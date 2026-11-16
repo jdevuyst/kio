@@ -1,30 +1,30 @@
 /// Option helpers with host-backed folds over canonical lists, Bool predicates, filters, and operators.
 /// A ready-to-use library module for your own Kio package.
-module library/option;
+mod library/option;
 
-import library/core(
-, Option
-, and_then
-, apply
-, bind
-, cat_step
-, from_option
-, from_sum
-, join_step
-, map
-, map_step
-, none
-, option
-, or_else
-, some
-, then
-, to_sum
-);
-import library/list/core(uncons);
-import library/macros/control(Bool as Control_bool, macro if);
-import library/macros/match(macro match);
-import library/macros/spine_macros(macro flatten_sum, macro narrow_sum, macro widen_sum);
-import list/core(List);
+import library/core {
+  type Option;
+  fn and_then;
+  fn apply;
+  fn bind;
+  fn cat_step;
+  fn from_option;
+  fn from_sum;
+  fn join_step;
+  fn map;
+  fn map_step;
+  fn none;
+  fn option;
+  fn or_else;
+  fn some;
+  fn then;
+  fn to_sum
+}
+import library/list/core { fn uncons }
+import library/macros/control { type Bool as Control_bool; macro if }
+import library/macros/match { macro match }
+import library/macros/spine_macros { macro flatten_sum; macro narrow_sum; macro widen_sum }
+import list/core { type List }
 import option_host as _rehost_gphahegjgpgofpgigphdhe;
 
 pub type Bool = Control_bool;

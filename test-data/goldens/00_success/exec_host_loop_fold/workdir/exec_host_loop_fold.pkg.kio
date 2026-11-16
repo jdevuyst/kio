@@ -1,4 +1,4 @@
-package exec_host_loop_fold;
+pkg exec_host_loop_fold;
 
 build {
   cache "out/.kio-cache/";

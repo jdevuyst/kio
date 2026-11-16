@@ -1,6 +1,6 @@
 /// `repmod` declares a `Rep` newtype and an elaborator that shares the
 /// module's own name. The elaborator's declared result type is `Rep`.
-module repmod;
+mod repmod;
 
 import __intrinsics__;
 

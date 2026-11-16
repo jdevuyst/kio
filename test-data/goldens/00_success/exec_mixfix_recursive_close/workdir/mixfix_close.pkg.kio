@@ -1,4 +1,4 @@
-package mixfix_close;
+pkg mixfix_close;
 
 build {
   cache "out/.kio-cache/";

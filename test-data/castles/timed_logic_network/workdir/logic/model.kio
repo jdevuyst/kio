@@ -1,13 +1,13 @@
-module logic/model;
+mod logic/model;
 
 import list/core as lists;
 import list/list as traversal;
 import list_host as numbers;
-import macros/control(macro if);
-import macros/match(macro match);
-import macros/row_macros(macro select);
-import macros/spine_macros(macro widen_sum);
-import testapi(Bool, I32, String);
+import macros/control { macro if }
+import macros/match { macro match }
+import macros/row_macros { macro select }
+import macros/spine_macros { macro widen_sum }
+import testapi { type Bool; type I32; type String }
 
 pub type Signal = { Wire: I32; Level: Bool };
 

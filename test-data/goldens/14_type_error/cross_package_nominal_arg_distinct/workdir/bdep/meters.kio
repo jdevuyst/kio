@@ -1,5 +1,5 @@
 /// A `Meters` newtype the dependency owns, over its own `Float`.
-module bdep/meters;
+mod bdep/meters;
 
 host type Float role(f64);
 

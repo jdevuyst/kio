@@ -1,4 +1,4 @@
-package source_parameter_grouping;
+pkg source_parameter_grouping;
 
 build {
   target haskell {

@@ -211,7 +211,7 @@ struct LoweringCtx {
     /// Per-module-path → (bare newtype leaf in that module's scope →
     /// the declaring module slash-path and original declaration name). Holds
     /// the module's own newtype declarations plus every newtype it
-    /// brings in with `import N(…, X, …);`. Used to pin a noncanonical
+    /// brings in with `import N { …; type X; … }`. Used to pin a noncanonical
     /// bare referenced newtype path in its explicit defining scope,
     /// independent of the eventual consumer (`specs/language.md`
     /// § Open-world design).
@@ -581,7 +581,7 @@ impl LoweringCtx {
     /// Record, for `module_path`, where each bare newtype leaf in its
     /// scope resolves: its own `newtype` declarations (home is
     /// `module_path`) plus the newtypes it imports with
-    /// `import N(…, X, …);` (home is `N`). Runs after every module's own newtypes
+    /// `import N { …; type X; … }` (home is `N`). Runs after every module's own newtypes
     /// are collected so an import can be confirmed against the source
     /// module's declarations. Feeds qualification of noncanonical bare
     /// referenced newtype paths in an explicit spelling scope.
@@ -677,7 +677,7 @@ impl LoweringCtx {
     }
 
     /// Look up a host fn reached cross-module by a qualified import path
-    /// (`m.foo` / `import m(foo);`) — keyed by the target module path.
+    /// (`m.foo` / `import m { fn foo }`) — keyed by the target module path.
     fn host_fn_for_import(&self, path: &str, name: &str) -> Option<&HostFnSig> {
         self.host_fns_by_module.get(path)?.get(name)
     }
@@ -1742,7 +1742,7 @@ impl<'a> Lowerer<'a> {
                     } => {
                         // A selective import may resolve to a `host fn` in
                         // the source module — host items are ordinary public
-                        // declarations brought into scope by `import m(foo);`.
+                        // declarations brought into scope by `import m { fn foo }`.
                         // Reference those as a host-fn value (the
                         // module-fn-value path below would mis-route them).
                         if let Some(hsig) = self.ctx.host_fn_for_import(mod_path, source) {
@@ -2646,7 +2646,7 @@ impl<'a> Lowerer<'a> {
                             // A selective import may resolve to a `host fn`
                             // in the source module — host items are ordinary
                             // public declarations brought into scope by
-                            // `import m(foo);`. Classify those as host calls
+                            // `import m { fn foo }`. Classify those as host calls
                             // (the module-fn path below would mis-route them
                             // through the module-call slot walk).
                             if let Some(hsig) = self.ctx.host_fn_for_import(&mod_path, &source) {
@@ -7726,10 +7726,7 @@ mod tests {
     fn returned_forall_type_application_keeps_one_boundary_per_binder() {
         let routed = full_pipeline_to_routed(&[(
             "test.kio",
-            "module test; \
-             host type N; \
-             host fn produce(_unit: .) -> [A] A; \
-             fn caller() -> N { produce() }",
+            "mod test; host type N; host fn produce(_unit: .) -> [A] A; fn caller() -> N { produce() }",
         )]);
         let Expr::LowTypeApplication {
             callee, type_arg, ..
@@ -7757,11 +7754,7 @@ mod tests {
     fn value_application_keeps_the_preceding_type_stage_as_its_callee() {
         let routed = full_pipeline_to_routed(&[(
             "test.kio",
-            "module test; \
-             host type N; \
-             host fn value(_unit: .) -> N; \
-             fn stage(_unit: .)[A] -> A -> A { .(item: A) -> A { item } } \
-             fn caller() -> N { stage()[N](value()) }",
+            "mod test; host type N; host fn value(_unit: .) -> N; fn stage(_unit: .)[A] -> A -> A { .(item: A) -> A { item } } fn caller() -> N { stage()[N](value()) }",
         )]);
         let Expr::LowIndirectCall {
             callee,
@@ -7822,15 +7815,7 @@ mod tests {
     fn optimized_let_keeps_a_type_application_before_a_later_effect() {
         let routed = full_optimized_pipeline_to_routed(&[(
             "test.kio",
-            "module test; \
-             host type N; \
-             host fn effect(_unit: .) -> .; \
-             fn stage(_unit: .)[A] -> A -> A { .(value: A) -> A { value } } \
-             fn caller(value: N) -> N { \
-               let residual = stage()[N]; \
-               effect(()); \
-               residual(value) \
-             }",
+            "mod test; host type N; host fn effect(_unit: .) -> .; fn stage(_unit: .)[A] -> A -> A { .(value: A) -> A { value } } fn caller(value: N) -> N { let residual = stage()[N]; effect(()); residual(value) }",
         )]);
         let Expr::Let {
             value: type_stage,
@@ -7854,21 +7839,7 @@ mod tests {
     fn optimized_residual_type_applications_remain_at_their_let_sites() {
         let routed = full_optimized_pipeline_to_routed(&[(
             "test.kio",
-            "module test; \
-             host type N; \
-             host fn effect(_unit: .) -> .; \
-             fn stage(_unit: .)[A][B] -> B -> B { \
-               effect(()); \
-               .(value: B) -> B { value } \
-             } \
-             fn caller(value: N) -> N { \
-               let base = stage(()); \
-               let after_a = base[N]; \
-               effect(()); \
-               let after_b = after_a[N]; \
-               effect(()); \
-               after_b(value) \
-             }",
+            "mod test; host type N; host fn effect(_unit: .) -> .; fn stage(_unit: .)[A][B] -> B -> B { effect(()); .(value: B) -> B { value } } fn caller(value: N) -> N { let base = stage(()); let after_a = base[N]; effect(()); let after_b = after_a[N]; effect(()); after_b(value) }",
         )]);
         let body = &routed_fn(&routed, "test", "caller").body;
         let Expr::Let {
@@ -7932,14 +7903,7 @@ mod tests {
     fn type_only_module_heads_precede_returned_value_arguments() {
         let routed = full_pipeline_to_routed(&[(
             "test.kio",
-            "module test; \
-             host type N; \
-             host fn effect() -> N; \
-             host fn unit_effect() -> .; \
-             fn make[A] -> A -> A { .(value: A) { value } } \
-             fn make_unit[A] -> . -> . { .() { () } } \
-             fn caller() -> N { make[N](effect()) } \
-             fn unit_caller() { make_unit[.](unit_effect()) }",
+            "mod test; host type N; host fn effect() -> N; host fn unit_effect() -> .; fn make[A] -> A -> A { .(value: A) { value } } fn make_unit[A] -> . -> . { .() { () } } fn caller() -> N { make[N](effect()) } fn unit_caller() { make_unit[.](unit_effect()) }",
         )]);
         let Expr::LowIndirectCall { callee, args, .. } = &routed_fn(&routed, "test", "caller").body
         else {
@@ -7972,10 +7936,7 @@ mod tests {
     fn returned_type_stages_precede_erased_value_argument_wrappers() {
         let routed = full_pipeline_to_routed(&[(
             "test.kio",
-            "module test; \
-             host fn effect() -> .; \
-             fn staged[A] -> [B] . -> . { .[B] { .() { () } } } \
-             fn caller() { staged[.][.](effect()) }",
+            "mod test; host fn effect() -> .; fn staged[A] -> [B] . -> . { .[B] { .() { () } } } fn caller() { staged[.][.](effect()) }",
         )]);
         let Expr::Let { value, body, .. } = &routed_fn(&routed, "test", "caller").body else {
             panic!("the fully specialized callee must precede argument wrappers")
@@ -8002,11 +7963,11 @@ mod tests {
         let routed = full_pipeline_to_routed(&[
             (
                 "factory.kio",
-                "module factory; pub fn make[A] -> A -> A { .(value: A) { value } }",
+                "mod factory; pub fn make[A] -> A -> A { .(value: A) { value } }",
             ),
             (
                 "test.kio",
-                "module test; import factory as factory; fn saved() -> [A] A -> A { factory.make }",
+                "mod test; import factory as factory; fn saved() -> [A] A -> A { factory.make }",
             ),
         ]);
         let Expr::FnExpr { sig, body, .. } = &routed_fn(&routed, "test", "saved").body else {
@@ -8023,12 +7984,7 @@ mod tests {
     fn interleaved_flat_call_arrives_as_ordered_nested_routed_layers() {
         let routed = full_pipeline_to_routed(&[(
             "test.kio",
-            "module test; \
-             host type N; \
-             host fn first(_unit: .) -> N; \
-             host fn second(_unit: .) -> N; \
-             fn interleaved[A](x: A)[B](y: B) -> B { y } \
-             fn caller() -> N { interleaved[N](first())[N](second()) }",
+            "mod test; host type N; host fn first(_unit: .) -> N; host fn second(_unit: .) -> N; fn interleaved[A](x: A)[B](y: B) -> B { y } fn caller() -> N { interleaved[N](first())[N](second()) }",
         )]);
         let Expr::LowIndirectCall {
             callee: first_value_stage,
@@ -8069,12 +8025,7 @@ mod tests {
     fn interleaved_host_call_uses_the_staged_function_value_route() {
         let routed = full_pipeline_to_routed(&[(
             "test.kio",
-            "module test; \
-             host type N; \
-             host fn first(_unit: .) -> N; \
-             host fn second(_unit: .) -> N; \
-             host fn staged[A](first: N)[B](second: N) -> N; \
-             fn caller() -> N { staged[.](first())[.](second()) }",
+            "mod test; host type N; host fn first(_unit: .) -> N; host fn second(_unit: .) -> N; host fn staged[A](first: N)[B](second: N) -> N; fn caller() -> N { staged[.](first())[.](second()) }",
         )]);
         let Expr::LowIndirectCall {
             callee: first_value_stage,
@@ -8219,12 +8170,7 @@ mod tests {
     fn newtype_projector_function_payload_recovers_unit_abi() {
         let routed = full_pipeline_to_routed(&[(
             "test.kio",
-            "module test; \
-             host type N; \
-             host fn value(_unit: .) -> N; \
-             type { Lazy: . -> N { mk; get; }; }; \
-             fn lazy() -> Lazy { Lazy.mk(.() { value() }) } \
-             fn caller() -> N { Lazy.get(lazy())() }",
+            "mod test; host type N; host fn value(_unit: .) -> N; type { Lazy: . -> N { mk; get; }; }; fn lazy() -> Lazy { Lazy.mk(.() { value() }) } fn caller() -> N { Lazy.get(lazy())() }",
         )]);
         let Expr::LowIndirectCall { callee, args, .. } = &routed_fn(&routed, "test", "caller").body
         else {
@@ -8248,15 +8194,11 @@ mod tests {
         let routed = full_pipeline_to_routed(&[
             (
                 "types.kio",
-                "module types; \
-                 pub type { Lazy: . -> . { pub mk; pub get; }; }; \
-                 pub fn lazy() -> Lazy { Lazy.mk(.() { () }) }",
+                "mod types; pub type { Lazy: . -> . { pub mk; pub get; }; }; pub fn lazy() -> Lazy { Lazy.mk(.() { () }) }",
             ),
             (
                 "main.kio",
-                "module main; \
-                 import types as alias; \
-                 fn caller() -> . { alias.Lazy.get(alias.lazy())() }",
+                "mod main; import types as alias; fn caller() -> . { alias.Lazy.get(alias.lazy())() }",
             ),
         ]);
         let Expr::LowIndirectCall { callee, args, .. } = &routed_fn(&routed, "main", "caller").body
@@ -8285,12 +8227,7 @@ mod tests {
     fn enriched_field_payload_recovers_its_declared_function_abi() {
         let routed = full_pipeline_to_routed(&[(
             "test.kio",
-            "module test; import __intrinsics__; \
-             host fn tick(_unit: .) -> .; \
-             type { Text: . -> . { mk; get }; Invoke[A]: A -> A { mk; get }; } \
-             fn unit_call(value: Text & .) -> . { Text.get(__fst__(value))(()) } \
-             fn effect_call(value: Text & .) -> . { Text.get(__fst__(value))(tick(())) } \
-             fn generic_call(value: Invoke[.] & .) -> . { Invoke.get[.](__fst__(value))(()) }",
+            "mod test; import __intrinsics__; host fn tick(_unit: .) -> .; type { Text: . -> . { mk; get }; Invoke[A]: A -> A { mk; get }; } fn unit_call(value: Text & .) -> . { Text.get(__fst__(value))(()) } fn effect_call(value: Text & .) -> . { Text.get(__fst__(value))(tick(())) } fn generic_call(value: Invoke[.] & .) -> . { Invoke.get[.](__fst__(value))(()) }",
         )]);
 
         let unit_body = &routed_fn(&routed, "test", "unit_call").body;
@@ -8395,18 +8332,15 @@ mod tests {
         let routed = full_pipeline_to_routed(&[
             (
                 "labels.kio",
-                "module labels; pub type { Text: . -> . { pub mk; pub get }; }",
+                "mod labels; pub type { Text: . -> . { pub mk; pub get }; }",
             ),
             (
                 "other.kio",
-                "module other; pub type { Text: . -> . { pub mk; pub get }; }",
+                "mod other; pub type { Text: . -> . { pub mk; pub get }; }",
             ),
             (
                 "main.kio",
-                "module main; import __intrinsics__; \
-                 import labels(Text); import labels as provider; import other as decoy; \
-                 fn decoy_marker(_value: decoy.Text) -> . { () } \
-                 fn caller(value: Text & .) -> . { provider.Text.get(__fst__(value))(()) }",
+                "mod main; import __intrinsics__; import labels {type Text} import labels as provider; import other as decoy; fn decoy_marker(_value: decoy.Text) -> . { () } fn caller(value: Text & .) -> . { provider.Text.get(__fst__(value))(()) }",
             ),
         ]);
         let body = &routed_fn(&routed, "main", "caller").body;
@@ -8705,36 +8639,15 @@ mod tests {
         let routed = full_pipeline_to_routed(&[
             (
                 "origin.kio",
-                "module origin; \
-                 pub type { Plain: . { pub mk; pub get; }; }; \
-                 pub type { Const[A]: . { pub mk; pub get; }; }; \
-                 pub type { Hidden[A] <E>: E { pub mk; pub get; }; }; \
-                 fn plain() -> Plain { .() { Plain.mk(()) }(()) } \
-                 fn local[A]() -> Const[A] { .() { Const.mk[A](()) }(()) } \
-                 fn hidden[A][E](value: E) -> Hidden[A] { \
-                   .() { Hidden.mk[A][E](value) }(()) \
-                 }",
+                "mod origin; pub type { Plain: . { pub mk; pub get; }; }; pub type { Const[A]: . { pub mk; pub get; }; }; pub type { Hidden[A] <E>: E { pub mk; pub get; }; }; fn plain() -> Plain { .() { Plain.mk(()) }(()) } fn local[A]() -> Const[A] { .() { Const.mk[A](()) }(()) } fn hidden[A][E](value: E) -> Hidden[A] { .() { Hidden.mk[A][E](value) }(()) }",
             ),
             (
                 "relay.kio",
-                "module relay; import origin as source; \
-                 pub type Forward[A] = source.Const[A];",
+                "mod relay; import origin as source; pub type Forward[A] = source.Const[A];",
             ),
             (
                 "consumer.kio",
-                "module consumer; import origin as source; import origin(Plain); \
-                 import relay(Forward); import relay as relay; \
-                 type { Const[A]: . { mk; get; }; }; \
-                 fn local[A]() -> Const[A] { .() { Const.mk[A](()) }(()) } \
-                 fn selected() -> Plain { .() { Plain.mk(()) }(()) } \
-                 fn qualified[A]() -> source.Const[A] { .() { source.Const.mk[A](()) }(()) } \
-                 fn forwarded[A]() -> Forward[A] { .() { Forward.mk[A](()) }(()) } \
-                 fn qualified_forwarded[A]() -> Forward[A] { \
-                   .() { relay.Forward.mk[A](()) }(()) \
-                 } \
-                 fn hidden[A][E](value: E) -> source.Hidden[A] { \
-                   .() { source.Hidden.mk[A][E](value) }(()) \
-                 }",
+                "mod consumer; import origin as source; import origin {type Plain} import relay {type Forward} import relay as relay; type { Const[A]: . { mk; get; }; }; fn local[A]() -> Const[A] { .() { Const.mk[A](()) }(()) } fn selected() -> Plain { .() { Plain.mk(()) }(()) } fn qualified[A]() -> source.Const[A] { .() { source.Const.mk[A](()) }(()) } fn forwarded[A]() -> Forward[A] { .() { Forward.mk[A](()) }(()) } fn qualified_forwarded[A]() -> Forward[A] { .() { relay.Forward.mk[A](()) }(()) } fn hidden[A][E](value: E) -> source.Hidden[A] { .() { source.Hidden.mk[A][E](value) }(()) }",
             ),
         ]);
         for (module, name, owner, nominal, generic) in [
@@ -8785,8 +8698,7 @@ mod tests {
     fn constructor_result_recovery_requires_exact_resolved_declaration_and_arguments() {
         let enriched = full_pipeline_to_enriched(&[(
             "owner.kio",
-            "module owner; \
-             type { Box[A]<E>: E { mk; get; }; };",
+            "mod owner; type { Box[A]<E>: E { mk; get; }; };",
         )]);
         let ctx = LoweringCtx::from_package(&enriched);
         let module = &enriched.module("owner").expect("owner module").module;
@@ -8845,38 +8757,15 @@ mod tests {
         let routed = full_pipeline_to_routed(&[
             (
                 "origin.kio",
-                "module origin; \
-                 pub type { Packet[A][B]: A & B { \
-                   pub mk; pub get; \
-                 }; }; \
-                 pub type { Hidden[A] <B>: A & (B -> A) & B { \
-                   pub mk; pub get; \
-                 }; }; \
-                 fn local[A][B](left: A, right: B) -> Packet[A][ B] { \
-                   Packet.mk[A][B](left, right) \
-                 } \
-                 fn existential[A][B](left: A, show: B -> A, right: B) -> Hidden[A] { \
-                   Hidden.mk[A][B](left, show, right) \
-                 }",
+                "mod origin; pub type { Packet[A][B]: A & B { pub mk; pub get; }; }; pub type { Hidden[A] <B>: A & (B -> A) & B { pub mk; pub get; }; }; fn local[A][B](left: A, right: B) -> Packet[A][ B] { Packet.mk[A][B](left, right) } fn existential[A][B](left: A, show: B -> A, right: B) -> Hidden[A] { Hidden.mk[A][B](left, show, right) }",
             ),
             (
                 "relay.kio",
-                "module relay; import origin as source; \
-                 pub type Parcel[A][B] = source.Packet[A][ B];",
+                "mod relay; import origin as source; pub type Parcel[A][B] = source.Packet[A][ B];",
             ),
             (
                 "consumer.kio",
-                "module consumer; import origin as source; \
-                 import relay(Parcel); import relay as relay; \
-                 fn qualified[A][B](left: A, right: B) -> source.Packet[A][ B] { \
-                   source.Packet.mk[A][B](left, right) \
-                 } \
-                 fn forwarded[A][B](left: A, right: B) -> Parcel[A][ B] { \
-                   Parcel.mk[A][B](left, right) \
-                 } \
-                 fn qualified_forwarded[A][B](left: A, right: B) -> Parcel[A][ B] { \
-                   relay.Parcel.mk[A][B](left, right) \
-                 }",
+                "mod consumer; import origin as source; import relay {type Parcel} import relay as relay; fn qualified[A][B](left: A, right: B) -> source.Packet[A][ B] { source.Packet.mk[A][B](left, right) } fn forwarded[A][B](left: A, right: B) -> Parcel[A][ B] { Parcel.mk[A][B](left, right) } fn qualified_forwarded[A][B](left: A, right: B) -> Parcel[A][ B] { relay.Parcel.mk[A][B](left, right) }",
             ),
         ]);
         for (module, name, expected_names) in [
@@ -8925,19 +8814,7 @@ mod tests {
     fn constructor_packet_preserves_grouped_unit_and_residual_member_stages() {
         let routed = full_pipeline_to_routed(&[(
             "test.kio",
-            "module test; \
-             type { Packet[A][B]: A & B { mk; get; }; }; \
-             type { Empty: . { mk; get; }; }; \
-             type { Function[A]: A -> A { mk; get; }; }; \
-             fn grouped[A][B](payload: A & B) -> Packet[A][ B] { \
-               Packet.mk[A][B](payload) \
-             } \
-             fn unit() -> Empty { Empty.mk() } \
-             fn first_class[A][B]() -> (A & B) -> Packet[A][ B] { Packet.mk[A][B] } \
-             fn residual[A]() -> [B] (A & B) -> Packet[A][ B] { Packet.mk[A] } \
-             fn projector_call[A](wrapped: Function[A], value: A) -> A { \
-               Function.get[A](wrapped)(value) \
-             }",
+            "mod test; type { Packet[A][B]: A & B { mk; get; }; }; type { Empty: . { mk; get; }; }; type { Function[A]: A -> A { mk; get; }; }; fn grouped[A][B](payload: A & B) -> Packet[A][ B] { Packet.mk[A][B](payload) } fn unit() -> Empty { Empty.mk() } fn first_class[A][B]() -> (A & B) -> Packet[A][ B] { Packet.mk[A][B] } fn residual[A]() -> [B] (A & B) -> Packet[A][ B] { Packet.mk[A] } fn projector_call[A](wrapped: Function[A], value: A) -> A { Function.get[A](wrapped)(value) }",
         )]);
         assert!(matches!(
             &routed_fn(&routed, "test", "grouped").body,
@@ -8973,18 +8850,7 @@ mod tests {
     fn local_newtype_constructor_canonicalizes_polymorphic_payload_storage() {
         let routed = full_pipeline_to_routed(&[(
             "test.kio",
-            "module test; \
-             type { Packed: [A] (. & .) -> . { mk; get; }; }; \
-             type { Thunk: [A] . -> . { mk; get; }; }; \
-             type { Exists <U>: [A] (U & A) -> U { mk; get; }; }; \
-             fn flat() -> Packed { \
-               Packed.mk(.[A](_left: ., _right: .) { () }) \
-             } \
-             fn packed() -> Packed { Packed.mk(.[A](_pair: . & .) { () }) } \
-             fn unit() -> Thunk { Thunk.mk(.[A]() { () }) } \
-             fn existential() -> Exists { \
-               Exists.mk[.](.[A](_left: ., _right: A) { _left }) \
-             }",
+            "mod test; type { Packed: [A] (. & .) -> . { mk; get; }; }; type { Thunk: [A] . -> . { mk; get; }; }; type { Exists <U>: [A] (U & A) -> U { mk; get; }; }; fn flat() -> Packed { Packed.mk(.[A](_left: ., _right: .) { () }) } fn packed() -> Packed { Packed.mk(.[A](_pair: . & .) { () }) } fn unit() -> Thunk { Thunk.mk(.[A]() { () }) } fn existential() -> Exists { Exists.mk[.](.[A](_left: ., _right: A) { _left }) }",
         )]);
 
         let Expr::LowNewtypeCtor { payload, .. } = &routed_fn(&routed, "test", "flat").body else {
@@ -9015,42 +8881,11 @@ mod tests {
         let routed = full_pipeline_to_routed(&[
             (
                 "types.kio",
-                "module types; \
-                 pub type { Packed: [A] (. & .) -> . { \
-                   pub mk; pub get; \
-                 }; }; \
-                 pub type { Thunk: [A] . -> . { \
-                   pub mk; pub get; \
-                 }; }; \
-                 pub type { Exists <U>: [A] (U & A) -> U { \
-                   pub mk; pub get; \
-                 }; }; \
-                 pub type { Identity[A]: A { \
-                   pub mk; pub get; \
-                 }; }; \
-                 pub type { Functor[*F]: [A][B] ((A -> B) & F[A]) -> F[B] { \
-                   pub mk; pub get; \
-                 }; };",
+                "mod types; pub type { Packed: [A] (. & .) -> . { pub mk; pub get; }; }; pub type { Thunk: [A] . -> . { pub mk; pub get; }; }; pub type { Exists <U>: [A] (U & A) -> U { pub mk; pub get; }; }; pub type { Identity[A]: A { pub mk; pub get; }; }; pub type { Functor[*F]: [A][B] ((A -> B) & F[A]) -> F[B] { pub mk; pub get; }; };",
             ),
             (
                 "main.kio",
-                "module main; \
-                 import types as alias; \
-                 fn flat() -> alias.Packed { \
-                   alias.Packed.mk(.[A](_left: ., _right: .) { () }) \
-                 } \
-                 fn packed() -> alias.Packed { \
-                   alias.Packed.mk(.[A](_pair: . & .) { () }) \
-                 } \
-                 fn unit() -> alias.Thunk { alias.Thunk.mk(.[A]() { () }) } \
-                 fn existential() -> alias.Exists { \
-                   alias.Exists.mk[.](.[A](_left: ., _right: A) { _left }) \
-                 } \
-                 fn nominal_result() -> alias.Functor[alias.Identity] { \
-                   alias.Functor.mk(.[A][B](step, value) { \
-                     alias.Identity.mk(step(alias.Identity.get(value))) \
-                   }) \
-                 }",
+                "mod main; import types as alias; fn flat() -> alias.Packed { alias.Packed.mk(.[A](_left: ., _right: .) { () }) } fn packed() -> alias.Packed { alias.Packed.mk(.[A](_pair: . & .) { () }) } fn unit() -> alias.Thunk { alias.Thunk.mk(.[A]() { () }) } fn existential() -> alias.Exists { alias.Exists.mk[.](.[A](_left: ., _right: A) { _left }) } fn nominal_result() -> alias.Functor[alias.Identity] { alias.Functor.mk(.[A][B](step, value) { alias.Identity.mk(step(alias.Identity.get(value))) }) }",
             ),
         ]);
 
@@ -9094,13 +8929,7 @@ mod tests {
     fn recovered_match_payload_types_preserve_nullary_lambda_abi() {
         let routed = full_pipeline_to_routed(&[(
             "test.kio",
-            "module test; \
-             import __intrinsics__; \
-             fn caller[A][B][C](value: A | B | C) -> A | B | C { \
-               __either__[A][ B | C][ A | B | C]( value, \
-                 .(left: A) { __left__[A][ B | C]( .() { left }(())) }, \
-                 .(tail: B | C) { __right__[A][ B | C]( .() { tail }(())) }) \
-             }",
+            "mod test; import __intrinsics__; fn caller[A][B][C](value: A | B | C) -> A | B | C { __either__[A][ B | C][ A | B | C]( value, .(left: A) { __left__[A][ B | C]( .() { left }(())) }, .(tail: B | C) { __right__[A][ B | C]( .() { tail }(())) }) }",
         )]);
         let Expr::EnrichedMatch {
             arms, scrutinee_ty, ..
@@ -9147,10 +8976,7 @@ mod tests {
     fn computed_unit_call_stages_callee_before_erased_argument_effect() {
         let routed = full_pipeline_to_routed(&[(
             "test.kio",
-            "module test; \
-             host fn make(_unit: .) -> . -> .; \
-             host fn observe(_unit: .) -> .; \
-             fn caller() -> . { make()(observe()) }",
+            "mod test; host fn make(_unit: .) -> . -> .; host fn observe(_unit: .) -> .; fn caller() -> . { make()(observe()) }",
         )]);
         let Expr::Let {
             name, value, body, ..
@@ -9188,10 +9014,7 @@ mod tests {
     fn computed_function_value_is_staged_before_top_level_abi_adapter() {
         let routed = full_pipeline_to_routed(&[(
             "test.kio",
-            "module test; \
-             host fn make(_unit: .)[A](_left: A, _right: A) -> A; \
-             fn accept(_function: [A] (A & A) -> A) -> . { () } \
-             fn caller() -> . { accept(make()) }",
+            "mod test; host fn make(_unit: .)[A](_left: A, _right: A) -> A; fn accept(_function: [A] (A & A) -> A) -> . { () } fn caller() -> . { accept(make()) }",
         )]);
         let Expr::LowModuleCall { args, .. } = &routed_fn(&routed, "test", "caller").body else {
             panic!(
@@ -9236,12 +9059,7 @@ mod tests {
     fn malformed_cps_projector_call_rejects_extra_continuation_values() {
         let mut enriched = full_pipeline_to_enriched(&[(
             "test.kio",
-            "module test; \
-             type { Pack<U>: U { mk; get; }; }; \
-             fn pack() -> Pack { Pack.mk(()) } \
-             fn caller() -> . { \
-               Pack.get(pack())(.[U](_payload: U) -> . { () }) \
-             }",
+            "mod test; type { Pack<U>: U { mk; get; }; }; fn pack() -> Pack { Pack.mk(()) } fn caller() -> . { Pack.get(pack())(.[U](_payload: U) -> . { () }) }",
         )]);
         let entry = enriched.modules_mut().next().expect("one test module");
         let caller = entry
@@ -9287,21 +9105,7 @@ mod tests {
     fn cps_continuations_share_one_exact_type_adapter_for_all_value_forms() {
         let routed = full_pipeline_to_routed(&[(
             "test.kio",
-            "module test; \
-             host type I32; \
-             host fn value(_unit: .) -> I32; \
-             type { Pack<U>: I32 & U; }; \
-             fn pack() -> Pack { Pack.mk((value(), ())) } \
-             fn named[U](number: I32, _witness: U) -> I32 { number } \
-             fn make(_unit: .) -> [U] (I32 & U) -> I32 { \
-               .[U](_pair: I32 & U) -> I32 { value() } \
-             } \
-             fn literal() -> I32 { \
-               Pack.get(pack())(.[U](_pair: I32 & U) -> I32 { value() }) \
-             } \
-             fn named_value() -> I32 { Pack.get(pack())(named) } \
-             fn let_value() -> I32 { let continuation = named; Pack.get(pack())(continuation) } \
-             fn computed() -> I32 { Pack.get(pack())(make(())) }",
+            "mod test; host type I32; host fn value(_unit: .) -> I32; type { Pack<U>: I32 & U; }; fn pack() -> Pack { Pack.mk((value(), ())) } fn named[U](number: I32, _witness: U) -> I32 { number } fn make(_unit: .) -> [U] (I32 & U) -> I32 { .[U](_pair: I32 & U) -> I32 { value() } } fn literal() -> I32 { Pack.get(pack())(.[U](_pair: I32 & U) -> I32 { value() }) } fn named_value() -> I32 { Pack.get(pack())(named) } fn let_value() -> I32 { let continuation = named; Pack.get(pack())(continuation) } fn computed() -> I32 { Pack.get(pack())(make(())) }",
         )]);
 
         fn find_cps(expr: &Expr<Routed>) -> (&Expr<Routed>, &Type<Routed>) {
@@ -9376,11 +9180,7 @@ mod tests {
     fn cps_continuation_binder_does_not_capture_same_spelling_caller_type() {
         let routed = full_pipeline_to_routed(&[(
             "test.kio",
-            "module test; \
-             type { Boxed[A]<U>: A & U; }; \
-             fn consume[U](boxed: Boxed[U], fallback: U) -> U { \
-               Boxed.get[U](boxed)(.[Hidden](_payload: U & Hidden) -> U { fallback }) \
-             }",
+            "mod test; type { Boxed[A]<U>: A & U; }; fn consume[U](boxed: Boxed[U], fallback: U) -> U { Boxed.get[U](boxed)(.[Hidden](_payload: U & Hidden) -> U { fallback }) }",
         )]);
         let Expr::LowCpsProjectorApply {
             continuation_ty, ..
@@ -9418,11 +9218,7 @@ mod tests {
     fn unannotated_cps_continuation_uses_selected_literal_result_type() {
         let routed = full_pipeline_to_routed(&[(
             "test.kio",
-            "module test; \
-             host type I32 role(i32); \
-             type { Pack <U>: U { mk; get; }; }; \
-             fn pack() -> Pack { Pack.mk(()) } \
-             fn caller() -> I32 { Pack.get(pack())(.[U](_payload: U) { 42[I32] }) }",
+            "mod test; host type I32 role(i32); type { Pack <U>: U { mk; get; }; }; fn pack() -> Pack { Pack.mk(()) } fn caller() -> I32 { Pack.get(pack())(.[U](_payload: U) { 42[I32] }) }",
         )]);
         let Expr::LowCpsProjectorApply {
             continuation_ty, ..
@@ -9445,11 +9241,7 @@ mod tests {
     fn cps_continuation_payload_binder_may_be_inferred() {
         let routed = full_pipeline_to_routed(&[(
             "test.kio",
-            "module test; \
-             host type I32 role(i32); \
-             type { Pack <U>: U { mk; get; }; }; \
-             fn pack() -> Pack { Pack.mk(()) } \
-             fn caller() -> I32 { Pack.get(pack())(.[U](_payload) { 42[I32] }) }",
+            "mod test; host type I32 role(i32); type { Pack <U>: U { mk; get; }; }; fn pack() -> Pack { Pack.mk(()) } fn caller() -> I32 { Pack.get(pack())(.[U](_payload) { 42[I32] }) }",
         )]);
         let Expr::LowCpsProjectorApply {
             continuation_ty, ..
@@ -9469,18 +9261,7 @@ mod tests {
     fn retained_unannotated_continuation_keeps_recursive_callable_shape() {
         let routed = full_pipeline_to_routed(&[(
             "test.kio",
-            "module test; \
-             host type I32; \
-             host fn value(_unit: .) -> I32; \
-             type { Pack <U>: U { mk; get; }; }; \
-             fn pack() -> Pack { Pack.mk(()) } \
-             fn caller() -> I32 { \
-               let continuation = \
-                 .[U](_payload: U) { .(left: I32, _right: I32) { left } }; \
-               let _first = \
-                 Pack.get(pack())[(I32 & I32) -> I32](continuation)((value(), value())); \
-               Pack.get(pack())[(I32 & I32) -> I32](continuation)((value(), value())) \
-             }",
+            "mod test; host type I32; host fn value(_unit: .) -> I32; type { Pack <U>: U { mk; get; }; }; fn pack() -> Pack { Pack.mk(()) } fn caller() -> I32 { let continuation = .[U](_payload: U) { .(left: I32, _right: I32) { left } }; let _first = Pack.get(pack())[(I32 & I32) -> I32](continuation)((value(), value())); Pack.get(pack())[(I32 & I32) -> I32](continuation)((value(), value())) }",
         )]);
         let Expr::Let {
             name, value, body, ..
@@ -9536,17 +9317,7 @@ mod tests {
     fn retained_continuation_shape_is_not_rebound_by_later_same_name_let() {
         let routed = full_pipeline_to_routed(&[(
             "test.kio",
-            "module test; \
-             host type I32; \
-             host fn value(_unit: .) -> I32; \
-             type { Pack <U>: U { mk; get; }; }; \
-             fn pack() -> Pack { Pack.mk(()) } \
-             fn caller() -> (I32 & I32) -> I32 { \
-               let f = .(left: I32, _right: I32) { left }; \
-               let continuation = .[U](_payload: U) { f }; \
-               let f = .(_pair: I32 & I32) { value() }; \
-               Pack.get(pack())[(I32 & I32) -> I32](continuation) \
-             }",
+            "mod test; host type I32; host fn value(_unit: .) -> I32; type { Pack <U>: U { mk; get; }; }; fn pack() -> Pack { Pack.mk(()) } fn caller() -> (I32 & I32) -> I32 { let f = .(left: I32, _right: I32) { left }; let continuation = .[U](_payload: U) { f }; let f = .(_pair: I32 & I32) { value() }; Pack.get(pack())[(I32 & I32) -> I32](continuation) }",
         )]);
 
         let Expr::Let {
@@ -9651,16 +9422,7 @@ mod tests {
     fn cps_continuation_recovers_literal_function_result_abi() {
         let routed = full_pipeline_to_routed(&[(
             "test.kio",
-            "module test; \
-             host type I32; \
-             type { Pack <U>: U { mk; get; }; }; \
-             fn pack() -> Pack { Pack.mk(()) } \
-             fn caller() -> (I32 & I32) -> I32 { \
-               Pack.get(pack())[ \
-                 (I32 & I32) -> I32]( \
-                 .[U](_payload: U) { .(left: I32, _right: I32) { left } } \
-               ) \
-             }",
+            "mod test; host type I32; type { Pack <U>: U { mk; get; }; }; fn pack() -> Pack { Pack.mk(()) } fn caller() -> (I32 & I32) -> I32 { Pack.get(pack())[ (I32 & I32) -> I32]( .[U](_payload: U) { .(left: I32, _right: I32) { left } } ) }",
         )]);
         let Expr::LowCpsProjectorApply { continuation, .. } =
             &routed_fn(&routed, "test", "caller").body
@@ -9699,11 +9461,7 @@ mod tests {
     fn sequenced_computed_callee_preserves_unit_abi() {
         let routed = full_pipeline_to_routed(&[(
             "test.kio",
-            "module test; \
-             host type N; \
-             host fn make(_unit: .) -> . -> N; \
-             host fn observe(_unit: .) -> .; \
-             fn caller() -> N { make(observe())() }",
+            "mod test; host type N; host fn make(_unit: .) -> . -> N; host fn observe(_unit: .) -> .; fn caller() -> N { make(observe())() }",
         )]);
         let Expr::LowIndirectCall { callee, args, .. } = &routed_fn(&routed, "test", "caller").body
         else {
@@ -9729,14 +9487,7 @@ mod tests {
     fn cps_projector_result_recovers_continuation_return_abi() {
         let routed = full_pipeline_to_routed(&[(
             "test.kio",
-            "module test; \
-             host type N; \
-             host fn value(_unit: .) -> N; \
-             type { Pack <U>: U { mk; get; }; }; \
-             fn pack() -> Pack { Pack.mk(()) } \
-             fn caller() -> N { \
-               Pack.get(pack())[. -> N](.[U](_value: U) { .() { value() } })() \
-             }",
+            "mod test; host type N; host fn value(_unit: .) -> N; type { Pack <U>: U { mk; get; }; }; fn pack() -> Pack { Pack.mk(()) } fn caller() -> N { Pack.get(pack())[. -> N](.[U](_value: U) { .() { value() } })() }",
         )]);
         let Expr::LowIndirectCall { callee, args, .. } = &routed_fn(&routed, "test", "caller").body
         else {
@@ -9761,15 +9512,7 @@ mod tests {
     fn sequenced_cps_continuation_body_recovers_tail_return_abi() {
         let routed = full_pipeline_to_routed(&[(
             "test.kio",
-            "module test; \
-             host type N; \
-             host fn value(_unit: .) -> N; \
-             host fn observe(_unit: .) -> .; \
-             type { Pack <U>: U { mk; get; }; }; \
-             fn pack() -> Pack { Pack.mk(()) } \
-             fn caller() -> N { \
-               Pack.get(pack())[. -> N](.[U](_value: U) { observe(); .() { value() } })() \
-             }",
+            "mod test; host type N; host fn value(_unit: .) -> N; host fn observe(_unit: .) -> .; type { Pack <U>: U { mk; get; }; }; fn pack() -> Pack { Pack.mk(()) } fn caller() -> N { Pack.get(pack())[. -> N](.[U](_value: U) { observe(); .() { value() } })() }",
         )]);
         let Expr::LowIndirectCall { callee, args, .. } = &routed_fn(&routed, "test", "caller").body
         else {
@@ -9796,15 +9539,7 @@ mod tests {
     fn cps_continuation_recovers_named_module_function_result_abi() {
         let routed = full_pipeline_to_routed(&[(
             "test.kio",
-            "module test; \
-             host type N; \
-             host fn value(_unit: .) -> N; \
-             type { Pack <U>: U { mk; get; }; }; \
-             fn pack() -> Pack { Pack.mk(()) } \
-             fn resume(_unit: .) -> N { value() } \
-             fn caller() -> N { \
-               Pack.get(pack())[. -> N](.[U](_value: U) { resume })() \
-             }",
+            "mod test; host type N; host fn value(_unit: .) -> N; type { Pack <U>: U { mk; get; }; }; fn pack() -> Pack { Pack.mk(()) } fn resume(_unit: .) -> N { value() } fn caller() -> N { Pack.get(pack())[. -> N](.[U](_value: U) { resume })() }",
         )]);
         let Expr::LowIndirectCall { callee, args, .. } = &routed_fn(&routed, "test", "caller").body
         else {
@@ -9832,14 +9567,7 @@ mod tests {
     fn cps_continuation_recovers_named_host_function_result_abi() {
         let routed = full_pipeline_to_routed(&[(
             "test.kio",
-            "module test; \
-             host type N; \
-             host fn resume(_unit: .) -> N; \
-             type { Pack <U>: U { mk; get; }; }; \
-             fn pack() -> Pack { Pack.mk(()) } \
-             fn caller() -> N { \
-               Pack.get(pack())[. -> N](.[U](_value: U) { resume })() \
-             }",
+            "mod test; host type N; host fn resume(_unit: .) -> N; type { Pack <U>: U { mk; get; }; }; fn pack() -> Pack { Pack.mk(()) } fn caller() -> N { Pack.get(pack())[. -> N](.[U](_value: U) { resume })() }",
         )]);
         let Expr::LowIndirectCall { callee, args, .. } = &routed_fn(&routed, "test", "caller").body
         else {
@@ -9868,19 +9596,11 @@ mod tests {
         let routed = full_pipeline_to_routed(&[
             (
                 "types.kio",
-                "module types; \
-                 pub type { Pack <U>: U { pub mk; pub get; }; }; \
-                 pub fn pack() -> Pack { Pack.mk(()) }",
+                "mod types; pub type { Pack <U>: U { pub mk; pub get; }; }; pub fn pack() -> Pack { Pack.mk(()) }",
             ),
             (
                 "main.kio",
-                "module main; \
-                 import types as alias; \
-                 host type N; \
-                 host fn value(_unit: .) -> N; \
-                 fn caller() -> N { \
-                   alias.Pack.get(alias.pack())[. -> N](.[U](_value: U) { .() { value() } })() \
-                 }",
+                "mod main; import types as alias; host type N; host fn value(_unit: .) -> N; fn caller() -> N { alias.Pack.get(alias.pack())[. -> N](.[U](_value: U) { .() { value() } })() }",
             ),
         ]);
         let Expr::LowIndirectCall { callee, args, .. } = &routed_fn(&routed, "main", "caller").body
@@ -9908,10 +9628,7 @@ mod tests {
     fn wrapper_free_indirect_call_keeps_direct_routed_shape() {
         let routed = full_pipeline_to_routed(&[(
             "test.kio",
-            "module test; \
-             fn identity(value: .) -> . { value } \
-             fn choose(_unit: .) -> . -> . { identity } \
-             fn caller() -> . { choose()(()) }",
+            "mod test; fn identity(value: .) -> . { value } fn choose(_unit: .) -> . -> . { identity } fn caller() -> . { choose()(()) }",
         )]);
         let Expr::LowIndirectCall { callee, args, .. } = &routed_fn(&routed, "test", "caller").body
         else {
@@ -9972,14 +9689,10 @@ mod tests {
     fn declined_outer_adapter_probe_does_not_consume_nested_adapter_binder() {
         let enriched = full_pipeline_to_enriched(&[(
             "test.kio",
-            "module test; \
-             type Lens[S][A] = (S -> A) & ((A & S) -> S); \
-             fn target[A]() -> Lens[A][ A] { \
-               (
+            "mod test; type Lens[S][A] = (S -> A) & ((A & S) -> S); fn target[A]() -> Lens[A][ A] { (
                  , .(value: A) -> A { value }
                  , .(new_value: A, _old_value: A) -> A { new_value }
-                 ) \
-             }",
+                 ) }",
         )]);
         let module = &enriched.module("test").expect("test module").module;
         let target = module
@@ -10031,28 +9744,11 @@ mod tests {
 
         let baseline = full_pipeline_to_routed(&[(
             "test.kio",
-            "module test; \
-             type Lens[S][A] = (S -> A) & ((A & S) -> S); \
-             fn target[A](_unit: .) -> Lens[A][ A] { \
-               let get = .(value: A) -> A { value }; \
-               let put = .(new_value: A, _old_value: A) -> A { new_value }; \
-               (get, put) \
-             }",
+            "mod test; type Lens[S][A] = (S -> A) & ((A & S) -> S); fn target[A](_unit: .) -> Lens[A][ A] { let get = .(value: A) -> A { value }; let put = .(new_value: A, _old_value: A) -> A { new_value }; (get, put) }",
         )]);
         let extended = full_pipeline_to_routed(&[(
             "test.kio",
-            "module test; \
-             type Lens[S][A] = (S -> A) & ((A & S) -> S); \
-             fn unrelated[A](_unit: .) -> Lens[A][ A] { \
-               let get = .(value: A) -> A { value }; \
-               let put = .(new_value: A, _old_value: A) -> A { new_value }; \
-               (get, put) \
-             } \
-             fn target[A](_unit: .) -> Lens[A][ A] { \
-               let get = .(value: A) -> A { value }; \
-               let put = .(new_value: A, _old_value: A) -> A { new_value }; \
-               (get, put) \
-             }",
+            "mod test; type Lens[S][A] = (S -> A) & ((A & S) -> S); fn unrelated[A](_unit: .) -> Lens[A][ A] { let get = .(value: A) -> A { value }; let put = .(new_value: A, _old_value: A) -> A { new_value }; (get, put) } fn target[A](_unit: .) -> Lens[A][ A] { let get = .(value: A) -> A { value }; let put = .(new_value: A, _old_value: A) -> A { new_value }; (get, put) }",
         )]);
 
         let baseline_name = first_generated_callee(&routed_fn(&baseline, "test", "target").body);
@@ -10087,7 +9783,7 @@ mod tests {
         [
             (
                 "left.kio",
-                r#"module left;
+                r#"mod left;
 
 host type Shared role(i32);
 
@@ -10098,7 +9794,7 @@ pub fn keep_generic[Shared](value: Shared) -> Shared { value }
             ),
             (
                 "right.kio",
-                r#"module right;
+                r#"mod right;
 
 host type Shared role(str);
 
@@ -10185,36 +9881,19 @@ pub fn keep_right(value: Shared) -> Shared { value }
         let routed = full_pipeline_to_routed(&[
             (
                 "provider.kio",
-                "module provider; \
-                 pub type { Token: . { \
-                   pub mk; pub get; \
-                 }; }; \
-                 pub fn serve(_token: Token, _tail: .) -> . { () }",
+                "mod provider; pub type { Token: . { pub mk; pub get; }; }; pub fn serve(_token: Token, _tail: .) -> . { () }",
             ),
             (
                 "api.kio",
-                "module api; \
-                 import provider(Token); \
-                 pub fn run(callback: (Token & .) -> .) -> . { \
-                   callback(Token.mk(()), ()) \
-                 }",
+                "mod api; import provider {type Token} pub fn run(callback: (Token & .) -> .) -> . { callback(Token.mk(()), ()) }",
             ),
             (
                 "absent.kio",
-                "module absent; \
-                 import api(run); \
-                 import provider(serve); \
-                 fn exercise(_unit: .) -> . { run(serve) }",
+                "mod absent; import api {fn run} import provider {fn serve} fn exercise(_unit: .) -> . { run(serve) }",
             ),
             (
                 "collision.kio",
-                "module collision; \
-                 import api(run); \
-                 import provider(serve); \
-                 type { Token: . & . { \
-                   mk; get; \
-                 }; }; \
-                 fn exercise(_unit: .) -> . { run(serve) }",
+                "mod collision; import api {fn run} import provider {fn serve} type { Token: . & . { mk; get; }; }; fn exercise(_unit: .) -> . { run(serve) }",
             ),
         ]);
 
@@ -10579,20 +10258,15 @@ pub fn keep_right(value: Shared) -> Shared { value }
         let routed = full_pipeline_to_routed(&[
             (
                 "origin.kio",
-                "module origin; \
-                 pub type { Box[A]: A { pub mk; pub get; }; };",
+                "mod origin; pub type { Box[A]: A { pub mk; pub get; }; };",
             ),
             (
                 "relay.kio",
-                "module relay; import origin as source; \
-                 pub type Box[A] = source.Box[A];",
+                "mod relay; import origin as source; pub type Box[A] = source.Box[A];",
             ),
             (
                 "consumer.kio",
-                "module consumer; import relay as source; \
-                 fn make[A](value: A) -> source.Box[A] { \
-                   source.Box.mk[A](value) \
-                 }",
+                "mod consumer; import relay as source; fn make[A](value: A) -> source.Box[A] { source.Box.mk[A](value) }",
             ),
         ]);
         assert!(matches!(
@@ -10611,23 +10285,15 @@ pub fn keep_right(value: Shared) -> Shared { value }
         let routed = full_pipeline_to_routed(&[
             (
                 "origin.kio",
-                "module origin; \
-                 pub type { Terminal[A]: A { pub mk; pub get; }; };",
+                "mod origin; pub type { Terminal[A]: A { pub mk; pub get; }; };",
             ),
             (
                 "relay.kio",
-                "module relay; import origin as source; \
-                 pub type Alias[A] = source.Terminal[A];",
+                "mod relay; import origin as source; pub type Alias[A] = source.Terminal[A];",
             ),
             (
                 "consumer.kio",
-                "module consumer; import relay(Alias); import relay as forwarded; \
-                 fn direct[A](value: A) -> Alias[A] { Alias.mk[A](value) } \
-                 fn qualified[A](value: A) -> forwarded.Alias[A] { \
-                   forwarded.Alias.mk[A](value) \
-                 } \
-                 fn constructor[A]() -> A -> Alias[A] { Alias.mk[A] } \
-                 fn projector[A]() -> Alias[A] -> A { forwarded.Alias.get[A] }",
+                "mod consumer; import relay {type Alias} import relay as forwarded; fn direct[A](value: A) -> Alias[A] { Alias.mk[A](value) } fn qualified[A](value: A) -> forwarded.Alias[A] { forwarded.Alias.mk[A](value) } fn constructor[A]() -> A -> Alias[A] { Alias.mk[A] } fn projector[A]() -> Alias[A] -> A { forwarded.Alias.get[A] }",
             ),
         ]);
 
@@ -10762,25 +10428,15 @@ pub fn keep_right(value: Shared) -> Shared { value }
         let routed = full_pipeline_to_routed(&[
             (
                 "origin.kio",
-                "module origin; \
-                 pub type { Packed[A] <U>: U & A { \
-                   pub mk; pub get; \
-                 }; };",
+                "mod origin; pub type { Packed[A] <U>: U & A { pub mk; pub get; }; };",
             ),
             (
                 "relay.kio",
-                "module relay; import origin as source; \
-                 pub type Envelope[A] = source.Packed[A];",
+                "mod relay; import origin as source; pub type Envelope[A] = source.Packed[A];",
             ),
             (
                 "consumer.kio",
-                "module consumer; import relay(Envelope); \
-                 fn construct[A](value: A) -> Envelope[A] { \
-                   Envelope.mk[A](((), value)) \
-                 } \
-                 fn project[A](value: Envelope[A]) -> . { \
-                   Envelope.get[A](value)(.[U](_payload: U & A) { () }) \
-                 }",
+                "mod consumer; import relay {type Envelope} fn construct[A](value: A) -> Envelope[A] { Envelope.mk[A](((), value)) } fn project[A](value: Envelope[A]) -> . { Envelope.get[A](value)(.[U](_payload: U & A) { () }) }",
             ),
         ]);
 
@@ -11181,11 +10837,7 @@ pub fn keep_right(value: Shared) -> Shared { value }
     #[test]
     fn alias_info_canonicalizes_owner_body_and_protects_binders() {
         let package = pipeline_to_enriched(
-            "module model; \
-             import list/core as list; \
-             type { A: . { mk; get; }; }; \
-             pub type Row = list.List[.]; \
-             pub type Identity[A] = A;",
+            "mod model; import list/core as list; type { A: . { mk; get; }; }; pub type Row = list.List[.]; pub type Identity[A] = A;",
         );
         let (_, entry) = package.modules().next().expect("one module");
         let mut ctx = LoweringCtx::default();
@@ -11212,7 +10864,7 @@ pub fn keep_right(value: Shared) -> Shared { value }
     }
 
     fn wide_recursive_group_source(member_count: usize) -> String {
-        let mut source = String::from("module test; type Id[T] = T;");
+        let mut source = String::from("mod test; type Id[T] = T;");
         for index in 0..member_count {
             write!(source, "type T{index} = .;").expect("writing to a String cannot fail");
         }
@@ -11780,16 +11432,7 @@ pub fn keep_right(value: Shared) -> Shared { value }
     fn stored_cps_projector_result_retains_typed_callable_stages() {
         let routed = full_optimized_pipeline_to_routed(&[(
             "test.kio",
-            "module test; \
-             host type N; \
-             pub type { Pack[A] <U>: A & U { mk; get }; } \
-             host fn receiver() -> Pack[N]; \
-             host fn observe(value: N) -> .; \
-             fn stored() -> N { \
-               let unpack = Pack.get(receiver()); \
-               observe(unpack(.[U](value: N, _payload: U) { value })); \
-               unpack(.[U](value: N, _payload: U) { value }) \
-             }",
+            "mod test; host type N; pub type { Pack[A] <U>: A & U { mk; get }; } host fn receiver() -> Pack[N]; host fn observe(value: N) -> .; fn stored() -> N { let unpack = Pack.get(receiver()); observe(unpack(.[U](value: N, _payload: U) { value })); unpack(.[U](value: N, _payload: U) { value }) }",
         )]);
         let Expr::Let { value, .. } = &routed_fn(&routed, "test", "stored").body else {
             panic!("the reused projector result must remain bound")
@@ -12217,17 +11860,7 @@ pub fn keep_right(value: Shared) -> Shared { value }
     fn inferred_fn_expr_partial_result_adapts_inline_and_let_bound_paths() {
         let routed = full_pipeline_to_routed(&[(
             "test",
-            "module test; \
-             host type N; \
-             fn consume(value: [B] (B & B) -> B) -> . { () } \
-             fn inline() -> . { \
-               consume(.(_seed: .)[B] { .(left: B, _right: B) -> B { left } }(())) \
-             } \
-             fn bound() -> . { \
-               let value = \
-                 .(_seed: .)[B] { .(left: B, _right: B) -> B { left } }(()); \
-               consume(value) \
-             }",
+            "mod test; host type N; fn consume(value: [B] (B & B) -> B) -> . { () } fn inline() -> . { consume(.(_seed: .)[B] { .(left: B, _right: B) -> B { left } }(())) } fn bound() -> . { let value = .(_seed: .)[B] { .(left: B, _right: B) -> B { left } }(()); consume(value) }",
         )]);
 
         for name in ["inline", "bound"] {
@@ -12244,29 +11877,7 @@ pub fn keep_right(value: Shared) -> Shared { value }
     fn anonymous_fn_return_tracks_let_bound_and_called_partial_results() {
         let routed = full_pipeline_to_routed(&[(
             "test",
-            "module test; \
-             host type N; \
-             fn consume(value: [B] (B & B) -> B) -> . { () } \
-             fn inferred() -> . { \
-               consume(.(_outer: .) { \
-                 let f = .(_seed: .)[B] { .(left: B, _right: B) -> B { left } }(()); \
-                 f \
-               }(())) \
-             } \
-             fn explicit() -> . { \
-               consume(.(_outer: .) -> [B] (B & B) -> B { \
-                 let f = .(_seed: .)[B] { .(left: B, _right: B) -> B { left } }(()); \
-                 f \
-               }(())) \
-             } \
-             fn called() -> . { \
-               consume(.(_outer: .) { \
-                 let make = .(_seed: .)[B] { \
-                   .(left: B, _right: B) -> B { left } \
-                 }; \
-                 make(()) \
-               }(())) \
-             }",
+            "mod test; host type N; fn consume(value: [B] (B & B) -> B) -> . { () } fn inferred() -> . { consume(.(_outer: .) { let f = .(_seed: .)[B] { .(left: B, _right: B) -> B { left } }(()); f }(())) } fn explicit() -> . { consume(.(_outer: .) -> [B] (B & B) -> B { let f = .(_seed: .)[B] { .(left: B, _right: B) -> B { left } }(()); f }(())) } fn called() -> . { consume(.(_outer: .) { let make = .(_seed: .)[B] { .(left: B, _right: B) -> B { left } }; make(()) }(())) }",
         )]);
 
         for name in ["inferred", "called"] {
@@ -12301,13 +11912,7 @@ pub fn keep_right(value: Shared) -> Shared { value }
     fn inferred_fn_expr_returned_parameter_keeps_checked_callable_abi() {
         let routed = full_pipeline_to_routed(&[(
             "test",
-            "module test; \
-             host type N; \
-             fn consume(value: [B] (B & B) -> B) -> . { () } \
-             fn caller() -> . { \
-               let source = .[B](left: B, _right: B) -> B { left }; \
-               consume(.(f: [B] (B & B) -> B) { f }(source)) \
-             }",
+            "mod test; host type N; fn consume(value: [B] (B & B) -> B) -> . { () } fn caller() -> . { let source = .[B](left: B, _right: B) -> B { left }; consume(.(f: [B] (B & B) -> B) { f }(source)) }",
         )]);
         let args = first_low_module_call(&routed_fn(&routed, "test", "caller").body, "consume")
             .expect("caller must consume the anonymous identity result");
@@ -12586,7 +12191,7 @@ pub fn keep_right(value: Shared) -> Shared { value }
         // export). The host fn classifies as `Expr::LowHostCall`.
         // We can't easily mint a package file here, so we synthesise
         // a Routed module directly through `route_package` and inspect.
-        let enriched = pipeline_to_enriched("module x; fn caller[A](y: A) -> A { y }");
+        let enriched = pipeline_to_enriched("mod x; fn caller[A](y: A) -> A { y }");
         let routed = route_package(&enriched);
         // The body of `caller` is a 1-seg Path to `y` — bound. The
         // lower pass classifies it as `LowBoundRef`.
@@ -12611,7 +12216,7 @@ pub fn keep_right(value: Shared) -> Shared { value }
     /// the callee is a bound local.
     #[test]
     fn lower_classifies_bound_callee_as_closure_call() {
-        let enriched = pipeline_to_enriched("module x; fn caller(f: . -> .) -> . { f(()) }");
+        let enriched = pipeline_to_enriched("mod x; fn caller(f: . -> .) -> . { f(()) }");
         let routed = route_package(&enriched);
         let m = routed.modules().next().expect("one module").1;
         let fn_def = m
@@ -12759,7 +12364,7 @@ pub fn keep_right(value: Shared) -> Shared { value }
             meta: test_meta_enriched(),
             doc: None,
         };
-        let scope_package = pipeline_to_enriched("module x; fn caller() -> . { () }");
+        let scope_package = pipeline_to_enriched("mod x; fn caller() -> . { () }");
         let scope = scope_package
             .modules()
             .next()
@@ -12838,9 +12443,9 @@ pub fn keep_right(value: Shared) -> Shared { value }
     #[test]
     fn generic_module_call_keeps_single_product_arg_grouped() {
         let enriched = pipeline_to_enriched(
-            "module x;\n\
-             fn pair_id[A](state: A & A) -> A & A { state }\n\
-             fn caller[A](state: A & A) -> A & A { pair_id(state) }",
+            "mod x;
+fn pair_id[A](state: A & A) -> A & A { state }
+fn caller[A](state: A & A) -> A & A { pair_id(state) }",
         );
         let routed = route_package(&enriched);
         let m = routed.modules().next().expect("one module").1;
@@ -12865,9 +12470,9 @@ pub fn keep_right(value: Shared) -> Shared { value }
     #[test]
     fn generic_module_call_instantiated_to_unit_keeps_value_slot() {
         let enriched = pipeline_to_enriched(
-            "module x;\n\
-             fn id[A](x: A) -> A { x }\n\
-             fn caller(y: .) -> . { id[.](y) }",
+            "mod x;
+fn id[A](x: A) -> A { x }
+fn caller(y: .) -> . { id[.](y) }",
         );
         let routed = route_package(&enriched);
         let m = routed.modules().next().expect("one module").1;
@@ -13029,14 +12634,14 @@ pub fn keep_right(value: Shared) -> Shared { value }
     fn generic_module_call_keeps_typed_callback_result_argument() {
         let routed = full_pipeline_to_routed(&[(
             "test.kio",
-            "module test;\n\
-             host type Input;\n\
-             host type Output;\n\
-             host fn make_output(_unit: .) -> Output;\n\
-             fn apply[A][R](callback: A -> R, value: A) -> R { callback(value) }\n\
-             fn run(value: Input) -> Output {\n\
-               apply(.(item: Input) { make_output() }, value)\n\
-             }",
+            "mod test;
+host type Input;
+host type Output;
+host fn make_output(_unit: .) -> Output;
+fn apply[A][R](callback: A -> R, value: A) -> R { callback(value) }
+fn run(value: Input) -> Output {
+apply(.(item: Input) { make_output() }, value)
+}",
         )]);
         let Expr::LowModuleCall { type_args, .. } = &routed_fn(&routed, "test", "run").body else {
             panic!(
@@ -13059,12 +12664,12 @@ pub fn keep_right(value: Shared) -> Shared { value }
     fn callback_body_generic_module_call_keeps_single_product_arg_grouped() {
         let enriched = full_pipeline_to_enriched(&[(
             "x.kio",
-            "module x;\n\
-             fn pair_id[A](state: A & A) -> A & A { state }\n\
-             fn consume[S][R](step: S -> R, state: S) -> R { step(state) }\n\
-             fn caller[A](state: A & A) -> A & A {\n\
-               consume(.(state: A & A) { pair_id(state) }, state)\n\
-             }",
+            "mod x;
+fn pair_id[A](state: A & A) -> A & A { state }
+fn consume[S][R](step: S -> R, state: S) -> R { step(state) }
+fn caller[A](state: A & A) -> A & A {
+consume(.(state: A & A) { pair_id(state) }, state)
+}",
         )]);
         let routed = route_package(&enriched);
         let m = routed.modules().next().expect("one module").1;

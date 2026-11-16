@@ -4,17 +4,17 @@
 /// macro calls. Macro expansion turns it into a list of `Flat`s, which by
 /// construction hold no calls. Pass one turns those into an address-indexed
 /// `Srcs` plus a symbol table, and pass two into a runnable `Prog`.
-module forge/program;
+mod forge/program;
 
-import forge/isa(Ins, Src);
+import forge/isa { type Ins; type Src }
 import forge/list as l;
-import macros/control(macro if);
-import macros/match(macro match);
-import macros/row_macros(macro select);
-import macros/spine_macros(macro widen_sum);
-import testapi(Bool, I32, String);
-import testapi/iter(loop);
-import testapi/text(string_eq);
+import macros/control { macro if }
+import macros/match { macro match }
+import macros/row_macros { macro select }
+import macros/spine_macros { macro widen_sum }
+import testapi { type Bool; type I32; type String }
+import testapi/iter { fn loop }
+import testapi/text { fn string_eq }
 
 /// A straight-line instruction sequence, before jump resolution.
 pub type Srcs = l.List[Src];

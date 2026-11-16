@@ -1,7 +1,7 @@
-module host/m;
+mod host/m;
 
-import host(Bool, Input, bar, baz, condition, foo);
-import macros/control(macro if);
+import host { type Bool; type Input; fn bar; fn baz; fn condition; fn foo }
+import macros/control { macro if }
 
 equiv stuck_if_ne(x: Input) {
   if(condition(x)) { foo() } else { bar() };

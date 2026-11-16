@@ -1,4 +1,4 @@
-module shared/option/macros/testapi;
+mod shared/option/macros/testapi;
 
 import shared/testapi as _rehost_hegfhdhegbhagj;
 

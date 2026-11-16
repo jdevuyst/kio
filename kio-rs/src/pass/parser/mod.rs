@@ -388,7 +388,7 @@ pub(crate) fn expression_has_unclosed_structural_forall(
 /// surrounding `build { }` braces.
 ///
 /// The body is **not** a language surface — no types, no values, no
-/// `module` declaration. The `cache`, `docs`, and `target` tokens are
+/// `mod` declaration. The `cache`, `docs`, and `target` tokens are
 /// contextual keywords recognized only here. The package-file
 /// parser consumes the same body inline (with the braces) via
 /// [`Parser::package_file`]; this standalone entry point is for
@@ -445,8 +445,8 @@ pub fn parse_lock_file(source: &str, stem: Option<&str>) -> Result<LockFile, Err
 }
 
 #[cfg(test)]
-pub(crate) const IMPORT_GRAMMAR_CONSUMER: &str = "module app/main;
-import syntax(op _ + _, op _ => _, varop [% %]);
+pub(crate) const IMPORT_GRAMMAR_CONSUMER: &str = "mod app/main;
+import syntax {op _ + _; op _ => _; op_var [% %]}
 type { Field: . };
 fn run(a: ., b: .) -> . { [% a => (a + b), b => a %] }
 rec(loop) { fn nested(a: ., b: .) -> . { a + b } }";
@@ -568,19 +568,19 @@ mod tests {
     #[test]
     fn boolean_literals_require_adjacent_marker() {
         for literal in [". t", ".\nf", ".// keep\nt"] {
-            let source = format!("module x; fn f() {{ {literal} }}");
+            let source = format!("mod x; fn f() {{ {literal} }}");
             let error = super::parse(&source).expect_err("separated boolean marker");
             assert!(error.diag().1.contains("immediately after `.`"), "{source}");
         }
         for literal in [".t", ".f"] {
-            super::parse(&format!("module x; fn f() {{ {literal} }}")).expect("adjacent marker");
+            super::parse(&format!("mod x; fn f() {{ {literal} }}")).expect("adjacent marker");
         }
     }
 
     #[test]
     fn host_declarations_reject_scoped_visibility() {
         for declaration in ["fn f() -> .;", "type T;"] {
-            let source = format!("module x; pub(x) host {declaration}");
+            let source = format!("mod x; pub(x) host {declaration}");
             let error = super::parse(&source).expect_err("host cannot be scoped");
             assert!(
                 error
@@ -589,7 +589,7 @@ mod tests {
                     .contains("host declarations cannot use `pub(path)`")
             );
             for modifier in ["host", "pub host", "host pub"] {
-                super::parse(&format!("module x; {modifier} {declaration}"))
+                super::parse(&format!("mod x; {modifier} {declaration}"))
                     .expect("plain host visibility remains public");
             }
         }
@@ -615,12 +615,12 @@ mod tests {
     fn tooling_complete_qualified_leaf_has_its_own_atom() {
         for (source, leaf, slot) in [
             (
-                "module app; fn run() { provider.item }",
+                "mod app; fn run() { provider.item }",
                 "item",
                 core::CursorSlot::Value,
             ),
             (
-                "module app; type Alias = provider/other.Name;",
+                "mod app; type Alias = provider/other.Name;",
                 "Name",
                 core::CursorSlot::Type,
             ),
@@ -648,7 +648,7 @@ mod tests {
 
     #[test]
     fn tooling_complete_module_reference_gap_is_owned() {
-        let source = "module app; import provider/";
+        let source = "mod app; import provider/";
         let probe = probe_tooling(
             source,
             Some(crate::ast::KioFileKind::Module),
@@ -668,10 +668,10 @@ mod tests {
     #[test]
     fn tooling_complete_header_and_member_names_are_binder_slots() {
         for (source, binder) in [
-            ("module app; type Alias[A] = A;", "Alias"),
-            ("module app; type { Name: . { mk; get; }; }", "Name"),
-            ("module app; host type Name;", "Name"),
-            ("module app;", "app"),
+            ("mod app; type Alias[A] = A;", "Alias"),
+            ("mod app; type { Name: . { mk; get; }; }", "Name"),
+            ("mod app; host type Name;", "Name"),
+            ("mod app;", "app"),
         ] {
             let cursor = source.find(binder).unwrap() as u32 + 1;
             let probe = probe_tooling(
@@ -690,7 +690,7 @@ mod tests {
 
     #[test]
     fn tooling_complete_incomplete_type_alias_retains_its_type_parameters() {
-        let source = "module app; type Alias[A] = ";
+        let source = "mod app; type Alias[A] = ";
         let probe = probe_tooling(
             source,
             Some(crate::ast::KioFileKind::Module),
@@ -709,7 +709,7 @@ mod tests {
 
     #[test]
     fn tooling_complete_incomplete_return_type_retains_signature_type_parameters() {
-        let source = "module app; fn run[T](value: T) -> ";
+        let source = "mod app; fn run[T](value: T) -> ";
         let probe = probe_tooling(
             source,
             Some(crate::ast::KioFileKind::Module),
@@ -728,7 +728,7 @@ mod tests {
 
     #[test]
     fn tooling_complete_nested_forall_is_not_lost_to_outer_body_prefix() {
-        let source = "module app; fn run() { .(f: [A] A -> A) { f } }";
+        let source = "mod app; fn run() { .(f: [A] A -> A) { f } }";
         let cursor = source.find("A ->").unwrap() as u32 + 1;
         let probe = probe_tooling(
             source,
@@ -748,7 +748,7 @@ mod tests {
 
     #[test]
     fn tooling_complete_equiv_keeps_its_written_signature_on_arm_failure() {
-        let source = "module app; equiv test[A](value: A) { value; f([B] ";
+        let source = "mod app; equiv test[A](value: A) { value; f([B] ";
         let probe = probe_tooling(
             source,
             Some(crate::ast::KioFileKind::Module),
@@ -769,7 +769,7 @@ mod tests {
 
     #[test]
     fn tooling_complete_rec_names_survive_a_member_body_error() {
-        let source = "module app; rec(loop) { fn first(value: .) { recur second(value); ? } fn second(x: .) { x } }";
+        let source = "mod app; rec(loop) { fn first(value: .) { recur second(value); ? } fn second(x: .) { x } }";
         let cursor = source.find("recur second").unwrap() as u32 + 6;
         let probe = probe_tooling(
             source,
@@ -789,7 +789,8 @@ mod tests {
 
     #[test]
     fn tooling_complete_signature_module_roles_survive_wrong_file_tail() {
-        let source = "signature app v(1); v(1) { breaking { add { module api { pub fn run() -> .; } } } } dependency tail;";
+        let source =
+            "sig app v(1); v(1) { breaking { add { mod api { pub fn run() -> .; } } } } dep tail;";
         let probe = probe_tooling(source, Some(crate::ast::KioFileKind::Signature), None, None);
         assert!(probe.parse_error.is_some());
         let start = source.find("api").unwrap() as u32;
@@ -808,10 +809,10 @@ mod tests {
         use crate::span::Span;
         use crate::tokens::TokenKind;
 
-        let complete = "signature app v(1); v(1) { with { module api { pub fn run() -> .; } }; nonbreaking { add { api.run; } } }";
+        let complete = "sig app v(1); v(1) { with { mod api { pub fn run() -> .; } }; nonbreaking { add { api.run; } } }";
         for source in [
-            format!("{complete} dependency lib;"),
-            "signature app v(1); v(1) { with { module api { pub fn run(".to_owned(),
+            format!("{complete} dep lib;"),
+            "sig app v(1); v(1) { with { mod api { pub fn run(".to_owned(),
         ] {
             let probe = probe_tooling_source(&source, None);
             assert!(probe.parse_error.is_some());
@@ -835,7 +836,7 @@ mod tests {
         }
 
         assert!(probe_tooling_source(complete, None).parse_error.is_none());
-        let invalid = "signature app v(1); v(1) { with { module api { pub fn Run(";
+        let invalid = "sig app v(1); v(1) { with { mod api { pub fn Run(";
         let probe = probe_tooling_source(invalid, None);
         assert!(probe.parse_error.is_some());
         let start = invalid.find("Run").unwrap() as u32;
@@ -855,7 +856,7 @@ mod tests {
         use crate::span::Span;
         use crate::tokens::TokenKind;
 
-        let prefix = "module app; op _ + _ { impl add; }; macro choose: . { impl select; };";
+        let prefix = "mod app; op _ + _ { impl add; }; macro choose: . { impl select; };";
         assert!(probe_tooling_source(prefix, None).parse_error.is_none());
         let source = format!("{prefix} fn broken() {{ ? }} fn later() {{ () }}");
         let probe = probe_tooling_source(&source, None);
@@ -895,10 +896,10 @@ mod tests {
         for declaration in [
             "macro make: . -> . {}",
             "macro make: . -> . { captures saved; }",
-            "varop [* *] {}",
-            "varop [* *] { finalize finish; }",
+            "op_var [* *] {}",
+            "op_var [* *] { finalize finish; }",
         ] {
-            let source = format!("module app; {declaration}; fn following() {{ () }}");
+            let source = format!("mod app; {declaration}; fn following() {{ () }}");
             let close = source.find('}').unwrap() as u32;
             let error = parse(&source).expect_err("required field is missing");
             let expected = crate::span::Span::new(close, close + 1);
@@ -978,56 +979,52 @@ mod tests {
     fn tooling_named_entries_follow_occupancy_in_every_written_order() {
         use crate::ast::KioFileKind::{Dependency, Module, Package, Signature};
         let cases = [
-            (Package, "package app; bridge {} ", vec!["build"]),
-            (Package, "package app; bridge {} build {} ", vec![]),
+            (Package, "pkg app; bridge {} ", vec!["build"]),
+            (Package, "pkg app; bridge {} build {} ", vec![]),
+            (Dependency, "dep lib; ", vec!["source", "rehost", "retype"]),
             (
                 Dependency,
-                "dependency lib; ",
+                "dep lib; retype lib/api to app/api; ",
                 vec!["source", "rehost", "retype"],
             ),
             (
                 Dependency,
-                "dependency lib; retype lib/api to app/api; ",
-                vec!["source", "rehost", "retype"],
-            ),
-            (
-                Dependency,
-                "dependency lib; rehost lib/api to app/api; source { path \"lib.pkg.kio\"; } ",
+                "dep lib; rehost lib/api to app/api; source { path \"lib.pkg.kio\"; } ",
                 vec!["rehost", "retype"],
             ),
             (
                 Module,
-                "module app; macro make: . { impl run; ",
+                "mod app; macro make: . { impl run; ",
                 vec!["captures", "trailing"],
             ),
             (
                 Module,
-                "module app; macro make: . { impl run; captures name; ",
+                "mod app; macro make: . { impl run; captures name; ",
                 vec!["trailing"],
             ),
             (
                 Module,
-                "module app; varop [* *] { finalize finish; ",
+                "mod app; op_var [* *] { finalize finish; ",
                 vec!["foldl", "foldr", "foldl1", "foldr1"],
             ),
             (
                 Module,
-                "module app; varop [* *] { finalize finish; foldr step base; ",
+                "mod app; op_var [* *] { finalize finish; foldr step base; ",
                 vec![],
             ),
             (
                 Signature,
-                "signature app v(1); v(1) { nonbreaking { add { module api { pub type A = .; } } } ",
+                "sig app v(1); v(1) { nonbreaking { add { mod api { pub type A = .; } } } ",
                 vec!["with", "breaking"],
             ),
             (
                 Signature,
-                "signature app v(1); v(1) { breaking { add { module api { host type A; } } } ",
+                "sig app v(1); v(1) { breaking { add { mod api { host type A; } } } ",
                 vec!["with", "nonbreaking"],
             ),
             (
                 Signature,
-                "signature app v(1); v(1) { breaking { remove { module api { A; } } ",
+                "sig app v(1); v(1) { breaking { remove {  api.A;  } ",
                 vec!["add", "modify"],
             ),
         ];
@@ -1045,7 +1042,7 @@ mod tests {
         assert!(failures.is_empty(), "{}", failures.join("\n"));
 
         let source =
-            "package app; build { target | {} cache (); docs { md \"docs\"; } target rust {} }";
+            "pkg app; build { target | {} cache (); docs { md \"docs\"; } target rust {} }";
         let cursor = source.find('|').unwrap();
         let source = source.replace('|', "");
         let probe = probe_tooling(&source, Some(Package), Some(cursor as u32), None);
@@ -1061,29 +1058,25 @@ mod tests {
     #[test]
     fn tooling_complete_remaining_fields_use_their_actual_productions() {
         for (source, expected) in [
-            ("module app; host type Text ", vec!["role"]),
-            ("module app; host type Text { ", vec!["owned"]),
-            ("module app; op _ + _ { ", vec!["impl"]),
+            ("mod app; host type Text ", vec!["role"]),
+            ("mod app; op _ + _ { ", vec!["impl"]),
             (
-                "module app; macro make: . { ",
+                "mod app; macro make: . { ",
                 vec!["captures", "impl", "trailing"],
             ),
             (
-                "module app; macro make: . { captures name; ",
+                "mod app; macro make: . { captures name; ",
                 vec!["impl", "trailing"],
             ),
             (
-                "module app; varop [* *] { ",
+                "mod app; op_var [* *] { ",
                 vec!["foldl", "foldr", "foldl1", "foldr1", "finalize"],
             ),
             (
-                "module app; varop [* *] { foldl step init; ",
+                "mod app; op_var [* *] { foldl step init; ",
                 vec!["finalize"],
             ),
-            (
-                "module app; fn run() { recur(poly, ",
-                vec!["cont", "escape"],
-            ),
+            ("mod app; fn run() { recur(poly, ", vec!["cont", "escape"]),
         ] {
             let probe = probe_tooling(
                 source,
@@ -1104,17 +1097,17 @@ mod tests {
         for (kind, source, expected) in [
             (
                 crate::ast::KioFileKind::Module,
-                "module app; host type A role(str) { owned }; ",
+                "mod app; host type A role(str) ; ",
                 "fn",
             ),
             (
                 crate::ast::KioFileKind::Signature,
-                "signature app v(1); v(1) { breaking { remove { module api { run; } } } ",
+                "sig app v(1); v(1) { breaking { remove {  api.run;  } } ",
                 "nonbreaking",
             ),
             (
                 crate::ast::KioFileKind::Signature,
-                "signature app v(1); v(1) { nonbreaking { add { module api { pub type A = .; } } } } ",
+                "sig app v(1); v(1) { nonbreaking { add { mod api { pub type A = .; } } } } ",
                 "v",
             ),
         ] {
@@ -1136,32 +1129,44 @@ mod tests {
         use crate::ast::KioFileKind::{Module, Signature};
 
         let mut cases = vec![
-            (Module, "module app; rec ".to_owned(), vec!["type"]),
-            (Module, "module app; pub rec ".to_owned(), vec!["type"]),
-            (Module, "module app; rec { ".to_owned(), vec!["pub", "type"]),
-            (Module, "module app; rec { pub ".to_owned(), vec!["type"]),
-            (Module, "module app; rec(loop) { pub ".to_owned(), vec!["fn"]),
-            (Module, "module app; host type A role(str) { owned ".to_owned(), vec![]),
+            (Module, "mod app; rec ".to_owned(), vec!["type"]),
+            (Module, "mod app; pub rec ".to_owned(), vec!["type"]),
+            (Module, "mod app; rec { ".to_owned(), vec!["pub", "type"]),
+            (Module, "mod app; rec { pub ".to_owned(), vec!["type"]),
+            (Module, "mod app; rec(loop) { pub ".to_owned(), vec!["fn"]),
             (
                 Module,
-                "module app; macro make: . { impl run; ".to_owned(),
+                "mod app; macro make: . { impl run; ".to_owned(),
                 vec!["captures", "trailing"],
             ),
-            (Signature, "signature app v(1); v(1) { nonbreaking { add { module api { pub type A = .; } } } ".to_owned(), vec!["breaking", "with"]),
-            (Signature, "signature app v(1); v(1) { breaking { remove { module api { run; } } ".to_owned(), vec!["add", "modify"]),
+            (
+                Signature,
+                "sig app v(1); v(1) { nonbreaking { add { mod api { pub type A = .; } } } "
+                    .to_owned(),
+                vec!["breaking", "with"],
+            ),
+            (
+                Signature,
+                "sig app v(1); v(1) { breaking { remove {  api.run;  } ".to_owned(),
+                vec!["add", "modify"],
+            ),
         ];
         for mode in ["foldl", "foldl1", "foldr", "foldr1"] {
             cases.push((
                 Module,
-                format!("module app; varop [* *] {{ {mode} step base; finalize finish; "),
+                format!("mod app; op_var [* *] {{ {mode} step base; finalize finish; "),
                 vec![],
             ));
         }
         for operation in ["add", "modify", "remove"] {
             cases.push((
                 Signature,
-                format!("signature app v(1); v(1) {{ breaking {{ {operation} {{ "),
-                vec!["module"],
+                format!("sig app v(1); v(1) {{ breaking {{ {operation} {{ "),
+                if operation == "remove" {
+                    vec![]
+                } else {
+                    vec!["mod"]
+                },
             ));
         }
         let mut failures = Vec::new();
@@ -1182,7 +1187,7 @@ mod tests {
 
     #[test]
     fn tooling_block_label_cursor_uses_the_marked_head_without_fixed_labels() {
-        let source = "module app; fn run() { choose { () } ";
+        let source = "mod app; fn run() { choose { () } ";
         let probe = probe_tooling(
             source,
             Some(crate::ast::KioFileKind::Module),
@@ -1200,7 +1205,7 @@ mod tests {
 
     #[test]
     fn tooling_context_edges_target_id_keeps_its_slot_after_an_earlier_target() {
-        let source = "package app; build { target rust {} target ";
+        let source = "pkg app; build { target rust {} target ";
         let cursor = source.len() as u32;
         let probe = probe_tooling(
             source,
@@ -1222,9 +1227,9 @@ mod tests {
     #[test]
     fn tooling_context_edges_target_id_partial_kebab_excludes_only_the_edited_header() {
         for (marked, expected) in [
-            ("package app; build { target ru|st- {} }", vec![]),
+            ("pkg app; build { target ru|st- {} }", vec![]),
             (
-                "package app; build { target ru|st- {} target rust {} }",
+                "pkg app; build { target ru|st- {} target rust {} }",
                 vec!["rust"],
             ),
         ] {
@@ -1251,21 +1256,21 @@ mod tests {
     fn tooling_context_edges_target_ids_exclude_the_edited_header_not_other_siblings() {
         use crate::span::Span;
         for (marked, expected) in [
-            ("package app; build { target ru|st {} }", vec![]),
+            ("pkg app; build { target ru|st {} }", vec![]),
             (
-                "package app; build { target ru|st {} target js {} }",
+                "pkg app; build { target ru|st {} target js {} }",
                 vec!["js"],
             ),
             (
-                "package app; build { target | {} target rust {} }",
+                "pkg app; build { target | {} target rust {} }",
                 vec!["rust"],
             ),
             (
-                "package app; build { target | {} target rust { broken; } target js {} }",
+                "pkg app; build { target | {} target rust { broken; } target js {} }",
                 vec!["rust", "js"],
             ),
             (
-                "package app; build { target | {} target js { nested { target rust {} } } }",
+                "pkg app; build { target | {} target js { nested { target rust {} } } }",
                 vec!["js"],
             ),
         ] {
@@ -1333,7 +1338,7 @@ mod tests {
         use crate::span::Span;
         use crate::tokens::TokenKind;
 
-        for prefix in ["", "module app;\n"] {
+        for prefix in ["", "mod app;\n"] {
             let source = format!("{prefix}import app\nfn neighbor() -> . {{ () }}");
             let probe = probe_tooling_source(&source, None);
             assert!(probe.parse_error.is_some());
@@ -1343,7 +1348,7 @@ mod tests {
                 probe.parse_error.as_ref().unwrap().diag(),
                 (
                     Span::new(start, start + 2),
-                    "expected `(` after the import provider"
+                    "expected `{` after the import provider"
                 )
             );
             assert!(
@@ -1382,40 +1387,40 @@ mod tests {
         for (kind, source, expected) in [
             (
                 KioFileKind::Module,
-                "module app; host ",
+                "mod app; host ",
                 vec!["fn", "pub", "type"],
             ),
             (
                 KioFileKind::Module,
-                "module app; pub host ",
+                "mod app; pub host ",
                 vec!["fn", "type"],
             ),
             (
                 KioFileKind::Module,
-                "module app; host pub ",
+                "mod app; host pub ",
                 vec!["fn", "type"],
             ),
-            (KioFileKind::Module, "module app; pure host ", vec![]),
-            (KioFileKind::Module, "module app; pub(app) host ", vec![]),
-            (KioFileKind::Module, "module app; pub(app) host f", vec![]),
+            (KioFileKind::Module, "mod app; pure host ", vec![]),
+            (KioFileKind::Module, "mod app; pub(app) host ", vec![]),
+            (KioFileKind::Module, "mod app; pub(app) host f", vec![]),
             (
                 KioFileKind::Module,
-                "module app; macro make: . { impl(",
+                "mod app; macro make: . { impl(",
                 vec!["fills"],
             ),
             (
                 KioFileKind::Module,
-                "module app; macro make: . { impl(fi",
+                "mod app; macro make: . { impl(fi",
                 vec!["fills"],
             ),
             (
                 KioFileKind::Dependency,
-                "dependency app; source { path \"app.pkg.kio\"; } rehost dep/api ",
+                "dep app; source { path \"app.pkg.kio\"; } rehost dep/api ",
                 vec!["to"],
             ),
             (
                 KioFileKind::Dependency,
-                "dependency app; source { path \"app.pkg.kio\"; } retype dep/api.Type ",
+                "dep app; source { path \"app.pkg.kio\"; } retype dep/api.Type ",
                 vec!["to"],
             ),
         ] {
@@ -1450,13 +1455,13 @@ mod tests {
         }
 
         for source in [
-            "module app; host fn run() -> .;",
-            "module app; host type Text;",
-            "module app; host pub type Text;",
-            "module app; pub host fn run() -> .;",
-            "module app; macro make: . { impl(fills) make; };",
-            "dependency app; source { path \"app.pkg.kio\"; } rehost dep/api to app/api;",
-            "dependency app; source { path \"app.pkg.kio\"; } retype dep/api.Type to app/api.Type;",
+            "mod app; host fn run() -> .;",
+            "mod app; host type Text;",
+            "mod app; host pub type Text;",
+            "mod app; pub host fn run() -> .;",
+            "mod app; macro make: . { impl(fills) make; };",
+            "dep app; source { path \"app.pkg.kio\"; } rehost dep/api to app/api;",
+            "dep app; source { path \"app.pkg.kio\"; } retype dep/api.Type to app/api.Type;",
         ] {
             assert!(
                 probe_tooling_source(source, None).parse_error.is_none(),
@@ -1464,13 +1469,13 @@ mod tests {
             );
         }
 
-        let incomplete_host = probe_tooling_source("module app; host ", None);
+        let incomplete_host = probe_tooling_source("mod app; host ", None);
         assert!(
             !tooling_keywords(&incomplete_host)
                 .iter()
                 .any(|(keyword, _)| keyword == "host")
         );
-        let scoped_source = "module app; pub(app) ";
+        let scoped_source = "mod app; pub(app) ";
         let scoped = probe_tooling_source(scoped_source, Some(scoped_source.len() as u32));
         let keywords = &scoped
             .facts
@@ -1479,7 +1484,7 @@ mod tests {
             .keywords;
         assert!(keywords.contains(&"fn") && keywords.contains(&"type"));
         assert!(!keywords.contains(&"host"));
-        let inverse = probe_tooling_source("module app; fn run() { host() }", None);
+        let inverse = probe_tooling_source("mod app; fn run() { host() }", None);
         assert!(inverse.parse_error.is_none());
         assert!(
             !tooling_keywords(&inverse)
@@ -1492,7 +1497,7 @@ mod tests {
     fn tooling_required_host_pub_keeps_the_current_atom_before_the_next_slot() {
         use crate::span::Span;
 
-        let source = "module app; host pub";
+        let source = "mod app; host pub";
         let start = source.rfind("pub").unwrap() as u32;
         let end = source.len() as u32;
         let observations: Vec<_> = [end - 1, end]
@@ -1527,13 +1532,10 @@ mod tests {
     #[test]
     fn tooling_complete_host_and_nominal_headers_retain_real_type_parameters() {
         for (source, expected) in [
-            ("module app; host fn run[A](value: ", vec!["A"]),
-            ("module app; host fn run[A](value: A) -> ", vec!["A"]),
-            (
-                "module app; type Choice[A] = { Item[B] <C>: ",
-                vec!["B", "C"],
-            ),
-            ("module app; type Choice[A] = { Item: . } | A", vec!["A"]),
+            ("mod app; host fn run[A](value: ", vec!["A"]),
+            ("mod app; host fn run[A](value: A) -> ", vec!["A"]),
+            ("mod app; type Choice[A] = { Item[B] <C>: ", vec!["B", "C"]),
+            ("mod app; type Choice[A] = { Item: . } | A", vec!["A"]),
         ] {
             let probe = probe_tooling(
                 source,
@@ -1558,7 +1560,7 @@ mod tests {
 
     #[test]
     fn tooling_complete_recursive_shorthand_retains_its_written_member() {
-        let source = "module app; rec(loop) fn run(value: .) { recur run(value) }";
+        let source = "mod app; rec(loop) fn run(value: .) { recur run(value) }";
         let cursor = source.find("recur run").unwrap() as u32 + 6;
         let probe = probe_tooling(
             source,
@@ -1584,32 +1586,28 @@ mod tests {
     fn tooling_complete_all_file_binders_suppress_candidates() {
         use crate::ast::KioFileKind;
         for (source, kind, binder) in [
-            ("package app;", KioFileKind::Package, "app"),
-            ("signature app v(1);", KioFileKind::Signature, "app"),
-            ("dependency app;", KioFileKind::Dependency, "app"),
+            ("pkg app;", KioFileKind::Package, "app"),
+            ("sig app v(1);", KioFileKind::Signature, "app"),
+            ("dep app;", KioFileKind::Dependency, "app"),
             ("lock app;", KioFileKind::Lock, "app"),
+            ("mod app; lit value = 1;", KioFileKind::Module, "value"),
             (
-                "module app; literal value = 1;",
-                KioFileKind::Module,
-                "value",
-            ),
-            (
-                "module app; macro name: . { impl identity; };",
+                "mod app; macro name: . { impl identity; };",
                 KioFileKind::Module,
                 "name",
             ),
             (
-                "module app; equiv name { (); () }",
+                "mod app; equiv name { (); () }",
                 KioFileKind::Module,
                 "name",
             ),
             (
-                "module app; host fn name(value: .) -> .;",
+                "mod app; host fn name(value: .) -> .;",
                 KioFileKind::Module,
                 "name",
             ),
             (
-                "module app; type Name = {Label: .};",
+                "mod app; type Name = {Label: .};",
                 KioFileKind::Module,
                 "Label:",
             ),
@@ -1628,20 +1626,10 @@ mod tests {
     fn tooling_file_identity_retains_completed_headers_with_incomplete_bodies() {
         use crate::ast::KioFileKind;
         for (kind, extension, header, body) in [
-            (KioFileKind::Package, "pkg", "package app;", "build {"),
-            (
-                KioFileKind::Dependency,
-                "dep",
-                "dependency app;",
-                "source {",
-            ),
+            (KioFileKind::Package, "pkg", "pkg app;", "build {"),
+            (KioFileKind::Dependency, "dep", "dep app;", "source {"),
             (KioFileKind::Lock, "lock", "lock app;", "resolved {"),
-            (
-                KioFileKind::Signature,
-                "sig",
-                "signature app v(1);",
-                "v(1) {",
-            ),
+            (KioFileKind::Signature, "sig", "sig app v(1);", "v(1) {"),
         ] {
             let root = std::env::current_dir().unwrap();
             let matching = root.join(format!("app.{extension}.kio"));
@@ -1673,7 +1661,7 @@ mod tests {
 
     #[test]
     fn tooling_complete_recovery_keeps_the_first_member_diagnostic() {
-        let source = "module app; rec(loop) { fn first() { ? }; fn broken( }";
+        let source = "mod app; rec(loop) { fn first() { ? }; fn broken( }";
         let ordinary = parse(source).unwrap_err();
         let probe = probe_tooling(source, Some(crate::ast::KioFileKind::Module), None, None);
         assert_eq!(
@@ -1691,7 +1679,7 @@ mod tests {
             ".x. { x1",
             ".(value) { value",
         ] {
-            let source = format!("module probe; fn run() {{ {body} fn neighbor() {{ () }}");
+            let source = format!("mod probe; fn run() {{ {body} fn neighbor() {{ () }}");
             let probe = probe_tooling(&source, Some(crate::ast::KioFileKind::Module), None, None);
             assert_eq!(
                 probe.parse_error.unwrap().diag().0.start as usize,
@@ -1712,13 +1700,12 @@ mod tests {
                 "{source}: retained functions: {names:?}"
             );
         }
-        let source =
-            "module probe; fn run() { .x. { x1 } fn nested() { () } } fn neighbor() { () }";
+        let source = "mod probe; fn run() { .x. { x1 } fn nested() { () } } fn neighbor() { () }";
         let probe = probe_tooling(source, Some(crate::ast::KioFileKind::Module), None, None);
         assert!(probe.parse_error.is_some());
         assert_eq!(probe.facts.prefix_items.len(), 1);
         assert!(matches!(&probe.facts.prefix_items[0], Item::FnDef(def) if def.name == "neighbor"));
-        let source = "module probe; fn run() { .x. { x1 } fn broken() { ? } fn neighbor() { () }";
+        let source = "mod probe; fn run() { .x. { x1 } fn broken() { ? } fn neighbor() { () }";
         let probe = probe_tooling(source, Some(crate::ast::KioFileKind::Module), None, None);
         assert_eq!(
             probe.parse_error.unwrap().diag().0.start as usize,
@@ -1736,14 +1723,14 @@ mod tests {
     #[test]
     fn tooling_complete_refactored_roots_preserve_ordinary_ast_and_errors() {
         for source in [
-            "module app; fn run[A](value: A) -> A { value }",
-            "module app; rec(loop) fn run(value: .) { recur run(value) }",
-            "module app; rec(loop) { fn first(value: .) { recur second(value) } fn second(value: .) { value } }",
-            "module app; equiv same[A](value: A) { value; value }",
-            "module app; equiv same[A](value: A) { value; f([B] ) }",
-            "module app; host fn run[A](value: A) -> A;",
-            "module app; type Choice[A] = { Item[B] <C>: A & B & C; };",
-            "module app; rec { type Alias = ; type { Later: . { mk; get; }; }; }",
+            "mod app; fn run[A](value: A) -> A { value }",
+            "mod app; rec(loop) fn run(value: .) { recur run(value) }",
+            "mod app; rec(loop) { fn first(value: .) { recur second(value) } fn second(value: .) { value } }",
+            "mod app; equiv same[A](value: A) { value; value }",
+            "mod app; equiv same[A](value: A) { value; f([B] ) }",
+            "mod app; host fn run[A](value: A) -> A;",
+            "mod app; type Choice[A] = { Item[B] <C>: A & B & C; };",
+            "mod app; rec { type Alias = ; type { Later: . { mk; get; }; }; }",
         ] {
             let cursor = source
                 .find("= ;")
@@ -1778,10 +1765,10 @@ mod tests {
     fn tooling_context_revision_file_headers_are_kind_owned() {
         use crate::ast::KioFileKind;
         for (kind, keyword) in [
-            (KioFileKind::Module, "module"),
-            (KioFileKind::Package, "package"),
-            (KioFileKind::Signature, "signature"),
-            (KioFileKind::Dependency, "dependency"),
+            (KioFileKind::Module, "mod"),
+            (KioFileKind::Package, "pkg"),
+            (KioFileKind::Signature, "sig"),
+            (KioFileKind::Dependency, "dep"),
             (KioFileKind::Lock, "lock"),
         ] {
             let probe = probe_tooling("", Some(kind), Some(0), None);
@@ -1794,47 +1781,47 @@ mod tests {
         use crate::ast::KioFileKind;
         for (source, kind, expected) in [
             (
-                "package app; build { docs { ",
+                "pkg app; build { docs { ",
                 KioFileKind::Package,
                 vec!["md", "support", "md_out", "html"],
             ),
             (
-                "package app; build { docs { md \"docs\"; ",
+                "pkg app; build { docs { md \"docs\"; ",
                 KioFileKind::Package,
                 vec!["support", "md_out", "html"],
             ),
             (
-                "dependency app; source { path \"app.pkg.kio\"; ",
+                "dep app; source { path \"app.pkg.kio\"; ",
                 KioFileKind::Dependency,
                 vec!["git", "ref"],
             ),
             (
-                "dependency app; source { git \"url\"; ",
+                "dep app; source { git \"url\"; ",
                 KioFileKind::Dependency,
                 vec!["path", "ref"],
             ),
             (
-                "dependency app; source { ref \"main\"; ",
+                "dep app; source { ref \"main\"; ",
                 KioFileKind::Dependency,
                 vec!["path", "git"],
             ),
             (
-                "dependency app; source { path \"app.pkg.kio\"; git \"url\"; ",
+                "dep app; source { path \"app.pkg.kio\"; git \"url\"; ",
                 KioFileKind::Dependency,
                 vec!["ref"],
             ),
             (
-                "dependency app; source { path \"app.pkg.kio\"; ref \"main\"; ",
+                "dep app; source { path \"app.pkg.kio\"; ref \"main\"; ",
                 KioFileKind::Dependency,
                 vec!["git"],
             ),
             (
-                "dependency app; source { git \"url\"; ref \"main\"; ",
+                "dep app; source { git \"url\"; ref \"main\"; ",
                 KioFileKind::Dependency,
                 vec!["path"],
             ),
             (
-                "dependency app; source { git \"url\"; ref \"main\"; path \"app.pkg.kio\"; ",
+                "dep app; source { git \"url\"; ref \"main\"; path \"app.pkg.kio\"; ",
                 KioFileKind::Dependency,
                 vec![],
             ),
@@ -1862,16 +1849,8 @@ mod tests {
     fn tooling_context_revision_field_keyword_survives_unfinished_value() {
         use crate::ast::KioFileKind;
         for (source, kind, keyword) in [
-            (
-                "package app; build { docs { md ",
-                KioFileKind::Package,
-                "md",
-            ),
-            (
-                "dependency app; source { path ",
-                KioFileKind::Dependency,
-                "path",
-            ),
+            ("pkg app; build { docs { md ", KioFileKind::Package, "md"),
+            ("dep app; source { path ", KioFileKind::Dependency, "path"),
             ("lock app; resolved { ref ", KioFileKind::Lock, "ref"),
         ] {
             let probe = probe_tooling(source, Some(kind), None, None);
@@ -1889,7 +1868,7 @@ mod tests {
     #[test]
     fn tooling_context_revision_control_roles_follow_their_production() {
         use crate::ast::KioFileKind;
-        let source = "module app; rec(loop) { fn run(x: .) { let local = x; recur run(local) } }";
+        let source = "mod app; rec(loop) { fn run(x: .) { let local = x; recur run(local) } }";
         let probe = probe_tooling(source, Some(KioFileKind::Module), None, None);
         assert!(probe.parse_error.is_none());
         let recs: Vec<_> = probe
@@ -1919,19 +1898,19 @@ mod tests {
         use crate::ast::KioFileKind;
         for (source, expected) in [
             (
-                "signature app v(1); v(1) { ",
+                "sig app v(1); v(1) { ",
                 vec!["with", "breaking", "nonbreaking"],
             ),
             (
-                "signature app v(1); v(1) { with { module api { host type A; } } ",
+                "sig app v(1); v(1) { with { mod api { host type A; } } ",
                 vec!["breaking", "nonbreaking"],
             ),
             (
-                "signature app v(1); v(1) { breaking { ",
+                "sig app v(1); v(1) { breaking { ",
                 vec!["add", "modify", "remove"],
             ),
             (
-                "signature app v(1); v(1) { breaking { add { module api { pub fn run() -> .; } } ",
+                "sig app v(1); v(1) { breaking { add { mod api { pub fn run() -> .; } } ",
                 vec!["modify", "remove"],
             ),
         ] {
@@ -1952,7 +1931,7 @@ mod tests {
     #[test]
     fn tooling_context_revision_module_item_and_modifier_choices() {
         use crate::ast::KioFileKind;
-        let source = "module app; ";
+        let source = "mod app; ";
         let probe = probe_tooling(
             source,
             Some(KioFileKind::Module),
@@ -1963,7 +1942,7 @@ mod tests {
         assert!(
             keywords.contains(&"import") && keywords.contains(&"fn") && keywords.contains(&"type")
         );
-        let source = "module app; pure ";
+        let source = "mod app; pure ";
         let probe = probe_tooling(
             source,
             Some(KioFileKind::Module),
@@ -1974,7 +1953,7 @@ mod tests {
             probe.facts.cursor.expect("after pure").keywords,
             vec!["pub", "fn"]
         );
-        let source = "module app; pub pure fn run() { () } host type A;";
+        let source = "mod app; pub pure fn run() { () } host type A;";
         let probe = probe_tooling(source, Some(KioFileKind::Module), None, None);
         let words: Vec<_> = tooling_keywords(&probe)
             .into_iter()
@@ -1993,7 +1972,7 @@ mod tests {
         let source = "f()";
         let probe = probe_tooling(source, None, Some(source.len() as u32), None);
         assert!(probe.facts.cursor.is_none(), "{:?}", probe.facts.cursor);
-        let source = "package app; build { docs { md \"docs\"; } }";
+        let source = "pkg app; build { docs { md \"docs\"; } }";
         let cursor = source.find(" } }").unwrap() as u32 + 2;
         let probe = probe_tooling(
             source,
@@ -2014,7 +1993,7 @@ mod tests {
 
     #[test]
     fn tooling_context_revision_keyword_end_is_not_the_next_binder() {
-        let source = "module app; fn run() { () }";
+        let source = "mod app; fn run() { () }";
         let cursor = source.find("fn").unwrap() as u32 + 2;
         let probe = probe_tooling(
             source,
@@ -2038,22 +2017,18 @@ mod tests {
         use crate::ast::KioFileKind;
         for (source, kind, expected) in [
             (
-                "signature app v(1); v(1) { with { module api { ",
+                "sig app v(1); v(1) { with { mod api { ",
                 KioFileKind::Signature,
                 vec!["import", "pub", "pure", "host", "rec", "type"],
             ),
             (
-                "signature app v(1); v(1) { breaking { add { module api { ",
+                "sig app v(1); v(1) { breaking { add { mod api { ",
                 KioFileKind::Signature,
                 vec!["import", "pub", "pure", "host", "type"],
             ),
+            ("mod app; rec { ", KioFileKind::Module, vec!["pub", "type"]),
             (
-                "module app; rec { ",
-                KioFileKind::Module,
-                vec!["pub", "type"],
-            ),
-            (
-                "signature app v(1); v(1) { with { module api { rec { ",
+                "sig app v(1); v(1) { with { mod api { rec { ",
                 KioFileKind::Signature,
                 vec!["pub", "type"],
             ),
@@ -2069,7 +2044,7 @@ mod tests {
 
     #[test]
     fn tooling_context_revision_signature_host_roles_are_exact() {
-        let source = "signature app v(1); v(1) { with { module api { host type A; host fn fn() -> A; } }; breaking { add { module api { pub fn run() -> .; } } } }";
+        let source = "sig app v(1); v(1) { with { mod api { host type A; host fn fn() -> A; } }; breaking { add { mod api { pub fn run() -> .; } } } }";
         let probe = probe_tooling(source, Some(crate::ast::KioFileKind::Signature), None, None);
         assert!(probe.parse_error.is_none(), "{:?}", probe.parse_error);
         let keywords = tooling_keywords(&probe);
@@ -2089,10 +2064,7 @@ mod tests {
 
     #[test]
     fn tooling_context_revision_invalid_modifiers_have_no_remaining_choice() {
-        for source in [
-            "module app; pure host fn run() { () }",
-            "module app; rec { pure ",
-        ] {
+        for source in ["mod app; pure host fn run() { () }", "mod app; rec { pure "] {
             let cursor = source.find("fn").unwrap_or(source.len()) as u32;
             let probe = probe_tooling(
                 source,
@@ -2127,7 +2099,7 @@ mod tests {
     fn tooling_scope_revision_incomplete_body_retains_written_prefix() {
         use super::ScopeSyntax;
         use crate::ast::KioFileKind;
-        let source = "module app; import provider(value); type Earlier = .; fn run(parameter: .) { let local = parameter; f(   ";
+        let source = "mod app; import provider {fn value} type Earlier = .; fn run(parameter: .) { let local = parameter; f(   ";
         let cursor = source.len() as u32;
         let probe = probe_tooling(source, Some(KioFileKind::Module), Some(cursor), None);
         assert!(probe.facts.recovered_group);
@@ -2167,7 +2139,7 @@ mod tests {
     #[test]
     fn tooling_scope_revision_failed_body_preserves_prefix_without_fake_ast() {
         use crate::ast::KioFileKind;
-        let source = "module app; import provider(value); type Earlier = .; fn run(parameter: .) { let local = parameter;   ";
+        let source = "mod app; import provider {fn value} type Earlier = .; fn run(parameter: .) { let local = parameter;   ";
         let probe = probe_tooling(
             source,
             Some(KioFileKind::Module),
@@ -2188,7 +2160,7 @@ mod tests {
     fn tooling_scope_revision_regions_are_cursor_local_and_binder_ordered() {
         use super::core::ScopeSyntax;
         use crate::ast::KioFileKind;
-        let source = "module app; fn before(other: .) { other } fn run(parameter: .) { let outer = parameter; scope { let inner = outer; inner } } fn after(other: .) { other }";
+        let source = "mod app; fn before(other: .) { other } fn run(parameter: .) { let outer = parameter; scope { let inner = outer; inner } } fn after(other: .) { other }";
         for marker in ["= parameter", "= outer", "inner }", "other }"] {
             let cursor = source.find(marker).unwrap() as u32 + 2;
             let probe = probe_tooling(source, Some(KioFileKind::Module), Some(cursor), None);
@@ -2234,8 +2206,7 @@ mod tests {
     fn tooling_scope_revision_retains_patterns_as_ast_carriers() {
         use super::core::ScopeSyntax;
         use crate::ast::KioFileKind;
-        let source =
-            "module app; fn run((left: ., right: .)) { let .(a: ., b: .) = (left, right); ";
+        let source = "mod app; fn run((left: ., right: .)) { let .(a: ., b: .) = (left, right); ";
         let probe = probe_tooling(
             source,
             Some(KioFileKind::Module),
@@ -2258,11 +2229,11 @@ mod tests {
     fn tooling_scope_revision_retained_success_ast_matches_ordinary_file_roots() {
         use crate::ast::KioFileKind;
         let cases = [
-            ("module app; fn run() { () }", Some(KioFileKind::Module)),
-            ("package app;", Some(KioFileKind::Package)),
-            ("signature app v(1);", Some(KioFileKind::Signature)),
+            ("mod app; fn run() { () }", Some(KioFileKind::Module)),
+            ("pkg app;", Some(KioFileKind::Package)),
+            ("sig app v(1);", Some(KioFileKind::Signature)),
             (
-                "dependency app; source { path \"app.pkg.kio\"; }",
+                "dep app; source { path \"app.pkg.kio\"; }",
                 Some(KioFileKind::Dependency),
             ),
             (
@@ -2314,7 +2285,7 @@ mod tests {
     #[test]
     fn tooling_atom_revision_split_arrow_advances_the_grammar_gap() {
         use crate::ast::KioFileKind;
-        let source = "module app; fn run() ->! { () }";
+        let source = "mod app; fn run() ->! { () }";
         let cursor = source.find('!').unwrap() as u32;
         let probe = probe_tooling(source, Some(KioFileKind::Module), Some(cursor), None);
         assert!(probe.parse_error.is_none(), "{:?}", probe.parse_error);
@@ -2338,7 +2309,7 @@ mod tests {
         use crate::ast::KioFileKind;
         for (source, marker, kind, expected) in [
             (
-                "module app; fn run(parameter: .) { () }",
+                "mod app; fn run(parameter: .) { () }",
                 "parameter",
                 Some(KioFileKind::Module),
                 CursorSuppressionKind::Binder,
@@ -2378,7 +2349,7 @@ mod tests {
     #[test]
     fn tooling_review_direct_recovered_open_is_visible() {
         use crate::ast::KioFileKind;
-        let source = "module app; rec(loop) { fn run() -> . { () }";
+        let source = "mod app; rec(loop) { fn run() -> . { () }";
         let probe = probe_tooling(source, Some(KioFileKind::Module), None, None);
         assert!(probe.parse_error.is_none(), "{:?}", probe.parse_error);
         assert!(
@@ -2413,10 +2384,7 @@ mod tests {
             ("// comment\n  ", None),
             ("// comment\n\"text\\q\"", None),
             ("// comment\n//bad", None),
-            (
-                "module app; fn run() { // comment",
-                Some(KioFileKind::Module),
-            ),
+            ("mod app; fn run() { // comment", Some(KioFileKind::Module)),
         ] {
             let cursor = source.find("comment").unwrap() as u32 + 2;
             let probe = probe_tooling(source, kind, Some(cursor), None);
@@ -2437,7 +2405,7 @@ mod tests {
     #[test]
     fn tooling_review_failed_item_cannot_claim_a_later_cursor() {
         use crate::ast::KioFileKind;
-        let source = "module app; type Broken = \n fn later(x: .) -> . { x }";
+        let source = "mod app; type Broken = \n fn later(x: .) -> . { x }";
         let cursor = source.rfind('x').unwrap() as u32;
         let probe = probe_tooling(source, Some(KioFileKind::Module), Some(cursor), None);
         assert!(probe.parse_error.is_some());
@@ -2456,7 +2424,7 @@ mod tests {
     #[test]
     fn tooling_review_failed_item_cannot_claim_next_items_comment() {
         use crate::ast::KioFileKind;
-        let source = "module app; type Broken = \n // comment\n fn later(x: .) -> . { x }";
+        let source = "mod app; type Broken = \n // comment\n fn later(x: .) -> . { x }";
         let cursor = source.find("comment").unwrap() as u32 + 2;
         let probe = probe_tooling(source, Some(KioFileKind::Module), Some(cursor), None);
         assert!(probe.parse_error.is_some());
@@ -2466,7 +2434,7 @@ mod tests {
     #[test]
     fn tooling_roles_are_exact_and_survive_a_malformed_sibling() {
         use crate::ast::KioFileKind;
-        let source = "module app; type { Box: . { mk; get; }; } fn ordinary(role: .) { role } host type A role(i32); fn broken(";
+        let source = "mod app; type { Box: . { mk; get; }; } fn ordinary(role: .) { role } host type A role(i32); fn broken(";
         let probe = probe_tooling(source, Some(KioFileKind::Module), None, None);
         assert_eq!(probe.kind, Some(KioFileKind::Module));
         assert!(probe.lexical_error.is_none());
@@ -2493,8 +2461,8 @@ mod tests {
     fn tooling_package_prefix_and_omitted_cache_are_distinct() {
         use crate::ast::KioFileKind;
         for source in [
-            "package app; build { cache (); target rust {",
-            "package app; build { target rust {",
+            "pkg app; build { cache (); target rust {",
+            "pkg app; build { target rust {",
         ] {
             let probe = probe_tooling(source, Some(KioFileKind::Package), None, None);
             assert!(parse_package_file(source, None).is_err());
@@ -2522,18 +2490,18 @@ mod tests {
     fn tooling_build_choices_follow_occupancy_and_retract_after_edits() {
         use crate::ast::KioFileKind;
         for (prefix, expected) in [
-            ("package app; build { ", vec!["cache", "docs", "target"]),
-            ("package app; build { cache (); ", vec!["docs", "target"]),
+            ("pkg app; build { ", vec!["cache", "docs", "target"]),
+            ("pkg app; build { cache (); ", vec!["docs", "target"]),
             (
-                "package app; build { docs { md \"docs\"; } ",
+                "pkg app; build { docs { md \"docs\"; } ",
                 vec!["cache", "target"],
             ),
             (
-                "package app; build { target rust {} ",
+                "pkg app; build { target rust {} ",
                 vec!["cache", "docs", "target"],
             ),
             (
-                "package app; build { target rust {} docs { md \"docs\"; } cache (); ",
+                "pkg app; build { target rust {} docs { md \"docs\"; } cache (); ",
                 vec!["target"],
             ),
         ] {
@@ -2554,10 +2522,10 @@ mod tests {
     fn tooling_nominal_choices_use_member_occupancy() {
         use crate::ast::KioFileKind;
         for (prefix, expected) in [
-            ("module a; type { A: . { ", vec!["pub", "mk", "get"]),
-            ("module a; type { A: . { mk; ", vec!["pub", "get"]),
-            ("module a; type { A: . { get; pub ", vec!["mk"]),
-            ("module a; type { A: . { mk; get; ", vec![]),
+            ("mod a; type { A: . { ", vec!["pub", "mk", "get"]),
+            ("mod a; type { A: . { mk; ", vec!["pub", "get"]),
+            ("mod a; type { A: . { get; pub ", vec!["mk"]),
+            ("mod a; type { A: . { mk; get; ", vec![]),
         ] {
             let source = format!("{prefix}}}; }}");
             let probe = probe_tooling(
@@ -2575,7 +2543,7 @@ mod tests {
     #[test]
     fn tooling_lexical_failure_preserves_only_its_proven_prefix() {
         use crate::ast::KioFileKind;
-        let source = "module app; host type A role(i32); fn broken() { \"unterminated";
+        let source = "mod app; host type A role(i32); fn broken() { \"unterminated";
         let probe = probe_tooling(
             source,
             Some(KioFileKind::Module),
@@ -2595,7 +2563,7 @@ mod tests {
     #[test]
     fn tooling_module_body_uses_consumer_operator_grammar() {
         use crate::ast::KioFileKind;
-        let source = "module app; import syntax(op _ + _, varop [% %]); fn run(a: .) -> . { if (a + a) { do (a) { let x = a; x } } else { [% a, a %] } }";
+        let source = "mod app; import syntax {op _ + _; op_var [% %]} fn run(a: .) -> . { if (a + a) { do (a) { let x = a; x } } else { [% a, a %] } }";
         parse(source).expect("ordinary imported grammar");
         let probe = probe_tooling(source, Some(KioFileKind::Module), None, None);
         assert!(probe.parse_error.is_none(), "{:?}", probe.parse_error);
@@ -2620,7 +2588,8 @@ mod tests {
     #[test]
     fn tooling_recursive_calls_and_ordinary_parameters_keep_separate_roles() {
         use crate::ast::KioFileKind;
-        let source = "module app; fn ordinary(rec: .) -> . { () } rec(loop) fn run() -> . { recur\n run\n () }";
+        let source =
+            "mod app; fn ordinary(rec: .) -> . { () } rec(loop) fn run() -> . { recur\n run\n () }";
         parse(source).expect("multiline recursive call");
         let probe = probe_tooling(source, Some(KioFileKind::Module), None, None);
         assert!(probe.parse_error.is_none(), "{:?}", probe.parse_error);
@@ -2645,11 +2614,11 @@ mod tests {
     #[test]
     fn tooling_signature_sections_do_not_promote_removed_names() {
         use crate::ast::KioFileKind;
-        let source = "signature app v(1); v(1) { with { module api { host type A; } }; breaking { add { module api { pub fn run() -> .; } }; remove { module api { type; pub; fn; } } } }";
+        let source = "sig app v(1); v(1) { with { mod api { host type A; } }; breaking { add { mod api { pub fn run() -> .; } }; remove {  api.type; api.pub; api.fn;  } } }";
         parse_signature_file(source, None).expect("signature removal grammar");
         let probe = probe_tooling(source, Some(KioFileKind::Signature), None, None);
         assert!(probe.parse_error.is_none(), "{:?}", probe.parse_error);
-        let removed_start = source.find("type; pub; fn;").unwrap() as u32;
+        let removed_start = source.find("api.type; api.pub; api.fn;").unwrap() as u32;
         assert!(
             probe
                 .facts
@@ -2669,7 +2638,7 @@ mod tests {
     #[test]
     fn tooling_literals_comments_and_wrong_parent_words_stay_neutral() {
         use crate::ast::KioFileKind;
-        let source = "module app; fn run(if: ., constructor: ., role: .) -> . { if }";
+        let source = "mod app; fn run(if: ., constructor: ., role: .) -> . { if }";
         let probe = probe_tooling(source, Some(KioFileKind::Module), None, None);
         assert!(probe.parse_error.is_none());
         assert!(
@@ -2741,7 +2710,7 @@ mod tests {
     }
 
     fn import_grammar_import_grammar(signature: &str) -> OperatorGrammar {
-        let module = p(&format!("module consumer; import provider({signature});"));
+        let module = p(&format!("mod consumer; import provider {{{signature}}}"));
         let ImportKind::Selective { items, .. } = &module.imports[0].kind else {
             panic!("selective")
         };
@@ -2752,7 +2721,7 @@ mod tests {
     }
 
     fn import_grammar_declaration_grammar(declaration: &str) -> OperatorGrammar {
-        let module = p(&format!("module provider; {declaration}"));
+        let module = p(&format!("mod provider; {declaration}"));
         match &module.items[0] {
             Item::Op(op, _) => {
                 let OpBody::Normal { kind, pattern, .. } = &op.body;
@@ -2775,7 +2744,7 @@ mod tests {
             commented.push_str(&rendered[token.span.start as usize..token.span.end as usize]);
             commented.push(' ');
         }
-        let module = p(&format!("module c; import p({commented});"));
+        let module = p(&format!("mod c; import p {{{commented}}}"));
         let canonical = crate::pretty::pretty_module(&module);
         for index in 0..tokens.len() {
             assert_eq!(
@@ -2801,13 +2770,13 @@ mod tests {
     #[test]
     fn variadic_open_is_one_maximal_run_independent_of_registered_prefixes() {
         for declarations in [
-            "varop [%? ?%] { foldl append empty; }; \
-             varop [%?:+- -+:?%] { foldl append empty; };",
-            "import syntax(varop [%? ?%], varop [%?:+- -+:?%]);",
+            "op_var [%? ?%] { foldl append empty; }; \
+             op_var [%?:+- -+:?%] { foldl append empty; };",
+            "import syntax { op_var [%? ?%]; op_var [%?:+- -+:?%] }",
             "",
         ] {
             let source =
-                format!("module consumer; {declarations} fn run() -> . {{ [%?:+- (), () -+:?%] }}");
+                format!("mod consumer; {declarations} fn run() -> . {{ [%?:+- (), () -+:?%] }}");
             let eager = parse(&source).expect("structural opening run");
             assert_eq!(parse_lazy(&source).unwrap().force_all().unwrap(), eager);
             let Item::FnDef(function) = eager.items.last().unwrap() else {
@@ -2865,7 +2834,7 @@ mod tests {
             let grammar =
                 import_grammar_declaration_grammar(&format!("op {pattern} {{ impl f; }};"));
             import_grammar_roundtrip(&grammar);
-            for kind in ["op", "op macro"] {
+            for kind in ["op", "op_macro"] {
                 let delayed = pattern
                     .split(' ')
                     .map(|part| {
@@ -2903,11 +2872,11 @@ mod tests {
         ];
         for pattern in rejected {
             assert!(
-                parse(&format!("module p; op {pattern} {{ impl f; }};")).is_err(),
+                parse(&format!("mod p; op {pattern} {{ impl f; }};")).is_err(),
                 "{pattern}"
             );
             assert!(
-                parse(&format!("module c; import p(op {pattern});")).is_err(),
+                parse(&format!("mod c; import p {{op {pattern}}}")).is_err(),
                 "{pattern}"
             );
         }
@@ -2922,8 +2891,8 @@ mod tests {
 
     #[test]
     fn delayed_operator_alias_identity_and_recovery() {
-        for selected in ["op ._ && .__", "op macro ._ && .__"] {
-            let source = format!("module c; import m({selected} as ._ %% .__);");
+        for selected in ["op ._ && .__", "op_macro ._ && .__"] {
+            let source = format!("mod c; import m {{{selected} as ._ %% .__}}");
             let module = p(&source);
             let ImportKind::Selective { items, .. } = &module.imports[0].kind else {
                 panic!("selective import")
@@ -2939,18 +2908,18 @@ mod tests {
             assert_eq!(grammar.render(), selected);
             assert_eq!(alias.local.render(), selected.replace("&&", "%%"));
             for alias in ["_ %% .__", "._ %% __", ".__ %% ._", "._ %% .___"] {
-                let bad = format!("module c; import m({selected} as {alias});");
+                let bad = format!("mod c; import m {{{selected} as {alias}}}");
                 assert!(parse(&bad).is_err(), "{bad}");
             }
         }
         for bad in [
-            "op macro",
-            "op macro _ && .",
+            "op_macro",
+            "op_macro _ && .",
             "op .",
             "op .name + _",
             "op (._) + _",
         ] {
-            let source = format!("module c; import m({bad}, good); fn after() -> . {{ () }}");
+            let source = format!("mod c; import m {{{bad}; fn good}} fn after() -> . {{ () }}");
             assert!(parse(&source).is_err(), "{source}");
             let (module, errors) = parse_recover_imports(&source).expect("recover selection");
             assert!(!errors.is_empty(), "{source}");
@@ -2964,7 +2933,7 @@ mod tests {
                     "{source}: {span:?}"
                 );
                 assert!(
-                    span.end as usize <= source.find(", good").unwrap() + 1,
+                    span.end as usize <= source.find("; fn good").unwrap() + 1,
                     "{source}: {span:?}"
                 );
             }
@@ -2977,7 +2946,7 @@ mod tests {
                 "{source}"
             );
         }
-        let reserved_source = "module c; import m(op .____ + _, good); fn after() -> . { () }";
+        let reserved_source = "mod c; import m {op .____ + _; fn good} fn after() -> . { () }";
         let reserved_start = reserved_source.find("____").unwrap() as u32;
         let reserved_span = crate::span::Span::new(reserved_start, reserved_start + 4);
         for error in [
@@ -2989,7 +2958,7 @@ mod tests {
             assert_eq!(error.diag().0, reserved_span);
             assert!(error.diag().1.contains("reserved"));
         }
-        let source = "module c; macro op : . -> . { impl helper; } op macro ._ && .__ { impl op; } fn after() -> . { () }";
+        let source = "mod c; macro op : . -> . { impl helper; } op_macro ._ && .__ { impl op; } fn after() -> . { () }";
         let parsed = p(source);
         assert_eq!(parse_lazy(source).unwrap().force_all().unwrap(), parsed);
         assert!(matches!(&parsed.items[0], Item::Macro(def, _) if def.name == "op"));
@@ -3009,13 +2978,13 @@ mod tests {
             for whitespace in [" ", "\t", "\n", "\r\n"] {
                 for mode in ["foldl", "foldr", "foldl1", "foldr1"] {
                     let declaration = format!(
-                        "varop {open}{whitespace}{close} {{ {mode} step base; finalize finish; }};"
+                        "op_var {open}{whitespace}{close} {{ {mode} step base; finalize finish; }};"
                     );
                     let grammar = import_grammar_declaration_grammar(&declaration);
                     import_grammar_roundtrip(&grammar);
                     let signature = grammar.render();
                     let siblings = p(&format!(
-                        "module c; import p({signature}, z, Field, op _ + _, varop [~ ~]);"
+                        "mod c; import p {{{signature}; fn z; type Field; op _ + _; op_var [~ ~]}}"
                     ));
                     let ImportKind::Selective { items, .. } = &siblings.imports[0].kind else {
                         panic!("selective")
@@ -3084,10 +3053,10 @@ mod tests {
             ("op _ + _", "op _ + ___ : _"),
             ("op _ ? _", "op _ ? _ : _"),
             ("op _ && _ ++ _", "op _ &&++ _"),
-            ("op <% _ %>", "varop [% %]"),
-            ("varop [% %]", "varop [: :]"),
-            ("varop [% %]", "varop [%% %%]"),
-            ("varop [% %]", "varop []"),
+            ("op <% _ %>", "op_var [% %]"),
+            ("op_var [% %]", "op_var [: :]"),
+            ("op_var [% %]", "op_var [%% %%]"),
+            ("op_var [% %]", "op_var []"),
         ];
         for (left, right) in pairs {
             let a = import_grammar_import_grammar(left);
@@ -3096,7 +3065,7 @@ mod tests {
             assert_ne!(a.render(), b.render(), "{left} / {right}");
             import_grammar_roundtrip(&a);
             import_grammar_roundtrip(&b);
-            if !left.contains("&& _ ++") && !right.starts_with("varop") {
+            if !left.contains("&& _ ++") && !right.starts_with("op_var") {
                 assert_eq!(a.dispatch_key(), b.dispatch_key());
             } else {
                 assert_ne!(a.dispatch_key(), b.dispatch_key());
@@ -3109,12 +3078,11 @@ mod tests {
     fn import_grammar_import_recovery_boundaries() {
         for tail in [
             "import m",
-            "import m(",
-            "import m(a,",
-            "import m(varop [%);",
-            "import m(varop [% ]%);",
+            "import m { fn }",
+            "import m { op _ = _ }",
+            "import m { op_var [% !] }",
         ] {
-            let source = format!("module c; {tail}");
+            let source = format!("mod c; {tail}");
             assert!(parse(&source).is_err(), "complete parser rejects {tail}");
             let (_, errors) = parse_recover_imports(&source).expect("recovered module");
             assert!(!errors.is_empty(), "{tail}");
@@ -3125,9 +3093,9 @@ mod tests {
                     .is_empty()
             );
         }
-        for bad in ["op _ = _", "varop [% !]", "varop [% ]%"] {
+        for bad in ["op _ = _", "op_var [% !]", "op_var [% ]%"] {
             let source = format!(
-                "module c; import m({bad}, // sibling once\n good); fn after() -> . {{ () }}"
+                "mod c; import m {{{bad}; // sibling once\n fn good}} fn after() -> . {{ () }}"
             );
             assert!(parse(&source).is_err());
             let (module, errors) =
@@ -3149,7 +3117,7 @@ mod tests {
                 1
             );
         }
-        let unclosed = "module c; import m(varop [%, good); fn after() -> . { () }";
+        let unclosed = "mod c; import m {op_var [%, good} fn after() -> . { () }";
         assert!(parse(unclosed).is_err());
         let (module, errors) =
             parse_recover_imports(unclosed).expect("recover unclosed square frame");
@@ -3166,13 +3134,13 @@ mod tests {
             "pub fn after() -> . { () }",
             "rec type { A : . | A { mk; get; }; };",
         ] {
-            let source = format!("module c; import m\n {declaration}");
+            let source = format!("mod c; import m\n {declaration}");
             assert!(parse(&source).is_err());
             let (module, errors) =
                 parse_recover_imports(&source).expect("recover declaration head");
             assert!(!errors.is_empty(), "{declaration}");
             assert_eq!(module.items.len(), 1, "{declaration}");
-            let expected = p(&format!("module c; {declaration}"));
+            let expected = p(&format!("mod c; {declaration}"));
             assert_eq!(
                 crate::pretty::pretty_module(&module),
                 crate::pretty::pretty_module(&expected)
@@ -3222,7 +3190,7 @@ mod tests {
     #[test]
     fn contextual_rec_ordinary_values_and_calls_keep_their_ast() {
         for expression in ["rec", "(rec)"] {
-            let module = p(&format!("module app; fn use(rec: .) {{ {expression} }}"));
+            let module = p(&format!("mod app; fn use(rec: .) {{ {expression} }}"));
             let Item::FnDef(def) = &module.items[0] else {
                 panic!()
             };
@@ -3241,7 +3209,7 @@ mod tests {
             "rec(value, other)",
             "rec(())",
         ] {
-            let module = p(&format!("module app; fn use() {{ {expression} }}"));
+            let module = p(&format!("mod app; fn use() {{ {expression} }}"));
             let Item::FnDef(def) = &module.items[0] else {
                 panic!()
             };
@@ -3251,7 +3219,7 @@ mod tests {
             assert!(
                 matches!(callee.as_ref(), Expr::Path { segments, .. } if segments == &vec!["rec".to_owned()])
             );
-            let source = format!("module app; fn use() {{ {expression} }}");
+            let source = format!("mod app; fn use() {{ {expression} }}");
             let probe = probe_tooling_source(&source, None);
             assert!(!probe.facts.keywords.iter().any(|fact| &probe.source
                 [fact.span.start as usize..fact.span.end as usize]
@@ -3266,7 +3234,7 @@ mod tests {
             "recur(poly) again(value)",
             "recur(cont, poly) again(value)",
         ] {
-            let module = p(&format!("module app; fn use() {{ {expression} }}"));
+            let module = p(&format!("mod app; fn use() {{ {expression} }}"));
             let Item::FnDef(def) = &module.items[0] else {
                 panic!()
             };
@@ -3280,7 +3248,7 @@ mod tests {
             ("recur(cont) |", CursorSlot::RecursiveCallee),
             ("recur ag|ain(value)", CursorSlot::RecursiveCallee),
         ] {
-            let marked = format!("module app; rec(loop) fn again[A](value: A) {{ {tail}");
+            let marked = format!("mod app; rec(loop) fn again[A](value: A) {{ {tail}");
             let cursor = marked.find('|').unwrap();
             let source = marked.replacen('|', "", 1);
             let probe = probe_tooling_source(&source, Some(cursor as u32));
@@ -3302,7 +3270,7 @@ mod tests {
             "recur(poly, cont, escape)",
             "other.recur(value)",
         ] {
-            let source = format!("module app; fn run(recur: .) {{ {expression} }}");
+            let source = format!("mod app; fn run(recur: .) {{ {expression} }}");
             let module = p(&source);
             let Item::FnDef(def) = &module.items[0] else {
                 panic!("function")
@@ -3337,7 +3305,7 @@ mod tests {
             (".() { recur(poly, escape, |", vec![]),
             (".() { recur(|, escape) again(x) }", vec!["poly"]),
         ] {
-            let marked = format!("module app; rec(loop) fn again[A](x: A) {{ {body}");
+            let marked = format!("mod app; rec(loop) fn again[A](x: A) {{ {body}");
             let cursor = marked.find('|').unwrap();
             let source = marked.replacen('|', "", 1);
             let probe = probe_tooling_source(&source, Some(cursor as u32));
@@ -3348,7 +3316,7 @@ mod tests {
                 "{marked}"
             );
         }
-        let marked = "module app; rec(loop) fn again(x: .) { .() { recur(|";
+        let marked = "mod app; rec(loop) fn again(x: .) { .() { recur(|";
         let cursor = marked.find('|').unwrap();
         let source = marked.replacen('|', "", 1);
         let probe = probe_tooling_source(&source, Some(cursor as u32));
@@ -3372,7 +3340,7 @@ mod tests {
             ),
         ] {
             let marked = format!(
-                "module app; rec(loop) fn again[A](x: A) {{ .() {{ recur({written}) again(x) }} }}"
+                "mod app; rec(loop) fn again[A](x: A) {{ .() {{ recur({written}) again(x) }} }}"
             );
             let cursor = marked.find('|').unwrap();
             let source = marked.replacen('|', "", 1);
@@ -3405,7 +3373,7 @@ mod tests {
     fn recursive_annotation_completion_survives_lambda_argument_recovery() {
         for written in ["|", "cont, |", "es|capex"] {
             let marked = format!(
-                "module app; rec(loop) {{ fn again[A](x: A) -> . {{ recur again(x) }}; fn capture[A](x: A) -> . {{ retain(.() -> . {{ recur({written}) again(x) }}) }} }}"
+                "mod app; rec(loop) {{ fn again[A](x: A) -> . {{ recur again(x) }}; fn capture[A](x: A) -> . {{ retain(.() -> . {{ recur({written}) again(x) }}) }} }}"
             );
             let cursor = marked.find('|').unwrap();
             let source = marked.replacen('|', "", 1);
@@ -3427,7 +3395,7 @@ mod tests {
             applied.replace_range(span.start as usize..span.end as usize, &text);
             parse(&applied).expect("a repaired lambda argument must parse as a value");
         }
-        let module = p("module app; fn run() { consume[.][. -> .](()) }");
+        let module = p("mod app; fn run() { consume[.][. -> .](()) }");
         let Item::FnDef(def) = &module.items[0] else {
             panic!("function")
         };
@@ -3463,7 +3431,7 @@ mod tests {
             "es|capex, poly, poly",
         ] {
             let marked = format!(
-                "module app; rec(loop) fn again[A](x: A) {{ .() {{ recur({written}) again(x) }} }}"
+                "mod app; rec(loop) fn again[A](x: A) {{ .() {{ recur({written}) again(x) }} }}"
             );
             let cursor = marked.find('|').unwrap();
             let source = marked.replacen('|', "", 1);
@@ -3482,14 +3450,15 @@ mod tests {
     #[test]
     fn recursive_declaration_marker_does_not_form_a_blockless_call() {
         for call in ["rec again(x)", "rec(cont) again(x)"] {
-            let source = format!("module app; rec(loop) fn again(x: .) {{ {call} }}");
+            let source = format!("mod app; rec(loop) fn again(x: .) {{ {call} }}");
             assert!(parse(&source).is_err(), "{source}");
         }
     }
 
     #[test]
     fn recursive_call_annotation_spans_are_exact_source_tokens() {
-        let source = "module app; fn use() { recur // 😀 keyword\n(, poly, // 😀 mode\n,cont,) again(value) }";
+        let source =
+            "mod app; fn use() { recur // 😀 keyword\n(, poly, // 😀 mode\n,cont,) again(value) }";
         let module = p(source);
         let Item::FnDef(def) = &module.items[0] else {
             panic!("function")
@@ -3515,7 +3484,7 @@ mod tests {
     #[test]
     fn contextual_rec_ordinary_call_gaps_preserve_completed_syntax() {
         for expression in ["rec(value)", "rec()", "rec(cont, cont)", "rec(escape)"] {
-            let marked = format!("module app; rec(loop) fn run(value: .) {{ {expression} | }}");
+            let marked = format!("mod app; rec(loop) fn run(value: .) {{ {expression} | }}");
             let cursor = marked.find('|').unwrap();
             let source = marked.replacen('|', "", 1);
             let probe = probe_tooling_source(&source, Some(cursor as u32));
@@ -3540,7 +3509,7 @@ mod tests {
     #[test]
     fn contextual_rec_duplicate_annotations_keep_parser_envelope_roles() {
         for mode in ["poly", "cont", "escape"] {
-            let source = format!("module app; fn run() {{ recur({mode}, {mode}) again() }}");
+            let source = format!("mod app; fn run() {{ recur({mode}, {mode}) again() }}");
             let duplicate = source.rfind(mode).unwrap() as u32;
             let expected_span = Span::new(duplicate, duplicate + mode.len() as u32);
             let expected_message = format!("duplicate `recur` call annotation `{mode}`");
@@ -3571,7 +3540,7 @@ mod tests {
 
     #[test]
     fn contextual_rec_duplicate_annotations_keep_public_token_roles() {
-        let source = "module app; fn run() { recur(poly, poly) again() }";
+        let source = "mod app; fn run() { recur(poly, poly) again() }";
         let tokens = crate::tokens::dump(source).unwrap();
         let kinds = |name: &str| {
             tokens
@@ -3614,7 +3583,7 @@ mod tests {
                 "value",
             ),
         ] {
-            let source = format!("module app; fn run() {{ recur({annotations}) again() }}");
+            let source = format!("mod app; fn run() {{ recur({annotations}) again() }}");
             let offset = source.find(marker).unwrap() as u32;
             let width = marker.split(',').next().unwrap().len() as u32;
             let probe = probe_tooling_source(&source, None);
@@ -3657,7 +3626,7 @@ mod tests {
 
     #[test]
     fn contextual_rec_unknown_annotations_keep_public_token_roles() {
-        let source = "module app; fn run() { recur(value, poly) again() }";
+        let source = "mod app; fn run() { recur(value, poly) again() }";
         let tokens = crate::tokens::dump(source).unwrap();
         for (name, expected) in [
             ("value", crate::tokens::TokenKind::Identifier),
@@ -3684,8 +3653,8 @@ mod tests {
     #[test]
     fn contextual_rec_annotation_role_recovery_stops_at_grammar_errors() {
         for ordinary in [
-            "module app; fn run() { rec(poly, poly) }",
-            "module app; fn run() { rec(value, poly) }",
+            "mod app; fn run() { rec(poly, poly) }",
+            "mod app; fn run() { rec(value, poly) }",
         ] {
             let probe = probe_tooling_source(ordinary, None);
             assert!(probe.parse_error.is_none());
@@ -3708,7 +3677,7 @@ mod tests {
                 true,
             ),
         ] {
-            let source = format!("module app; fn run() {{ {tail} }}");
+            let source = format!("mod app; fn run() {{ {tail} }}");
             let probe = probe_tooling_source(&source, None);
             assert!(probe.parse_error.is_some());
             assert!(probe.syntax.is_none());
@@ -3754,7 +3723,7 @@ mod tests {
                 "duplicate `recur` call annotation `poly`",
             ),
         ] {
-            let source = format!("module app; fn run() {{ recur({annotations}) again() }}");
+            let source = format!("mod app; fn run() {{ recur({annotations}) again() }}");
             let probe = probe_tooling_source(&source, None);
             let error = probe.parse_error.as_ref().unwrap();
             assert!(probe.syntax.is_none());
@@ -3789,14 +3758,8 @@ mod tests {
     #[test]
     fn contextual_rec_invalid_items_keep_public_sibling_tokens() {
         for (source, poly_count) in [
-            (
-                "module app; fn run() { recur((poly, poly), cont) again() }",
-                2,
-            ),
-            (
-                "module app; fn run() { recur(value poly, cont) again() }",
-                1,
-            ),
+            ("mod app; fn run() { recur((poly, poly), cont) again() }", 2),
+            ("mod app; fn run() { recur(value poly, cont) again() }", 1),
         ] {
             let tokens = crate::tokens::dump(source).unwrap();
             for (name, expected, count) in [
@@ -3829,7 +3792,7 @@ mod tests {
             ("[* poly, poly !], cont", false),
             ("[* poly, poly, cont", false),
         ] {
-            let source = format!("module app; fn run() {{ recur({annotations}) again() }}");
+            let source = format!("mod app; fn run() {{ recur({annotations}) again() }}");
             let probe = probe_tooling_source(&source, None);
             assert!(probe.syntax.is_none());
             let error = probe.parse_error.as_ref().unwrap();
@@ -3879,14 +3842,14 @@ mod tests {
 
     #[test]
     fn contextual_rec_annotation_comma_runs_preserve_modes_and_format() {
-        let canonical = p("module app; fn run() { recur(cont, poly) again() }");
+        let canonical = p("mod app; fn run() { recur(cont, poly) again() }");
         for annotations in [
             ",cont,poly",
             "cont,,,poly",
             "cont,poly,,,",
             ",,,cont,,,poly,,,",
         ] {
-            let source = format!("module app; fn run() {{ recur({annotations}) again() }}");
+            let source = format!("mod app; fn run() {{ recur({annotations}) again() }}");
             let module = p(&source);
             assert_eq!(
                 crate::pretty::pretty_module(&module),
@@ -3907,7 +3870,7 @@ mod tests {
             ("recur(cont,,, |", CursorSlot::RecursiveAnnotation),
             ("recur(,,,cont,,,poly,,,) |", CursorSlot::RecursiveCallee),
         ] {
-            let marked = format!("module app; rec(loop) fn again[A](value: A) {{ {tail}");
+            let marked = format!("mod app; rec(loop) fn again[A](value: A) {{ {tail}");
             let cursor = marked.find('|').unwrap();
             let source = marked.replacen('|', "", 1);
             let probe = probe_tooling_source(&source, Some(cursor as u32));
@@ -3918,14 +3881,14 @@ mod tests {
             );
         }
         for annotations in ["", ",", ",,,"] {
-            let source = format!("module app; fn run() {{ recur({annotations}) again() }}");
+            let source = format!("mod app; fn run() {{ recur({annotations}) again() }}");
             assert_eq!(
                 parse(&source).unwrap_err().diag().1,
                 "`recur` call annotation list cannot be empty"
             );
         }
         for expression in ["rec((poly), cont)", "rec(,,,cont,,,poly,,,)", "rec(,,,)"] {
-            let source = format!("module app; fn run() {{ {expression} }}");
+            let source = format!("mod app; fn run() {{ {expression} }}");
             let probe = probe_tooling_source(&source, None);
             assert!(
                 probe.parse_error.is_none(),
@@ -3942,7 +3905,7 @@ mod tests {
     #[test]
     fn contextual_rec_outer_envelope_keeps_callee_after_invalid_annotation_groups() {
         for annotation in ["", "()", "(poly)", "helper(helper(helper(value)))", "123"] {
-            let source = format!("module app; fn run() {{ recur({annotation}) again() }}");
+            let source = format!("mod app; fn run() {{ recur({annotation}) again() }}");
             let probe = probe_tooling_source(&source, None);
             assert!(probe.parse_error.is_some());
             assert!(probe.syntax.is_none());
@@ -3974,9 +3937,9 @@ mod tests {
             );
         }
         for (source, target) in [
-            ("module app; fn run() { recur(poly, 123) Again() }", "Again"),
-            ("module app; fn run() { recur(poly, 123) _() }", "_"),
-            ("module app; fn run() { recur(poly, again()", "again"),
+            ("mod app; fn run() { recur(poly, 123) Again() }", "Again"),
+            ("mod app; fn run() { recur(poly, 123) _() }", "_"),
+            ("mod app; fn run() { recur(poly, again()", "again"),
         ] {
             let probe = probe_tooling_source(source, None);
             assert!(probe.parse_error.is_some());
@@ -4024,14 +3987,11 @@ mod tests {
             "a slash-qualified FQN must not parse as a value expression"
         );
         for source in [
-            "module main; fn run() -> . { provider/path.item() }",
-            "module main; fn sink(value: .) -> . { value } \
-             fn run() -> . { sink(provider/path.item()) }",
-            "module main; fn run() -> . { let value = provider/path.item(); value }",
-            "module main; fn run() -> . { \
-             if(provider/path.item()) { () } else { () } }",
-            "module main; fn run(value: .) -> . { \
-             value.>provider/path.item() }",
+            "mod main; fn run() -> . { provider/path.item() }",
+            "mod main; fn sink(value: .) -> . { value } fn run() -> . { sink(provider/path.item()) }",
+            "mod main; fn run() -> . { let value = provider/path.item(); value }",
+            "mod main; fn run() -> . { if(provider/path.item()) { () } else { () } }",
+            "mod main; fn run(value: .) -> . { value.>provider/path.item() }",
         ] {
             let error = p_err(source);
             assert!(
@@ -4044,8 +4004,8 @@ mod tests {
     #[test]
     fn unbound_slash_operator_is_not_diagnosed_as_an_item_fqn() {
         for source in [
-            "module main; fn run() -> . { left / right }",
-            "module main; fn run() -> . { left() / right.item }",
+            "mod main; fn run() -> . { left / right }",
+            "mod main; fn run() -> . { left() / right.item }",
         ] {
             let error = p_err(source);
             assert!(error.contains("expected `}`"), "{error}");
@@ -4059,8 +4019,7 @@ mod tests {
     #[test]
     fn slash_operator_keeps_dotted_rhs_as_an_expression_path() {
         let context = local_expression_context(
-            "module syntax; fn choose[A](left: A, right: A) -> A { right } \
-             op _ / _ { impl choose; };",
+            "mod syntax; fn choose[A](left: A, right: A) -> A { right } op _ / _ { impl choose; };",
         );
         let expr = p_expr_with_context("left/alias.item", Some(&context))
             .expect("the registered slash operator should parse");
@@ -4104,19 +4063,18 @@ mod tests {
 
     #[test]
     fn direct_fqns_remain_in_type_paths() {
-        p("module main; \
-             fn keep(value: provider/path.Value) -> provider/path.Value { value }");
+        p("mod main; fn keep(value: provider/path.Value) -> provider/path.Value { value }");
     }
 
     #[test]
     fn callable_targets_reject_direct_fqns_uniformly() {
         for source in [
-            "module main; op _ + _ { impl provider/path.add; };",
-            "module main; varop [* *] { foldr cons provider/path.empty; };",
-            "module main; varop [* *] { foldr provider/path.cons empty; };",
-            "module main; varop [* *] { foldr cons empty; finalize provider/path.finish; };",
-            "module main; macro inspect : . -> . { impl provider/path.inspect; };",
-            "module main; macro inspect : . -> . { impl(fills) provider/path.inspect; };",
+            "mod main; op _ + _ { impl provider/path.add; };",
+            "mod main; op_var [* *] { foldr cons provider/path.empty; };",
+            "mod main; op_var [* *] { foldr provider/path.cons empty; };",
+            "mod main; op_var [* *] { foldr cons empty; finalize provider/path.finish; };",
+            "mod main; macro inspect : . -> . { impl provider/path.inspect; };",
+            "mod main; macro inspect : . -> . { impl(fills) provider/path.inspect; };",
         ] {
             for error in [
                 parse(source).expect_err("eager parser must reject a direct callable FQN"),
@@ -4141,20 +4099,19 @@ mod tests {
 
     #[test]
     fn capture_and_rec_loop_paths_use_imported_or_dotted_value_paths() {
-        p("module main; \
-           macro inspect : . -> . { captures runtime.helper; impl helper; }; \
-           rec(runtime.loop) fn run() -> . { () }");
+        p(
+            "mod main; macro inspect : . -> . { captures runtime.helper; impl helper; }; rec(runtime.loop) fn run() -> . { () }",
+        );
 
         assert!(
             parse(
-                "module main; \
-                 macro inspect : . -> . { captures provider/path.helper; impl helper; };"
+                "mod main; macro inspect : . -> . { captures provider/path.helper; impl helper; };"
             )
             .is_err(),
             "capture paths are dotted value paths, not direct item FQNs"
         );
         assert!(
-            parse("module main; rec(provider/path.loop) fn run() -> . { () }").is_err(),
+            parse("mod main; rec(provider/path.loop) fn run() -> . { () }").is_err(),
             "rec(loop) names an ordinary value path, not a direct item FQN"
         );
     }
@@ -4175,7 +4132,7 @@ mod tests {
         }
 
         let plus_context = local_expression_context(
-            "module x; fn add(a: A, b: A) -> A { a } op _ + _ { impl add; };",
+            "mod x; fn add(a: A, b: A) -> A { a } op _ + _ { impl add; };",
         );
         assert!(!expression_has_unclosed_structural_forall(
             "value + .[A",
@@ -4190,7 +4147,7 @@ mod tests {
     #[test]
     fn expression_context_distinguishes_selected_and_unrelated_fixed_operators() {
         let local_prefix = local_expression_context(
-            "module local; fn prefix(a: A) -> A { a } op <% _ { impl prefix; };",
+            "mod local; fn prefix(a: A) -> A { a } op <% _ { impl prefix; };",
         );
         assert!(p_expr_with_context("<% a", Some(&local_prefix)).is_ok());
         assert!(!expression_has_unclosed_structural_forall(
@@ -4206,7 +4163,7 @@ mod tests {
         assert!(prefix_call.structural_bracket_offsets.is_empty());
         assert!(!prefix_call.unclosed_structural_forall_at_eof);
 
-        let consumer = parse("module consumer; import syntax(op _ <% _);")
+        let consumer = parse("mod consumer; import syntax {op _ <% _}")
             .expect("consumer-declared consumer parse");
         let imported =
             expression_parse_context(&consumer).expect("imported expression parse context");
@@ -4216,7 +4173,7 @@ mod tests {
             Some(&imported),
         ));
 
-        let unrelated = local_expression_context("module unrelated;");
+        let unrelated = local_expression_context("mod unrelated;");
         assert!(p_expr_with_context("a <% b", Some(&unrelated)).is_err());
         let unrelated_probe = probe_expression_fragment("a <% b", Some(&unrelated))
             .expect("unselected operator fragment probe");
@@ -4233,7 +4190,7 @@ mod tests {
         };
         assert!(matches!(args.as_slice(), [CallArg::Type(_)]));
 
-        let bracket = local_expression_context("module x; varop [* *] { foldr step base; };");
+        let bracket = local_expression_context("mod x; op_var [* *] { foldr step base; };");
         let with_operator = p_expr_with_context("consume[[A] Poly]", Some(&bracket))
             .expect("same spelling with local varop");
         let Expr::Call { args, .. } = with_operator else {
@@ -4246,7 +4203,7 @@ mod tests {
         assert!(!probe.unclosed_structural_forall_at_eof);
 
         let consumer =
-            parse("module consumer; import syntax(varop [* *]);").expect("selective varop import");
+            parse("mod consumer; import syntax {op_var [* *]}").expect("selective varop import");
         let imported =
             expression_parse_context(&consumer).expect("imported varop expression context");
         let imported_arg = p_expr_with_context("consume[[A] Poly]", Some(&imported))
@@ -4260,8 +4217,8 @@ mod tests {
         assert_eq!(imported_probe.structural_bracket_offsets, [7, 8, 10, 16]);
         assert!(!imported_probe.unclosed_structural_forall_at_eof);
         for source in [
-            "module x; op [ _ ] _ { impl bracket; };",
-            "module x; import syntax(op [ _ ] _);",
+            "mod x; op [ _ ] _ { impl bracket; };",
+            "mod x; import syntax {op [ _ ] _}",
         ] {
             assert!(parse(source).is_err(), "{source}");
         }
@@ -4289,8 +4246,7 @@ mod tests {
 
     #[test]
     fn lazy_module_parse_defers_function_body_errors_until_force() {
-        let source = "\
-module lazy;
+        let source = "mod lazy;
 
 pub fn bad() -> . { let x = ; () }
 ";
@@ -4305,8 +4261,7 @@ pub fn bad() -> . { let x = ; () }
 
     #[test]
     fn lazy_module_force_matches_eager_parse_with_operator_body() {
-        let source = "\
-module lazy;
+        let source = "mod lazy;
 
 fn add(a: I32, b: I32) -> I32 { a }
 
@@ -4324,8 +4279,7 @@ pub fn main() -> I32 { 1 + 2 }
 
     #[test]
     fn module_operator_scope_rejects_later_declaration_eagerly() {
-        let source = "\
-module module_scope;
+        let source = "mod module_scope;
 
 fn add(a: I32, b: I32) -> I32 { a }
 
@@ -4340,10 +4294,10 @@ op _ + _ { impl add; };
 
     #[test]
     fn module_operator_scope_rejects_later_declaration_when_forced() {
-        let source = "module module_scope;\n\
-            fn add(a: ., b: .) -> . { a }\n\
-            fn before_declaration() -> . { () + () }\n\
-            op _ + _ { impl add; };";
+        let source = "mod module_scope;
+fn add(a: ., b: .) -> . { a }
+fn before_declaration() -> . { () + () }
+op _ + _ { impl add; };";
         let lazy = parse_lazy(source).expect("the unforced body remains deferred");
         let Item::FnDef(before) = &lazy.module().items[1] else {
             panic!("expected the earlier function");
@@ -4361,9 +4315,10 @@ op _ + _ { impl add; };
             "fn before() -> . { (() * ()) + () }",
             "rec(loop) { fn before() -> . { (() * ()) + () } }",
         ] {
-            let prefix = "module consumer;\n\
-                import syntax(op _ * _);\n\
-                fn combine(a: ., b: .) -> . { a }\n";
+            let prefix = "mod consumer;
+import syntax {op _ * _}
+fn combine(a: ., b: .) -> . { a }
+";
             let operator = "op _ + _ { impl combine; };\n";
             let source = format!("{prefix}{body}\n{operator}");
             let eager =
@@ -4393,8 +4348,7 @@ op _ + _ { impl add; };
         // and fail with "expected `->` or `{`"). The host modifier gates
         // the lazy fn-deferral, so the signature parses eagerly even in
         // lazy mode and round-trips against the eager parse.
-        let source = "\
-module host_lazy;
+        let source = "mod host_lazy;
 
 host fn foo(p0: String) -> .;
 ";
@@ -4412,7 +4366,7 @@ host fn foo(p0: String) -> .;
 
     #[test]
     fn empty_module_declaration() {
-        let m = p("module foo;");
+        let m = p("mod foo;");
         assert_eq!(m.path.segments, vec!["foo"]);
         assert!(m.imports.is_empty());
         assert!(m.items.is_empty());
@@ -4429,8 +4383,7 @@ host fn foo(p0: String) -> .;
         // parallel path's NodeIds use task-offset ranges and
         // would differ from a hypothetical purely-sequential
         // build).
-        let source = "\
-module sample;
+        let source = "mod sample;
 
 fn helper(a: I32, b: I32) -> I32 { a }
 
@@ -4486,7 +4439,7 @@ pub fn main() -> . { () }
         // The parser surfaces a parse error scoped to the group's
         // source range — not "expected `}` at EOF" cascading
         // through the rest of the file.
-        let source = "module x;\nfn broken() -> . { (\nfn ok() -> . { () }";
+        let source = "mod x;\nfn broken() -> . { (\nfn ok() -> . { () }";
         let err = parse(source).expect_err("parse should fail");
         let (span, msg) = err.diag();
         assert!(
@@ -4512,8 +4465,7 @@ pub fn main() -> . { () }
         // path (`module a/b/c/main`) and longer surrounding text.
         // Verifies the recovery error span is still anchored to
         // the malformed `{` and not to position 0.
-        let source = "\
-module parser_recovery_localized/main;
+        let source = "mod parser_recovery_localized/main;
 
 fn broken() -> . { (
 
@@ -4534,8 +4486,7 @@ fn ok() -> . { () }";
         // they should not affect parser recovery. Matches the
         // shape of `test-data/goldens/11_parse_error/parser_recovery_localized/src/main.kio`,
         // including the trailing newline.
-        let source = "\
-module parser_recovery_localized/main;
+        let source = "mod parser_recovery_localized/main;
 
 // `broken`'s body opens with `{` but never closes before the next
 // top-level `fn`. The tree-skeleton builder marks the group as
@@ -4558,21 +4509,21 @@ fn ok() -> . { () }
 
     #[test]
     fn nested_module_declaration() {
-        let m = p("module a/b/c;");
+        let m = p("mod a/b/c;");
         assert_eq!(m.path.segments, vec!["a", "b", "c"]);
     }
 
     #[test]
     fn module_declaration_required() {
         let msg = p_err("fn foo() -> . { () }");
-        assert!(msg.contains("module"));
+        assert!(msg.contains("mod"));
     }
 
     // ---- import statements --------------------------------------------------
 
     #[test]
     fn import_selective_single() {
-        let m = p("module x; import a/b(foo);");
+        let m = p("mod x; import a/b {fn foo}");
         let u = &m.imports[0];
         match &u.kind {
             ImportKind::Selective { items, from } => {
@@ -4589,7 +4540,7 @@ fn ok() -> . { () }
 
     #[test]
     fn import_selective_multi() {
-        let m = p("module x; import pkg/mod(foo, bar, baz);");
+        let m = p("mod x; import pkg/mod {fn foo; fn bar; fn baz}");
         match &m.imports[0].kind {
             ImportKind::Selective { items, .. } => {
                 let names: Vec<&str> = items
@@ -4605,7 +4556,7 @@ fn ok() -> . { () }
     #[test]
     fn selective_aliases_keep_source_and_destination_separate() {
         let module = p(
-            "module x; import provider(foo as bar, Foo as Bar, op as operation, varop as variadic, same as same);",
+            "mod x; import provider {fn foo as bar; type Foo as Bar; fn op as operation; fn varop as variadic; fn same as same}",
         );
         let items = selective_items(&module.imports[0]);
         for (item, source, local) in [
@@ -4628,7 +4579,7 @@ fn ok() -> . { () }
             "{foo} as bar",
             "foo as __reserved__",
         ] {
-            assert!(!p_err(&format!("module x; import provider({selection});")).is_empty());
+            assert!(!p_err(&format!("mod x; import provider {{{selection}}}")).is_empty());
         }
     }
 
@@ -4638,9 +4589,9 @@ fn ok() -> . { () }
             "op _ + __ as _ ++ __",
             "op _ ? ___ : ___ as _ ?? ___ :: ___",
             "op _ + _ + _ as _ - _ - _",
-            "varop [* *] as [% %]",
+            "op_var [* *] as [% %]",
         ] {
-            let module = p(&format!("module x; import provider({selection});"));
+            let module = p(&format!("mod x; import provider {{{selection}}}"));
             let ImportItem::OperatorPattern {
                 grammar,
                 alias: Some(alias),
@@ -4658,11 +4609,11 @@ fn ok() -> . { () }
             "op _ + _ + _ as _ - _ + _",
             "op _ + _ - _ as _ ? _ ? _",
             "op _ + _ + _ as _ ++ _",
-            "varop [* *] as [% *]",
+            "op_var [* *] as [% *]",
             "op _ + _ as op _ - _",
         ] {
             assert!(
-                !p_err(&format!("module x; import provider({selection});")).is_empty(),
+                !p_err(&format!("mod x; import provider {{{selection}}}")).is_empty(),
                 "{selection}"
             );
         }
@@ -4670,30 +4621,46 @@ fn ok() -> . { () }
 
     #[test]
     fn import_selective_value_and_type_names_remain_distinct() {
-        let m = p("module x; import pkg/mod(item, Item);");
+        let m = p("mod x; import pkg/mod {fn item; type Item}");
         let items = selective_items(&m.imports[0]);
         assert!(matches!(&items[0], ImportItem::Name { name, .. } if name == "item"));
         assert!(matches!(&items[1], ImportItem::Name { name, .. } if name == "Item"));
     }
 
     #[test]
-    fn braced_import_selection_is_outside_ordinary_grammar() {
+    fn selective_import_kinds_are_required_in_eager_and_lazy_headers() {
         for provider in ["origin", "missing/provider"] {
-            for selection in ["{item}", "{Item}", "{// keep\n item // tail\n}"] {
-                let source = format!("module x; import {provider}({selection});");
-                let eager = parse(&source).expect_err("an import selection requires a name");
-                let lazy = parse_lazy(&source).expect_err("headers use the same grammar");
-                assert_eq!(eager.diag(), lazy.diag());
-                assert!(matches!(eager, Error::Parse(_)));
-                let ordinary = source.replacen('{', "", 1).replacen('}', "", 1);
-                parse(&ordinary).expect("ordinary selector is syntactically valid");
-            }
+            let source =
+                format!("mod x; import {provider} {{ fn item; type Item; macro as as local }}");
+            let eager = parse(&source).expect("explicit selections");
+            let lazy = parse_lazy(&source).expect("lazy header selections");
+            assert_eq!(eager.imports, lazy.module().imports);
+            let invalid = format!("mod x; import {provider} {{ item }}");
+            assert!(parse(&invalid).is_err());
+            assert!(parse_lazy(&invalid).is_err());
         }
     }
 
     #[test]
+    fn selective_import_semicolon_runs_follow_block_rules() {
+        let source = "mod c; import p { ; // first\n ; fn a; ; // second\n type B; ; };";
+        let module = parse(source).expect("separator runs and one outer suffix");
+        assert_eq!(selective_items(&module.imports[0]).len(), 2);
+        let formatted = crate::pretty::pretty_module(&module);
+        assert_eq!(formatted.matches("// first").count(), 1, "{formatted}");
+        assert_eq!(formatted.matches("// second").count(), 1, "{formatted}");
+        assert!(formatted.find("// first").unwrap() < formatted.find("fn a").unwrap());
+        assert!(formatted.find("// second").unwrap() < formatted.find("type B").unwrap());
+        assert!(!formatted.contains("};"), "{formatted}");
+        let reparsed = parse(&formatted).expect("formatted import reparses");
+        assert_eq!(crate::pretty::pretty_module(&reparsed), formatted);
+        assert!(parse("mod c; import p { ; ; }").is_err());
+        assert!(parse("mod c; import p { fn a };;").is_err());
+    }
+
+    #[test]
     fn import_qualified_multi_segment() {
-        let m = p("module x; import a/b/c as m;");
+        let m = p("mod x; import a/b/c as m;");
         match &m.imports[0].kind {
             ImportKind::Qualified { path, alias, .. } => {
                 assert_eq!(path.segments, vec!["a", "b", "c"]);
@@ -4705,19 +4672,19 @@ fn ok() -> . { () }
 
     #[test]
     fn import_qualified_alias_requires_a_value_name() {
-        let m = p("module x; import a/b as lower_alias;");
+        let m = p("mod x; import a/b as lower_alias;");
         assert!(matches!(
             &m.imports[0].kind,
             ImportKind::Qualified { alias, .. } if alias == "lower_alias"
         ));
 
-        let msg = p_err("module x; import a/b as UpperAlias;");
+        let msg = p_err("mod x; import a/b as UpperAlias;");
         assert!(msg.contains("value name"), "got: {msg}");
     }
 
     #[test]
     fn import_qualified_single_segment() {
-        let m = p("module x; import a as m;");
+        let m = p("mod x; import a as m;");
         match &m.imports[0].kind {
             ImportKind::Qualified { path, alias, .. } => {
                 assert_eq!(path.segments, vec!["a"]);
@@ -4728,14 +4695,20 @@ fn ok() -> . { () }
     }
 
     #[test]
-    fn import_fn_modifier_rejected() {
-        let msg = p_err("module x; import macros(fn checked);");
-        assert!(msg.contains("expected"), "got: {msg}");
+    fn import_fn_selector_is_explicit() {
+        let module = p("mod x; import macros {fn checked}");
+        assert!(matches!(
+            &selective_items(&module.imports[0])[0],
+            ImportItem::Name {
+                kind: crate::ast::ImportNameKind::Function,
+                ..
+            }
+        ));
     }
 
     #[test]
     fn import_intrinsics() {
-        let m = p("module x; import __intrinsics__;");
+        let m = p("mod x; import __intrinsics__;");
         assert_eq!(m.imports[0].kind, ImportKind::Intrinsics);
     }
 
@@ -4766,10 +4739,10 @@ fn ok() -> . { () }
             "op _ ? _ : __",
             "op _ <% _ %>",
             "op <% _ %>",
-            "varop [* *]",
-            "varop [! !]",
+            "op_var [* *]",
+            "op_var [! !]",
         ] {
-            let module = p_header(&format!("module x; import syntax({grammar});"));
+            let module = p_header(&format!("mod x; import syntax {{{grammar}}}"));
             let items = selective_items(&module.imports[0]);
             assert_eq!(items.len(), 1);
             assert_eq!(imported_grammar(&items[0]).render(), grammar);
@@ -4779,25 +4752,21 @@ fn ok() -> . { () }
     #[test]
     fn import_operator_projection_is_delimited_from_sibling_items() {
         let module = p_header(
-            "module x; import syntax(Mytype, my_function, op _ + __, varop [* *], Field);",
+            "mod x; import syntax {type Mytype; fn my_function; op _ + __; op_var [* *]; type Field}",
         );
         let items = selective_items(&module.imports[0]);
         assert_eq!(items.len(), 5);
         assert_eq!(items[0].as_name(), Some("Mytype"));
         assert_eq!(items[1].as_name(), Some("my_function"));
         assert_eq!(imported_grammar(&items[2]).render(), "op _ + __");
-        assert_eq!(imported_grammar(&items[3]).render(), "varop [* *]");
+        assert_eq!(imported_grammar(&items[3]).render(), "op_var [* *]");
         assert_eq!(items[4].as_name(), Some("Field"));
     }
 
     #[test]
     fn imported_prefix_operator_carries_fixed_tail() {
-        let m = parse(
-            "module x; \
-             import syntax(op ? _ : _); \
-             fn choose(a: A, b: A) -> A { ? a : b }",
-        )
-        .expect("consumer-declared parse");
+        let m = parse("mod x; import syntax {op ? _ : _} fn choose(a: A, b: A) -> A { ? a : b }")
+            .expect("consumer-declared parse");
         let Item::FnDef(def) = &m.items[0] else {
             panic!("expected function definition");
         };
@@ -4815,11 +4784,7 @@ fn ok() -> . { () }
     #[test]
     fn imported_variadic_operator_contains_ordinary_operator_elements() {
         let m = parse(
-            "module x; \
-             import syntax(varop [% %], op _ => _); \
-             fn pairs(k1: A, v1: A, k2: A, v2: A) -> A { \
-               [% k1 => v1, k2 => v2 %] \
-             }",
+            "mod x; import syntax {op_var [% %]; op _ => _} fn pairs(k1: A, v1: A, k2: A, v2: A) -> A { [% k1 => v1, k2 => v2 %] }",
         )
         .expect("consumer-declared parse");
         let Item::FnDef(def) = &m.items[0] else {
@@ -4854,8 +4819,7 @@ fn ok() -> . { () }
 
     #[test]
     fn variadic_declaration_is_complete_in_lazy_parse() {
-        let source = "module x; \
-             pub varop [* *] { foldr step zero; };";
+        let source = "mod x; pub op_var [* *] { foldr step zero; };";
         let eager = parse(source).expect("eager parse");
         let lazy = parse_lazy(source).expect("lazy header parse");
         assert_eq!(lazy.module(), &eager);
@@ -4865,12 +4829,7 @@ fn ok() -> . { () }
 
     #[test]
     fn imported_operator_is_available_in_deferred_rec_member() {
-        let source = "module x; \
-             import syntax(op ? _ : _); \
-             rec(loop) { \
-               fn choose(a: A, b: A) -> A { ? a : b }; \
-               fn keep(a: A) -> A { a } \
-             }";
+        let source = "mod x; import syntax {op ? _ : _} rec(loop) { fn choose(a: A, b: A) -> A { ? a : b }; fn keep(a: A) -> A { a } }";
         let eager = parse(source).expect("consumer-declared parse");
         let lazy = parse_lazy(source).expect("lazy header parse");
         let forced = lazy.force_all().expect("force recursive member body");
@@ -4879,20 +4838,20 @@ fn ok() -> . { () }
 
     #[test]
     fn import_nullary_fixed_grammar_is_rejected() {
-        let error = parse("module x; import syntax(op ++);").unwrap_err();
+        let error = parse("mod x; import syntax {op ++}").unwrap_err();
         assert!(error.diag().1.contains("at least one value slot"));
     }
 
     #[test]
     fn import_operator_dots_are_reserved() {
         for word in [".+", ".+.", "..", "<.>", "(+.)", "(.+)"] {
-            assert!(parse(&format!("module x; import syntax(op _ {word} _);")).is_err());
+            assert!(parse(&format!("mod x; import syntax {{op _ {word} _}}")).is_err());
         }
     }
 
     #[test]
     fn delayed_slot_dot_terminates_the_preceding_symbol_word() {
-        for tag in ["op", "op macro"] {
+        for tag in ["op", "op_macro"] {
             let expected = format!("{tag} _ + ._");
             for pattern in ["_ +. _", "_ +._", "_ + . _", "_ + ._"] {
                 let declaration = import_grammar_declaration_grammar(&format!(
@@ -4909,7 +4868,7 @@ fn ok() -> . { () }
 
     #[test]
     fn fn_def_zero_arg_unit() {
-        let m = p("module x; fn main() -> . { () }");
+        let m = p("mod x; fn main() -> . { () }");
         match &m.items[0] {
             Item::FnDef(d) => {
                 assert!(!d.vis.is_pub());
@@ -4928,7 +4887,7 @@ fn ok() -> . { () }
         // language.md § Function definitions: `-> .` may be omitted.
         // The parser synthesizes Type::Unit and records `ret_elided`
         // so the formatter can round-trip the original shape.
-        let m = p("module x; fn say_hi() { () }");
+        let m = p("mod x; fn say_hi() { () }");
         match &m.items[0] {
             Item::FnDef(d) => {
                 assert_eq!(d.name, "say_hi");
@@ -4943,7 +4902,7 @@ fn ok() -> . { () }
     fn fn_def_explicit_return_keeps_elided_false() {
         // The dual: an explicit `-> .` annotation produces the same
         // synthesized Type::Unit but with `ret_elided = false`.
-        let m = p("module x; fn say_hi() -> . { () }");
+        let m = p("mod x; fn say_hi() -> . { () }");
         match &m.items[0] {
             Item::FnDef(d) => {
                 assert!(matches!(d.ret, Type::Unit { .. }));
@@ -4960,13 +4919,13 @@ fn ok() -> . { () }
         // accepts it; the typer (rejected at synth time) is what
         // catches mis-elision. At parse alone, the body is read as
         // `String` (a path) and then `{ ... }`, which is a parse error.
-        let msg = p_err("module x; fn greet() String { \"hi\" }");
+        let msg = p_err("mod x; fn greet() String { \"hi\" }");
         assert!(msg.contains("`->` or `{`") || msg.contains("`{`"));
     }
 
     #[test]
     fn fn_def_pub_visibility() {
-        let m = p("module x; pub fn main() -> . { () }");
+        let m = p("mod x; pub fn main() -> . { () }");
         match &m.items[0] {
             Item::FnDef(d) => assert!(d.vis.is_pub()),
             other => panic!("expected FnDef, got {other:?}"),
@@ -4975,7 +4934,7 @@ fn ok() -> . { () }
 
     #[test]
     fn fn_def_identity_function() {
-        let m = p("module x; pub fn id[A](x: A) -> A { x }");
+        let m = p("mod x; pub fn id[A](x: A) -> A { x }");
         match &m.items[0] {
             Item::FnDef(d) => {
                 assert_eq!(d.sig.params.len(), 2);
@@ -5014,7 +4973,7 @@ fn ok() -> . { () }
 
     #[test]
     fn fn_def_intermixed_params_preserve_order() {
-        let m = p("module x; fn f[A](x: A)[B](y: B) -> A { x }");
+        let m = p("mod x; fn f[A](x: A)[B](y: B) -> A { x }");
         if let Item::FnDef(d) = &m.items[0] {
             assert!(matches!(d.sig.params[0], SignatureParam::Type(_)));
             assert!(matches!(d.sig.params[1], SignatureParam::Value(_)));
@@ -5026,11 +4985,11 @@ fn ok() -> . { () }
     #[test]
     fn type_only_functions_preserve_written_groups() {
         for source in [
-            "module x; fn marker[A] -> . { () }",
-            "module x; pure fn marker[A][B] { () }",
-            "module x; fn marker() -> [A] . { .[A] { () } }",
-            "module x; fn marker() -> [A][B] . { .[A][B] -> . { () } }",
-            "module x; fn marker() -> [A] . { . [A] // body\n { () } }",
+            "mod x; fn marker[A] -> . { () }",
+            "mod x; pure fn marker[A][B] { () }",
+            "mod x; fn marker() -> [A] . { .[A] { () } }",
+            "mod x; fn marker() -> [A][B] . { .[A][B] -> . { () } }",
+            "mod x; fn marker() -> [A] . { . [A] // body\n { () } }",
         ] {
             let eager = p(source);
             assert_eq!(parse_lazy(source).unwrap().force_all().unwrap(), eager);
@@ -5045,12 +5004,12 @@ fn ok() -> . { () }
             assert_eq!(original.sig.groups, formatted.sig.groups, "{rendered}");
             assert_eq!(rendered, crate::pretty::pretty_module(&reparsed));
         }
-        let named = p("module x; fn marker[A] { () }");
+        let named = p("mod x; fn marker[A] { () }");
         let Item::FnDef(function) = &named.items[0] else {
             panic!("function")
         };
         assert_eq!(function.sig.value_group_count(), 0);
-        let anonymous = p("module x; fn marker() -> [A] . { .[A] { () } }");
+        let anonymous = p("mod x; fn marker() -> [A] . { .[A] { () } }");
         let Item::FnDef(function) = &anonymous.items[0] else {
             panic!("function")
         };
@@ -5063,21 +5022,21 @@ fn ok() -> . { () }
     #[test]
     fn type_only_admission_preserves_other_declaration_boundaries() {
         for source in [
-            "module x; fn constant -> . { () }",
-            "module x; host fn marker[A] -> .;",
-            "module x; equiv marker[A] { (); () }",
-            "module x; rec(loop) fn marker[A] -> . { () }",
-            "module x; rec(loop) { fn marker[A] -> . { () } }",
+            "mod x; fn constant -> . { () }",
+            "mod x; host fn marker[A] -> .;",
+            "mod x; equiv marker[A] { (); () }",
+            "mod x; rec(loop) fn marker[A] -> . { () }",
+            "mod x; rec(loop) { fn marker[A] -> . { () } }",
         ] {
             assert!(parse(source).is_err(), "{source}");
             assert!(parse_lazy(source).is_err(), "{source}");
         }
         for source in [
-            "module x; host fn marker[A]() -> .;",
-            "module x; equiv marker[A]() { (); () }",
-            "module x; rec(loop) fn marker[A]() -> . { () }",
-            "module x; rec(loop) { fn marker[A]() -> . { () } }",
-            "module x; rec(loop) fn marker()[A]() -> . { () }",
+            "mod x; host fn marker[A]() -> .;",
+            "mod x; equiv marker[A]() { (); () }",
+            "mod x; rec(loop) fn marker[A]() -> . { () }",
+            "mod x; rec(loop) { fn marker[A]() -> . { () } }",
+            "mod x; rec(loop) fn marker()[A]() -> . { () }",
         ] {
             let eager = p(source);
             assert_eq!(parse_lazy(source).unwrap().force_all().unwrap(), eager);
@@ -5087,7 +5046,7 @@ fn ok() -> . { () }
     #[test]
     fn fn_def_universal_binder_bracket_spelling() {
         // `[A]` is the spelling for universal binder groups.
-        let m = p("module x; pub fn id[A](x: A) -> A { x }");
+        let m = p("mod x; pub fn id[A](x: A) -> A { x }");
         match &m.items[0] {
             Item::FnDef(d) => {
                 assert_eq!(d.sig.params.len(), 2);
@@ -5102,7 +5061,7 @@ fn ok() -> . { () }
 
     #[test]
     fn parenthesized_type_param_in_fn_signature_rejected() {
-        let err = p_err("module x; fn id([A], x: A) -> A { x }");
+        let err = p_err("mod x; fn id([A], x: A) -> A { x }");
         assert!(
             err.contains("expected identifier") || err.contains("expected `,` or `)`"),
             "parenthesized type parameter must not parse in a fn value group, got: {err}"
@@ -5111,7 +5070,7 @@ fn ok() -> . { () }
 
     #[test]
     fn fn_binders_use_separate_brackets() {
-        let m = p("module x; fn pair[A][B](x: A, y: B) -> A { x }");
+        let m = p("mod x; fn pair[A][B](x: A, y: B) -> A { x }");
         match &m.items[0] {
             Item::FnDef(d) => {
                 assert!(matches!(&d.sig.params[0], SignatureParam::Type(tp) if tp.name == "A"));
@@ -5120,14 +5079,14 @@ fn ok() -> . { () }
             }
             other => panic!("expected FnDef, got {other:?}"),
         }
-        assert!(parse("module x; fn pair[A, B](x: A, y: B) -> A { x }").is_err());
+        assert!(parse("mod x; fn pair[A, B](x: A, y: B) -> A { x }").is_err());
     }
 
     #[test]
     fn fn_def_universal_binder_angle_form_rejected() {
         // Universal binders are `[A]`-shaped; `<A>` is reserved for
         // existentials in their paren-wrapped position.
-        let err = p_err("module x; fn id<U>(x: U) -> U { x }");
+        let err = p_err("mod x; fn id<U>(x: U) -> U { x }");
         assert!(
             err.contains("expected a signature parameter group"),
             "want bracket complaint, got: {err}"
@@ -5138,13 +5097,13 @@ fn ok() -> . { () }
     fn fn_def_mismatched_binder_brackets_is_parse_error() {
         // `[A>` mismatches the bracket opener with the angle closer —
         // the type-param group reports the missing `]`.
-        let err = p_err("module x; fn id[A>(x: A) -> A { x }");
+        let err = p_err("mod x; fn id[A>(x: A) -> A { x }");
         assert!(err.contains("]"), "want `]` complaint, got: {err}");
     }
 
     #[test]
     fn newtype_universal_binder_bracket_spelling() {
-        let m = p("module x; type { Box[A] : A { mk; pub get; }; };");
+        let m = p("mod x; type { Box[A] : A { mk; pub get; }; };");
         match &m.items[0] {
             Item::Newtype(d) => {
                 assert_eq!(d.type_params.len(), 1);
@@ -5156,7 +5115,7 @@ fn ok() -> . { () }
 
     #[test]
     fn parenthesized_type_param_in_newtype_header_rejected() {
-        let err = p_err("module x; type { Box([A]) : A { mk; get; }; };");
+        let err = p_err("mod x; type { Box([A]) : A { mk; get; }; };");
         assert!(
             err.contains("expected `:`") || err.contains("expected type expression"),
             "parenthesized type parameter must not parse in a newtype header, got: {err}"
@@ -5165,7 +5124,7 @@ fn ok() -> . { () }
 
     #[test]
     fn newtype_binders_use_separate_brackets() {
-        let m = p("module x; type { Box[A][B] : A { mk; get; }; };");
+        let m = p("mod x; type { Box[A][B] : A { mk; get; }; };");
         match &m.items[0] {
             Item::Newtype(d) => {
                 assert_eq!(d.type_params.len(), 2);
@@ -5174,12 +5133,12 @@ fn ok() -> . { () }
             }
             other => panic!("expected Newtype, got {other:?}"),
         }
-        assert!(parse("module x; type { Box[A, B] : A { mk; get; }; };").is_err());
+        assert!(parse("mod x; type { Box[A, B] : A { mk; get; }; };").is_err());
     }
 
     #[test]
     fn type_alias_universal_binder_bracket_spelling() {
-        let m = p("module x; type Same[A] = A;");
+        let m = p("mod x; type Same[A] = A;");
         match &m.items[0] {
             Item::TypeAlias(t) => {
                 assert_eq!(t.type_params.len(), 1);
@@ -5191,7 +5150,7 @@ fn ok() -> . { () }
 
     #[test]
     fn parenthesized_type_param_in_type_alias_header_rejected() {
-        let err = p_err("module x; type Same([A]) = A;");
+        let err = p_err("mod x; type Same([A]) = A;");
         assert!(
             err.contains("expected `=`") || err.contains("expected type expression"),
             "parenthesized type parameter must not parse in a type-alias header, got: {err}"
@@ -5200,7 +5159,7 @@ fn ok() -> . { () }
 
     #[test]
     fn type_alias_binders_use_separate_brackets() {
-        let m = p("module x; type Pair[A][B] = A & B;");
+        let m = p("mod x; type Pair[A][B] = A & B;");
         match &m.items[0] {
             Item::TypeAlias(t) => {
                 assert_eq!(t.type_params.len(), 2);
@@ -5209,14 +5168,14 @@ fn ok() -> . { () }
             }
             other => panic!("expected a type alias, got {other:?}"),
         }
-        assert!(parse("module x; type Pair[A, B] = A & B;").is_err());
+        assert!(parse("mod x; type Pair[A, B] = A & B;").is_err());
     }
 
     #[test]
     fn kind_annotated_binders_parse_stars_to_kinds() {
         // `[A]` ⇒ kind `*` (None), `[*F]` ⇒ kind `*→*`, `[**G]` ⇒
         // kind `*→*→*`. See `specs/grammar.md` § Kind grammar.
-        let m = p("module x; fn higher[A][*F][**G]( x: A) -> A { x }");
+        let m = p("mod x; fn higher[A][*F][**G]( x: A) -> A { x }");
         match &m.items[0] {
             Item::FnDef(d) => {
                 let tps: Vec<&TypeParam> = d
@@ -5242,17 +5201,17 @@ fn ok() -> . { () }
 
     #[test]
     fn compact_forall_brackets_peel_from_maximal_runs() {
-        p("module x; fn higher[A][*F][**G](x: A) -> A { x }");
-        p("module x; type Nested = [A][B] A -> B;");
-        p("module x; fn lambda() -> . { .[*F](x: F[.]) -> F[.] { x } }");
+        p("mod x; fn higher[A][*F][**G](x: A) -> A { x }");
+        p("mod x; type Nested = [A][B] A -> B;");
+        p("mod x; fn lambda() -> . { .[*F](x: F[.]) -> F[.] { x } }");
     }
 
     #[test]
     fn malformed_or_nested_forall_binders_stay_rejected() {
         for source in [
-            "module x; fn missing[A(x: A) -> A { x }",
-            "module x; fn nameless[*](x: .) -> . { x }",
-            "module x; fn nested[[A]](x: A) -> A { x }",
+            "mod x; fn missing[A(x: A) -> A { x }",
+            "mod x; fn nameless[*](x: .) -> . { x }",
+            "mod x; fn nested[[A]](x: A) -> A { x }",
         ] {
             let message = p_err(source);
             assert!(
@@ -5266,7 +5225,7 @@ fn ok() -> . { () }
     fn kind_annotated_binders_round_trip_through_fmt() {
         // The pretty-printer re-emits the star annotation, so a kinded
         // newtype header survives a parse → print → parse round-trip.
-        let src = "module x; type { Either[*E][**A] : A { mk; pub get; }; };";
+        let src = "mod x; type { Either[*E][**A] : A { mk; pub get; }; };";
         let m = p(src);
         match &m.items[0] {
             Item::Newtype(d) => {
@@ -5286,7 +5245,7 @@ fn ok() -> . { () }
     #[test]
     fn function_type_polymorphic_bracket_spelling() {
         // `[A] A -> A` as a function-type expression in a type.
-        let m = p("module x; type Id = [A] A -> A;");
+        let m = p("mod x; type Id = [A] A -> A;");
         match &m.items[0] {
             Item::TypeAlias(t) => match t.type_body() {
                 Type::Forall { param, .. } => {
@@ -5299,21 +5258,8 @@ fn ok() -> . { () }
     }
 
     #[test]
-    fn type_alias_standalone_existential_rejected() {
-        // Standalone existential type expressions are no longer
-        // admissible; the parser rejects `(<U>, body)` with a
-        // diagnostic pointing at the newtype-header alternative.
-        let msg = p_err("module x; type Pack[A] = (<U>, (A & U));");
-        assert!(
-            msg.contains("existential type expressions are no longer admissible")
-                || msg.contains("declared on a `newtype` header"),
-            "want existential-rejection diagnostic, got: {msg}"
-        );
-    }
-
-    #[test]
     fn fn_def_call_in_body() {
-        let m = p(r#"module x; pub fn main() -> . { print("Hello, world!") }"#);
+        let m = p(r#"mod x; pub fn main() -> . { print("Hello, world!") }"#);
         if let Item::FnDef(d) = &m.items[0] {
             match &d.body {
                 Expr::Call { callee, args, .. } => {
@@ -5328,7 +5274,7 @@ fn ok() -> . { () }
 
     #[test]
     fn rec_single_fn_shorthand_parses() {
-        let m = p("module x; rec(loop) pub fn f[A](x: A) -> A { recur f[String](x) }");
+        let m = p("mod x; rec(loop) pub fn f[A](x: A) -> A { recur f[String](x) }");
         let Item::RecGroup(group, _) = &m.items[0] else {
             panic!("expected RecGroup, got {:?}", m.items[0]);
         };
@@ -5359,8 +5305,8 @@ fn ok() -> . { () }
     #[test]
     fn recursive_data_singleton_spellings_parse() {
         for source in [
-            "module x; rec type { List[A] : . | (A & List[A]) { mk; get; }; };",
-            "module x; rec type Tree = { Leaf: I32 } | { Branch: Tree & Tree };",
+            "mod x; rec type { List[A] : . | (A & List[A]) { mk; get; }; };",
+            "mod x; rec type Tree = { Leaf: I32 } | { Branch: Tree & Tree };",
         ] {
             parse(source).unwrap_or_else(|error| {
                 panic!("recursive data declaration failed to parse for {source:?}: {error:?}")
@@ -5371,7 +5317,7 @@ fn ok() -> . { () }
     #[test]
     fn mutual_recursive_type_group_parses() {
         let source =
-            "module x; rec { type { A : . | B { mk; get; }; }; type { B : . | A { mk; get; }; }; }";
+            "mod x; rec { type { A : . | B { mk; get; }; }; type { B : . | A { mk; get; }; }; }";
         parse(source)
             .unwrap_or_else(|error| panic!("recursive type group failed to parse: {error:?}"));
     }
@@ -5379,7 +5325,7 @@ fn ok() -> . { () }
     #[test]
     fn type_declaration_editable_ranges_own_only_attached_prefixes() {
         let source = concat!(
-            "module x ;\n",
+            "mod x ;\n",
             "// Ambiguous attachment.\n",
             "type A = .;\n",
             "/// B docs.\n",
@@ -5412,7 +5358,7 @@ fn ok() -> . { () }
                 "// first\n//\n//\n// paragraph\n\n/// Interior note.\n// last\n",
             ] {
                 let source = format!(
-                    "module x;\n{outer_doc}rec {opener}{{\n/// Alias documentation.\ntype A = B; type {{ B : A {{ mk; get }}; }}; // closing boundary\n}}",
+                    "mod x;\n{outer_doc}rec {opener}{{\n/// Alias documentation.\ntype A = B; type {{ B : A {{ mk; get }}; }}; // closing boundary\n}}",
                 );
                 let parsed = parse(&source).expect("recursive group");
                 assert_eq!(parse_lazy(&source).unwrap().force_all().unwrap(), parsed);
@@ -5472,7 +5418,7 @@ fn ok() -> . { () }
     #[test]
     fn recursive_type_group_retains_prefix_owned_source_layout() {
         let source = concat!(
-            "module x; rec {\n",
+            "mod x; rec {\n",
             "  // group-leading context\n",
             "  /// Alias docs.\n",
             "  pub type A = B;\n",
@@ -5511,7 +5457,7 @@ fn ok() -> . { () }
 
     #[test]
     fn bare_type_group_leading_visibility_highlights_the_complete_modifier() {
-        let source = "module x/y; pub(x) rec { type A = B; type { B : A { mk; get; }; }; }";
+        let source = "mod x/y; pub(x) rec { type A = B; type { B : A { mk; get; }; }; }";
         let error = parse(source).expect_err("a bare type group has member visibility only");
         let (span, message) = error.diag();
         assert_eq!(
@@ -5529,7 +5475,7 @@ fn ok() -> . { () }
     #[test]
     fn rec_mutual_group_parses_member_visibility() {
         let m = p(
-            "module x; rec(loop) { pub fn even(n: Bool) -> Bool { recur odd(n) }; fn odd(n: Bool) -> Bool { recur even(n) } }",
+            "mod x; rec(loop) { pub fn even(n: Bool) -> Bool { recur odd(n) }; fn odd(n: Bool) -> Bool { recur even(n) } }",
         );
         let Item::RecGroup(group, _) = &m.items[0] else {
             panic!("expected RecGroup, got {:?}", m.items[0]);
@@ -5544,8 +5490,8 @@ fn ok() -> . { () }
     #[test]
     fn recursive_members_are_impure_across_eager_lazy_and_tooling_parses() {
         for source in [
-            "module x; pub rec(loop) fn f[A](x: A) -> A { recur f[A](x) }",
-            "module x; rec(loop) { pub fn f(x: .) { recur g(x) }; fn g(x: .) { x } }",
+            "mod x; pub rec(loop) fn f[A](x: A) -> A { recur f[A](x) }",
+            "mod x; rec(loop) { pub fn f(x: .) { recur g(x) }; fn g(x: .) { x } }",
         ] {
             let eager = parse(source).expect("recursive declaration");
             let lazy = parse_lazy(source).expect("deferred recursive declaration");
@@ -5569,8 +5515,8 @@ fn ok() -> . { () }
     #[test]
     fn recursive_member_body_errors_remain_deferred() {
         for source in [
-            "module x; rec(loop) fn f() { let x = ; () }",
-            "module x; rec(loop) { fn good() { () }; fn bad() { let x = ; () } }",
+            "mod x; rec(loop) fn f() { let x = ; () }",
+            "mod x; rec(loop) { fn good() { () }; fn bad() { let x = ; () } }",
         ] {
             let eager = parse(source).expect_err("invalid body");
             let lazy = parse_lazy(source).expect("headers do not parse the body");
@@ -5582,8 +5528,8 @@ fn ok() -> . { () }
     #[test]
     fn rec_prefix_accepts_flexible_visibility_order() {
         for src in [
-            "module x; pub rec(loop) fn f() -> . { () }",
-            "module x; rec(loop) pub fn f() -> . { () }",
+            "mod x; pub rec(loop) fn f() -> . { () }",
+            "mod x; rec(loop) pub fn f() -> . { () }",
         ] {
             let m = p(src);
             let Item::RecGroup(group, _) = &m.items[0] else {
@@ -5594,8 +5540,8 @@ fn ok() -> . { () }
         }
 
         for src in [
-            "module x/y; pub(x) rec(loop) fn f() -> . { () }",
-            "module x/y; rec(loop) pub(x) fn f() -> . { () }",
+            "mod x/y; pub(x) rec(loop) fn f() -> . { () }",
+            "mod x/y; rec(loop) pub(x) fn f() -> . { () }",
         ] {
             let m = p(src);
             let Item::RecGroup(group, _) = &m.items[0] else {
@@ -5611,8 +5557,8 @@ fn ok() -> . { () }
     #[test]
     fn braced_rec_group_rejects_leading_visibility() {
         for src in [
-            "module x; pub rec(loop) { fn f() -> . { () } }",
-            "module x/y; pub(x) rec(loop) { fn f() -> . { () } }",
+            "mod x; pub rec(loop) { fn f() -> . { () } }",
+            "mod x/y; pub(x) rec(loop) { fn f() -> . { () } }",
         ] {
             let message = p_err(src);
             assert!(
@@ -5625,8 +5571,8 @@ fn ok() -> . { () }
     #[test]
     fn pure_modifier_accepts_flexible_visibility_order() {
         for src in [
-            "module x; pub pure fn f() -> . { () }",
-            "module x; pure pub fn f() -> . { () }",
+            "mod x; pub pure fn f() -> . { () }",
+            "mod x; pure pub fn f() -> . { () }",
         ] {
             let m = p(src);
             let Item::FnDef(d) = &m.items[0] else {
@@ -5640,26 +5586,26 @@ fn ok() -> . { () }
     #[test]
     fn pure_modifier_rejects_unsupported_items() {
         for src in [
-            "module x; pure host type T;",
-            "module x; pure host fn f() -> .;",
-            "module x; pure type T = .;",
-            "module x; pure type { T: . { mk; get; }; };",
-            "module x; pure type { Field: .; };",
-            "module x; pure macro e : [S] S -> [T] T { impl f; };",
-            "module x; pure op + _ { impl f; };",
-            "module x; pure varop [* *] { foldr g f; };",
-            "module x; pure literal n = 1;",
-            "module x; pure equiv same() { (); () }",
-            "module x; pub pure rec(loop) fn f() -> . { () }",
-            "module x; pub rec(loop) pure fn f() -> . { () }",
-            "module x; pure rec(loop) fn f() -> . { () }",
-            "module x; pure rec(loop) pub fn f() -> . { () }",
-            "module x; rec(loop) pure pub fn f() -> . { () }",
-            "module x; rec(loop) pure fn f() -> . { () }",
-            "module x; rec(loop) pub pure fn f() -> . { () }",
-            "module x; pure rec(loop) { fn f() -> . { () } }",
-            "module x; rec(loop) { pure fn f() -> . { () } }",
-            "module x; rec(loop) { pub pure fn f() -> . { () } }",
+            "mod x; pure host type T;",
+            "mod x; pure host fn f() -> .;",
+            "mod x; pure type T = .;",
+            "mod x; pure type { T: . { mk; get; }; };",
+            "mod x; pure type { Field: .; };",
+            "mod x; pure macro e : [S] S -> [T] T { impl f; };",
+            "mod x; pure op + _ { impl f; };",
+            "mod x; pure op_var [* *] { foldr g f; };",
+            "mod x; pure lit n = 1;",
+            "mod x; pure equiv same() { (); () }",
+            "mod x; pub pure rec(loop) fn f() -> . { () }",
+            "mod x; pub rec(loop) pure fn f() -> . { () }",
+            "mod x; pure rec(loop) fn f() -> . { () }",
+            "mod x; pure rec(loop) pub fn f() -> . { () }",
+            "mod x; rec(loop) pure pub fn f() -> . { () }",
+            "mod x; rec(loop) pure fn f() -> . { () }",
+            "mod x; rec(loop) pub pure fn f() -> . { () }",
+            "mod x; pure rec(loop) { fn f() -> . { () } }",
+            "mod x; rec(loop) { pure fn f() -> . { () } }",
+            "mod x; rec(loop) { pub pure fn f() -> . { () } }",
         ] {
             let msg = p_err(src);
             assert!(msg.contains("pure"), "unexpected error for {src:?}: {msg}");
@@ -5669,12 +5615,12 @@ fn ok() -> . { () }
     #[test]
     fn pure_rec_diagnostic_explains_required_loop_call() {
         for source in [
-            "module x; pure rec(loop) fn f() -> . { () }",
-            "module x; rec(loop) pure fn f() -> . { () }",
-            "module x; rec(loop) pub pure fn f() -> . { () }",
-            "module x; pure rec(loop) { fn f() -> . { () } }",
-            "module x; rec(loop) { pure fn f() -> . { () } }",
-            "module x; rec(loop) { pub pure fn f() -> . { () } }",
+            "mod x; pure rec(loop) fn f() -> . { () }",
+            "mod x; rec(loop) pure fn f() -> . { () }",
+            "mod x; rec(loop) pub pure fn f() -> . { () }",
+            "mod x; pure rec(loop) { fn f() -> . { () } }",
+            "mod x; rec(loop) { pure fn f() -> . { () } }",
+            "mod x; rec(loop) { pub pure fn f() -> . { () } }",
         ] {
             let eager = parse(source).expect_err("pure recursive member");
             let lazy = parse_lazy(source).expect_err("pure recursive header");
@@ -5695,7 +5641,7 @@ fn ok() -> . { () }
 
     #[test]
     fn pure_host_fn_diagnostic_explains_no_host_call_contract() {
-        let message = p_err("module x; pure host fn effect() -> .;");
+        let message = p_err("mod x; pure host fn effect() -> .;");
         assert!(
             message.contains("`pure` means that a function does not call host functions"),
             "got: {message}"
@@ -5705,7 +5651,7 @@ fn ok() -> . { () }
     #[test]
     fn macro_item_accepts_colon_type_declaration() {
         let m =
-            p("module x; pub macro demo : [Source] Source -> [Target] Target { impl demo_impl; };");
+            p("mod x; pub macro demo : [Source] Source -> [Target] Target { impl demo_impl; };");
         let Item::Macro(macro_def, _) = &m.items[0] else {
             panic!("expected macro item, got {:?}", m.items[0]);
         };
@@ -5726,19 +5672,19 @@ fn ok() -> . { () }
     fn macro_fills_schedule_uses_exact_marker_and_lexical_path() {
         for (source, expected_schedule) in [
             (
-                "module x; macro demo : . -> . { impl(fills)(x); };",
+                "mod x; macro demo : . -> . { impl(fills)(x); };",
                 crate::ast::MacroSchedule::Fills,
             ),
             (
-                "module x; macro demo : . -> . { impl fills; };",
+                "mod x; macro demo : . -> . { impl fills; };",
                 crate::ast::MacroSchedule::Late,
             ),
             (
-                "module x; macro demo : . -> . { impl(fills) helper.run; };",
+                "mod x; macro demo : . -> . { impl(fills) helper.run; };",
                 crate::ast::MacroSchedule::Fills,
             ),
             (
-                "module x; macro demo : . -> . { impl ( fills ) helper.Type.run; };",
+                "mod x; macro demo : . -> . { impl ( fills ) helper.Type.run; };",
                 crate::ast::MacroSchedule::Fills,
             ),
         ] {
@@ -5754,8 +5700,8 @@ fn ok() -> . { () }
         }
 
         for source in [
-            "module x; macro demo : . -> . { impl .(value: .) -> . { value }; };",
-            "module x; macro demo : . -> . { impl(fills) (); };",
+            "mod x; macro demo : . -> . { impl .(value: .) -> . { value }; };",
+            "mod x; macro demo : . -> . { impl(fills) (); };",
         ] {
             for error in [
                 parse(source).expect_err("eager parsing must reject implementation expressions"),
@@ -5776,7 +5722,7 @@ fn ok() -> . { () }
             }
         }
 
-        let direct_fqn = "module x; macro demo : . -> . { impl helpers/core.run; };";
+        let direct_fqn = "mod x; macro demo : . -> . { impl helpers/core.run; };";
         for error in [
             parse(direct_fqn).expect_err("eager parsing must reject a direct callable FQN"),
             parse_lazy(direct_fqn).expect_err("lazy parsing must reject a direct callable FQN"),
@@ -5794,7 +5740,7 @@ fn ok() -> . { () }
     #[test]
     fn macro_item_parses_captures() {
         let m = p(
-            "module x; pub macro type_of : [T] . -> Type_rep { captures (Type_rep, Type_rep.mk_type_rep, helper); impl type_of_impl; };",
+            "mod x; pub macro type_of : [T] . -> Type_rep { captures (Type_rep, Type_rep.mk_type_rep, helper); impl type_of_impl; };",
         );
         let Item::Macro(macro_def, _) = &m.items[0] else {
             panic!("expected macro item, got {:?}", m.items[0]);
@@ -5822,13 +5768,13 @@ fn ok() -> . { () }
 
     #[test]
     fn fn_def_name_must_be_lowercase() {
-        let msg = p_err("module x; fn Foo() -> . { () }");
+        let msg = p_err("mod x; fn Foo() -> . { () }");
         assert!(msg.contains("value name"));
     }
 
     #[test]
     fn fn_def_name_double_underscore_rejected() {
-        let msg = p_err("module x; fn __secret() -> . { () }");
+        let msg = p_err("mod x; fn __secret() -> . { () }");
         assert!(msg.contains("`__`"));
     }
 
@@ -5836,7 +5782,7 @@ fn ok() -> . { () }
 
     #[test]
     fn type_alias_nullary() {
-        let m = p("module x; type Logger = String -> .;");
+        let m = p("mod x; type Logger = String -> .;");
         match &m.items[0] {
             Item::TypeAlias(t) => {
                 assert_eq!(t.name, "Logger");
@@ -5849,7 +5795,7 @@ fn ok() -> . { () }
 
     #[test]
     fn type_alias_parametric_pub() {
-        let m = p("module x; pub type Pair[A][B] = (A & B);");
+        let m = p("mod x; pub type Pair[A][B] = (A & B);");
         match &m.items[0] {
             Item::TypeAlias(t) => {
                 assert!(t.vis.is_pub());
@@ -5863,7 +5809,7 @@ fn ok() -> . { () }
     #[test]
     fn literal_alias_preserves_exact_visibility_in_both_parse_paths_and_formatting() {
         for prefix in ["", "pub ", "pub(api) ", "pub(api/inner) ", "pub(other) "] {
-            let source = format!("module api/inner; {prefix}literal value = 7;");
+            let source = format!("mod api/inner; {prefix}lit value = 7;");
             for module in [p(&source), p_header(&source)] {
                 let Item::LiteralAlias(literal, _) = &module.items[0] else {
                     panic!("the input declares a literal alias");
@@ -5878,7 +5824,7 @@ fn ok() -> . { () }
                 assert_eq!(literal.vis.is_exported(), prefix == "pub ");
                 let formatted = crate::pretty::pretty_module(&module);
                 assert!(
-                    formatted.contains(&format!("{prefix}literal value = 7;")),
+                    formatted.contains(&format!("{prefix}lit value = 7;")),
                     "{formatted}"
                 );
             }
@@ -5887,7 +5833,7 @@ fn ok() -> . { () }
 
     #[test]
     fn literal_alias_accepts_bare_literal() {
-        let m = p("module x; literal logger = \"hi\";");
+        let m = p("mod x; lit logger = \"hi\";");
         let Item::LiteralAlias(lit, _) = &m.items[0] else {
             panic!("expected literal, got {:?}", m.items[0]);
         };
@@ -5900,7 +5846,7 @@ fn ok() -> . { () }
 
     #[test]
     fn literal_alias_rejects_expression_body() {
-        let msg = p_err("module x; literal logger = ();");
+        let msg = p_err("mod x; lit logger = ();");
         assert!(
             msg.contains("expected a bare literal token"),
             "unexpected: {msg}"
@@ -5909,7 +5855,7 @@ fn ok() -> . { () }
 
     #[test]
     fn literal_alias_rejects_annotation() {
-        let msg = p_err("module x; literal logger = \"hi\"(String);");
+        let msg = p_err("mod x; lit logger = \"hi\"(String);");
         assert!(msg.contains("`;`"), "unexpected: {msg}");
     }
 
@@ -5917,7 +5863,7 @@ fn ok() -> . { () }
 
     #[test]
     fn newtype_nullary() {
-        let m = p("module x; type { Celsius : . { pub mk; pub get; }; };");
+        let m = p("mod x; type { Celsius : . { pub mk; pub get; }; };");
         match &m.items[0] {
             Item::Newtype(d) => {
                 assert_eq!(d.name, "Celsius");
@@ -5933,8 +5879,7 @@ fn ok() -> . { () }
 
     #[test]
     fn newtype_parametric_with_rec() {
-        let m = p("module x; rec type { List[A] : (. | (A & List[A])) { \
-             pub mk; pub get; }; };");
+        let m = p("mod x; rec type { List[A] : (. | (A & List[A])) { pub mk; pub get; }; };");
         if let Item::Newtype(d) = &m.items[0] {
             assert_eq!(d.name, "List");
             assert!(d.rec_span.is_some());
@@ -5963,7 +5908,7 @@ fn ok() -> . { () }
 
     #[test]
     fn newtype_member_order_swappable() {
-        let m = p("module x; type { Foo : . { pub get; pub mk; }; };");
+        let m = p("mod x; type { Foo : . { pub get; pub mk; }; };");
         if let Item::Newtype(d) = &m.items[0] {
             assert_eq!(d.constructor.name, "mk");
             assert_eq!(d.projector.name, "get");
@@ -5972,17 +5917,17 @@ fn ok() -> . { () }
 
     #[test]
     fn newtype_member_visibility_must_lead_keyword() {
-        let source = "module x; type { Foo: . { mk pub; get; }; };";
+        let source = "mod x; type { Foo: . { mk pub; get; }; };";
         let error = parse(source).expect_err("visibility must precede the member role");
         assert!(matches!(error, crate::error::Error::Parse(_)));
         let span = error.diagnostic().span;
         assert_eq!(&source[span.start as usize..span.end as usize], "pub");
-        p("module x; type { Foo: . { pub mk; get; }; };");
+        p("mod x; type { Foo: . { pub mk; get; }; };");
     }
 
     #[test]
     fn newtype_member_comma_terminator_rejected() {
-        let msg = p_err("module x; type { Foo : . { pub mk, pub get; }; };");
+        let msg = p_err("mod x; type { Foo : . { pub mk, pub get; }; };");
         assert!(
             msg.contains("`;` between block entries"),
             "unexpected: {msg}"
@@ -5991,15 +5936,14 @@ fn ok() -> . { () }
 
     #[test]
     fn newtype_missing_member_errors() {
-        let msg = p_err("module x; type { Foo : . { pub mk; }; };");
+        let msg = p_err("mod x; type { Foo : . { pub mk; }; };");
         assert!(msg.contains("`get`"));
     }
 
     #[test]
     fn newtype_with_existentials_one_binder() {
         // Existential binders trail the universal parameters on the nominal header.
-        let m = p("module x; type { Pack[A] <U> : A & U { \
-             mk; get; }; };");
+        let m = p("mod x; type { Pack[A] <U> : A & U { mk; get; }; };");
         if let Item::Newtype(d) = &m.items[0] {
             assert_eq!(d.name, "Pack");
             assert_eq!(d.type_params.len(), 1);
@@ -6015,8 +5959,7 @@ fn ok() -> . { () }
 
     #[test]
     fn newtype_with_existentials_multiple_binders() {
-        let m = p("module x; type { Pack[A] <L> <R> : A & L & R { \
-             mk; get; }; };");
+        let m = p("mod x; type { Pack[A] <L> <R> : A & L & R { mk; get; }; };");
         if let Item::Newtype(d) = &m.items[0] {
             assert_eq!(d.existential_params.len(), 2);
             assert_eq!(d.existential_params[0].name, "L");
@@ -6029,7 +5972,7 @@ fn ok() -> . { () }
     #[test]
     fn newtype_with_existentials_no_universals() {
         // Existentials-only header: `Pack <U> : U`.
-        let m = p("module x; type { Pack <U> : U { mk; get; }; };");
+        let m = p("mod x; type { Pack <U> : U { mk; get; }; };");
         if let Item::Newtype(d) = &m.items[0] {
             assert!(d.type_params.is_empty());
             assert_eq!(d.existential_params.len(), 1);
@@ -6040,18 +5983,8 @@ fn ok() -> . { () }
     }
 
     #[test]
-    fn newtype_existential_in_payload_is_parse_error() {
-        // Existential binders belong on the nominal header.
-        let msg = p_err("module x; type { Pack[A] : (<U>, A & U) { mk; get; }; };");
-        assert!(
-            msg.contains("existential type expressions are no longer admissible"),
-            "want existential-rejection diagnostic, got: {msg}"
-        );
-    }
-
-    #[test]
     fn newtype_no_existentials_keeps_field_empty() {
-        let m = p("module x; type { Foo[A] : A { mk; get; }; };");
+        let m = p("mod x; type { Foo[A] : A { mk; get; }; };");
         if let Item::Newtype(d) = &m.items[0] {
             assert!(d.existential_params.is_empty());
         } else {
@@ -6063,7 +5996,7 @@ fn ok() -> . { () }
 
     #[test]
     fn type_function_one_param() {
-        let m = p("module x; type F = Int -> Bool;");
+        let m = p("mod x; type F = Int -> Bool;");
         if let Item::TypeAlias(t) = &m.items[0] {
             match t.type_body() {
                 Type::Function { param, .. } => {
@@ -6077,7 +6010,7 @@ fn ok() -> . { () }
 
     #[test]
     fn type_function_bare_one_param() {
-        let m = p("module x; type F = Int -> Bool;");
+        let m = p("mod x; type F = Int -> Bool;");
         if let Item::TypeAlias(t) = &m.items[0] {
             match t.type_body() {
                 Type::Function { param, .. } => {
@@ -6092,7 +6025,7 @@ fn ok() -> . { () }
 
     #[test]
     fn type_function_bare_arrow_right_associates() {
-        let m = p("module x; type F = A -> B -> C;");
+        let m = p("mod x; type F = A -> B -> C;");
         if let Item::TypeAlias(t) = &m.items[0] {
             match t.type_body() {
                 Type::Function { ret, .. } => {
@@ -6105,7 +6038,7 @@ fn ok() -> . { () }
 
     #[test]
     fn arrow_result_product_chain_requires_parentheses() {
-        let m = p("module x; type F = A -> (B & C);");
+        let m = p("mod x; type F = A -> (B & C);");
         if let Item::TypeAlias(t) = &m.items[0] {
             match t.type_body() {
                 Type::Function { ret, .. } => {
@@ -6121,30 +6054,30 @@ fn ok() -> . { () }
         for result in ["B & C", "B | C", "& B &", "| B |", "&", "|"] {
             for prefix in ["A", "(A)", "(A & B)", "(A | B)", "([A] A -> A)"] {
                 for source in [
-                    format!("module x; type F = {prefix} -> {result};"),
-                    format!("module x; fn f(value: {prefix} -> {result}) {{ () }}"),
-                    format!("module x; fn f() -> {prefix} -> {result} {{ () }}"),
-                    format!("module x; fn f() {{ .() -> {prefix} -> {result} {{ () }} }}"),
+                    format!("mod x; type F = {prefix} -> {result};"),
+                    format!("mod x; fn f(value: {prefix} -> {result}) {{ () }}"),
+                    format!("mod x; fn f() -> {prefix} -> {result} {{ () }}"),
+                    format!("mod x; fn f() {{ .() -> {prefix} -> {result} {{ () }} }}"),
                 ] {
                     let message = p_err(&source);
                     if matches!(result, "B & C" | "B | C") {
                         assert!(message.contains("right of `->`"), "{source}: {message}");
                     }
                 }
-                p(&format!("module x; type F = {prefix} -> ({result});"));
+                p(&format!("mod x; type F = {prefix} -> ({result});"));
             }
             if matches!(result, "B & C" | "B | C") {
-                p(&format!("module x; fn f() -> {result} {{ () }}"));
-                p(&format!("module x; fn f() {{ .() -> {result} {{ () }} }}"));
+                p(&format!("mod x; fn f() -> {result} {{ () }}"));
+                p(&format!("mod x; fn f() {{ .() -> {result} {{ () }} }}"));
             }
         }
-        p("module x; type F = A -> B -> C;");
-        p("module x; type F = A -> [B] B & B;");
+        p("mod x; type F = A -> B -> C;");
+        p("mod x; type F = A -> [B] B & B;");
     }
 
     #[test]
     fn type_function_parenthesized_bare_arrow_groups() {
-        let m = p("module x; type F = (A -> B);");
+        let m = p("mod x; type F = (A -> B);");
         if let Item::TypeAlias(t) = &m.items[0] {
             assert!(matches!(t.type_body(), Type::Function { .. }));
         }
@@ -6152,7 +6085,7 @@ fn ok() -> . { () }
 
     #[test]
     fn comma_after_function_type_binder_rejected() {
-        let msg = p_err("module x; type Id = ([A], A) -> A;");
+        let msg = p_err("mod x; type Id = ([A], A) -> A;");
         assert!(
             msg.contains("expected type expression") || msg.contains("expected `)`"),
             "comma after function-type binder must be rejected, got: {msg}"
@@ -6161,15 +6094,15 @@ fn ok() -> . { () }
 
     #[test]
     fn function_type_binders_use_separate_brackets() {
-        p("module x; type F = [A][B]A -> B;");
-        assert!(parse("module x; type F = [A, B]A -> B;").is_err());
+        p("mod x; type F = [A][B]A -> B;");
+        assert!(parse("mod x; type F = [A, B]A -> B;").is_err());
     }
 
     #[test]
     fn function_type_comma_value_group_rejected() {
         for source in [
-            "module x; type F = (A, B) -> C;",
-            "module x; type F = [A](A, A) -> A;",
+            "mod x; type F = (A, B) -> C;",
+            "mod x; type F = [A](A, A) -> A;",
         ] {
             let msg = p_err(source);
             assert!(
@@ -6181,7 +6114,7 @@ fn ok() -> . { () }
 
     #[test]
     fn type_function_bare_product_lhs_rejected() {
-        let msg = p_err("module x; type F = A & B -> C;");
+        let msg = p_err("mod x; type F = A & B -> C;");
         assert!(
             msg.contains("left of `->`") || msg.contains("parenthesized"),
             "unexpected: {msg}"
@@ -6190,7 +6123,7 @@ fn ok() -> . { () }
 
     #[test]
     fn type_function_bare_sum_lhs_rejected() {
-        let msg = p_err("module x; type F = A | B -> C;");
+        let msg = p_err("mod x; type F = A | B -> C;");
         assert!(
             msg.contains("left of `->`") || msg.contains("parenthesized"),
             "unexpected: {msg}"
@@ -6199,7 +6132,7 @@ fn ok() -> . { () }
 
     #[test]
     fn type_function_zero_param() {
-        let m = p("module x; type F = . -> Int;");
+        let m = p("mod x; type F = . -> Int;");
         if let Item::TypeAlias(t) = &m.items[0] {
             match t.type_body() {
                 Type::Function {
@@ -6216,7 +6149,7 @@ fn ok() -> . { () }
 
     #[test]
     fn type_function_unit_param_group() {
-        let m = p("module x; type F = (.) -> Int;");
+        let m = p("mod x; type F = (.) -> Int;");
         if let Item::TypeAlias(t) = &m.items[0] {
             match t.type_body() {
                 Type::Function {
@@ -6232,7 +6165,7 @@ fn ok() -> . { () }
 
     #[test]
     fn type_unit_vs_zero_param_function() {
-        let m = p("module x; type U = .;");
+        let m = p("mod x; type U = .;");
         if let Item::TypeAlias(t) = &m.items[0] {
             assert!(matches!(t.type_body(), Type::Unit { .. }));
         }
@@ -6240,7 +6173,7 @@ fn ok() -> . { () }
 
     #[test]
     fn type_bottom() {
-        let m = p("module x; type Bot = !;");
+        let m = p("mod x; type Bot = !;");
         if let Item::TypeAlias(t) = &m.items[0] {
             assert!(matches!(t.type_body(), Type::Bottom { .. }));
         }
@@ -6248,7 +6181,7 @@ fn ok() -> . { () }
 
     #[test]
     fn type_sum_and_product() {
-        let m = p("module x; type S = (A | B); type P = (A & B);");
+        let m = p("mod x; type S = (A | B); type P = (A & B);");
         if let Item::TypeAlias(t) = &m.items[0] {
             assert!(matches!(t.type_body(), Type::Sum { .. }));
         }
@@ -6264,7 +6197,7 @@ fn ok() -> . { () }
         // Annotations on `fn` value parameters parse as arbitrary
         // type expressions; the typer verifies them against
         // bidirectional flow.
-        let m = p("module x; fn make() -> . { (.(x: .) { x })(()) }");
+        let m = p("mod x; fn make() -> . { (.(x: .) { x })(()) }");
         if let Item::FnDef(d) = &m.items[0] {
             match &d.body {
                 Expr::Call { callee, .. } => match callee.as_ref() {
@@ -6286,7 +6219,7 @@ fn ok() -> . { () }
         // `fn` return-type annotations parse as arbitrary type
         // expressions; the typer verifies them against bidirectional
         // flow.
-        let m = p("module x; fn make() -> . { (.(x) -> . { x })(()) }");
+        let m = p("mod x; fn make() -> . { (.(x) -> . { x })(()) }");
         if let Item::FnDef(d) = &m.items[0] {
             match &d.body {
                 Expr::Call { callee, .. } => match callee.as_ref() {
@@ -6305,7 +6238,7 @@ fn ok() -> . { () }
         // `: _` and `-> _` placeholders parse as `Type::Infer`. The
         // typer treats them identically to no annotation: the type
         // is recovered from bidirectional flow.
-        let m = p("module x; fn make() -> . { (.(x: _) -> _ { x })(()) }");
+        let m = p("mod x; fn make() -> . { (.(x: _) -> _ { x })(()) }");
         if let Item::FnDef(d) = &m.items[0] {
             match &d.body {
                 Expr::Call { callee, .. } => match callee.as_ref() {
@@ -6325,7 +6258,7 @@ fn ok() -> . { () }
 
     #[test]
     fn fn_expr_no_annotations_parses() {
-        let m = p("module x; fn make() -> . { .(x) { x }(0) }");
+        let m = p("mod x; fn make() -> . { .(x) { x }(0) }");
         if let Item::FnDef(d) = &m.items[0] {
             match &d.body {
                 Expr::Call { callee, .. } => match callee.as_ref() {
@@ -6346,7 +6279,7 @@ fn ok() -> . { () }
 
     #[test]
     fn let_expr_simple() {
-        let m = p("module x; fn main() -> . { let x = (); x }");
+        let m = p("mod x; fn main() -> . { let x = (); x }");
         if let Item::FnDef(d) = &m.items[0] {
             match &d.body {
                 Expr::Let { name, .. } => {
@@ -6364,7 +6297,7 @@ fn ok() -> . { () }
         // user-written RHS (typically a curried CPS-projector call).
         // This parser test exercises only the syntactic desugar shape;
         // the typer test verifies the CPS form composes correctly.
-        let m = p("module x; fn open(thunk: I32) -> . { let .(<U> x) = thunk; () }");
+        let m = p("mod x; fn open(thunk: I32) -> . { let .(<U> x) = thunk; () }");
         let Item::FnDef(d) = &m.items[0] else {
             panic!("expected FnDef");
         };
@@ -6390,7 +6323,7 @@ fn ok() -> . { () }
 
     #[test]
     fn let_unpack_multi_binder_desugars_to_cps_call() {
-        let m = p("module x; fn open(thunk: I32) -> . { let .(<L> <R2> x) = thunk; () }");
+        let m = p("mod x; fn open(thunk: I32) -> . { let .(<L> <R2> x) = thunk; () }");
         let Item::FnDef(d) = &m.items[0] else {
             panic!("expected FnDef");
         };
@@ -6408,16 +6341,13 @@ fn ok() -> . { () }
 
     #[test]
     fn let_unpack_rejects_annotation() {
-        let msg = p_err(
-            "module x; \
-             fn open() -> . { let .(<U> x: u) = e; () }",
-        );
+        let msg = p_err("mod x; fn open() -> . { let .(<U> x: u) = e; () }");
         assert!(msg.contains("type annotations on existential-opening `let` binders"));
     }
 
     #[test]
     fn let_unpack_works_inside_equiv_arm() {
-        let m = p("module x; equiv check { scope { let .(<U> x) = thunk; () }; () }");
+        let m = p("mod x; equiv check { scope { let .(<U> x) = thunk; () }; () }");
         let Item::Equiv(e, _) = &m.items[0] else {
             panic!("expected Equiv");
         };
@@ -6447,7 +6377,7 @@ fn ok() -> . { () }
 
     #[test]
     fn let_expr_annotation_parses_as_typed_let() {
-        let m = p("module x; fn main() -> . { let .(x: .) = (); x }");
+        let m = p("mod x; fn main() -> . { let .(x: .) = (); x }");
         let Item::FnDef(d) = &m.items[0] else {
             panic!("expected FnDef");
         };
@@ -6469,7 +6399,7 @@ fn ok() -> . { () }
         // The parser should produce a pointed error pointing at
         // the block-statement spelling when the user wrote
         // `let X = E in body`.
-        let msg = p_err("module x; fn main() -> . { let x = () in x }");
+        let msg = p_err("mod x; fn main() -> . { let x = () in x }");
         assert!(
             msg.contains("expected `;` after let binding"),
             "expected pointed `let-in` rejection error, got: {msg}"
@@ -6478,7 +6408,7 @@ fn ok() -> . { () }
 
     #[test]
     fn block_must_end_with_expression() {
-        let msg = p_err("module x; fn f() -> . { let x = (); }");
+        let msg = p_err("mod x; fn f() -> . { let x = (); }");
         assert!(
             msg.contains("must end with an expression"),
             "expected end-with-expression error, got: {msg}"
@@ -6487,7 +6417,7 @@ fn ok() -> . { () }
 
     #[test]
     fn empty_block_rejected() {
-        let msg = p_err("module x; fn f() -> . { }");
+        let msg = p_err("mod x; fn f() -> . { }");
         assert!(
             msg.contains("no final expression") || msg.contains("must end with"),
             "expected empty-block error, got: {msg}"
@@ -6498,7 +6428,7 @@ fn ok() -> . { () }
     fn seq_statement_parses() {
         // `e;` is an expression statement (Expr::Seq), distinct
         // from `let _ = e;` (Expr::Let with name "_").
-        let m = p("module x; fn f() -> . { ()  ; () }");
+        let m = p("mod x; fn f() -> . { ()  ; () }");
         if let Item::FnDef(d) = &m.items[0] {
             match &d.body {
                 Expr::Seq { value, body, .. } => {
@@ -6512,7 +6442,7 @@ fn ok() -> . { () }
 
     #[test]
     fn block_repeated_and_trailing_semicolons_parse() {
-        let m = p("module x; fn f() -> . { ;;; ();;; ();;; }");
+        let m = p("mod x; fn f() -> . { ;;; ();;; ();;; }");
         let Item::FnDef(d) = &m.items[0] else {
             panic!("expected fn");
         };
@@ -6525,7 +6455,7 @@ fn ok() -> . { () }
 
     #[test]
     fn final_semicolon_after_block_expression_is_ignored() {
-        let m = p("module x; fn f() -> . { (); }");
+        let m = p("mod x; fn f() -> . { (); }");
         let Item::FnDef(d) = &m.items[0] else {
             panic!("expected fn");
         };
@@ -6534,7 +6464,7 @@ fn ok() -> . { () }
 
     #[test]
     fn wildcard_let_parses() {
-        let m = p("module x; fn f() -> . { let _ = (); () }");
+        let m = p("mod x; fn f() -> . { let _ = (); () }");
         if let Item::FnDef(d) = &m.items[0] {
             match &d.body {
                 Expr::Let { name, .. } => {
@@ -6547,7 +6477,7 @@ fn ok() -> . { () }
 
     #[test]
     fn tuple_literal_two_elements() {
-        let m = p("module x; fn f() -> . { (.t, .f) }");
+        let m = p("mod x; fn f() -> . { (.t, .f) }");
         if let Item::FnDef(d) = &m.items[0] {
             match &d.body {
                 Expr::Tuple { items, .. } => {
@@ -6562,7 +6492,7 @@ fn ok() -> . { () }
 
     #[test]
     fn tuple_literal_three_elements() {
-        let m = p("module x; fn f() -> . { (.t, .f, .t) }");
+        let m = p("mod x; fn f() -> . { (.t, .f, .t) }");
         if let Item::FnDef(d) = &m.items[0] {
             match &d.body {
                 Expr::Tuple { items, .. } => assert_eq!(items.len(), 3),
@@ -6573,7 +6503,7 @@ fn ok() -> . { () }
 
     #[test]
     fn tuple_literal_trailing_comma_allowed() {
-        let m = p("module x; fn f() -> . { (.t, .f,) }");
+        let m = p("mod x; fn f() -> . { (.t, .f,) }");
         if let Item::FnDef(d) = &m.items[0] {
             match &d.body {
                 Expr::Tuple { items, .. } => assert_eq!(items.len(), 2),
@@ -6584,7 +6514,7 @@ fn ok() -> . { () }
 
     #[test]
     fn parens_single_element_is_grouping() {
-        let m = p("module x; fn f() -> . { (.t) }");
+        let m = p("mod x; fn f() -> . { (.t) }");
         if let Item::FnDef(d) = &m.items[0] {
             // A bare `(e)` is grouping — yields the inner expression
             // unchanged, not a 1-tuple.
@@ -6594,7 +6524,7 @@ fn ok() -> . { () }
 
     #[test]
     fn tuple_single_element_with_trailing_comma_is_grouping() {
-        let m = p("module x; fn f() -> . { (.t,) }");
+        let m = p("mod x; fn f() -> . { (.t,) }");
         if let Item::FnDef(d) = &m.items[0] {
             assert!(matches!(d.body, Expr::BoolLit { value: true, .. }));
         }
@@ -6602,7 +6532,7 @@ fn ok() -> . { () }
 
     #[test]
     fn tuple_single_element_with_leading_comma_is_grouping() {
-        let m = p("module x; fn f() -> . { (,,, .t ,,,) }");
+        let m = p("mod x; fn f() -> . { (,,, .t ,,,) }");
         if let Item::FnDef(d) = &m.items[0] {
             assert!(matches!(d.body, Expr::BoolLit { value: true, .. }));
         }
@@ -6610,7 +6540,7 @@ fn ok() -> . { () }
 
     #[test]
     fn tuple_empty_comma_runs_are_unit() {
-        let m = p("module x; fn f() -> . { (,,,) }");
+        let m = p("mod x; fn f() -> . { (,,,) }");
         if let Item::FnDef(d) = &m.items[0] {
             assert!(matches!(d.body, Expr::Unit { .. }));
         }
@@ -6618,7 +6548,7 @@ fn ok() -> . { () }
 
     #[test]
     fn type_product_chain_three_elements() {
-        let m = p("module x; pub type T = (A & B & C);");
+        let m = p("mod x; pub type T = (A & B & C);");
         if let Item::TypeAlias(t) = &m.items[0] {
             // Right-folded: `Product { A, Product { B, C } }`.
             match t.type_body() {
@@ -6633,7 +6563,7 @@ fn ok() -> . { () }
 
     #[test]
     fn type_sum_chain_three_elements() {
-        let m = p("module x; pub type T = (A | B | C);");
+        let m = p("mod x; pub type T = (A | B | C);");
         if let Item::TypeAlias(t) = &m.items[0] {
             match t.type_body() {
                 Type::Sum { left, right, .. } => {
@@ -6647,7 +6577,7 @@ fn ok() -> . { () }
 
     #[test]
     fn type_comma_product_rejected() {
-        let msg = p_err("module x; pub type T = (A, B);");
+        let msg = p_err("mod x; pub type T = (A, B);");
         assert!(
             msg.contains("commas form tuple values, not product types"),
             "unexpected: {msg}"
@@ -6657,9 +6587,9 @@ fn ok() -> . { () }
     #[test]
     fn type_comma_single_element_rejected() {
         for source in [
-            "module x; pub type T = (, A);",
-            "module x; pub type T = (A,);",
-            "module x; pub type T = (,,, A ,,,);",
+            "mod x; pub type T = (, A);",
+            "mod x; pub type T = (A,);",
+            "mod x; pub type T = (,,, A ,,,);",
         ] {
             let msg = p_err(source);
             assert!(
@@ -6671,7 +6601,7 @@ fn ok() -> . { () }
 
     #[test]
     fn type_comma_empty_runs_rejected() {
-        let msg = p_err("module x; pub type T = (,,,);");
+        let msg = p_err("mod x; pub type T = (,,,);");
         assert!(
             msg.contains("write `.` for the unit type"),
             "unexpected: {msg}"
@@ -6680,7 +6610,7 @@ fn ok() -> . { () }
 
     #[test]
     fn type_mixing_amp_and_pipe_rejected() {
-        let msg = p_err("module x; pub type T = (A & B | C);");
+        let msg = p_err("mod x; pub type T = (A & B | C);");
         assert!(
             msg.contains("mixing `&` and `|`") || msg.contains("explicit parentheses"),
             "unexpected: {msg}"
@@ -6691,7 +6621,7 @@ fn ok() -> . { () }
     fn type_explicit_left_associative_keeps_shape() {
         // `((A & B) & C)` should still produce a left-leaning tree —
         // structurally distinct from the right-leaning chain form.
-        let m = p("module x; pub type T = ((A & B) & C);");
+        let m = p("mod x; pub type T = ((A & B) & C);");
         if let Item::TypeAlias(t) = &m.items[0] {
             match t.type_body() {
                 Type::Product { left, right, .. } => {
@@ -6707,7 +6637,7 @@ fn ok() -> . { () }
     fn type_bare_product_chain_two_elements() {
         // Bare `A & B` (no outer parens) folds to the same right-
         // associated `Product` as `(A & B)`.
-        let m = p("module x; pub type T = A & B;");
+        let m = p("mod x; pub type T = A & B;");
         if let Item::TypeAlias(t) = &m.items[0] {
             match t.type_body() {
                 Type::Product { left, right, .. } => {
@@ -6723,7 +6653,7 @@ fn ok() -> . { () }
 
     #[test]
     fn type_bare_product_chain_three_elements() {
-        let m = p("module x; pub type T = A & B & C;");
+        let m = p("mod x; pub type T = A & B & C;");
         if let Item::TypeAlias(t) = &m.items[0] {
             match t.type_body() {
                 Type::Product { left, right, .. } => {
@@ -6737,7 +6667,7 @@ fn ok() -> . { () }
 
     #[test]
     fn type_bare_sum_chain_three_elements() {
-        let m = p("module x; pub type T = A | B | C;");
+        let m = p("mod x; pub type T = A | B | C;");
         if let Item::TypeAlias(t) = &m.items[0] {
             match t.type_body() {
                 Type::Sum { left, right, .. } => {
@@ -6752,7 +6682,7 @@ fn ok() -> . { () }
     #[test]
     fn type_bare_chain_in_fn_def_param() {
         // Bare `A & B` lands in a `fn` parameter annotation.
-        let m = p("module x; fn f(x: A & B) -> . { x }");
+        let m = p("mod x; fn f(x: A & B) -> . { x }");
         if let Item::FnDef(d) = &m.items[0] {
             if let SignatureParam::Value(vp) = &d.sig.params[0] {
                 assert!(matches!(vp.ty, Some(Type::Product { .. })));
@@ -6765,7 +6695,7 @@ fn ok() -> . { () }
     #[test]
     fn type_bare_chain_in_fn_def_return() {
         // Bare chains in return-type position.
-        let m = p("module x; fn f(x: A) -> A | B { x }");
+        let m = p("mod x; fn f(x: A) -> A | B { x }");
         if let Item::FnDef(d) = &m.items[0] {
             assert!(matches!(d.ret, Type::Sum { .. }));
         }
@@ -6775,7 +6705,7 @@ fn ok() -> . { () }
     fn type_bare_leading_op_product() {
         // Multi-line layout: `& A & B` with the leading operator
         // accepted at the top of the chain.
-        let m = p("module x; pub type T = & A & B;");
+        let m = p("mod x; pub type T = & A & B;");
         if let Item::TypeAlias(t) = &m.items[0] {
             assert!(matches!(t.type_body(), Type::Product { .. }));
         }
@@ -6783,7 +6713,7 @@ fn ok() -> . { () }
 
     #[test]
     fn type_bare_leading_op_sum() {
-        let m = p("module x; pub type T = | A | B | C;");
+        let m = p("mod x; pub type T = | A | B | C;");
         if let Item::TypeAlias(t) = &m.items[0] {
             match t.type_body() {
                 Type::Sum { left, right, .. } => {
@@ -6798,7 +6728,7 @@ fn ok() -> . { () }
     #[test]
     fn type_bare_chain_mixing_rejected() {
         // Bare `A & B | C` mixing rejected, mirroring the inside-paren rule.
-        let msg = p_err("module x; pub type T = A & B | C;");
+        let msg = p_err("mod x; pub type T = A & B | C;");
         assert!(
             msg.contains("mixing `&` and `|`") || msg.contains("explicit parentheses"),
             "unexpected: {msg}"
@@ -6807,7 +6737,7 @@ fn ok() -> . { () }
 
     #[test]
     fn type_bare_single_leading_op_is_grouping() {
-        let m = p("module x; pub type T = & A;");
+        let m = p("mod x; pub type T = & A;");
         if let Item::TypeAlias(t) = &m.items[0] {
             assert!(matches!(t.type_body(), Type::Path { .. }));
         }
@@ -6815,7 +6745,7 @@ fn ok() -> . { () }
 
     #[test]
     fn type_bare_single_leading_pipe_is_grouping() {
-        let m = p("module x; pub type T = | A;");
+        let m = p("mod x; pub type T = | A;");
         if let Item::TypeAlias(t) = &m.items[0] {
             assert!(matches!(t.type_body(), Type::Path { .. }));
         }
@@ -6823,7 +6753,7 @@ fn ok() -> . { () }
 
     #[test]
     fn type_empty_product_and_sum_chains_use_identities() {
-        let m = p("module x;
+        let m = p("mod x;
              pub type P = &;
              pub type S = |;
              pub type Pp = (&);
@@ -6845,10 +6775,10 @@ fn ok() -> . { () }
     #[test]
     fn type_parenthesized_single_item_chains_are_grouping() {
         for source in [
-            "module x; pub type T = (& A);",
-            "module x; pub type T = (A &);",
-            "module x; pub type T = (| A);",
-            "module x; pub type T = (A |);",
+            "mod x; pub type T = (& A);",
+            "mod x; pub type T = (A &);",
+            "mod x; pub type T = (| A);",
+            "mod x; pub type T = (A |);",
         ] {
             let m = p(source);
             if let Item::TypeAlias(t) = &m.items[0] {
@@ -6862,7 +6792,7 @@ fn ok() -> . { () }
 
     #[test]
     fn type_comma_after_product_chain_in_function_param_rejected() {
-        let msg = p_err("module x; pub type T = (A & B, C) -> R;");
+        let msg = p_err("mod x; pub type T = (A & B, C) -> R;");
         assert!(
             msg.contains("commas form tuple values, not product types"),
             "comma in function-type value group must be rejected, got: {msg}"
@@ -6874,7 +6804,7 @@ fn ok() -> . { () }
         // `(A & B) -> C` parses as a function from `A & B` to `C`.
         // The type-level representation has one product-domain slot;
         // multi-slot ABI is a named-signature lowering detail.
-        let m = p("module x; pub type T = (A & B) -> C;");
+        let m = p("mod x; pub type T = (A & B) -> C;");
         if let Item::TypeAlias(t) = &m.items[0] {
             match t.type_body() {
                 Type::Function {
@@ -6896,8 +6826,9 @@ fn ok() -> . { () }
 
     #[test]
     fn type_product_function_alias_keeps_product_domain_single_slot() {
-        let m = p("module x; pub type Deps[St][Res][Str] = \
-             (((St -> (St | Res)) & St) -> Res) & ((Str & Str) -> Str);");
+        let m = p(
+            "mod x; pub type Deps[St][Res][Str] = (((St -> (St | Res)) & St) -> Res) & ((Str & Str) -> Str);",
+        );
         let Item::TypeAlias(t) = &m.items[0] else {
             panic!("expected type alias");
         };
@@ -6928,7 +6859,7 @@ fn ok() -> . { () }
 
     #[test]
     fn compact_nominal_rhs_rejects_lowercase_entries() {
-        let msg = p_err("module x; type { Box[A] : A }; pub type T = {box: A & B};");
+        let msg = p_err("mod x; type { Box[A] : A }; pub type T = {box: A & B};");
         assert!(
             msg.contains("type name `box`") && msg.contains("uppercase first letter"),
             "got: {msg}"
@@ -6941,7 +6872,7 @@ fn ok() -> . { () }
     fn ufcs_bare_no_args() {
         // `r.>f` with no parens parses to an `Expr::Ufcs` with an
         // empty arg list — projector-style call form.
-        let m = p("module x; fn f() -> . { r.>f }");
+        let m = p("mod x; fn f() -> . { r.>f }");
         if let Item::FnDef(d) = &m.items[0] {
             match &d.body {
                 Expr::Ufcs { callee, args, .. } => {
@@ -6977,7 +6908,7 @@ fn ok() -> . { () }
             ("((T.member())).<<r", "()"),
             ("(f(\n// empty\n)).<r", "(\n// empty\n)"),
         ] {
-            let source = format!("module x; fn run() -> . {{ {tail} }}");
+            let source = format!("mod x; fn run() -> . {{ {tail} }}");
             let eager = parse(&source).expect_err("an explicit empty UFCS tail must be rejected");
             assert_eq!(
                 eager.diagnostic().message,
@@ -7050,7 +6981,7 @@ fn ok() -> . { () }
         }
 
         for direct in ["f()", "T.member()", "transform()"] {
-            let source = format!("module x; fn run() -> . {{ {direct} }}");
+            let source = format!("mod x; fn run() -> . {{ {direct} }}");
             let eager = parse(&source)
                 .unwrap_or_else(|error| panic!("direct call {direct} was rejected: {error:?}"));
             let lazy = parse_lazy(&source)
@@ -7063,7 +6994,7 @@ fn ok() -> . { () }
         }
 
         for grouped_nonempty in ["(f(a)).<r", "((T.member(a))).<<r"] {
-            let source = format!("module x; fn run() -> . {{ {grouped_nonempty} }}");
+            let source = format!("mod x; fn run() -> . {{ {grouped_nonempty} }}");
             let eager = parse(&source).unwrap_or_else(|error| {
                 panic!("grouped nonempty left splice {grouped_nonempty} was rejected: {error:?}")
             });
@@ -7094,7 +7025,7 @@ fn ok() -> . { () }
 
     #[test]
     fn grouped_empty_left_ufcs_tail_keeps_the_exact_list_span_across_trivia() {
-        let source = "module x; fn run() -> . { (f // gap\n ()).<r }";
+        let source = "mod x; fn run() -> . { (f // gap\n ()).<r }";
         let eager = parse(source).expect_err("the grouped empty tail must be rejected");
         let span = eager.diagnostic().span;
         assert_eq!(&source[span.start as usize..span.end as usize], "()");
@@ -7122,7 +7053,7 @@ fn ok() -> . { () }
             ("transform.<r", UfcsFlavor::ArgumentLast, false),
             ("transform.<<r", UfcsFlavor::ArgumentFirst, false),
         ] {
-            let source = format!("module x; fn run() -> . {{ {tail} }}");
+            let source = format!("mod x; fn run() -> . {{ {tail} }}");
             let eager = parse(&source).unwrap_or_else(|error| {
                 panic!("bare UFCS tail failed to parse for {tail}: {error:?}")
             });
@@ -7171,7 +7102,7 @@ fn ok() -> . { () }
             ("transform(()).<r", UfcsFlavor::ArgumentLast, false),
             ("transform(()).<<r", UfcsFlavor::ArgumentFirst, false),
         ] {
-            let source = format!("module x; fn run() -> . {{ {tail} }}");
+            let source = format!("mod x; fn run() -> . {{ {tail} }}");
             let eager = parse(&source)
                 .unwrap_or_else(|error| panic!("explicit Unit failed for {tail}: {error:?}"));
             let lazy = parse_lazy(&source)
@@ -7206,7 +7137,7 @@ fn ok() -> . { () }
 
     #[test]
     fn ufcs_with_value_args() {
-        let m = p("module x; fn f() -> . { r.>f(x, y) }");
+        let m = p("mod x; fn f() -> . { r.>f(x, y) }");
         if let Item::FnDef(d) = &m.items[0] {
             match &d.body {
                 Expr::Ufcs {
@@ -7226,7 +7157,7 @@ fn ok() -> . { () }
 
     #[test]
     fn ufcs_receiver_last_with_value_args() {
-        let m = p("module x; fn f() -> . { r.>>f(x, y) }");
+        let m = p("mod x; fn f() -> . { r.>>f(x, y) }");
         if let Item::FnDef(d) = &m.items[0] {
             match &d.body {
                 Expr::Ufcs {
@@ -7252,7 +7183,7 @@ fn ok() -> . { () }
             ("f[T](x).<r", UfcsFlavor::ArgumentLast),
             ("f[T](x).<<r", UfcsFlavor::ArgumentFirst),
         ] {
-            let m = p(&format!("module x; fn g() {{ {src} }}"));
+            let m = p(&format!("mod x; fn g() {{ {src} }}"));
             let Item::FnDef(d) = &m.items[0] else {
                 panic!("function");
             };
@@ -7284,7 +7215,7 @@ fn ok() -> . { () }
 
     #[test]
     fn call_splice_argument_last_zero_existing_args() {
-        let m = p("module x; fn f() -> . { f.<x }");
+        let m = p("mod x; fn f() -> . { f.<x }");
         if let Item::FnDef(d) = &m.items[0] {
             match &d.body {
                 Expr::Ufcs {
@@ -7306,7 +7237,7 @@ fn ok() -> . { () }
 
     #[test]
     fn call_splice_argument_first_existing_args() {
-        let m = p("module x; fn f() -> . { f(a).<<x }");
+        let m = p("mod x; fn f() -> . { f(a).<<x }");
         if let Item::FnDef(d) = &m.items[0] {
             match &d.body {
                 Expr::Ufcs {
@@ -7328,7 +7259,7 @@ fn ok() -> . { () }
 
     #[test]
     fn call_splice_rhs_stops_before_next_splice() {
-        let m = p("module x; fn f() -> . { f.<x.>g }");
+        let m = p("mod x; fn f() -> . { f.<x.>g }");
         if let Item::FnDef(d) = &m.items[0] {
             match &d.body {
                 Expr::Ufcs {
@@ -7354,7 +7285,7 @@ fn ok() -> . { () }
 
     #[test]
     fn call_splice_parenthesized_rhs_can_contain_splice() {
-        let m = p("module x; fn f() -> . { f.<(x.>g) }");
+        let m = p("mod x; fn f() -> . { f.<(x.>g) }");
         if let Item::FnDef(d) = &m.items[0] {
             match &d.body {
                 Expr::Ufcs {
@@ -7376,7 +7307,7 @@ fn ok() -> . { () }
 
     #[test]
     fn ufcs_qualified_callee() {
-        let m = p("module x; import provider as m; fn f() -> . { r.>m.f(x) }");
+        let m = p("mod x; import provider as m; fn f() -> . { r.>m.f(x) }");
         if let Item::FnDef(d) = &m.items[0] {
             match &d.body {
                 Expr::Ufcs { callee, .. } => {
@@ -7391,7 +7322,7 @@ fn ok() -> . { () }
     fn ufcs_chained() {
         // `r.>f.>g(x)` chains UFCS calls; the outer call's
         // receiver is the inner UFCS expression.
-        let m = p("module x; fn f() -> . { r.>f.>g(x) }");
+        let m = p("mod x; fn f() -> . { r.>f.>g(x) }");
         if let Item::FnDef(d) = &m.items[0] {
             match &d.body {
                 Expr::Ufcs {
@@ -7414,7 +7345,7 @@ fn ok() -> . { () }
     fn ufcs_call_then_ufcs() {
         // `f(r).>g` mixes call with UFCS — the postfix loop
         // alternates freely.
-        let m = p("module x; fn f() -> . { f(r).>g }");
+        let m = p("mod x; fn f() -> . { f(r).>g }");
         if let Item::FnDef(d) = &m.items[0] {
             match &d.body {
                 Expr::Ufcs { receiver, .. } => {
@@ -7427,7 +7358,7 @@ fn ok() -> . { () }
 
     #[test]
     fn ufcs_missing_callee_rejected() {
-        let msg = p_err("module x; fn f() -> . { r.> }");
+        let msg = p_err("mod x; fn f() -> . { r.> }");
         assert!(
             msg.contains("expected") && (msg.contains("ident") || msg.contains("name")),
             "unexpected: {msg}"
@@ -7436,7 +7367,7 @@ fn ok() -> . { () }
 
     #[test]
     fn ufcs_dotted_callee_no_trailing_segment_rejected() {
-        let msg = p_err("module x; fn f() -> . { r.>f. }");
+        let msg = p_err("mod x; fn f() -> . { r.>f. }");
         assert!(
             msg.contains("expected") && (msg.contains("ident") || msg.contains("name")),
             "unexpected: {msg}"
@@ -7449,7 +7380,7 @@ fn ok() -> . { () }
     /// and the absent target leaves `args` empty.
     #[test]
     fn macro_ufcs_no_args_iso() {
-        let m = p("module x; fn f() -> . { r.>iso }");
+        let m = p("mod x; fn f() -> . { r.>iso }");
         if let Item::FnDef(d) = &m.items[0] {
             match &d.body {
                 Expr::Ufcs {
@@ -7474,7 +7405,7 @@ fn ok() -> . { () }
 
     #[test]
     fn macro_ufcs_with_target_into() {
-        let m = p("module x; fn f() { (r.>into)[T] }");
+        let m = p("mod x; fn f() { (r.>into)[T] }");
         let Item::FnDef(d) = &m.items[0] else {
             panic!("function");
         };
@@ -7505,7 +7436,7 @@ fn ok() -> . { () }
 
     #[test]
     fn macro_ufcs_receiver_last_parses() {
-        let m = p("module x; fn f() -> . { r.>>iso }");
+        let m = p("mod x; fn f() -> . { r.>>iso }");
         if let Item::FnDef(d) = &m.items[0] {
             match &d.body {
                 Expr::Ufcs {
@@ -7527,7 +7458,7 @@ fn ok() -> . { () }
 
     #[test]
     fn call_splice_argument_first_precedes_returned_type_stage() {
-        let m = p("module x; fn f() { (iso.<<r)[T] }");
+        let m = p("mod x; fn f() { (iso.<<r)[T] }");
         let Item::FnDef(d) = &m.items[0] else {
             panic!("function");
         };
@@ -7559,9 +7490,9 @@ fn ok() -> . { () }
     #[test]
     fn macro_ufcs_onto_align_atom() {
         for (src, expected_name) in [
-            ("module x; fn f() -> . { r.>onto }", "onto"),
-            ("module x; fn f() -> . { r.>align }", "align"),
-            ("module x; fn f() -> . { r.>atom }", "atom"),
+            ("mod x; fn f() -> . { r.>onto }", "onto"),
+            ("mod x; fn f() -> . { r.>align }", "align"),
+            ("mod x; fn f() -> . { r.>atom }", "atom"),
         ] {
             let m = p(src);
             if let Item::FnDef(d) = &m.items[0] {
@@ -7591,7 +7522,7 @@ fn ok() -> . { () }
     /// macro UFCS (`macro_call = None`).
     #[test]
     fn macro_ufcs_followed_by_ufcs() {
-        let m = p("module x; fn f() -> . { r.>iso.>frob }");
+        let m = p("mod x; fn f() -> . { r.>iso.>frob }");
         if let Item::FnDef(d) = &m.items[0] {
             match &d.body {
                 Expr::Ufcs {
@@ -7624,7 +7555,7 @@ fn ok() -> . { () }
     /// the regular UFCS.
     #[test]
     fn ufcs_followed_by_macro_ufcs() {
-        let m = p("module x; fn f() -> . { r.>frob.>iso }");
+        let m = p("mod x; fn f() -> . { r.>frob.>iso }");
         if let Item::FnDef(d) = &m.items[0] {
             match &d.body {
                 Expr::Ufcs {
@@ -7659,7 +7590,7 @@ fn ok() -> . { () }
     /// name resolves later in ordinary scope.
     #[test]
     fn macro_ufcs_user_defined_name_parses() {
-        let m = p("module x; fn f() -> . { r.>frob(x) }");
+        let m = p("mod x; fn f() -> . { r.>frob(x) }");
         if let Item::FnDef(d) = &m.items[0] {
             match &d.body {
                 Expr::Ufcs {
@@ -7682,7 +7613,7 @@ fn ok() -> . { () }
 
     #[test]
     fn qualified_ufcs_is_neutral_until_resolution() {
-        let module = p("module x; import m as m; fn f() { r.>m.iso }");
+        let module = p("mod x; import m as m; fn f() { r.>m.iso }");
         let Item::FnDef(def) = &module.items[0] else {
             panic!("function")
         };
@@ -7699,7 +7630,7 @@ fn ok() -> . { () }
 
     #[test]
     fn macro_ufcs_atom_with_target_parses() {
-        let m = p("module x; fn f() { (r.>atom)[T] }");
+        let m = p("mod x; fn f() { (r.>atom)[T] }");
         let Item::FnDef(d) = &m.items[0] else {
             panic!("function");
         };
@@ -7732,7 +7663,7 @@ fn ok() -> . { () }
 
     #[test]
     fn op_non_assoc_parses() {
-        let m = p("module x; fn add(a: A, b: A) -> A { a } op _ + _ { impl add; };");
+        let m = p("mod x; fn add(a: A, b: A) -> A { a } op _ + _ { impl add; };");
         let Item::Op(d, _) = &m.items[1] else {
             panic!("expected Op, got {:?}", m.items[1])
         };
@@ -7748,7 +7679,7 @@ fn ok() -> . { () }
 
     #[test]
     fn op_right_assoc_parses() {
-        let m = p("module x; fn add(a: A, b: A) -> A { a } op _ + __ { impl add; };");
+        let m = p("mod x; fn add(a: A, b: A) -> A { a } op _ + __ { impl add; };");
         let Item::Op(d, _) = &m.items[1] else {
             panic!("expected Op, got {:?}", m.items[1])
         };
@@ -7759,7 +7690,7 @@ fn ok() -> . { () }
 
     #[test]
     fn op_left_assoc_parses() {
-        let m = p("module x; fn add(a: A, b: A) -> A { a } op __ + _ { impl add; };");
+        let m = p("mod x; fn add(a: A, b: A) -> A { a } op __ + _ { impl add; };");
         let Item::Op(d, _) = &m.items[1] else {
             panic!("expected Op, got {:?}", m.items[1])
         };
@@ -7774,7 +7705,7 @@ fn ok() -> . { () }
     /// grammar written in imports and documentation queries.
     #[cfg(feature = "surface")]
     fn fixed_dispatch_key_of(decl: &str) -> String {
-        let src = format!("module x; fn f() -> . {{ () }} {decl}");
+        let src = format!("mod x; fn f() -> . {{ () }} {decl}");
         let m = p(&src);
         let Item::Op(d, _) = m.items.last().expect("op item") else {
             panic!("expected Op as last item");
@@ -7784,7 +7715,7 @@ fn ok() -> . { () }
 
     #[cfg(feature = "surface")]
     fn variadic_dispatch_key_of(decl: &str) -> String {
-        let src = format!("module x; fn f() -> . {{ () }} {decl}");
+        let src = format!("mod x; fn f() -> . {{ () }} {decl}");
         let m = p(&src);
         let Item::VariadicOperator(d, _) = m.items.last().expect("variadic item") else {
             panic!("expected variadic operator as last item");
@@ -7817,9 +7748,9 @@ fn ok() -> . { () }
     #[cfg(feature = "surface")]
     #[test]
     fn fixed_dispatch_key_keeps_whole_symbol_words() {
-        assert!(parse("module x; op _ && ++ _ { impl f; };").is_err());
+        assert!(parse("mod x; op _ && ++ _ { impl f; };").is_err());
         assert_eq!(fixed_dispatch_key_of("op _ &&++ _ { impl f; };"), "_ &&++");
-        assert!(parse("module x; op _ < ! _ { impl f; };").is_err());
+        assert!(parse("mod x; op _ < ! _ { impl f; };").is_err());
         assert_eq!(fixed_dispatch_key_of("op _ <! _ { impl f; };"), "_ <!");
     }
 
@@ -7841,7 +7772,7 @@ fn ok() -> . { () }
 
     #[test]
     fn op_equal_token_requires_quotation() {
-        let msg = p_err("module x; fn eq(a: A, b: A) -> A { a } op _ = _ { impl eq; };");
+        let msg = p_err("mod x; fn eq(a: A, b: A) -> A { a } op _ = _ { impl eq; };");
         assert!(
             msg.contains("operator-token quotation"),
             "unexpected: {msg}"
@@ -7859,7 +7790,7 @@ fn ok() -> . { () }
     fn variadic_dispatch_key_keyed_on_open_only() {
         for mode in ["foldl", "foldr", "foldl1", "foldr1"] {
             assert_eq!(
-                variadic_dispatch_key_of(&format!("varop [* *] {{ {mode} f f; }};")),
+                variadic_dispatch_key_of(&format!("op_var [* *] {{ {mode} f f; }};")),
                 "[* _"
             );
         }
@@ -7869,7 +7800,7 @@ fn ok() -> . { () }
     #[test]
     fn variadic_dispatch_key_multi_character_open() {
         assert_eq!(
-            variadic_dispatch_key_of("varop [! !] { foldr f f; };"),
+            variadic_dispatch_key_of("op_var [! !] { foldr f f; };"),
             "[! _"
         );
     }
@@ -7878,7 +7809,7 @@ fn ok() -> . { () }
 
     #[test]
     fn op_bare_infix_semicolon_rejected() {
-        let msg = p_err("module x; fn f() -> . { () } op _ ; _ { impl f; };");
+        let msg = p_err("mod x; fn f() -> . { () } op _ ; _ { impl f; };");
         assert!(
             msg.contains("not admissible") && msg.contains("semicolons separate statements"),
             "unexpected: {msg}"
@@ -7887,7 +7818,7 @@ fn ok() -> . { () }
 
     #[test]
     fn op_quoted_infix_semicolon_rejected() {
-        let msg = p_err("module x; fn f() -> . { () } op _ (;) _ { impl f; };");
+        let msg = p_err("mod x; fn f() -> . { () } op _ (;) _ { impl f; };");
         assert!(
             msg.contains("not admissible") && msg.contains("semicolons separate statements"),
             "unexpected: {msg}"
@@ -7896,7 +7827,7 @@ fn ok() -> . { () }
 
     #[test]
     fn op_bare_infix_comma_rejected() {
-        let msg = p_err("module x; fn f() -> . { () } op _ , _ { impl f; };");
+        let msg = p_err("mod x; fn f() -> . { () } op _ , _ { impl f; };");
         assert!(
             msg.contains("not admissible") && msg.contains("commas separate list elements"),
             "unexpected: {msg}"
@@ -7905,7 +7836,7 @@ fn ok() -> . { () }
 
     #[test]
     fn op_quoted_infix_comma_rejected() {
-        let msg = p_err("module x; fn f() -> . { () } op _ (,) _ { impl f; };");
+        let msg = p_err("mod x; fn f() -> . { () } op _ (,) _ { impl f; };");
         assert!(
             msg.contains("not admissible") && msg.contains("commas separate list elements"),
             "unexpected: {msg}"
@@ -7915,8 +7846,8 @@ fn ok() -> . { () }
     #[test]
     fn variadic_semicolon_separator_rejected() {
         for source in [
-            "module x; varop [* *] { foldr cons nil; }; fn run(a: A, b: A) -> A { [* a; b *] }",
-            "module x; op variadic [* (_ ;) ... *] { foldr cons nil; };",
+            "mod x; op_var [* *] { foldr cons nil; }; fn run(a: A, b: A) -> A { [* a; b *] }",
+            "mod x; op variadic [* (_ ;) ... *] { foldr cons nil; };",
         ] {
             assert!(parse(source).is_err());
             assert!(
@@ -7929,8 +7860,9 @@ fn ok() -> . { () }
 
     #[test]
     fn variadic_comma_separator_accepted() {
-        let m = p("module x; varop [* *] { foldr cons nil; }; \
-             fn run(a: A, b: A) -> A { [* , a,, b, *] }");
+        let m = p(
+            "mod x; op_var [* *] { foldr cons nil; }; fn run(a: A, b: A) -> A { [* , a,, b, *] }",
+        );
         let Item::FnDef(function) = m.items.last().unwrap() else {
             panic!("expected function");
         };
@@ -7947,9 +7879,9 @@ fn ok() -> . { () }
     #[test]
     fn variadic_callables_must_be_lexical_paths() {
         let sources = [
-            "module x; varop [* *] { foldr cons .x. { x1 }; };",
-            "module x; varop [* *] { foldr .x. { x1 } nil; };",
-            "module x; varop [* *] { foldr cons nil; finalize .x. { x1 }; };",
+            "mod x; op_var [* *] { foldr cons .x. { x1 }; };",
+            "mod x; op_var [* *] { foldr .x. { x1 } nil; };",
+            "mod x; op_var [* *] { foldr cons nil; finalize .x. { x1 }; };",
         ];
 
         for source in sources {
@@ -7992,9 +7924,8 @@ fn ok() -> . { () }
                 } else {
                     ""
                 };
-                let source = format!(
-                    "module x; varop [% %] {{ {keyword} ops.step ops.initialize;{tail} }};"
-                );
+                let source =
+                    format!("mod x; op_var [% %] {{ {keyword} ops.step ops.initialize;{tail} }};");
                 let eager = p(&source);
                 let lazy = parse_lazy(&source).expect("complete variadic declaration");
                 assert_eq!(lazy.module(), &eager);
@@ -8028,12 +7959,12 @@ fn ok() -> . { () }
             "foldl step initialize; foldr step initialize;",
             "foldl step initialize; finalize finish; finalize again;",
         ] {
-            let source = format!("module x; varop [* *] {{ {body} }};");
+            let source = format!("mod x; op_var [* *] {{ {body} }};");
             assert!(parse(&source).is_err(), "{body}");
             assert!(parse_lazy(&source).is_err(), "{body}");
         }
-        let canonical = "module x; varop [* *] { foldl step initialize; finalize finish; };";
-        let reordered = "module x; varop [* *] { finalize finish; foldl step initialize; };";
+        let canonical = "mod x; op_var [* *] { foldl step initialize; finalize finish; };";
+        let reordered = "mod x; op_var [* *] { finalize finish; foldl step initialize; };";
         let expected = crate::pretty::pretty_module(&parse(canonical).unwrap());
         assert_eq!(
             crate::pretty::pretty_module(&parse(reordered).unwrap()),
@@ -8052,12 +7983,12 @@ fn ok() -> . { () }
             "op variadic [* (_ ,) ... *]",
             "op variadic <% (_ => _ ;) ... %>",
             "op variadic [ ! (_ ~) ... ! ]",
-            "varop [* (_ ,) ... *]",
-            "varop [% (_ => _ ,) ... %]",
-            "varop [% ]%",
+            "op_var [* (_ ,) ... *]",
+            "op_var [% (_ => _ ,) ... %]",
+            "op_var [% ]%",
             "op [* *]",
         ] {
-            let source = format!("module x; {head} {{ foldl step initialize; }};");
+            let source = format!("mod x; {head} {{ foldl step initialize; }};");
             assert!(parse(&source).is_err());
             assert!(parse_lazy(&source).is_err());
         }
@@ -8067,9 +7998,10 @@ fn ok() -> . { () }
     fn op_square_bracket_reports_fixed_pattern_error() {
         for visibility in ["", "pub "] {
             let source = format!(
-                "module x;\nfn wrap(a: .) {{ a }}\n\
-                 {visibility}op [ _ ] {{ impl wrap; }};\n\
-                 varop [* *] {{ foldr cons nil; }};"
+                "mod x;
+fn wrap(a: .) {{ a }}
+{visibility}op [ _ ] {{ impl wrap; }};
+op_var [* *] {{ foldr cons nil; }};"
             );
             let eager = parse(&source).expect_err("square brackets are not fixed words");
             let lazy = parse_lazy(&source).expect_err("lazy headers validate fixed words");
@@ -8085,19 +8017,19 @@ fn ok() -> . { () }
 
     #[test]
     fn op_body_comma_terminator_rejected() {
-        let msg = p_err("module x; fn f() -> . { () } op _ + _ { impl f, };");
+        let msg = p_err("mod x; fn f() -> . { () } op _ + _ { impl f, };");
         assert!(msg.contains("`;`"), "unexpected: {msg}");
     }
 
     #[test]
     fn op_opposing_recursive_slots_rejected() {
-        let msg = p_err("module x; fn f() -> . { () } op __ + __ { impl f; };");
+        let msg = p_err("mod x; fn f() -> . { () } op __ + __ { impl f; };");
         assert!(msg.contains("both exposed"), "unexpected: {msg}");
     }
 
     #[test]
     fn op_adjacent_slots_rejected() {
-        let msg = p_err("module x; fn f() -> . { () } op _ _ + _ { impl f; };");
+        let msg = p_err("mod x; fn f() -> . { () } op _ _ + _ { impl f; };");
         assert!(msg.contains("adjacent slots"), "unexpected: {msg}");
     }
 
@@ -8105,7 +8037,7 @@ fn ok() -> . { () }
     fn op_no_token_rejected() {
         // `op _ _ _ { impl f; };` has no operator token. Caught either by
         // the adjacent-slots check or the empty-token check.
-        let msg = p_err("module x; fn f() -> . { () } op _ _ _ { impl f; };");
+        let msg = p_err("mod x; fn f() -> . { () } op _ _ _ { impl f; };");
         assert!(
             msg.contains("operator word") || msg.contains("adjacent"),
             "unexpected: {msg}"
@@ -8118,7 +8050,7 @@ fn ok() -> . { () }
         // cross-module operator-import feature. The `vis_pub`
         // flag is plumbed through to the AST so the resolver /
         // operator-fold pass can pick it up.
-        let m = p("module x; fn add(a: A, b: A) -> A { a } pub op _ + _ { impl add; };");
+        let m = p("mod x; fn add(a: A, b: A) -> A { a } pub op _ + _ { impl add; };");
         match m.items.last().expect("op item") {
             Item::Op(d, _) => assert!(d.vis.is_pub()),
             other => panic!("expected `pub op`, got {other:?}"),
@@ -8128,11 +8060,7 @@ fn ok() -> . { () }
     #[test]
     fn op_duplicate_in_scope_rejected() {
         let msg = p_err(
-            "module x; \
-             fn add(a: A, b: A) -> A { a } \
-             fn other(a: A, b: A) -> A { a } \
-             op _ + _ { impl add; }; \
-             op _ + _ { impl other; };",
+            "mod x; fn add(a: A, b: A) -> A { a } fn other(a: A, b: A) -> A { a } op _ + _ { impl add; }; op _ + _ { impl other; };",
         );
         assert!(
             msg.contains("`op _ + _`") && msg.contains("already defined"),
@@ -8143,11 +8071,7 @@ fn ok() -> . { () }
     #[test]
     fn op_distinct_slot_kinds_share_one_dispatch_key() {
         let msg = p_err(
-            "module x; \
-             fn add(a: A, b: A) -> A { a } \
-             fn other(a: A, b: A) -> A { a } \
-             op _ + _ { impl add; }; \
-             op _ + __ { impl other; };",
+            "mod x; fn add(a: A, b: A) -> A { a } fn other(a: A, b: A) -> A { a } op _ + _ { impl add; }; op _ + __ { impl other; };",
         );
         assert!(
             msg.contains("`op _ + __`") && msg.contains("already defined"),
@@ -8158,21 +8082,16 @@ fn ok() -> . { () }
     #[test]
     fn variadic_duplicate_diagnostic_retains_the_incoming_projection() {
         let message = p_err(
-            "module x; varop [% %] { foldl append empty; }; \
-             varop [% %] { foldr push zero; };",
+            "mod x; op_var [% %] { foldl append empty; }; op_var [% %] { foldr push zero; };",
         );
-        assert!(message.contains("`varop [% %]`"), "{message}");
+        assert!(message.contains("`op_var [% %]`"), "{message}");
         assert!(message.contains("already defined"), "{message}");
     }
 
     #[test]
     fn op_split_prefix_word_rejected() {
         let msg = p_err(
-            "module x; \
-             fn neg(a: A) -> A { a } \
-             fn decrement(a: A) -> A { a } \
-             op - _ { impl neg; }; \
-             op - - _ { impl decrement; };",
+            "mod x; fn neg(a: A) -> A { a } fn decrement(a: A) -> A { a } op - _ { impl neg; }; op - - _ { impl decrement; };",
         );
         assert!(msg.contains("must alternate"), "unexpected: {msg}");
     }
@@ -8183,11 +8102,9 @@ fn ok() -> . { () }
         // prefix and non-prefix keyspaces — unary `op - __ { impl neg; };`
         // plus binary `op _ - __ { impl sub; };` coexist because the keyspaces
         // are separate.
-        let m = p("module x; \
-             fn neg(a: A) -> A { a } \
-             fn sub(a: A, b: A) -> A { a } \
-             op - __ { impl neg; }; \
-             op _ - __ { impl sub; };");
+        let m = p(
+            "mod x; fn neg(a: A) -> A { a } fn sub(a: A, b: A) -> A { a } op - __ { impl neg; }; op _ - __ { impl sub; };",
+        );
         // Both `op` items registered without a parse error.
         assert!(matches!(&m.items[2], Item::Op(_, _)));
         assert!(matches!(&m.items[3], Item::Op(_, _)));
@@ -8200,10 +8117,9 @@ fn ok() -> . { () }
         // resolves the placeholder to a concrete `Expr::Call`. These
         // parser-level tests check the placeholder shape; the fold
         // pass's own tests cover the resolved-call shape.
-        let m = p("module x; \
-             fn add(a: A, b: A) -> A { a } \
-             op _ + _ { impl add; }; \
-             fn use_op(x: A, y: A) -> A { x + y }");
+        let m = p(
+            "mod x; fn add(a: A, b: A) -> A { a } op _ + _ { impl add; }; fn use_op(x: A, y: A) -> A { x + y }",
+        );
         match &m.items[2] {
             Item::FnDef(d) => match &d.body {
                 Expr::OpChain { kind, .. } => {
@@ -8222,10 +8138,9 @@ fn ok() -> . { () }
 
     #[test]
     fn operator_usage_bang_prefixed_op_after_macro_named_value_is_not_macro_call() {
-        let m = p("module x; \
-             fn pick(a: A, b: A) -> A { a } \
-             op _ !? _ { impl pick; }; \
-             fn use_op(fit: A, y: A) -> A { fit !? y }");
+        let m = p(
+            "mod x; fn pick(a: A, b: A) -> A { a } op _ !? _ { impl pick; }; fn use_op(fit: A, y: A) -> A { fit !? y }",
+        );
         match &m.items[2] {
             Item::FnDef(d) => match &d.body {
                 Expr::OpChain { kind, .. } => {
@@ -8245,10 +8160,7 @@ fn ok() -> . { () }
     #[test]
     fn operator_usage_non_assoc_chain_rejected() {
         let msg = p_err(
-            "module x; \
-             fn add(a: A, b: A) -> A { a } \
-             op _ + _ { impl add; }; \
-             fn use_op(x: A) -> A { x + x + x }",
+            "mod x; fn add(a: A, b: A) -> A { a } op _ + _ { impl add; }; fn use_op(x: A) -> A { x + x + x }",
         );
         assert!(
             msg.contains("non-associative") || msg.contains("explicit parens"),
@@ -8260,10 +8172,9 @@ fn ok() -> . { () }
     fn operator_usage_right_assoc_chains() {
         // `a + b + c` with right-assoc parses as nested OpChain
         // placeholders: outer `+(x, [inner])`, inner `+(y, z)`.
-        let m = p("module x; \
-             fn add(a: A, b: A) -> A { a } \
-             op _ + __ { impl add; }; \
-             fn use_op(x: A, y: A, z: A) -> A { x + y + z }");
+        let m = p(
+            "mod x; fn add(a: A, b: A) -> A { a } op _ + __ { impl add; }; fn use_op(x: A, y: A, z: A) -> A { x + y + z }",
+        );
         if let Item::FnDef(d) = &m.items[2]
             && let Expr::OpChain {
                 kind: crate::ast::OpChainKind::Normal { slots, .. },
@@ -8289,10 +8200,9 @@ fn ok() -> . { () }
     fn operator_usage_left_assoc_chains() {
         // `a + b + c` with left-assoc parses as nested OpChain:
         // outer `+([inner], z)`, inner `+(x, y)`.
-        let m = p("module x; \
-             fn add(a: A, b: A) -> A { a } \
-             op __ + _ { impl add; }; \
-             fn use_op(x: A, y: A, z: A) -> A { x + y + z }");
+        let m = p(
+            "mod x; fn add(a: A, b: A) -> A { a } op __ + _ { impl add; }; fn use_op(x: A, y: A, z: A) -> A { x + y + z }",
+        );
         if let Item::FnDef(d) = &m.items[2]
             && let Expr::OpChain {
                 kind: crate::ast::OpChainKind::Normal { slots, .. },
@@ -8317,12 +8227,7 @@ fn ok() -> . { () }
     #[test]
     fn operator_usage_mixing_rejected() {
         let msg = p_err(
-            "module x; \
-             fn add(a: A, b: A) -> A { a } \
-             fn mul(a: A, b: A) -> A { a } \
-             op _ + __ { impl add; }; \
-             op _ * __ { impl mul; }; \
-             fn use_ops(x: A, y: A, z: A) -> A { x + y * z }",
+            "mod x; fn add(a: A, b: A) -> A { a } fn mul(a: A, b: A) -> A { a } op _ + __ { impl add; }; op _ * __ { impl mul; }; fn use_ops(x: A, y: A, z: A) -> A { x + y * z }",
         );
         assert!(
             msg.contains("different operators") || msg.contains("explicit parens"),
@@ -8332,9 +8237,7 @@ fn ok() -> . { () }
 
     #[test]
     fn op_prefix_unary_parses() {
-        let m = p("module x; \
-             fn neg(a: A) -> A { a } \
-             op - __ { impl neg; };");
+        let m = p("mod x; fn neg(a: A) -> A { a } op - __ { impl neg; };");
         let Item::Op(d, _) = &m.items[1] else {
             panic!("expected Op, got {:?}", m.items[1])
         };
@@ -8345,9 +8248,7 @@ fn ok() -> . { () }
 
     #[test]
     fn op_postfix_unary_parses() {
-        let m = p("module x; \
-             fn maybe(a: A) -> A { a } \
-             op _ ? { impl maybe; };");
+        let m = p("mod x; fn maybe(a: A) -> A { a } op _ ? { impl maybe; };");
         let Item::Op(d, _) = &m.items[1] else {
             panic!("expected Op, got {:?}", m.items[1])
         };
@@ -8358,9 +8259,7 @@ fn ok() -> . { () }
 
     #[test]
     fn op_ternary_right_assoc_parses() {
-        let m = p("module x; \
-             fn cond(a: A, b: A, c: A) -> A { a } \
-             op _ ? _ : __ { impl cond; };");
+        let m = p("mod x; fn cond(a: A, b: A, c: A) -> A { a } op _ ? _ : __ { impl cond; };");
         let Item::Op(d, _) = &m.items[1] else {
             panic!("expected Op, got {:?}", m.items[1])
         };
@@ -8378,22 +8277,20 @@ fn ok() -> . { () }
         // `:` is admissible in op pattern position because the
         // parser disambiguates type-annotation contexts (binding
         // sites) from expression position (operator).
-        let m = p("module x; fn annot(a: A, b: A) -> A { a } op _ : _ { impl annot; };");
+        let m = p("mod x; fn annot(a: A, b: A) -> A { a } op _ : _ { impl annot; };");
         assert!(matches!(&m.items[1], Item::Op(_, _)));
     }
 
     #[test]
     fn op_reserved_token_inside_multi_token_ok() {
         // `:` is also admitted inside larger operator patterns.
-        let m = p("module x; \
-             fn cond(a: A, b: A, c: A) -> A { a } \
-             op _ ? _ : _ { impl cond; };");
+        let m = p("mod x; fn cond(a: A, b: A, c: A) -> A { a } op _ ? _ : _ { impl cond; };");
         assert!(matches!(&m.items[1], Item::Op(_, _)));
     }
 
     #[test]
     fn op_leading_dot_one_dot_rejected() {
-        let msg = p_err("module x; fn f(a: A, b: A) -> A { a } op _ .+ _ { impl f; };");
+        let msg = p_err("mod x; fn f(a: A, b: A) -> A { a } op _ .+ _ { impl f; };");
         assert!(
             msg.contains("a delayed operator operand requires"),
             "got: {msg}"
@@ -8402,7 +8299,7 @@ fn ok() -> . { () }
 
     #[test]
     fn op_quoted_leading_dot_one_dot_rejected() {
-        let msg = p_err("module x; fn f(a: A, b: A) -> A { a } op _ (.+) _ { impl f; };");
+        let msg = p_err("mod x; fn f(a: A, b: A) -> A { a } op _ (.+) _ { impl f; };");
         assert!(
             msg.contains("reserved") || msg.contains("one quoted operator word"),
             "got: {msg}"
@@ -8413,7 +8310,7 @@ fn ok() -> . { () }
     fn op_marker_shaped_leading_dot_one_dot_rejected() {
         for spelling in [".#", ".$$$$"] {
             let msg = p_err(&format!(
-                "module x; fn f(a: A, b: A) -> A {{ a }} op _ {spelling} _ {{ impl f; }};"
+                "mod x; fn f(a: A, b: A) -> A {{ a }} op _ {spelling} _ {{ impl f; }};"
             ));
             assert!(
                 msg.contains("a delayed operator operand requires"),
@@ -8424,22 +8321,20 @@ fn ok() -> . { () }
 
     #[test]
     fn op_leading_dot_two_dots_rejected() {
-        assert!(parse("module x; op _ .+. _ { impl f; };").is_err());
+        assert!(parse("mod x; op _ .+. _ { impl f; };").is_err());
     }
 
     #[test]
     fn op_internal_or_trailing_dot_rejected() {
         for word in ["(+.)", "<.>", "(<.)"] {
-            assert!(parse(&format!("module x; op _ {word} _ {{ impl f; }};")).is_err());
+            assert!(parse(&format!("mod x; op _ {word} _ {{ impl f; }};")).is_err());
         }
     }
 
     #[test]
     fn operator_usage_prefix_unary() {
-        let m = p("module x; \
-             fn neg(a: A) -> A { a } \
-             op - __ { impl neg; }; \
-             fn use_op(x: A) -> A { -x }");
+        let m =
+            p("mod x; fn neg(a: A) -> A { a } op - __ { impl neg; }; fn use_op(x: A) -> A { -x }");
         if let Item::FnDef(d) = &m.items[2] {
             match &d.body {
                 Expr::OpChain { kind, .. } => {
@@ -8459,10 +8354,9 @@ fn ok() -> . { () }
     fn operator_usage_prefix_unary_chains() {
         // `- - x` parses as nested prefix OpChains for a
         // right-recursive prefix.
-        let m = p("module x; \
-             fn neg(a: A) -> A { a } \
-             op - __ { impl neg; }; \
-             fn use_op(x: A) -> A { - - x }");
+        let m = p(
+            "mod x; fn neg(a: A) -> A { a } op - __ { impl neg; }; fn use_op(x: A) -> A { - - x }",
+        );
         if let Item::FnDef(d) = &m.items[2]
             && let Expr::OpChain { kind, .. } = &d.body
         {
@@ -8490,10 +8384,9 @@ fn ok() -> . { () }
 
     #[test]
     fn operator_usage_postfix_unary() {
-        let m = p("module x; \
-             fn maybe(a: A) -> A { a } \
-             op _ ? { impl maybe; }; \
-             fn use_op(x: A) -> A { x? }");
+        let m = p(
+            "mod x; fn maybe(a: A) -> A { a } op _ ? { impl maybe; }; fn use_op(x: A) -> A { x? }",
+        );
         if let Item::FnDef(d) = &m.items[2] {
             match &d.body {
                 Expr::OpChain { kind, .. } => {
@@ -8512,10 +8405,9 @@ fn ok() -> . { () }
     #[test]
     fn operator_usage_postfix_unary_chains() {
         // `x ? ?` parses as nested postfix OpChains.
-        let m = p("module x; \
-             fn maybe(a: A) -> A { a } \
-             op _ ? { impl maybe; }; \
-             fn use_op(x: A) -> A { x ? ? }");
+        let m = p(
+            "mod x; fn maybe(a: A) -> A { a } op _ ? { impl maybe; }; fn use_op(x: A) -> A { x ? ? }",
+        );
         if let Item::FnDef(d) = &m.items[2]
             && let Expr::OpChain { kind, .. } = &d.body
         {
@@ -8536,10 +8428,9 @@ fn ok() -> . { () }
 
     #[test]
     fn operator_usage_ternary() {
-        let m = p("module x; \
-             fn cond(a: A, b: A, c: A) -> A { a } \
-             op _ ? _ : __ { impl cond; }; \
-             fn use_op(p: A, t: A, e: A) -> A { p ? t : e }");
+        let m = p(
+            "mod x; fn cond(a: A, b: A, c: A) -> A { a } op _ ? _ : __ { impl cond; }; fn use_op(p: A, t: A, e: A) -> A { p ? t : e }",
+        );
         if let Item::FnDef(d) = &m.items[2] {
             match &d.body {
                 Expr::OpChain { kind, .. } => {
@@ -8559,10 +8450,9 @@ fn ok() -> . { () }
         // `a ? b : c ? d : e` with right-assoc ternary parses as
         // a nested OpChain: outer 3 slots, third slot itself a
         // 3-slot OpChain.
-        let m = p("module x; \
-             fn cond(a: A, b: A, c: A) -> A { a } \
-             op _ ? _ : __ { impl cond; }; \
-             fn use_op(a: A, b: A, c: A, d: A, e: A) -> A { a ? b : c ? d : e }");
+        let m = p(
+            "mod x; fn cond(a: A, b: A, c: A) -> A { a } op _ ? _ : __ { impl cond; }; fn use_op(a: A, b: A, c: A, d: A, e: A) -> A { a ? b : c ? d : e }",
+        );
         if let Item::FnDef(d) = &m.items[2]
             && let Expr::OpChain {
                 kind: crate::ast::OpChainKind::Normal { slots, .. },
@@ -8586,12 +8476,9 @@ fn ok() -> . { () }
 
     #[test]
     fn operator_nesting_grouped_prefix_with_binary_composes() {
-        let m = p("module x; \
-             fn neg(a: A) -> A { a } \
-             fn add(a: A, b: A) -> A { a } \
-             op - __ { impl neg; }; \
-             op _ + __ { impl add; }; \
-             fn use_op(x: A, y: A) -> A { (- x) + y }");
+        let m = p(
+            "mod x; fn neg(a: A) -> A { a } fn add(a: A, b: A) -> A { a } op - __ { impl neg; }; op _ + __ { impl add; }; fn use_op(x: A, y: A) -> A { (- x) + y }",
+        );
         if let Item::FnDef(d) = &m.items[4]
             && let Expr::OpChain { kind, .. } = &d.body
         {
@@ -8611,12 +8498,9 @@ fn ok() -> . { () }
 
     #[test]
     fn operator_nesting_postfix_with_binary_composes() {
-        let module = p("module x; \
-             fn maybe(a: A) -> A { a } \
-             fn add(a: A, b: A) -> A { a } \
-             op _ ? { impl maybe; }; \
-             op _ + __ { impl add; }; \
-             fn use_op(x: A, y: A) -> A { x ? + y }");
+        let module = p(
+            "mod x; fn maybe(a: A) -> A { a } fn add(a: A, b: A) -> A { a } op _ ? { impl maybe; }; op _ + __ { impl add; }; fn use_op(x: A, y: A) -> A { x ? + y }",
+        );
         assert!(
             matches!(&module.items[4], Item::FnDef(def) if matches!(&def.body, Expr::OpChain { kind, .. } if kind.leading_op_run() == ["+"]))
         );
@@ -8626,12 +8510,9 @@ fn ok() -> . { () }
     fn operator_nesting_parens_force_composition() {
         // `(x ?) + y` parses as outer `+` OpChain whose first slot
         // is the parenthesized `?` OpChain.
-        let m = p("module x; \
-             fn maybe(a: A) -> A { a } \
-             fn add(a: A, b: A) -> A { a } \
-             op _ ? { impl maybe; }; \
-             op _ + __ { impl add; }; \
-             fn use_op(x: A, y: A) -> A { (x ?) + y }");
+        let m = p(
+            "mod x; fn maybe(a: A) -> A { a } fn add(a: A, b: A) -> A { a } op _ ? { impl maybe; }; op _ + __ { impl add; }; fn use_op(x: A, y: A) -> A { (x ?) + y }",
+        );
         if let Item::FnDef(d) = &m.items[4]
             && let Expr::OpChain { kind, .. } = &d.body
         {
@@ -8647,12 +8528,7 @@ fn ok() -> . { () }
         // ternary only. Different operators in that slot need
         // explicit parens.
         let msg = p_err(
-            "module x; \
-             fn cond(a: A, b: A, c: A) -> A { a } \
-             fn add(a: A, b: A) -> A { a } \
-             op _ ? _ : __ { impl cond; }; \
-             op _ + __ { impl add; }; \
-             fn use_op(a: A, b: A, c: A, d: A) -> A { a ? b : c + d }",
+            "mod x; fn cond(a: A, b: A, c: A) -> A { a } fn add(a: A, b: A) -> A { a } op _ ? _ : __ { impl cond; }; op _ + __ { impl add; }; fn use_op(a: A, b: A, c: A, d: A) -> A { a ? b : c + d }",
         );
         assert!(
             msg.contains("different operators") || msg.contains("explicit parens"),
@@ -8667,7 +8543,7 @@ fn ok() -> . { () }
         // with the unexpected token. Here `+` after `x` makes the
         // function body `x` complete, then `+ y` is leftover and
         // fails the `}` expectation.
-        let msg = p_err("module x; fn f(x: A) -> A { x + y }");
+        let msg = p_err("mod x; fn f(x: A) -> A { x + y }");
         // The exact wording depends on the surrounding parser
         // state; just verify we didn't try to apply an unknown op.
         assert!(!msg.contains("non-associative"), "unexpected: {msg}");
@@ -8675,9 +8551,8 @@ fn ok() -> . { () }
 
     #[test]
     fn literals_in_body() {
-        let m = p(
-            r#"module x; fn f() -> . { let s = "hi"; let n = 42; let f = 3.14; let b = .t; () }"#,
-        );
+        let m =
+            p(r#"mod x; fn f() -> . { let s = "hi"; let n = 42; let f = 3.14; let b = .t; () }"#);
         if let Item::FnDef(d) = &m.items[0] {
             // Innermost call carries a BoolLit
             fn drill(e: &Expr) -> &Expr {
@@ -8696,7 +8571,7 @@ fn ok() -> . { () }
 
     #[test]
     fn bare_int_literal_has_no_annotation() {
-        let m = p("module x; fn f() -> . { let n = 42; () }");
+        let m = p("mod x; fn f() -> . { let n = 42; () }");
         if let Item::FnDef(d) = &m.items[0]
             && let Expr::Let { value, .. } = &d.body
         {
@@ -8716,7 +8591,7 @@ fn ok() -> . { () }
     fn int_literal_bracket_form_carries_annotation() {
         // `100[I32]` — the trailing `[Type]` is the explicit
         // annotation, parsed onto the literal node.
-        let m = p("module x; fn f() -> . { let n = 100[I32]; () }");
+        let m = p("mod x; fn f() -> . { let n = 100[I32]; () }");
         if let Item::FnDef(d) = &m.items[0]
             && let Expr::Let { value, .. } = &d.body
         {
@@ -8736,7 +8611,7 @@ fn ok() -> . { () }
 
     #[test]
     fn float_literal_bracket_form_carries_annotation() {
-        let m = p("module x; fn f() -> . { let n = 3.14[F64]; () }");
+        let m = p("mod x; fn f() -> . { let n = 3.14[F64]; () }");
         if let Item::FnDef(d) = &m.items[0]
             && let Expr::Let { value, .. } = &d.body
         {
@@ -8756,7 +8631,7 @@ fn ok() -> . { () }
 
     #[test]
     fn dotted_path_in_value_position() {
-        let m = p("module x; fn f() -> . { Foo.mk_foo() }");
+        let m = p("mod x; fn f() -> . { Foo.mk_foo() }");
         if let Item::FnDef(d) = &m.items[0]
             && let Expr::Call { callee, .. } = &d.body
         {
@@ -8781,7 +8656,7 @@ fn ok() -> . { () }
 
     #[test]
     fn type_and_value_arguments_have_distinct_stages() {
-        let m = p(r#"module x; fn f() { id[String]("hi") }"#);
+        let m = p(r#"mod x; fn f() { id[String]("hi") }"#);
         let Item::FnDef(d) = &m.items[0] else {
             panic!("function");
         };
@@ -8799,20 +8674,20 @@ fn ok() -> . { () }
         assert!(
             matches!(args.as_slice(), [CallArg::Type(Type::Path { segments, .. })] if segments[0].name == "String")
         );
-        assert!(parse(r#"module x; fn f() { id(String, "hi") }"#).is_err());
+        assert!(parse(r#"mod x; fn f() { id(String, "hi") }"#).is_err());
     }
 
     #[test]
     fn failed_dot_lambda_call_arg_does_not_become_a_forall_type() {
         assert!(
-            parse("module x; fn f() -> . { consume(.[A] A) }").is_err(),
+            parse("mod x; fn f() -> . { consume(.[A] A) }").is_err(),
             "a type binder cannot replace a value lambda body"
         );
     }
 
     #[test]
     fn grouped_product_type_is_an_explicit_type_stage() {
-        let m = p("module x; fn f() { id[(A & B)](0) }");
+        let m = p("mod x; fn f() { id[(A & B)](0) }");
         let Item::FnDef(d) = &m.items[0] else {
             panic!("function");
         };
@@ -8835,7 +8710,7 @@ fn ok() -> . { () }
     #[test]
     fn type_stage_product_is_independent_of_amp_operator() {
         let m = p(
-            "module x; fn both(a: A, b: A) -> A { a } op _ & _ { impl both; }; fn f() { id[String & String](value) }",
+            "mod x; fn both(a: A, b: A) -> A { a } op _ & _ { impl both; }; fn f() { id[String & String](value) }",
         );
         let Item::FnDef(d) = &m.items[2] else {
             panic!("function");
@@ -8859,7 +8734,7 @@ fn ok() -> . { () }
     #[test]
     fn grouped_type_stage_product_is_independent_of_amp_operator() {
         let m = p(
-            "module x; fn both(a: A, b: A) -> A { a } op _ & _ { impl both; }; fn f() { id[(String & String)](value) }",
+            "mod x; fn both(a: A, b: A) -> A { a } op _ & _ { impl both; }; fn f() { id[(String & String)](value) }",
         );
         let Item::FnDef(d) = &m.items[2] else {
             panic!("function");
@@ -8882,10 +8757,9 @@ fn ok() -> . { () }
 
     #[test]
     fn call_arg_prefix_bang_with_operand_stays_value_operator() {
-        let m = p("module x; \
-             fn invert(a: A) -> A { a } \
-             op ! _ { impl invert; }; \
-             fn f() -> . { id(! value, other) }");
+        let m = p(
+            "mod x; fn invert(a: A) -> A { a } op ! _ { impl invert; }; fn f() -> . { id(! value, other) }",
+        );
         if let Item::FnDef(d) = &m.items[2]
             && let Expr::Call { args, .. } = &d.body
         {
@@ -8896,9 +8770,8 @@ fn ok() -> . { () }
 
     #[test]
     fn type_stage_bottom_is_independent_of_prefix_operator() {
-        let m = p(
-            "module x; fn invert(a: A) -> A { a } op ! _ { impl invert; }; fn f() { id[!](value) }",
-        );
+        let m =
+            p("mod x; fn invert(a: A) -> A { a } op ! _ { impl invert; }; fn f() { id[!](value) }");
         let Item::FnDef(d) = &m.items[2] else {
             panic!("function");
         };
@@ -8920,7 +8793,7 @@ fn ok() -> . { () }
 
     #[test]
     fn call_arg_tuple_members_stay_values() {
-        let m = p("module x; fn f() { id((A.mk(a), B.mk(b)), 0) }");
+        let m = p("mod x; fn f() { id((A.mk(a), B.mk(b)), 0) }");
         let Item::FnDef(d) = &m.items[0] else {
             panic!("function");
         };
@@ -8928,12 +8801,12 @@ fn ok() -> . { () }
             panic!("value call");
         };
         assert!(matches!(&args[0], CallArg::Value(Expr::Tuple { items, .. }) if items.len() == 2));
-        assert!(parse("module x; fn f() { id((A, B), 0) }").is_err());
+        assert!(parse("mod x; fn f() { id((A, B), 0) }").is_err());
     }
 
     #[test]
     fn lowercase_identifier_is_not_a_type_expr() {
-        let msg = p_err("module x; fn f(value: string) -> . { () }");
+        let msg = p_err("mod x; fn f(value: string) -> . { () }");
         assert_eq!(
             msg,
             "type name `string` must have an uppercase first letter"
@@ -8942,7 +8815,7 @@ fn ok() -> . { () }
 
     #[test]
     fn call_arg_lowercase_tuple_stays_value() {
-        let m = p("module x; fn f() -> . { id((a, b), 0) }");
+        let m = p("mod x; fn f() -> . { id((a, b), 0) }");
         if let Item::FnDef(d) = &m.items[0]
             && let Expr::Call { args, .. } = &d.body
         {
@@ -8955,7 +8828,7 @@ fn ok() -> . { () }
 
     #[test]
     fn returned_type_stage_accepts_leading_sum() {
-        let m = p("module x; fn f() { flatten_sum(x)[| A | B] }");
+        let m = p("mod x; fn f() { flatten_sum(x)[| A | B] }");
         let Item::FnDef(d) = &m.items[0] else {
             panic!("function");
         };
@@ -8975,8 +8848,7 @@ fn ok() -> . { () }
 
     #[test]
     fn call_arg_member_call_routes_to_value() {
-        let m = p("module x; \
-             fn f() -> . { id(List.un_list(a, xs), 0) }");
+        let m = p("mod x; fn f() -> . { id(List.un_list(a, xs), 0) }");
         if let Item::FnDef(d) = &m.items[0]
             && let Expr::Call { args, .. } = &d.body
         {
@@ -8992,9 +8864,9 @@ fn ok() -> . { () }
 
     #[test]
     fn sequence_block_call_parses() {
-        let m = p("module x; fn pure[A](x: A) -> A { x } \
-             fn bind[A][B](xs: A, k: A -> B) -> B { k(xs) } \
-             fn f() -> . { do (bind) { let x <- (); pure(x) } }");
+        let m = p(
+            "mod x; fn pure[A](x: A) -> A { x } fn bind[A][B](xs: A, k: A -> B) -> B { k(xs) } fn f() -> . { do (bind) { let x <- (); pure(x) } }",
+        );
         let Item::FnDef(d) = &m.items[2] else {
             panic!("expected fn");
         };
@@ -9017,7 +8889,7 @@ fn ok() -> . { () }
 
     #[test]
     fn scope_block_call_parses() {
-        let m = p("module x; fn f() -> . { scope { let x = (); x } }");
+        let m = p("mod x; fn f() -> . { scope { let x = (); x } }");
         let Item::FnDef(d) = &m.items[0] else {
             panic!("expected fn");
         };
@@ -9036,7 +8908,7 @@ fn ok() -> . { () }
 
     #[test]
     fn neutral_pure_binding_only_block_keeps_its_items() {
-        let m = p("module x; fn f() -> . { scope { let x = (); } }");
+        let m = p("mod x; fn f() -> . { scope { let x = (); } }");
         let Item::FnDef(d) = &m.items[0] else {
             panic!("expected fn");
         };
@@ -9051,7 +8923,7 @@ fn ok() -> . { () }
 
     #[test]
     fn block_unit_prefix_can_be_parenthesized() {
-        let m = p("module x; fn f() -> . { do({}) { () } }");
+        let m = p("mod x; fn f() -> . { do({}) { () } }");
         let Item::FnDef(d) = &m.items[0] else {
             panic!("expected fn");
         };
@@ -9076,7 +8948,7 @@ fn ok() -> . { () }
     #[test]
     fn match_macro_direct_call_parses() {
         let m = p(
-            "module x; fn f(v: I32 | String) { match(v)(.(n: I32) { () }, .(s: String) { () })[. | .] }",
+            "mod x; fn f(v: I32 | String) { match(v)(.(n: I32) { () }, .(s: String) { () })[. | .] }",
         );
         let Item::FnDef(f) = &m.items[0] else {
             panic!("function");
@@ -9107,8 +8979,7 @@ fn ok() -> . { () }
 
     #[test]
     fn match_macro_arm_parses_nested_macro_with_leading_sum_target() {
-        let m =
-            p("module x; fn f(v: A) -> A | B { match(v)(.(x: A) { flatten_sum(x)[| A | B] }) }");
+        let m = p("mod x; fn f(v: A) -> A | B { match(v)(.(x: A) { flatten_sum(x)[| A | B] }) }");
         let Item::FnDef(f) = &m.items[0] else {
             panic!("function");
         };
@@ -9132,7 +9003,7 @@ fn ok() -> . { () }
     #[test]
     fn match_macro_ufcs_parses() {
         let m = p(
-            "module x; fn f(v: I32 | String) { (v.>match)(.(n: I32) { () }, .(s: String) { () })[. | .] }",
+            "mod x; fn f(v: I32 | String) { (v.>match)(.(n: I32) { () }, .(s: String) { () })[. | .] }",
         );
         let Item::FnDef(f) = &m.items[0] else {
             panic!("function");
@@ -9169,9 +9040,8 @@ fn ok() -> . { () }
 
     #[test]
     fn derive_macro_call_parses() {
-        let m = p(
-            "module x; fn f() -> Monad[Maybe] { derive(maybe_monad, maybe_t_monad)[Monad[Maybe]] }",
-        );
+        let m =
+            p("mod x; fn f() -> Monad[Maybe] { derive(maybe_monad, maybe_t_monad)[Monad[Maybe]] }");
         let Item::FnDef(f) = &m.items[0] else {
             panic!("function");
         };
@@ -9191,7 +9061,7 @@ fn ok() -> . { () }
 
     #[test]
     fn derive_macro_elided_target_parses() {
-        let m = p("module x; fn f() -> Monad[Maybe] { derive(maybe_monad)[_] }");
+        let m = p("mod x; fn f() -> Monad[Maybe] { derive(maybe_monad)[_] }");
         let Item::FnDef(f) = &m.items[0] else {
             panic!("function");
         };
@@ -9211,7 +9081,7 @@ fn ok() -> . { () }
 
     #[test]
     fn derive_macro_ufcs_parses() {
-        let m = p("module x; fn f() { (maybe_monad.>derive)[Monad[Maybe]] }");
+        let m = p("mod x; fn f() { (maybe_monad.>derive)[Monad[Maybe]] }");
         let Item::FnDef(d) = &m.items[0] else {
             panic!("function");
         };
@@ -9242,17 +9112,9 @@ fn ok() -> . { () }
 
     #[test]
     fn neutral_block_binding_and_expression_forms_parse() {
-        let m = p("module x; \
-             fn bind[A][B](xs: A, k: A -> B) -> B { k(xs) } \
-             fn unit_step() -> . { () } \
-             fn f() -> . { \
-               do (bind) { \
-                 let x <- (); \
-                 let y = (); \
-                 unit_step(); \
-                 () \
-               } \
-             }");
+        let m = p(
+            "mod x; fn bind[A][B](xs: A, k: A -> B) -> B { k(xs) } fn unit_step() -> . { () } fn f() -> . { do (bind) { let x <- (); let y = (); unit_step(); () } }",
+        );
         let Item::FnDef(d) = &m.items[2] else {
             panic!("expected fn");
         };
@@ -9287,9 +9149,9 @@ fn ok() -> . { () }
 
     #[test]
     fn neutral_block_repeated_and_trailing_separators_parse() {
-        let m = p("module x; \
-             fn bind[A][B](xs: A, k: A -> B) -> B { k(xs) } \
-             fn f() -> . { do (bind) { ;;; ();;; ();;; } }");
+        let m = p(
+            "mod x; fn bind[A][B](xs: A, k: A -> B) -> B { k(xs) } fn f() -> . { do (bind) { ;;; ();;; ();;; } }",
+        );
         let Item::FnDef(d) = &m.items[1] else {
             panic!("expected fn");
         };
@@ -9309,9 +9171,9 @@ fn ok() -> . { () }
 
     #[test]
     fn neutral_bind_only_block_keeps_its_items() {
-        let m = p("module x; \
-             fn bind[A][B](xs: A, k: A -> B) -> B { k(xs) } \
-             fn f() -> . { do (bind) { let x <- (); } }");
+        let m = p(
+            "mod x; fn bind[A][B](xs: A, k: A -> B) -> B { k(xs) } fn f() -> . { do (bind) { let x <- (); } }",
+        );
         let Item::FnDef(d) = &m.items[1] else {
             panic!("expected fn");
         };
@@ -9326,9 +9188,9 @@ fn ok() -> . { () }
 
     #[test]
     fn neutral_empty_body_is_preserved() {
-        let m = p("module x; \
-             fn bind[A][B](xs: A, k: A -> B) -> B { k(xs) } \
-             fn f() -> . { do (bind) { } }");
+        let m = p(
+            "mod x; fn bind[A][B](xs: A, k: A -> B) -> B { k(xs) } fn f() -> . { do (bind) { } }",
+        );
         let Item::FnDef(d) = &m.items[1] else {
             panic!("expected fn");
         };
@@ -9343,7 +9205,7 @@ fn ok() -> . { () }
         // `let x <- e;` at ordinary block scope: the let-stmt's `=`-
         // only rule rejects with a diagnostic pointing at the
         // unexpected `<-`.
-        let msg = p_err("module x; fn f() -> . { let x <- (); () }");
+        let msg = p_err("mod x; fn f() -> . { let x <- (); () }");
         // The block-let parser expects `=`; encountering `<-`
         // surfaces as a connective mismatch.
         assert!(msg.contains("`=`") || msg.contains("<-"), "got: {msg}");
@@ -9353,8 +9215,7 @@ fn ok() -> . { () }
 
     #[test]
     fn equiv_two_terms_parses() {
-        let m = p("module x; fn id[A](v: A) -> A { v } \
-             equiv id_id[A](x: A) { id(x); id(id(x)) }");
+        let m = p("mod x; fn id[A](v: A) -> A { v } equiv id_id[A](x: A) { id(x); id(id(x)) }");
         assert_eq!(m.items.len(), 2);
         match &m.items[1] {
             Item::Equiv(e, _) => {
@@ -9368,8 +9229,7 @@ fn ok() -> . { () }
 
     #[test]
     fn equiv_n_terms_with_repeated_and_trailing_semicolons_parses() {
-        let m = p("module x; \
-             equiv three { ;; ();;; ();; ();;;; }");
+        let m = p("mod x; equiv three { ;; ();;; ();; ();;;; }");
         match &m.items[0] {
             Item::Equiv(e, _) => {
                 assert_eq!(e.name, "three");
@@ -9381,7 +9241,7 @@ fn ok() -> . { () }
 
     #[test]
     fn equiv_no_params_parses() {
-        let m = p("module x; equiv simple { (); () }");
+        let m = p("mod x; equiv simple { (); () }");
         match &m.items[0] {
             Item::Equiv(e, _) => {
                 assert!(e.sig.params.is_empty());
@@ -9393,7 +9253,7 @@ fn ok() -> . { () }
 
     #[test]
     fn equiv_comma_arms_rejected_with_separator_message() {
-        let msg = p_err("module x; equiv simple { (), () }");
+        let msg = p_err("mod x; equiv simple { (), () }");
         assert!(msg.contains("separated with `;`, not `,`"), "got: {msg}");
         assert!(msg.contains(".() { ... }()"), "got: {msg}");
     }
@@ -9401,28 +9261,28 @@ fn ok() -> . { () }
     #[test]
     fn equiv_singleton_rejected() {
         // `N=1` is a hard error per the spec.
-        let msg = p_err("module x; equiv lonely { () }");
+        let msg = p_err("mod x; equiv lonely { () }");
         assert!(msg.contains("at least two"), "got: {msg}");
     }
 
     #[test]
     fn equiv_empty_rejected() {
         // `N=0` is a hard error per the spec.
-        let msg = p_err("module x; equiv empty { }");
+        let msg = p_err("mod x; equiv empty { }");
         assert!(msg.contains("at least two"), "got: {msg}");
     }
 
     #[test]
     fn equiv_pub_rejected() {
         // `equiv` is not a public-API form.
-        let msg = p_err("module x; pub equiv e { (); () }");
+        let msg = p_err("mod x; pub equiv e { (); () }");
         assert!(msg.contains("pub"), "got: {msg}");
     }
 
     #[test]
     fn equiv_anonymous_rejected() {
         // Names are required; the parser expects an identifier here.
-        let msg = p_err("module x; equiv { (); () }");
+        let msg = p_err("mod x; equiv { (); () }");
         // Whatever the exact message, the failure happens at the
         // missing-identifier slot, not later.
         assert!(!msg.is_empty(), "got: {msg}");
@@ -9430,7 +9290,7 @@ fn ok() -> . { () }
 
     #[test]
     fn if_else_parses() {
-        let m = p("module x; fn f() -> . { if (.t) { () } else { () } }");
+        let m = p("mod x; fn f() -> . { if (.t) { () } else { () } }");
         if let Item::FnDef(d) = &m.items[0] {
             assert!(
                 matches!(&d.body, Expr::BlockCall { head, blocks, .. } if head.name == "if" && blocks.len() == 2)
@@ -9440,7 +9300,7 @@ fn ok() -> . { () }
 
     #[test]
     fn if_condition_before_block_parses() {
-        let m = p("module x; fn pick[A](c: Bool, t: A, e: A) -> A { if (c) { t } else { e } }");
+        let m = p("mod x; fn pick[A](c: Bool, t: A, e: A) -> A { if (c) { t } else { e } }");
         if let Item::FnDef(d) = &m.items[0] {
             assert!(
                 matches!(&d.body, Expr::BlockCall { prefix, blocks, .. } if prefix.len() == 1 && blocks.len() == 2)
@@ -9450,7 +9310,7 @@ fn ok() -> . { () }
 
     #[test]
     fn leading_dot_bool_literals_parse() {
-        let m = p("module x; fn f() -> . { (.t, .f) }");
+        let m = p("mod x; fn f() -> . { (.t, .f) }");
         if let Item::FnDef(d) = &m.items[0] {
             match &d.body {
                 Expr::Tuple { items, .. } => {
@@ -9464,12 +9324,12 @@ fn ok() -> . { () }
 
     #[test]
     fn leading_dot_let_statement_is_rejected() {
-        assert!(parse("module x; fn f() -> . { .x = (); x }").is_err());
+        assert!(parse("mod x; fn f() -> . { .x = (); x }").is_err());
     }
 
     #[test]
     fn leading_dot_fn_literals_parse() {
-        let m = p("module x; fn f() -> . { .(x) { x } }");
+        let m = p("mod x; fn f() -> . { .(x) { x } }");
         if let Item::FnDef(d) = &m.items[0] {
             assert!(matches!(d.body, Expr::FnExpr { .. }));
         }
@@ -9477,7 +9337,7 @@ fn ok() -> . { () }
 
     #[test]
     fn leading_dot_fn_literals_parse_type_binder_group() {
-        let m = p("module x; fn f() -> . { .[A](x: A) { x } }");
+        let m = p("mod x; fn f() -> . { .[A](x: A) { x } }");
         if let Item::FnDef(d) = &m.items[0] {
             match &d.body {
                 Expr::FnExpr { sig, .. } => {
@@ -9491,7 +9351,7 @@ fn ok() -> . { () }
 
     #[test]
     fn leading_dot_placeholder_lambda_parses() {
-        let m = p("module x; fn f() -> . { .x. { x1 } }");
+        let m = p("mod x; fn f() -> . { .x. { x1 } }");
         if let Item::FnDef(d) = &m.items[0] {
             assert!(matches!(d.body, Expr::FnPlaceholder { .. }));
         }
@@ -9499,25 +9359,22 @@ fn ok() -> . { () }
 
     #[test]
     fn expression_keywords_parse_as_function_names() {
-        let m = p("module x; \
-             fn if() -> . { () } \
-             fn else() -> . { () } \
-             fn do() -> . { () } \
-             fn use_all() -> . { let f = if; let _ = f(); let _ = else(); do() }");
+        let m = p(
+            "mod x; fn if() -> . { () } fn else() -> . { () } fn do() -> . { () } fn use_all() -> . { let f = if; let _ = f(); let _ = else(); do() }",
+        );
         assert_eq!(m.items.len(), 4);
     }
 
     #[test]
     fn fold_keyword_parses_as_function_name() {
-        let m = p("module x; \
-             pub fn fold[A][B](f: (B & A) -> B, seed: B, xs: Seq[A]) -> B { seed }");
+        let m = p("mod x; pub fn fold[A][B](f: (B & A) -> B, seed: B, xs: Seq[A]) -> B { seed }");
         assert_eq!(m.items.len(), 1);
         assert!(matches!(&m.items[0], Item::FnDef(d) if d.name == "fold"));
     }
 
     #[test]
     fn quoted_operator_after_function_keeps_its_item_boundary() {
-        let source = "module x;
+        let source = "mod x;
             fn op(left: ., right: .) -> . { left }
             pub op _ (?) _ { impl op; };
             fn run() -> . { () ? () }";
@@ -9544,7 +9401,7 @@ fn ok() -> . { () }
 
     #[test]
     fn if_block_has_neutral_parser_shape() {
-        let m = p("module x; fn f() -> . { if (.t) { () } }");
+        let m = p("mod x; fn f() -> . { if (.t) { () } }");
         assert!(matches!(
             &m.items[0],
             Item::FnDef(d) if matches!(&d.body, Expr::BlockCall { head, blocks, .. }
@@ -9554,7 +9411,7 @@ fn ok() -> . { () }
 
     #[test]
     fn type_alias_preserves_written_binding_and_target_spans() {
-        let source = "module x; pub(x) type Local = provider.Original;";
+        let source = "mod x; pub(x) type Local = provider.Original;";
         let module = p(source);
         let Item::TypeAlias(forward) = &module.items[0] else {
             panic!("expected type alias declaration");
@@ -9581,29 +9438,29 @@ fn ok() -> . { () }
     #[test]
     fn braced_forwarding_forms_are_outside_ordinary_grammar() {
         for source in [
-            "module x; type {local} = {original};",
-            "module x; type {Local} = {provider.Original};",
-            "module x; type {local}[A] = {original};",
-            "module x; type {local} = {original(A)};",
-            "module x; type {local} = {original: .};",
-            "module x; type {local} = Original;",
-            "module x; type {local, other} = {original};",
-            "module x; type {local} = {original, other};",
-            "module x; type {Upper} = {original};",
-            "module x; type {_local} = {original};",
-            "module x; rec type {local} = {original};",
-            "module x; rec { type {local} = {original}; }",
+            "mod x; type {local} = {original};",
+            "mod x; type {Local} = {provider.Original};",
+            "mod x; type {local}[A] = {original};",
+            "mod x; type {local} = {original(A)};",
+            "mod x; type {local} = {original: .};",
+            "mod x; type {local} = Original;",
+            "mod x; type {local, other} = {original};",
+            "mod x; type {local} = {original, other};",
+            "mod x; type {Upper} = {original};",
+            "mod x; type {_local} = {original};",
+            "mod x; rec type {local} = {original};",
+            "mod x; rec { type {local} = {original}; }",
         ] {
             assert!(parse(source).is_err(), "unexpectedly parsed {source}");
         }
-        let module = p("module x; type Local = provider.Original; type Alias[A] = Original[A];");
+        let module = p("mod x; type Local = provider.Original; type Alias[A] = Original[A];");
         assert!(matches!(&module.items[0], Item::TypeAlias(alias) if alias.name == "Local"));
         assert!(matches!(&module.items[1], Item::TypeAlias(alias) if alias.type_params.len() == 1));
     }
 
     #[test]
     fn compact_nominal_anonymous_single_entry() {
-        let m = p("module x; type { Foo : . };");
+        let m = p("mod x; type { Foo : . };");
         match &m.items[0] {
             Item::Labels(d, _) => {
                 assert!(d.type_alias_name.is_none());
@@ -9619,7 +9476,7 @@ fn ok() -> . { () }
 
     #[test]
     fn compact_nominal_anonymous_multi_entry() {
-        let m = p("module x; type { Foo : .; Bar : .; Baz : . };");
+        let m = p("mod x; type { Foo : .; Bar : .; Baz : . };");
         if let Item::Labels(d, _) = &m.items[0] {
             assert_eq!(d.entries.len(), 3);
             let names: Vec<&str> = d.entries.iter().map(|e| e.name.as_str()).collect();
@@ -9631,7 +9488,7 @@ fn ok() -> . { () }
 
     #[test]
     fn compact_nominal_pub_form() {
-        let m = p("module x; pub type { Foo : . };");
+        let m = p("mod x; pub type { Foo : . };");
         if let Item::Labels(d, _) = &m.items[0] {
             assert!(d.vis.is_pub());
         } else {
@@ -9641,7 +9498,7 @@ fn ok() -> . { () }
 
     #[test]
     fn compact_nominal_named_form_introduces_type_alias_name() {
-        let m = p("module x; type T = { Foo : . };");
+        let m = p("mod x; type T = { Foo : . };");
         if let Item::Labels(d, _) = &m.items[0] {
             assert_eq!(d.type_alias_name.as_deref(), Some("T"));
             assert!(d.type_alias_params.is_empty());
@@ -9653,7 +9510,7 @@ fn ok() -> . { () }
 
     #[test]
     fn compact_nominal_parametric_named_form() {
-        let m = p("module x; type T[A] = { Foo[A] : A };");
+        let m = p("mod x; type T[A] = { Foo[A] : A };");
         if let Item::Labels(d, _) = &m.items[0] {
             assert_eq!(d.type_alias_name.as_deref(), Some("T"));
             assert_eq!(d.type_alias_params.len(), 1);
@@ -9677,7 +9534,7 @@ fn ok() -> . { () }
             "type Choice = { Value: (_); };",
             "rec type Choice = { Value: _; };",
         ] {
-            let source = format!("module x; {declaration}");
+            let source = format!("mod x; {declaration}");
             for error in [
                 parse(&source).expect_err("an entry must declare a payload"),
                 parse_lazy(&source)
@@ -9701,7 +9558,7 @@ fn ok() -> . { () }
 
     #[test]
     fn nominal_nested_infer_remains_an_ordinary_payload() {
-        let m = p("module x; type { Value[*F]: F[_]; };");
+        let m = p("mod x; type { Value[*F]: F[_]; };");
         let Item::Labels(labels, _) = &m.items[0] else {
             panic!("expected compact nominal declaration");
         };
@@ -9713,8 +9570,9 @@ fn ok() -> . { () }
 
     #[test]
     fn nominal_existing_types_are_ordinary_rhs_operands() {
-        let m = p("module x; type { Value[*F][A]: F[A]; }; \
-             type Choice[*G][B] = Value[G][B] & { Other: .; };");
+        let m = p(
+            "mod x; type { Value[*F][A]: F[A]; }; type Choice[*G][B] = Value[G][B] & { Other: .; };",
+        );
         let Item::Labels(labels, _) = &m.items[1] else {
             panic!("expected compact nominal declaration");
         };
@@ -9731,7 +9589,7 @@ fn ok() -> . { () }
 
     #[test]
     fn nominal_qualified_types_are_ordinary_rhs_operands() {
-        let m = p("module x; type Choice = dep.Value & { Other: .; };");
+        let m = p("mod x; type Choice = dep.Value & { Other: .; };");
         let Item::Labels(labels, _) = &m.items[0] else {
             panic!("expected compact nominal declaration");
         };
@@ -9746,7 +9604,7 @@ fn ok() -> . { () }
 
     #[test]
     fn nominal_duplicate_entries_are_rejected() {
-        let message = p_err("module x; type Choice = { Value: .; Value: .; };");
+        let message = p_err("mod x; type Choice = { Value: .; Value: .; };");
         assert!(
             message.contains("duplicate nominal `Value`"),
             "got: {message}"
@@ -9756,7 +9614,7 @@ fn ok() -> . { () }
     #[test]
     fn compact_nominal_entry_with_existentials() {
         // Compact entries share their binder header with explicit singleton declarations.
-        let m = p("module x; type { Dproduct[A] <L> <R> : A & L & R };");
+        let m = p("mod x; type { Dproduct[A] <L> <R> : A & L & R };");
         if let Item::Labels(d, _) = &m.items[0] {
             let e = &d.entries[0];
             assert_eq!(e.name, "Dproduct");
@@ -9772,7 +9630,7 @@ fn ok() -> . { () }
 
     #[test]
     fn compact_nominal_entry_existentials_without_universals() {
-        let m = p("module x; type { Pack <U> : U };");
+        let m = p("mod x; type { Pack <U> : U };");
         if let Item::Labels(d, _) = &m.items[0] {
             let e = &d.entries[0];
             assert!(e.type_params.is_empty());
@@ -9785,7 +9643,7 @@ fn ok() -> . { () }
 
     #[test]
     fn compact_nominal_entry_no_existentials_keeps_field_empty() {
-        let m = p("module x; type { Foo[A] : A };");
+        let m = p("mod x; type { Foo[A] : A };");
         if let Item::Labels(d, _) = &m.items[0] {
             assert!(d.entries[0].existential_params.is_empty());
         } else {
@@ -9794,18 +9652,8 @@ fn ok() -> . { () }
     }
 
     #[test]
-    fn compact_nominal_entry_existential_in_payload_is_parse_error() {
-        // Existential binders belong on the nominal header.
-        let msg = p_err("module x; type { Foo[A] : (<U>, A & U) };");
-        assert!(
-            msg.contains("existential type expressions are no longer admissible"),
-            "want existential-rejection diagnostic, got: {msg}"
-        );
-    }
-
-    #[test]
     fn compact_nominal_trailing_semicolon_allowed() {
-        let m = p("module x; type { Foo : .; Bar : .; };");
+        let m = p("mod x; type { Foo : .; Bar : .; };");
         if let Item::Labels(d, _) = &m.items[0] {
             assert_eq!(d.entries.len(), 2);
         } else {
@@ -9815,19 +9663,19 @@ fn ok() -> . { () }
 
     #[test]
     fn compact_nominal_empty_block_rejected() {
-        let msg = p_err("module x; type { };");
+        let msg = p_err("mod x; type { };");
         assert!(msg.contains("at least one entry"), "got: {msg}");
     }
 
     #[test]
     fn compact_nominal_named_must_use_a_type_name() {
-        let msg = p_err("module x; type t = { Foo : . };");
+        let msg = p_err("mod x; type t = { Foo : . };");
         assert!(msg.contains("type name"), "got: {msg}");
     }
 
     #[test]
     fn compact_nominal_entry_requires_type_name() {
-        let msg = p_err("module x; type { foo : . };");
+        let msg = p_err("mod x; type { foo : . };");
         assert!(
             msg.contains("type name `foo` must have an uppercase first letter"),
             "got: {msg}"
@@ -9837,7 +9685,7 @@ fn ok() -> . { () }
     #[test]
     fn compact_nominal_self_reference_payload_parses() {
         // A payload can mention its nominal declaration; recursion is validated later.
-        let m = p("module x; type { List[A] : (. | (A & List[A])) };");
+        let m = p("mod x; type { List[A] : (. | (A & List[A])) };");
         if let Item::Labels(d, _) = &m.items[0] {
             assert_eq!(d.entries[0].name, "List");
         } else {
@@ -9847,7 +9695,7 @@ fn ok() -> . { () }
 
     #[test]
     fn empty_braces_are_unit() {
-        let m = p("module x; fn make() -> . { {} }");
+        let m = p("mod x; fn make() -> . { {} }");
         let Item::FnDef(d) = &m.items[0] else {
             panic!("expected fn");
         };
@@ -9870,29 +9718,29 @@ fn ok() -> . { () }
 
     #[test]
     fn iso_call_parses() {
-        assert_user_macro_name("module x; fn f() -> . { iso(x) }", "iso");
+        assert_user_macro_name("mod x; fn f() -> . { iso(x) }", "iso");
     }
 
     #[test]
     fn into_call_parses() {
-        assert_user_macro_name("module x; fn f() -> . { into(x) }", "into");
+        assert_user_macro_name("mod x; fn f() -> . { into(x) }", "into");
     }
 
     #[test]
     fn onto_call_parses() {
-        assert_user_macro_name("module x; fn f() -> . { onto(x) }", "onto");
+        assert_user_macro_name("mod x; fn f() -> . { onto(x) }", "onto");
     }
 
     #[test]
     fn ease_call_parses() {
-        assert_user_macro_name("module x; fn f() -> . { ease(x) }", "ease");
+        assert_user_macro_name("mod x; fn f() -> . { ease(x) }", "ease");
     }
 
     #[test]
     fn ease_ufcs_parses() {
         // Receiver-first UFCS form `r.>ease(T)` is still a `Ufcs`
         // node at parse time; verify it parses without error.
-        let _m = p("module x; fn f() -> . { x.>ease(()) }");
+        let _m = p("mod x; fn f() -> . { x.>ease(()) }");
     }
 
     // ---- Spine-palette calls -------------------------------------
@@ -9940,144 +9788,114 @@ fn ok() -> . { () }
 
     #[test]
     fn reorder_sum_call_parses() {
-        assert_macro_kind(
-            "module x; fn f() -> . { reorder_sum(x, ()) }",
-            "reorder_sum",
-        );
+        assert_macro_kind("mod x; fn f() -> . { reorder_sum(x, ()) }", "reorder_sum");
     }
 
     #[test]
     fn reorder_sum_ufcs_parses() {
-        assert_macro_ufcs(
-            "module x; fn f() -> . { x.>reorder_sum(()) }",
-            "reorder_sum",
-        );
+        assert_macro_ufcs("mod x; fn f() -> . { x.>reorder_sum(()) }", "reorder_sum");
     }
 
     #[test]
     fn reorder_prod_call_parses() {
-        assert_macro_kind(
-            "module x; fn f() -> . { reorder_prod(x, ()) }",
-            "reorder_prod",
-        );
+        assert_macro_kind("mod x; fn f() -> . { reorder_prod(x, ()) }", "reorder_prod");
     }
 
     #[test]
     fn reorder_prod_ufcs_parses() {
-        assert_macro_ufcs(
-            "module x; fn f() -> . { x.>reorder_prod(()) }",
-            "reorder_prod",
-        );
+        assert_macro_ufcs("mod x; fn f() -> . { x.>reorder_prod(()) }", "reorder_prod");
     }
 
     #[test]
     fn narrow_sum_call_parses() {
-        assert_macro_kind("module x; fn f() -> . { narrow_sum(x, ()) }", "narrow_sum");
+        assert_macro_kind("mod x; fn f() -> . { narrow_sum(x, ()) }", "narrow_sum");
     }
 
     #[test]
     fn narrow_sum_ufcs_parses() {
-        assert_macro_ufcs("module x; fn f() -> . { x.>narrow_sum(()) }", "narrow_sum");
+        assert_macro_ufcs("mod x; fn f() -> . { x.>narrow_sum(()) }", "narrow_sum");
     }
 
     #[test]
     fn narrow_prod_call_parses() {
-        assert_macro_kind(
-            "module x; fn f() -> . { narrow_prod(x, ()) }",
-            "narrow_prod",
-        );
+        assert_macro_kind("mod x; fn f() -> . { narrow_prod(x, ()) }", "narrow_prod");
     }
 
     #[test]
     fn narrow_prod_ufcs_parses() {
-        assert_macro_ufcs(
-            "module x; fn f() -> . { x.>narrow_prod(()) }",
-            "narrow_prod",
-        );
+        assert_macro_ufcs("mod x; fn f() -> . { x.>narrow_prod(()) }", "narrow_prod");
     }
 
     #[test]
     fn widen_sum_call_parses() {
-        assert_macro_kind("module x; fn f() -> . { widen_sum(x, ()) }", "widen_sum");
+        assert_macro_kind("mod x; fn f() -> . { widen_sum(x, ()) }", "widen_sum");
     }
 
     #[test]
     fn widen_sum_ufcs_parses() {
-        assert_macro_ufcs("module x; fn f() -> . { x.>widen_sum(()) }", "widen_sum");
+        assert_macro_ufcs("mod x; fn f() -> . { x.>widen_sum(()) }", "widen_sum");
     }
 
     #[test]
     fn widen_prod_call_parses() {
-        assert_macro_kind("module x; fn f() -> . { widen_prod(x, ()) }", "widen_prod");
+        assert_macro_kind("mod x; fn f() -> . { widen_prod(x, ()) }", "widen_prod");
     }
 
     #[test]
     fn widen_prod_ufcs_parses() {
-        assert_macro_ufcs("module x; fn f() -> . { x.>widen_prod(()) }", "widen_prod");
+        assert_macro_ufcs("mod x; fn f() -> . { x.>widen_prod(()) }", "widen_prod");
     }
 
     #[test]
     fn flatten_sum_call_parses() {
-        assert_macro_kind(
-            "module x; fn f() -> . { flatten_sum(x, ()) }",
-            "flatten_sum",
-        );
+        assert_macro_kind("mod x; fn f() -> . { flatten_sum(x, ()) }", "flatten_sum");
     }
 
     #[test]
     fn flatten_sum_ufcs_parses() {
-        assert_macro_ufcs(
-            "module x; fn f() -> . { x.>flatten_sum(()) }",
-            "flatten_sum",
-        );
+        assert_macro_ufcs("mod x; fn f() -> . { x.>flatten_sum(()) }", "flatten_sum");
     }
 
     #[test]
     fn flatten_prod_call_parses() {
-        assert_macro_kind(
-            "module x; fn f() -> . { flatten_prod(x, ()) }",
-            "flatten_prod",
-        );
+        assert_macro_kind("mod x; fn f() -> . { flatten_prod(x, ()) }", "flatten_prod");
     }
 
     #[test]
     fn flatten_prod_ufcs_parses() {
-        assert_macro_ufcs(
-            "module x; fn f() -> . { x.>flatten_prod(()) }",
-            "flatten_prod",
-        );
+        assert_macro_ufcs("mod x; fn f() -> . { x.>flatten_prod(()) }", "flatten_prod");
     }
 
     #[test]
     fn one_sum_call_parses() {
-        assert_macro_kind("module x; fn f() -> . { one_sum(x, ()) }", "one_sum");
+        assert_macro_kind("mod x; fn f() -> . { one_sum(x, ()) }", "one_sum");
     }
 
     #[test]
     fn one_sum_ufcs_parses() {
         // `one_sum` accepts target-elided UFCS; parens-iff-args drops
         // the parens entirely when no target is supplied.
-        assert_macro_ufcs("module x; fn f() -> . { x.>one_sum }", "one_sum");
+        assert_macro_ufcs("mod x; fn f() -> . { x.>one_sum }", "one_sum");
     }
 
     #[test]
     fn one_prod_call_parses() {
-        assert_macro_kind("module x; fn f() -> . { one_prod(x, ()) }", "one_prod");
+        assert_macro_kind("mod x; fn f() -> . { one_prod(x, ()) }", "one_prod");
     }
 
     #[test]
     fn one_prod_ufcs_parses() {
-        assert_macro_ufcs("module x; fn f() -> . { x.>one_prod }", "one_prod");
+        assert_macro_ufcs("mod x; fn f() -> . { x.>one_prod }", "one_prod");
     }
 
     #[test]
     fn fit_call_parses() {
-        assert_macro_kind("module x; fn f() -> . { fit(x, ()) }", "fit");
+        assert_macro_kind("mod x; fn f() -> . { fit(x, ()) }", "fit");
     }
 
     #[test]
     fn fit_ufcs_parses() {
-        assert_macro_ufcs("module x; fn f() -> . { x.>fit(()) }", "fit");
+        assert_macro_ufcs("mod x; fn f() -> . { x.>fit(()) }", "fit");
     }
 
     // ---- placeholder lambdas -----------------------------------------
@@ -10104,7 +9922,7 @@ fn ok() -> . { () }
         ] {
             for stem in ["x", "_arg"] {
                 let body = body.replace('x', stem);
-                let source = format!("module m; fn run() {{ let .{stem}. = (); {body} }}");
+                let source = format!("mod m; fn run() {{ let .{stem}. = (); {body} }}");
                 let parsed = p(&source);
                 let Item::FnDef(def) = &parsed.items[0] else {
                     panic!("function")
@@ -10143,7 +9961,7 @@ fn ok() -> . { () }
             "action { let.x.fn() }",
             "action { let.x.fn }",
         ] {
-            let source = format!("module m; op _ <- _ {{ impl choose }}; fn run() {{ {body} }}");
+            let source = format!("mod m; op _ <- _ {{ impl choose }}; fn run() {{ {body} }}");
             let parsed = p(&source);
             let rendered = crate::pretty::pretty_module(&parsed);
             let compact = rendered.split_whitespace().collect::<String>();
@@ -10154,7 +9972,7 @@ fn ok() -> . { () }
             p(&rendered);
         }
         for body in ["let.x. // path\n y()", "action { let.x. // path\n y } "] {
-            let source = format!("module m; fn run() {{ {body} }}");
+            let source = format!("mod m; fn run() {{ {body} }}");
             let formatted = crate::pretty::pretty_module(&p(&source));
             assert_eq!(crate::pretty::pretty_module(&p(&formatted)), formatted);
         }
@@ -10167,7 +9985,7 @@ fn ok() -> . { () }
             "action { let // intro\n .x. // before\n = // after\n () // end\n; x1 }",
             "action { let // intro\n .x. // before\n <- // after\n () // end\n; x1 }",
         ] {
-            let source = format!("module m; fn run() {{ {body} }}");
+            let source = format!("mod m; fn run() {{ {body} }}");
             let formatted = crate::pretty::pretty_module(&p(&source));
             assert_eq!(formatted.matches("// before").count(), 1, "{formatted}");
             assert_eq!(formatted.matches("// after").count(), 1, "{formatted}");
@@ -10195,7 +10013,7 @@ fn ok() -> . { () }
             "let (.x.) = (); x1",
             "let .x. : . = (); x1",
         ] {
-            let source = format!("module m; fn run() {{ {body} }}");
+            let source = format!("mod m; fn run() {{ {body} }}");
             assert!(parse(&source).is_err(), "{source}");
             assert!(
                 parse_lazy(&source)
@@ -10210,10 +10028,7 @@ fn ok() -> . { () }
     fn numbered_neutral_bindings_keep_each_source_order_owner() {
         for connective in ["=", "<-"] {
             let source = format!(
-                "module m; fn run() {{ action {{ \
-                let .x. {connective} (); print(x2); \
-                let .x. {connective} x1; print(x3); \
-                let .y. {connective} (); pair(x2, y1) }} }}"
+                "mod m; fn run() {{ action {{ let .x. {connective} (); print(x2); let .x. {connective} x1; print(x3); let .y. {connective} (); pair(x2, y1) }} }}"
             );
             let parsed = p(&source);
             let Item::FnDef(def) = &parsed.items[0] else {
@@ -10249,7 +10064,7 @@ fn ok() -> . { () }
     #[test]
     fn placeholder_stems_preserve_source_references() {
         for stem in ["x", "arg", "_p", "x1_y", "t", "f"] {
-            let source = format!("module m; fn run() {{ .{stem}. {{ pair({stem}2, {stem}1) }} }}");
+            let source = format!("mod m; fn run() {{ .{stem}. {{ pair({stem}2, {stem}1) }} }}");
             let module = p(&source);
             let Item::FnDef(def) = &module.items[0] else {
                 panic!("function")
@@ -10296,7 +10111,7 @@ fn ok() -> . { () }
             ("Field.mk(x1)", 1),
             ("let .(<U> x2) = x1; x2", 1),
         ] {
-            let source = format!("module m; fn run() {{ .x. {{ {body} }} }}");
+            let source = format!("mod m; fn run() {{ .x. {{ {body} }} }}");
             let mut module = p(&source);
             let Item::FnDef(def) = &mut module.items[0] else {
                 panic!("function")
@@ -10332,7 +10147,7 @@ fn ok() -> . { () }
             ".$$$$ { $$$$2 }",
             ".# { # }",
         ] {
-            let source = format!("module m; fn run() {{ {expression} }}");
+            let source = format!("mod m; fn run() {{ {expression} }}");
             assert!(parse(&source).is_err(), "{source}");
             assert!(
                 parse_lazy(&source)
@@ -10345,9 +10160,9 @@ fn ok() -> . { () }
 
     #[test]
     fn placeholder_no_reference_diagnostic() {
-        let message = p_err("module m; fn run() { .x. { () } }");
+        let message = p_err("mod m; fn run() { .x. { () } }");
         assert!(message.contains("at least one unshadowed"), "{message}");
-        p("module m; fn run() { .() { () } }");
+        p("mod m; fn run() { .() { () } }");
     }
 
     // ---- Build block body (`build { ... }` in `<name>.pkg.kio`) ---
@@ -10489,10 +10304,10 @@ fn ok() -> . { () }
 
     #[test]
     fn build_block_unknown_top_level_token_errors() {
-        // `module` at the top level of a build block is not allowed.
+        // `mod` at the top level of a build block is not allowed.
         // `cache` is optional (it defaults to disabled), so an unknown
         // leading token is rejected where a `target` block is expected.
-        let msg = pb_err("module foo;");
+        let msg = pb_err("mod foo;");
         assert!(msg.contains("`target`"), "got: {msg}");
     }
 
@@ -10569,7 +10384,7 @@ fn ok() -> . { () }
     #[test]
     fn configuration_git_path_unit_preserves_absence_and_duplicate_checks() {
         let source = parse_dependency_file(
-            r#"dependency dep; source { path ((())); ref ("main"); git (("url")) }"#,
+            r#"dep dep; source { path ((())); ref ("main"); git (("url")) }"#,
             Some("dep"),
         )
         .unwrap();
@@ -10587,24 +10402,32 @@ fn ok() -> . { () }
             "path (); path \"pkg.pkg.kio\"",
             "path \"pkg.pkg.kio\"; path ()",
         ] {
-            let dependency =
-                format!("dependency dep; source {{ git \"url\"; ref \"main\"; {fields} }}");
+            let dependency = format!("dep dep; source {{ git \"url\"; ref \"main\"; {fields} }}");
             assert!(parse_dependency_file(&dependency, Some("dep")).is_err());
             let lock = format!(
                 "lock dep; resolved {{ git \"url\"; ref \"main\"; commit \"sha\"; sig \"digest\"; {fields} }}"
             );
             assert!(parse_lock_file(&lock, Some("dep")).is_err());
         }
-        assert!(parse_dependency_file("dependency dep; source { path () }", Some("dep")).is_err());
+        assert!(parse_dependency_file("dep dep; source { path () }", Some("dep")).is_err());
     }
 
     // ---- Build block inside the package file --------------------------
 
     #[test]
     fn package_file_with_build_block() {
-        let src = "package app;\n\n\
-             build {\n  cache ();\n\n  target js { out \"out/js/\"; }\n}\n\n\
-             bridge {\n  main;\n}\n";
+        let src = "pkg app;
+
+build {
+  cache ();
+
+  target js { out \"out/js/\"; }
+}
+
+bridge {
+  main;
+}
+";
         let ef = parse_package_file(src, Some("app")).expect("parse");
         let build = ef.build.expect("build block present");
         assert!(matches!(
@@ -10618,9 +10441,16 @@ fn ok() -> . { () }
 
     #[test]
     fn package_file_build_block_before_bridge() {
-        let src = "package app;\n\n\
-             build {\n  cache ();\n}\n\n\
-             bridge {\n  main;\n}\n";
+        let src = "pkg app;
+
+build {
+  cache ();
+}
+
+bridge {
+  main;
+}
+";
         let ef = parse_package_file(src, Some("app")).expect("parse");
         assert!(ef.build.is_some());
         assert!(ef.bridge.is_some());
@@ -10628,9 +10458,16 @@ fn ok() -> . { () }
 
     #[test]
     fn package_file_build_block_after_bridge_parses() {
-        let src = "package app;\n\n\
-             bridge {\n  main;\n}\n\n\
-             build {\n  cache ();\n}\n";
+        let src = "pkg app;
+
+bridge {
+  main;
+}
+
+build {
+  cache ();
+}
+";
         let file = parse_package_file(src, Some("app")).expect("unordered package sections");
         assert!(file.build.is_some());
         let bridge = file.bridge.as_ref().expect("bridge survives");
@@ -10641,7 +10478,7 @@ fn ok() -> . { () }
 
     #[test]
     fn package_file_without_build_block() {
-        let src = "package app;\n\nbridge {\n  main;\n}\n";
+        let src = "pkg app;\n\nbridge {\n  main;\n}\n";
         let ef = parse_package_file(src, Some("app")).expect("parse");
         assert!(ef.build.is_none());
     }
@@ -10649,13 +10486,13 @@ fn ok() -> . { () }
     // ---- Package files (`<name>.pkg.kio`) -----------------------------
 
     fn pe(src: &str) -> PackageFile {
-        let full = format!("package pkg;\n{src}");
+        let full = format!("pkg pkg;\n{src}");
         parse_package_file(&full, None)
             .unwrap_or_else(|e| panic!("parse_package_file failed for {full:?}: {e:?}"))
     }
 
     fn pe_err(src: &str) -> String {
-        let full = format!("package pkg;\n{src}");
+        let full = format!("pkg pkg;\n{src}");
         match parse_package_file(&full, None) {
             Err(e) => e.diag().1.to_owned(),
             Ok(_) => panic!("expected parse error for {full:?}"),
@@ -10733,23 +10570,11 @@ fn ok() -> . { () }
     }
 
     #[test]
-    fn package_file_env_block_rejected() {
-        let msg = pe_err("env { type String role(str); }");
-        assert!(msg.contains("`host` declarations"), "got: {msg}");
-    }
-
-    #[test]
-    fn package_file_export_block_rejected() {
-        let msg = pe_err("export { main.main; }");
-        assert!(msg.contains("`host` declarations"), "got: {msg}");
-    }
-
-    #[test]
     fn package_file_module_decl_rejected() {
-        let msg = pe_err("module foo;");
+        let msg = pe_err("mod foo;");
         assert_eq!(
             msg,
-            "a package file contains a `package <name>;` header, an optional `build` block, and an optional `bridge` block"
+            "a package file contains a `pkg <name>;` header, an optional `build` block, and an optional `bridge` block"
         );
     }
 
@@ -10758,7 +10583,7 @@ fn ok() -> . { () }
         let msg = pe_err("fn foo() -> . { () }");
         assert_eq!(
             msg,
-            "a package file contains a `package <name>;` header, an optional `build` block, and an optional `bridge` block"
+            "a package file contains a `pkg <name>;` header, an optional `build` block, and an optional `bridge` block"
         );
     }
 
@@ -10773,7 +10598,7 @@ fn ok() -> . { () }
 
     #[test]
     fn host_type_with_role() {
-        let m = p("module x; host type String role(str);");
+        let m = p("mod x; host type String role(str);");
         match host_items(&m)[0] {
             Item::HostType(h) => {
                 assert_eq!(h.name, "String");
@@ -10786,7 +10611,7 @@ fn ok() -> . { () }
 
     #[test]
     fn host_type_without_role() {
-        let m = p("module x; host type Map[K][V];");
+        let m = p("mod x; host type Map[K][V];");
         match host_items(&m)[0] {
             Item::HostType(h) => {
                 assert_eq!(h.name, "Map");
@@ -10798,35 +10623,14 @@ fn ok() -> . { () }
     }
 
     #[test]
-    fn host_type_owned_block() {
-        let m = p("module x; host type Owned_str role(str) { owned };");
-        match host_items(&m)[0] {
-            Item::HostType(h) => {
-                assert_eq!(h.name, "Owned_str");
-                assert!(h.owned);
-            }
-            other => panic!("expected host type, got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn host_type_without_owned_defaults_false() {
-        let m = p("module x; host type Str role(str);");
-        match host_items(&m)[0] {
-            Item::HostType(h) => assert!(!h.owned),
-            other => panic!("got {other:?}"),
-        }
-    }
-
-    #[test]
     fn host_type_unknown_role_kind_errors() {
-        let msg = p_err("module x; host type Weird role(quux);");
+        let msg = p_err("mod x; host type Weird role(quux);");
         assert!(msg.contains("unknown `role` kind"), "got: {msg}");
     }
 
     #[test]
     fn host_fn_anonymous_param_rejected() {
-        let err = p_err("module x; host fn print_string(String) -> .;");
+        let err = p_err("mod x; host fn print_string(String) -> .;");
         assert!(
             err.contains("expected named host function parameter"),
             "anonymous host fn param must be rejected, got: {err}"
@@ -10836,10 +10640,10 @@ fn ok() -> . { () }
     #[test]
     fn host_fn_omitted_result_is_unit() {
         for source in [
-            "module x; host fn tick();",
-            "module x; host fn discard[A](value: A);",
-            "module x; host fn staged(value: .)[A];",
-            "module x; host fn staged[A](value: A)[B](other: B);",
+            "mod x; host fn tick();",
+            "mod x; host fn discard[A](value: A);",
+            "mod x; host fn staged(value: .)[A];",
+            "mod x; host fn staged[A](value: A)[B](other: B);",
         ] {
             let m = p(source);
             let Item::HostFn(h) = host_items(&m)[0] else {
@@ -10852,13 +10656,13 @@ fn ok() -> . { () }
             };
             assert!(matches!(h.ret, Type::Unit { .. }), "{source}");
         }
-        assert!(p_err("module x; host fn tick() { () }").contains("supplied by the host"));
-        assert!(p_err("module x; host fn discard(value);").contains("expected"));
+        assert!(p_err("mod x; host fn tick() { () }").contains("supplied by the host"));
+        assert!(p_err("mod x; host fn discard(value);").contains("expected"));
     }
 
     #[test]
     fn host_fn_named_param() {
-        let m = p("module x; host fn print(s: String) -> .;");
+        let m = p("mod x; host fn print(s: String) -> .;");
         match host_items(&m)[0] {
             Item::HostFn(h) => match &h.params[0] {
                 crate::ast::HostFnParam::Value(vp) => {
@@ -10872,7 +10676,7 @@ fn ok() -> . { () }
 
     #[test]
     fn host_fn_polymorphic() {
-        let m = p("module x; host fn fold[A][B](f: (B & A) -> B, seed: B, xs: Seq[A]) -> B;");
+        let m = p("mod x; host fn fold[A][B](f: (B & A) -> B, seed: B, xs: Seq[A]) -> B;");
         match host_items(&m)[0] {
             Item::HostFn(h) => {
                 assert_eq!(h.name, "fold");
@@ -10886,7 +10690,7 @@ fn ok() -> . { () }
 
     #[test]
     fn host_fn_returns_bottom() {
-        let m = p("module x; host fn panic(msg: String) -> !;");
+        let m = p("mod x; host fn panic(msg: String) -> !;");
         match host_items(&m)[0] {
             Item::HostFn(h) => assert!(matches!(&h.ret, Type::Bottom { .. })),
             other => panic!("got {other:?}"),
@@ -10897,9 +10701,9 @@ fn ok() -> . { () }
     fn host_pub_normalizes_to_plain_host() {
         // `pub host` / `host pub` are accepted (host items are always
         // public); both parse to the same `Item::HostType`.
-        let m = p("module x; pub host type Foo;");
+        let m = p("mod x; pub host type Foo;");
         assert!(matches!(host_items(&m)[0], Item::HostType(_)));
-        let m = p("module x; host pub type Foo;");
+        let m = p("mod x; host pub type Foo;");
         assert!(matches!(host_items(&m)[0], Item::HostType(_)));
     }
 
@@ -10907,7 +10711,7 @@ fn ok() -> . { () }
     fn host_as_identifier_still_parses() {
         // `host` is a contextual keyword: as an ordinary value name it
         // keeps parsing (here as a `fn` binding named `host`).
-        let m = p("module x; fn host() -> . { () }");
+        let m = p("mod x; fn host() -> . { () }");
         match &m.items[0] {
             Item::FnDef(d) => assert_eq!(d.name, "host"),
             other => panic!("expected fn `host`, got {other:?}"),
@@ -10918,17 +10722,9 @@ fn ok() -> . { () }
 
     #[test]
     fn one_leading_underscore_marks_type_names() {
-        let module = p("module x; \
-             host type Host; \
-             host type _Host; \
-             type Alias[A] = A; \
-             type _Alias[_A] = _A; \
-             type _Poly = [_T] _T -> _T; \
-             type { Box[B] : Alias[B] { mk; get; }; }; \
-             type { _Box[_B] : _Alias[_B] { mk; get; }; }; \
-             type { _Pack[_C] <_Hidden> : _C & _Hidden { mk; get; }; }; \
-             type Row = { Plain: . }; \
-             type _Row = { Field: . };");
+        let module = p(
+            "mod x; host type Host; host type _Host; type Alias[A] = A; type _Alias[_A] = _A; type _Poly = [_T] _T -> _T; type { Box[B] : Alias[B] { mk; get; }; }; type { _Box[_B] : _Alias[_B] { mk; get; }; }; type { _Pack[_C] <_Hidden> : _C & _Hidden { mk; get; }; }; type Row = { Plain: . }; type _Row = { Field: . };",
+        );
         assert_eq!(module.items.len(), 10);
     }
 
@@ -10950,22 +10746,16 @@ fn ok() -> . { () }
             ("Foo__bar", "exactly one `_`"),
             ("Foo1bar", "letter following a digit"),
         ] {
-            let msg = p_err(&format!("module x; type {name} = .;"));
+            let msg = p_err(&format!("mod x; type {name} = .;"));
             assert!(msg.contains(reason), "{name}: {msg}");
         }
     }
 
     #[test]
     fn explicit_call_stages_accept_exact_name_roles_only() {
-        p("module ok; fn id[A](x: A) -> A { x } \
-           fn ordinary[A](value: A) -> A { id[A](value) } \
-           fn marked[_A](_value: _A) -> _A { id[_A](_value) } \
-           fn qualified[_A](_value: _A) -> _A { \
-               id[m._Foo](_value); \
-               let _ = id[_A](Formtype.member[_A](_value)); \
-               let _ = id[_A](m._value1.member(_value)); \
-               id[_A](m._Foo.member(_value)) \
-           }");
+        p(
+            "mod ok; fn id[A](x: A) -> A { x } fn ordinary[A](value: A) -> A { id[A](value) } fn marked[_A](_value: _A) -> _A { id[_A](_value) } fn qualified[_A](_value: _A) -> _A { id[m._Foo](_value); let _ = id[_A](Formtype.member[_A](_value)); let _ = id[_A](m._value1.member(_value)); id[_A](m._Foo.member(_value)) }",
+        );
         for (argument, invalid_name) in [
             ("_FooBar", "_FooBar"),
             ("_FooBar[_A]", "_FooBar"),
@@ -10989,8 +10779,7 @@ fn ok() -> . { () }
                 format!("id[{argument}](x)")
             };
             let msg = p_err(&format!(
-                "module bad; fn id[A](x: A) -> A {{ x }} \
-                 fn f[_A](x: .) -> . {{ {call} }}"
+                "mod bad; fn id[A](x: A) -> A {{ x }} fn f[_A](x: .) -> . {{ {call} }}"
             ));
             assert!(msg.contains(invalid_name), "{argument}: {msg}");
         }
@@ -10998,9 +10787,9 @@ fn ok() -> . { () }
 
     #[test]
     fn expression_paths_accept_exact_name_roles_only() {
-        p("module ok; fn f[_A](_value: .) -> . { m._Foo.member[_A](_value) }");
-        p("module ok; fn f[_A](_value: .) -> . { __pair__[_A][_A](_value, _value) }");
-        p("module ok; fn f() { __Foo.member(__value) }");
+        p("mod ok; fn f[_A](_value: .) -> . { m._Foo.member[_A](_value) }");
+        p("mod ok; fn f[_A](_value: .) -> . { __pair__[_A][_A](_value, _value) }");
+        p("mod ok; fn f() { __Foo.member(__value) }");
         for (expression, invalid_name) in [
             ("_FooBar", "_FooBar"),
             ("_1Foo", "_1Foo"),
@@ -11011,17 +10800,17 @@ fn ok() -> . { () }
             ("m.FooBar.member", "FooBar"),
             ("m.__FooBar.member", "__FooBar"),
         ] {
-            let message = p_err(&format!("module bad; fn f() -> . {{ {expression} }}"));
+            let message = p_err(&format!("mod bad; fn f() -> . {{ {expression} }}"));
             assert!(message.contains(invalid_name), "{expression}: {message}");
         }
     }
 
     #[test]
     fn macro_aliases_are_value_names() {
-        p("module ok; import provider(macro selected as _foo); fn f(x: .) { _foo.<<x }");
+        p("mod ok; import provider {macro selected as _foo} fn f(x: .) { _foo.<<x }");
         for name in ["_Foo", "_FooBar"] {
             let message = p_err(&format!(
-                "module bad; import provider(macro selected as {name});"
+                "mod bad; import provider {{macro selected as {name}}}"
             ));
             assert!(message.contains(name), "{name}: {message}");
         }
@@ -11029,10 +10818,10 @@ fn ok() -> . { () }
 
     #[test]
     fn operator_and_variadic_callable_paths_use_exact_name_roles() {
-        p("module ok; op _ + _ { impl _Box.mk; };");
-        p("module ok; varop [* *] { foldr _foo _Box.mk; };");
-        p("module ok; op _ + _ { impl __pair__; };");
-        p("module ok; varop [* *] { foldr __pair__ _foo; finalize __fst__; };");
+        p("mod ok; op _ + _ { impl _Box.mk; };");
+        p("mod ok; op_var [* *] { foldr _foo _Box.mk; };");
+        p("mod ok; op _ + _ { impl __pair__; };");
+        p("mod ok; op_var [* *] { foldr __pair__ _foo; finalize __fst__; };");
         for (reference, invalid_name) in [
             ("_Foo", "_Foo"),
             ("FooBar", "FooBar"),
@@ -11040,13 +10829,13 @@ fn ok() -> . { () }
             ("_FooBar.member", "_FooBar"),
             ("_1Foo.member", "_1Foo"),
         ] {
-            let op_message = p_err(&format!("module bad; op _ + _ {{ impl {reference}; }};"));
+            let op_message = p_err(&format!("mod bad; op _ + _ {{ impl {reference}; }};"));
             assert!(
                 op_message.contains(invalid_name),
                 "op {reference}: {op_message}"
             );
             let fold_message = p_err(&format!(
-                "module bad; varop [* *] {{ foldr ok {reference}; }};"
+                "mod bad; op_var [* *] {{ foldr ok {reference}; }};"
             ));
             assert!(
                 fold_message.contains(invalid_name),
@@ -11057,10 +10846,17 @@ fn ok() -> . { () }
 
     #[test]
     fn selective_imports_accept_exact_name_roles_only() {
-        p("module x; import provider(Foo, foo, _Foo, _foo, _foo1); fn ok() -> . { () }");
+        p(
+            "mod x; import provider {type Foo; fn foo; type _Foo; fn _foo; fn _foo1} fn ok() -> . { () }",
+        );
         for name in ["_FooBar", "_1Foo", "_1foo", "FooBar", "__Foo"] {
+            let kind = if name.chars().any(|c| c.is_ascii_uppercase()) {
+                "type"
+            } else {
+                "fn"
+            };
             let msg = p_err(&format!(
-                "module x; import provider({name}); fn bad() -> . {{ () }}"
+                "mod x; import provider {{ {kind} {name} }} fn bad() -> . {{ () }}"
             ));
             assert!(msg.contains(name), "{name}: {msg}");
         }
@@ -11069,80 +10865,80 @@ fn ok() -> . { () }
     #[test]
     fn marked_type_names_are_rejected_in_value_only_roles() {
         for source in [
-            "module m; type T = m._Foo;",
-            "module m; type T = m.Foo;",
-            "module m; fn f(_: .) -> . { let _ = (); .(_: .) { () }(()) }",
-            "module m; rec(__pair__) fn f() -> . { () }",
+            "mod m; type T = m._Foo;",
+            "mod m; type T = m.Foo;",
+            "mod m; fn f(_: .) -> . { let _ = (); .(_: .) { () }(()) }",
+            "mod m; rec(__pair__) fn f() -> . { () }",
         ] {
             p(source);
         }
         for (role, invalid, valid) in [
-            ("module head", "module _Foo;", "module _foo;"),
-            ("module tail", "module m/_Foo;", "module m/_foo;"),
+            ("module head", "mod _Foo;", "mod _foo;"),
+            ("module tail", "mod m/_Foo;", "mod m/_foo;"),
             (
                 "qualified import source",
-                "module m; import _Foo as dep; fn f() -> . { () }",
-                "module m; import _foo as dep; fn f() -> . { () }",
+                "mod m; import _Foo as dep; fn f() -> . { () }",
+                "mod m; import _foo as dep; fn f() -> . { () }",
             ),
             (
                 "qualified import source tail",
-                "module m; import provider/_Foo as dep; fn f() -> . { () }",
-                "module m; import provider/_foo as dep; fn f() -> . { () }",
+                "mod m; import provider/_Foo as dep; fn f() -> . { () }",
+                "mod m; import provider/_foo as dep; fn f() -> . { () }",
             ),
             (
                 "qualified import alias",
-                "module m; import provider as _Foo; fn f() -> . { () }",
-                "module m; import provider as _foo; fn f() -> . { () }",
+                "mod m; import provider as _Foo; fn f() -> . { () }",
+                "mod m; import provider as _foo; fn f() -> . { () }",
             ),
             (
                 "function name",
-                "module m; fn _Foo() -> . { () }",
-                "module m; fn _foo() -> . { () }",
+                "mod m; fn _Foo() -> . { () }",
+                "mod m; fn _foo() -> . { () }",
             ),
             (
                 "host function name",
-                "module m; host fn _Foo() -> .;",
-                "module m; host fn _foo() -> .;",
+                "mod m; host fn _Foo() -> .;",
+                "mod m; host fn _foo() -> .;",
             ),
             (
                 "function parameter",
-                "module m; fn f(_Foo: .) -> . { () }",
-                "module m; fn f(_foo: .) -> . { () }",
+                "mod m; fn f(_Foo: .) -> . { () }",
+                "mod m; fn f(_foo: .) -> . { () }",
             ),
             (
                 "host function parameter",
-                "module m; host fn f(_Foo: .) -> .;",
-                "module m; host fn f(_foo: .) -> .;",
+                "mod m; host fn f(_Foo: .) -> .;",
+                "mod m; host fn f(_foo: .) -> .;",
             ),
             (
                 "lambda parameter",
-                "module m; fn f() -> . { .(_Foo: .) { () } }",
-                "module m; fn f() -> . { .(_foo: .) { () } }",
+                "mod m; fn f() -> . { .(_Foo: .) { () } }",
+                "mod m; fn f() -> . { .(_foo: .) { () } }",
             ),
             (
                 "let binder",
-                "module m; fn f() -> . { let _Foo = (); () }",
-                "module m; fn f() -> . { let _foo = (); () }",
+                "mod m; fn f() -> . { let _Foo = (); () }",
+                "mod m; fn f() -> . { let _foo = (); () }",
             ),
             (
                 "type-path module qualifier",
-                "module m; type T = _Foo.Bar;",
-                "module m; type T = _foo.Bar;",
+                "mod m; type T = _Foo.Bar;",
+                "mod m; type T = _foo.Bar;",
             ),
             (
                 "type-path module qualifier tail",
-                "module m; type T = provider/_Foo.Bar;",
-                "module m; type T = provider/_foo.Bar;",
+                "mod m; type T = provider/_Foo.Bar;",
+                "mod m; type T = provider/_foo.Bar;",
             ),
             (
                 "recursion loop path",
-                "module m; rec(_Foo) fn f() -> . { () }",
-                "module m; rec(_foo) fn f() -> . { () }",
+                "mod m; rec(_Foo) fn f() -> . { () }",
+                "mod m; rec(_foo) fn f() -> . { () }",
             ),
             (
                 "UFCS callee",
-                "module m; fn f(x: .) -> . { x.>_Foo }",
-                "module m; fn f(x: .) -> . { x.>_foo }",
+                "mod m; fn f(x: .) -> . { x.>_Foo }",
+                "mod m; fn f(x: .) -> . { x.>_foo }",
             ),
         ] {
             let message = p_err(invalid);
@@ -11154,26 +10950,26 @@ fn ok() -> . { () }
     #[test]
     fn macro_captures_accept_exact_type_or_value_roles() {
         for source in [
-            "module m; macro demo : . -> . { captures Foo; impl _foo; };",
-            "module m; macro demo : . -> . { captures _Foo; impl _foo; };",
-            "module m; macro demo : . -> . { captures _foo; impl _foo; };",
-            "module m; macro demo : . -> . { captures m._Foo.member; impl _foo; };",
+            "mod m; macro demo : . -> . { captures Foo; impl _foo; };",
+            "mod m; macro demo : . -> . { captures _Foo; impl _foo; };",
+            "mod m; macro demo : . -> . { captures _foo; impl _foo; };",
+            "mod m; macro demo : . -> . { captures m._Foo.member; impl _foo; };",
         ] {
             p(source);
         }
         for name in ["_FooBar", "_1Foo", "__pair__"] {
             let bare = p_err(&format!(
-                "module m; macro demo : . -> . {{ captures {name}; impl _foo; }};"
+                "mod m; macro demo : . -> . {{ captures {name}; impl _foo; }};"
             ));
             assert!(bare.contains(name), "bare {name}: {bare}");
             let dotted = p_err(&format!(
-                "module m; macro demo : . -> . {{ captures m.{name}; impl _foo; }};"
+                "mod m; macro demo : . -> . {{ captures m.{name}; impl _foo; }};"
             ));
             assert!(dotted.contains(name), "dotted {name}: {dotted}");
         }
         for name in ["Foo", "_Foo"] {
             let message = p_err(&format!(
-                "module m; macro demo : . -> . {{ captures m.{name}; impl _foo; }};"
+                "mod m; macro demo : . -> . {{ captures m.{name}; impl _foo; }};"
             ));
             assert!(message.contains(name), "dotted {name}: {message}");
         }
@@ -11181,21 +10977,21 @@ fn ok() -> . { () }
 
     #[test]
     fn ufcs_callee_accepts_documented_reserved_value_references() {
-        p("module m; fn f(x: ., y: .) -> . { x.>__pair__[.][.](y) }");
+        p("mod m; fn f(x: ., y: .) -> . { x.>__pair__[.][.](y) }");
         p(
-            "module m; fn f[Bool](packet: Bool & (. -> Bool) & (. -> Bool)) -> Bool { packet.>>__if_then_else__[Bool] }",
+            "mod m; fn f[Bool](packet: Bool & (. -> Bool) & (. -> Bool)) -> Bool { packet.>>__if_then_else__[Bool] }",
         );
         for name in ["_Foo", "_FooBar", "__Foo"] {
-            let message = p_err(&format!("module m; fn f(x: .) -> . {{ x.>{name} }}"));
+            let message = p_err(&format!("mod m; fn f(x: .) -> . {{ x.>{name} }}"));
             assert!(message.contains(name), "{name}: {message}");
         }
     }
 
     #[test]
     fn macro_import_requires_a_user_value_name() {
-        p("module m; import provider(macro _foo); fn f(x: .) { x.>_foo }");
+        p("mod m; import provider {macro _foo} fn f(x: .) { x.>_foo }");
         for name in ["__pair__", "__if_then_else__", "_Foo"] {
-            let message = p_err(&format!("module m; import provider(macro {name});"));
+            let message = p_err(&format!("mod m; import provider {{macro {name}}}"));
             assert!(message.contains(name), "{name}: {message}");
         }
     }
@@ -11203,12 +10999,12 @@ fn ok() -> . { () }
     #[test]
     fn left_callee_ufcs_accepts_exact_value_references() {
         for source in [
-            "module m; fn f(x: .) -> . { _foo.<x }",
-            "module m; fn f(x: .) -> . { _foo(()).<x }",
-            "module m; fn f(x: .) -> . { _Box.mk.<x }",
-            "module m; fn f(x: .) -> . { _Box.mk(()).<x }",
-            "module m; fn f(x: .) -> . { __pair__[.][.](x, x).<x }",
-            "module m; fn f(x: .) -> . { _foo(()).<<x }",
+            "mod m; fn f(x: .) -> . { _foo.<x }",
+            "mod m; fn f(x: .) -> . { _foo(()).<x }",
+            "mod m; fn f(x: .) -> . { _Box.mk.<x }",
+            "mod m; fn f(x: .) -> . { _Box.mk(()).<x }",
+            "mod m; fn f(x: .) -> . { __pair__[.][.](x, x).<x }",
+            "mod m; fn f(x: .) -> . { _foo(()).<<x }",
         ] {
             p(source);
         }
@@ -11219,17 +11015,17 @@ fn ok() -> . { () }
             ("_FooBar(())", "_FooBar"),
             ("__Foo", "__Foo"),
         ] {
-            let message = p_err(&format!("module m; fn f(x: .) -> . {{ {callee}.<x }}"));
+            let message = p_err(&format!("mod m; fn f(x: .) -> . {{ {callee}.<x }}"));
             assert!(message.contains(invalid_name), "{callee}: {message}");
         }
     }
 
     #[test]
     fn slash_only_qualified_type_paths_are_rejected() {
-        for source in ["module m; type T = m._Foo;", "module m; type T = m.Foo;"] {
+        for source in ["mod m; type T = m._Foo;", "mod m; type T = m.Foo;"] {
             p(source);
         }
-        for source in ["module m; type T = m/_Foo;", "module m; type T = m/Foo;"] {
+        for source in ["mod m; type T = m/_Foo;", "mod m; type T = m/Foo;"] {
             let message = p_err(source);
             assert!(
                 message.contains("qualified paths require"),
@@ -11240,7 +11036,7 @@ fn ok() -> . { () }
 
     #[test]
     fn bare_underscore_remains_a_slot_not_a_type_name() {
-        let msg = p_err("module x; type _ = .;");
+        let msg = p_err("mod x; type _ = .;");
         assert!(
             msg.contains("type name `_` must contain at least one ASCII letter"),
             "{msg}"
@@ -11250,14 +11046,14 @@ fn ok() -> . { () }
     #[test]
     fn reserved_shape_newtype_name_rejected() {
         // A user declaration cannot occupy the reserved hygiene namespace.
-        let msg = p_err("module x; type { __Tag_foo__ : . { pub mk; pub get; }; };");
+        let msg = p_err("mod x; type { __Tag_foo__ : . { pub mk; pub get; }; };");
         assert!(msg.contains("may not begin with `__`"), "got: {msg}");
     }
 
     #[test]
     fn reserved_shape_value_param_name_rejected() {
         // Reservation applies equally to local and module-level declarations.
-        let msg = p_err("module x; fn f() -> . { .(__p1__) { () }(()) }");
+        let msg = p_err("mod x; fn f() -> . { .(__p1__) { () }(()) }");
         assert!(msg.contains("`__`"), "got: {msg}");
     }
 
@@ -11267,13 +11063,13 @@ fn ok() -> . { () }
         // bare references like `__pair__` after that import go
         // through the IDENT lexer rule (not the declaration
         // validators), so they continue to parse.
-        let _ = p("module x; import __intrinsics__; fn f() -> . { __pair__[.][.]((), ()) }");
+        let _ = p("mod x; import __intrinsics__; fn f() -> . { __pair__[.][.]((), ()) }");
     }
 
     #[test]
     fn user_leading_underscore_pair_rejected() {
         // Trailing affixes do not affect leading-prefix reservation.
-        let msg = p_err("module x; fn __foo() -> . { () }");
+        let msg = p_err("mod x; fn __foo() -> . { () }");
         assert!(msg.contains("`__`"), "got: {msg}");
     }
 
@@ -11281,7 +11077,7 @@ fn ok() -> . { () }
     fn user_trailing_underscore_pair_accepted() {
         // `foo__` (no leading `__`) is just a value name with a
         // trailing underscore — fine.
-        let _ = p("module x; fn foo__() -> . { () }");
+        let _ = p("mod x; fn foo__() -> . { () }");
     }
 
     #[test]
@@ -11291,10 +11087,10 @@ fn ok() -> . { () }
         // (letterless) have no role and are rejected at every name
         // position — here a fn name and a `let` binder name.
         for src in [
-            "module x; fn _() -> . { () }",
-            "module x; fn _1() -> . { () }",
-            "module x; fn _1_2() -> . { () }",
-            "module x; fn f() -> . { let _1 = (); _1 }",
+            "mod x; fn _() -> . { () }",
+            "mod x; fn _1() -> . { () }",
+            "mod x; fn _1_2() -> . { () }",
+            "mod x; fn f() -> . { let _1 = (); _1 }",
         ] {
             let msg = p_err(src);
             assert!(
@@ -11310,9 +11106,9 @@ fn ok() -> . { () }
         // legal wherever a binder admits it: `let`, top-level fn
         // params, and lambda params. (Rejection applies only to `_`
         // in a *name* role — see `letterless_value_name_rejected`.)
-        let _ = p("module x; fn f() -> . { let _ = (); () }");
-        let _ = p("module x; fn f(_: .) -> . { () }");
-        let _ = p("module x; fn use_it() -> . { g(.(_: .) { () }) }");
+        let _ = p("mod x; fn f() -> . { let _ = (); () }");
+        let _ = p("mod x; fn f(_: .) -> . { () }");
+        let _ = p("mod x; fn use_it() -> . { g(.(_: .) { () }) }");
     }
 
     #[test]
@@ -11320,7 +11116,7 @@ fn ok() -> . { () }
         // `_` in a type position parses as `Type::Infer` — the
         // surface-only placeholder the typer is responsible for
         // resolving.
-        let m = p("module x; fn id(x: _) -> _ { x }");
+        let m = p("mod x; fn id(x: _) -> _ { x }");
         let crate::ast::Item::FnDef(d) = &m.items[0] else {
             panic!("expected fn, got {:?}", m.items[0]);
         };
@@ -11343,7 +11139,7 @@ fn ok() -> . { () }
 
     #[test]
     fn underscore_parses_in_type_arg_list() {
-        let m = p("module x; fn use_id() { f[_](()) }");
+        let m = p("mod x; fn use_id() { f[_](()) }");
         let Item::FnDef(d) = &m.items[0] else {
             panic!("function");
         };
@@ -11373,13 +11169,13 @@ fn ok() -> . { () }
         let Error::Parse(Diagnostic { message, .. }) = err else {
             panic!("expected Parse error");
         };
-        assert!(message.contains("package <name>"), "got: {message}");
+        assert!(message.contains("pkg <name>"), "got: {message}");
     }
 
     #[test]
     fn package_file_header_name_must_match_stem() {
         let err =
-            parse_package_file("package wrong;", Some("logger")).expect_err("expected parse error");
+            parse_package_file("pkg wrong;", Some("logger")).expect_err("expected parse error");
         let Error::Parse(Diagnostic { message, .. }) = err else {
             panic!("expected Parse error");
         };
@@ -11410,7 +11206,7 @@ fn ok() -> . { () }
 
     #[test]
     fn sig_header_only() {
-        let f = sig("signature app v(1);\n");
+        let f = sig("sig app v(1);\n");
         assert_eq!(f.pkg, "app");
         assert_eq!(f.version, 1);
         assert!(f.versions.is_empty());
@@ -11418,7 +11214,7 @@ fn ok() -> . { () }
 
     #[test]
     fn sig_header_stem_mismatch_rejected() {
-        let msg = match parse_signature_file("signature app v(1);\n", Some("other")) {
+        let msg = match parse_signature_file("sig app v(1);\n", Some("other")) {
             Err(e) => e.diag().1.to_owned(),
             Ok(_) => panic!("expected stem mismatch error"),
         };
@@ -11427,13 +11223,13 @@ fn ok() -> . { () }
 
     #[test]
     fn sig_header_missing_signature_keyword_rejected() {
-        let msg = sig_err("package app v(1);\n");
-        assert!(msg.contains("signature <pkg> v(<N>)"), "got: {msg}");
+        let msg = sig_err("pkg app v(1);\n");
+        assert!(msg.contains("sig <pkg> v(<N>)"), "got: {msg}");
     }
 
     #[test]
     fn sig_header_missing_version_rejected() {
-        let msg = sig_err("signature app;\n");
+        let msg = sig_err("sig app;\n");
         assert!(msg.contains("v(<N>)"), "got: {msg}");
     }
 
@@ -11445,12 +11241,12 @@ fn ok() -> . { () }
     /// `nonbreaking` section (an `add`).
     #[test]
     fn sig_multi_version_full_shape() {
-        let src = r#"signature app v(2);
+        let src = r#"sig app v(2);
 
 v(1) {
   nonbreaking {
     add {
-      module app/api {
+      mod app/api {
         import app/types as t;
         host type Handle role(i32);
         host fn open(path: Text) -> Handle;
@@ -11465,20 +11261,20 @@ v(1) {
 v(2) {
   breaking {
     modify {
-      module app/api {
+      mod app/api {
         pub fn serve(h: Handle, opts: I32) -> .;
       }
     };
     remove {
-      module app/api {
-        open;
-        Alias;
-      }
+
+        app/api.open;
+        app/api.Alias;
+
     }
   };
   nonbreaking {
     add {
-      module app/api {
+      mod app/api {
         pub fn close(h: Handle) -> .;
       }
     }
@@ -11497,7 +11293,7 @@ v(2) {
         let nb1 = v1.nonbreaking.as_ref().expect("v(1) nonbreaking");
         assert_eq!(nb1.add.len(), 1);
         assert!(nb1.modify.is_empty());
-        assert!(nb1.remove.is_empty());
+        assert!(nb1.remove_refs.is_empty());
         let sec = &nb1.add[0];
         assert_eq!(module_path_str(&sec.path), "app/api");
         assert_eq!(sec.imports.len(), 1);
@@ -11523,15 +11319,19 @@ v(2) {
         let br2 = v2.breaking.as_ref().expect("v(2) breaking");
         assert!(br2.add.is_empty());
         assert_eq!(br2.modify.len(), 1);
-        assert_eq!(br2.remove.len(), 1);
+        assert_eq!(br2.remove_refs.len(), 2);
         let modify_sec = &br2.modify[0];
         assert_eq!(module_path_str(&modify_sec.path), "app/api");
         assert!(
             matches!(&modify_sec.items[0], SigItem::ExportFn(export) if export.function.name == "serve")
         );
-        let removed = &br2.remove[0];
-        assert_eq!(module_path_str(&removed.path), "app/api");
-        let names: Vec<&str> = removed.names.iter().map(|n| n.name.as_str()).collect();
+        let removed = &br2.remove_refs;
+        assert!(
+            removed
+                .iter()
+                .all(|item| module_path_str(&item.path) == "app/api")
+        );
+        let names: Vec<&str> = removed.iter().map(|n| n.name.as_str()).collect();
         assert_eq!(names, vec!["open", "Alias"]);
 
         let nb2 = v2.nonbreaking.as_ref().expect("v(2) nonbreaking");
@@ -11543,11 +11343,11 @@ v(2) {
 
     #[test]
     fn sig_recursive_group_uses_version_context_and_exact_member_refs() {
-        let src = r#"signature app v(1);
+        let src = r#"sig app v(1);
 
 v(1) {
   with {
-    module api {
+    mod api {
       rec {
         pub type A = B;
         pub type { B : A { pub mk; pub get; }; };
@@ -11576,7 +11376,7 @@ v(1) {
         assert_eq!(add_refs[1].name, "B");
 
         let emitted = crate::sig::emit_signature_file(&file);
-        assert!(emitted.contains("with {\n    module api {\n      rec {"));
+        assert!(emitted.contains("with {\n    mod api {\n      rec {"));
         assert!(emitted.contains("add {\n      api.A;\n      api.B\n    }"));
         let reparsed = sig(&emitted);
         assert_eq!(reparsed.versions[0].with.len(), 1);
@@ -11594,8 +11394,9 @@ v(1) {
     #[test]
     fn sig_recursive_group_is_rejected_inline_in_an_operation() {
         let message = sig_err(
-            "signature app v(1);\n\
-             v(1) { nonbreaking { add { module api { rec { type A = B; type { B : A { mk; get; }; }; } } } } }\n",
+            "sig app v(1);
+v(1) { nonbreaking { add { mod api { rec { type A = B; type { B : A { mk; get; }; }; } } } } }
+",
         );
         assert!(message.contains("version-leading `with`"), "got: {message}");
     }
@@ -11603,8 +11404,9 @@ v(1) {
     #[test]
     fn sig_operation_reference_requires_an_exact_module_path() {
         let message = sig_err(
-            "signature app v(1);\n\
-             v(1) { nonbreaking { add { api; } } }\n",
+            "sig app v(1);
+v(1) { nonbreaking { add { api; } } }
+",
         );
         assert!(
             message.contains("between the module path and declaration name"),
@@ -11614,10 +11416,10 @@ v(1) {
 
     #[test]
     fn sig_item_refs_use_the_nonexpression_fqn_category_with_contextual_names() {
-        let file = sig(r#"signature app v(1);
+        let file = sig(r#"sig app v(1);
 v(1) {
   with {
-    module module/with {
+    mod module/with {
       rec {
         pub type A = B;
         pub type { B : A { pub mk; pub get; }; };
@@ -11640,8 +11442,9 @@ v(1) {
 
     #[test]
     fn sig_legacy_nested_remove_emits_as_an_exact_fqn() {
-        let file = sig("signature app v(1);\n\
-             v(1) { breaking { remove { module foo/bar { A; } } } }\n");
+        let file = sig("sig app v(1);
+v(1) { breaking { remove {  foo/bar.A;  } } }
+");
         let emitted = crate::sig::emit_signature_file(&file);
         assert!(emitted.contains("remove {\n      foo/bar.A\n    }"));
         assert!(!emitted.contains("module foo/bar"));
@@ -11649,8 +11452,9 @@ v(1) {
 
     #[test]
     fn sig_export_fn_stray_body_rejected() {
-        let src = "signature app v(1);\n\
-            v(1) { nonbreaking { add { module app { pub fn f() -> . { () } } } } }\n";
+        let src = "sig app v(1);
+v(1) { nonbreaking { add { mod app { pub fn f() -> . { () } } } } }
+";
         let msg = sig_err(src);
         assert!(
             msg.contains("body-less signature") && msg.contains("pub fn f(p) -> R;"),
@@ -11660,16 +11464,18 @@ v(1) {
 
     #[test]
     fn sig_export_fn_must_be_pub() {
-        let src = "signature app v(1);\n\
-            v(1) { nonbreaking { add { module app { fn f() -> .; } } } }\n";
+        let src = "sig app v(1);
+v(1) { nonbreaking { add { mod app { fn f() -> .; } } } }
+";
         let msg = sig_err(src);
         assert!(msg.contains("must be `pub`"), "got: {msg}");
     }
 
     #[test]
     fn sig_export_fn_accepts_pure() {
-        let file = sig("signature app v(1);\n\
-            v(1) { nonbreaking { add { module app { pub pure fn f() -> .; } } } }\n");
+        let file = sig("sig app v(1);
+v(1) { nonbreaking { add { mod app { pub pure fn f() -> .; } } } }
+");
         let SigItem::ExportFn(export) =
             &file.versions[0].nonbreaking.as_ref().unwrap().add[0].items[0]
         else {
@@ -11695,8 +11501,9 @@ v(1) {
             "pub pure type { N : . { pub mk; pub get; }; };",
         ] {
             let source = format!(
-                "signature app v(1);\n\
-                 v(1) {{ nonbreaking {{ add {{ module app {{ {declaration} }} }} }} }}\n"
+                "sig app v(1);
+v(1) {{ nonbreaking {{ add {{ mod app {{ {declaration} }} }} }} }}
+"
             );
             let message = sig_err(&source);
             assert!(
@@ -11708,8 +11515,9 @@ v(1) {
 
     #[test]
     fn sig_rejects_pure_host_fn_with_no_host_call_reason() {
-        let source = "signature app v(1);\n\
-            v(1) { nonbreaking { add { module app { pure host fn effect() -> .; } } } }\n";
+        let source = "sig app v(1);
+v(1) { nonbreaking { add { mod app { pure host fn effect() -> .; } } } }
+";
         let message = sig_err(source);
         assert!(
             message.contains("`pure` means that a function does not call host functions"),
@@ -11719,8 +11527,9 @@ v(1) {
 
     #[test]
     fn sig_surface_only_form_rejected() {
-        let src = "signature app v(1);\n\
-            v(1) { nonbreaking { add { module app { type { A: I32; }; } } } }\n";
+        let src = "sig app v(1);
+v(1) { nonbreaking { add { mod app { type { A: I32; }; } } } }
+";
         let msg = sig_err(src);
         assert!(
             msg.contains("one entry with an explicit `mk` / `get` body"),
@@ -11729,19 +11538,8 @@ v(1) {
     }
 
     #[test]
-    fn sig_owned_source_annotation_rejected() {
-        // A `.sig.kio` records backend-independent signatures. The redundant
-        // source-compatible `{ owned }` annotation is not part of that
-        // contract and is rejected with a sig-context diagnostic.
-        let src = "signature app v(1);\n\
-            v(1) { nonbreaking { add { module api { host type H role(str) { owned }; } } } }\n";
-        let msg = sig_err(src);
-        assert!(msg.contains("backend-independent signatures"), "got: {msg}");
-    }
-
-    #[test]
     fn sig_empty_version_block_rejected() {
-        let msg = sig_err("signature app v(1);\nv(1) {}\n");
+        let msg = sig_err("sig app v(1);\nv(1) {}\n");
         assert!(
             msg.contains("at least one of `breaking") || msg.contains("nonbreaking"),
             "got: {msg}"
@@ -11750,9 +11548,9 @@ v(1) {
 
     #[test]
     fn sig_named_sections_accept_nonbreaking_before_breaking() {
-        let src = "signature app v(1);\n\
-            v(1) { nonbreaking { add { module app { pub fn f() -> .; } } }; \
-            breaking { add { module app { host type H; } } } }\n";
+        let src = "sig app v(1);
+v(1) { nonbreaking { add { mod app { pub fn f() -> .; } } }; breaking { add { mod app { host type H; } } } }
+";
         let parsed = sig(src);
         assert_eq!(
             parsed.versions[0].breaking.as_ref().unwrap().add[0]
@@ -11778,14 +11576,14 @@ v(1) {
 
     #[test]
     fn sig_change_buckets_accept_remove_before_add() {
-        let src = "signature app v(2);\n\
-            v(1) { nonbreaking { add { module app { pub fn f() -> .; } } } }\n\
-            v(2) { nonbreaking { remove { module app { f; } }; \
-            add { module app { pub fn g() -> .; } } } }\n";
+        let src = "sig app v(2);
+v(1) { nonbreaking { add { mod app { pub fn f() -> .; } } } }
+v(2) { nonbreaking { remove {  app.f;  }; add { mod app { pub fn g() -> .; } } } }
+";
         let parsed = sig(src);
         let set = parsed.versions[1].nonbreaking.as_ref().unwrap();
         assert_eq!(set.add[0].items.len(), 1);
-        assert_eq!(set.remove[0].names.len(), 1);
+        assert_eq!(set.remove_refs.len(), 1);
         let replayed = crate::sig::replay(&parsed).expect("valid reordered buckets");
         let names: Vec<_> = replayed
             .current
@@ -11805,11 +11603,12 @@ v(1) {
         // export fn) and a `_?[A-Z][a-z0-9_]*` type name (host
         // type / exported newtype / type alias). Side is recovered by
         // replay, so the remove block lists names of either shape.
-        let src = "signature app v(1);\n\
-            v(1) { breaking { remove { module app { old_fn; Old_type; _Old_type; } } } }\n";
+        let src = "sig app v(1);
+v(1) { breaking { remove {  app.old_fn; app.Old_type; app._Old_type;  } } }
+";
         let f = sig(src);
-        let removed = &f.versions[0].breaking.as_ref().unwrap().remove[0];
-        let names: Vec<&str> = removed.names.iter().map(|n| n.name.as_str()).collect();
+        let removed = &f.versions[0].breaking.as_ref().unwrap().remove_refs;
+        let names: Vec<&str> = removed.iter().map(|n| n.name.as_str()).collect();
         assert_eq!(names, vec!["old_fn", "Old_type", "_Old_type"]);
     }
 
@@ -11817,8 +11616,9 @@ v(1) {
     fn sig_empty_module_section_admissible() {
         // A module section with no items models module removal (the
         // module is empty after replay). Empty modules are admissible.
-        let src = "signature app v(1);\n\
-            v(1) { nonbreaking { add { module app {} } } }\n";
+        let src = "sig app v(1);
+v(1) { nonbreaking { add { mod app {} } } }
+";
         let f = sig(src);
         let sec = &f.versions[0].nonbreaking.as_ref().unwrap().add[0];
         assert!(sec.items.is_empty());
@@ -11827,7 +11627,7 @@ v(1) {
 
     #[test]
     fn sig_trailing_garbage_rejected() {
-        let msg = sig_err("signature app v(1);\nmodule app;\n");
+        let msg = sig_err("sig app v(1);\nmod app;\n");
         assert!(
             msg.contains("version block or end of signature file"),
             "got: {msg}"
@@ -11840,10 +11640,35 @@ v(1) {
         // rejects it (an input error, not a panic) so replay and the
         // draft recompute can't disagree about the same file.
         let msg = sig_err(
-            "signature app v(2);\n\
-             v(1) {\n  nonbreaking {\n    add {\n      module api {\n        pub fn a() -> .;\n      }\n    }\n  }\n}\n\
-             v(2) {\n  nonbreaking {\n    add {\n      module api {\n        pub fn b() -> .;\n      }\n    }\n  }\n}\n\
-             v(2) {\n  nonbreaking {\n    add {\n      module api {\n        pub fn c() -> .;\n      }\n    }\n  }\n}\n",
+            "sig app v(2);
+v(1) {
+  nonbreaking {
+    add {
+      mod api {
+        pub fn a() -> .;
+      }
+    }
+  }
+}
+v(2) {
+  nonbreaking {
+    add {
+      mod api {
+        pub fn b() -> .;
+      }
+    }
+  }
+}
+v(2) {
+  nonbreaking {
+    add {
+      mod api {
+        pub fn c() -> .;
+      }
+    }
+  }
+}
+",
         );
         assert!(msg.contains("duplicate `v(2)`"), "got: {msg}");
     }
@@ -11853,9 +11678,26 @@ v(1) {
         // A block `v(3)` under a `v(2)` header is incoherent — the
         // header generation is the open draft, so no later block exists.
         let msg = sig_err(
-            "signature app v(2);\n\
-             v(1) {\n  nonbreaking {\n    add {\n      module api {\n        pub fn a() -> .;\n      }\n    }\n  }\n}\n\
-             v(3) {\n  nonbreaking {\n    add {\n      module api {\n        pub fn b() -> .;\n      }\n    }\n  }\n}\n",
+            "sig app v(2);
+v(1) {
+  nonbreaking {
+    add {
+      mod api {
+        pub fn a() -> .;
+      }
+    }
+  }
+}
+v(3) {
+  nonbreaking {
+    add {
+      mod api {
+        pub fn b() -> .;
+      }
+    }
+  }
+}
+",
         );
         assert!(msg.contains("out of range"), "got: {msg}");
     }
@@ -11865,9 +11707,26 @@ v(1) {
         // A gap: `v(1)` then `v(3)` (missing `v(2)`) under a `v(3)`
         // header. Version blocks must run `v(1)`..=`v(max)` with no hole.
         let msg = sig_err(
-            "signature app v(3);\n\
-             v(1) {\n  nonbreaking {\n    add {\n      module api {\n        pub fn a() -> .;\n      }\n    }\n  }\n}\n\
-             v(3) {\n  nonbreaking {\n    add {\n      module api {\n        pub fn b() -> .;\n      }\n    }\n  }\n}\n",
+            "sig app v(3);
+v(1) {
+  nonbreaking {
+    add {
+      mod api {
+        pub fn a() -> .;
+      }
+    }
+  }
+}
+v(3) {
+  nonbreaking {
+    add {
+      mod api {
+        pub fn b() -> .;
+      }
+    }
+  }
+}
+",
         );
         assert!(msg.contains("non-contiguous"), "got: {msg}");
     }
@@ -11878,9 +11737,33 @@ v(1) {
         // first surviving block is the correctly partitioned
         // add-only boundary, and the original v(4) removal remains at
         // its own generation.
-        let file = sig("signature app v(4);\n\
-             v(3) {\n  breaking {\n    add {\n      module api {\n        host fn need() -> .;\n      }\n    }\n  };\n  nonbreaking {\n    add {\n      module api {\n        pub fn provide() -> .;\n      }\n    }\n  }\n}\n\
-             v(4) {\n  nonbreaking {\n    remove {\n      module api {\n        need;\n      }\n    }\n  }\n}\n");
+        let file = sig("sig app v(4);
+v(3) {
+  breaking {
+    add {
+      mod api {
+        host fn need() -> .;
+      }
+    }
+  };
+  nonbreaking {
+    add {
+      mod api {
+        pub fn provide() -> .;
+      }
+    }
+  }
+}
+v(4) {
+  nonbreaking {
+    remove {
+
+        api.need;
+
+    }
+  }
+}
+");
         assert_eq!(
             file.versions
                 .iter()
@@ -11892,9 +11775,29 @@ v(1) {
 
     #[test]
     fn sig_later_recursive_compact_boundary_is_self_validating() {
-        let file = sig("signature app v(3);\n\
-             v(2) {\n  with {\n    module api {\n      rec {\n        pub type A = B;\n        pub type { B : A { pub mk; pub get; }; };\n      }\n    }\n  };\n  nonbreaking {\n    add {\n      api.A;\n      api.B;\n    }\n  }\n}\n\
-             v(3) {\n  breaking {\n    remove { api.A; }\n  }\n}\n");
+        let file = sig("sig app v(3);
+v(2) {
+  with {
+    mod api {
+      rec {
+        pub type A = B;
+        pub type { B : A { pub mk; pub get; }; };
+      }
+    }
+  };
+  nonbreaking {
+    add {
+      api.A;
+      api.B;
+    }
+  }
+}
+v(3) {
+  breaking {
+    remove { api.A; }
+  }
+}
+");
         assert_eq!(
             file.versions
                 .iter()
@@ -11907,8 +11810,19 @@ v(1) {
     #[test]
     fn sig_later_recursive_boundary_rejects_unintroduced_public_peer() {
         let message = sig_err(
-            "signature app v(2);\n\
-             v(2) {\n  with {\n    module api {\n      rec {\n        pub type A = B;\n        pub type { B : A { pub mk; pub get; }; };\n      }\n    }\n  };\n  nonbreaking { add { api.A; } }\n}\n",
+            "sig app v(2);
+v(2) {
+  with {
+    mod api {
+      rec {
+        pub type A = B;
+        pub type { B : A { pub mk; pub get; }; };
+      }
+    }
+  };
+  nonbreaking { add { api.A; } }
+}
+",
         );
         assert!(
             message.contains("add-only compact boundary"),
@@ -11919,8 +11833,16 @@ v(1) {
     #[test]
     fn sig_later_compact_boundary_rejects_ordinary_with_target() {
         let message = sig_err(
-            "signature app v(2);\n\
-             v(2) {\n  with {\n    module api {\n      pub type T = .;\n    }\n  };\n  nonbreaking { add { api.T; } }\n}\n",
+            "sig app v(2);
+v(2) {
+  with {
+    mod api {
+      pub type T = .;
+    }
+  };
+  nonbreaking { add { api.T; } }
+}
+",
         );
         assert!(
             message.contains("add-only compact boundary"),
@@ -11930,16 +11852,33 @@ v(1) {
 
     #[test]
     fn sig_later_compact_boundary_accepts_recursive_singleton_target() {
-        let file = sig("signature app v(2);\n\
-             v(2) {\n  with {\n    module api {\n      pub rec type { Loop : . | Loop { pub mk; pub get; }; };\n    }\n  };\n  nonbreaking { add { api.Loop; } }\n}\n");
+        let file = sig("sig app v(2);
+v(2) {
+  with {
+    mod api {
+      pub rec type { Loop : . | Loop { pub mk; pub get; }; };
+    }
+  };
+  nonbreaking { add { api.Loop; } }
+}
+");
         assert_eq!(file.versions[0].version, 2);
     }
 
     #[test]
     fn sig_later_first_block_must_have_compact_boundary_shape() {
         let modified = sig_err(
-            "signature app v(3);\n\
-             v(3) {\n  breaking {\n    modify {\n      module api {\n        pub fn provide(x: .) -> .;\n      }\n    }\n  }\n}\n",
+            "sig app v(3);
+v(3) {
+  breaking {
+    modify {
+      mod api {
+        pub fn provide(x: .) -> .;
+      }
+    }
+  }
+}
+",
         );
         assert!(
             modified.contains("add-only compact boundary"),
@@ -11952,9 +11891,18 @@ v(1) {
         // A message is replay-inert. Allowing it keeps a compacted later
         // boundary closed under uncommit followed by a message-bearing
         // commit, without weakening the add-only structural gate.
-        let file = sig("signature app v(3);\n\
-             /// Summarize the compacted additive history.\n\
-             v(3) {\n  nonbreaking {\n    add {\n      module api {\n        pub fn provide() -> .;\n      }\n    }\n  }\n}\n");
+        let file = sig("sig app v(3);
+/// Summarize the compacted additive history.
+v(3) {
+  nonbreaking {
+    add {
+      mod api {
+        pub fn provide() -> .;
+      }
+    }
+  }
+}
+");
         assert!(file.versions[0].doc.is_some());
     }
 
@@ -11964,8 +11912,17 @@ v(1) {
         // generations. Under a v(5) header, ending at v(3) omits both
         // the latest sealed generation and the open draft.
         let msg = sig_err(
-            "signature app v(5);\n\
-             v(3) {\n  nonbreaking {\n    add {\n      module api {\n        pub fn provide() -> .;\n      }\n    }\n  }\n}\n",
+            "sig app v(5);
+v(3) {
+  nonbreaking {
+    add {
+      mod api {
+        pub fn provide() -> .;
+      }
+    }
+  }
+}
+",
         );
         assert!(msg.contains("omits trailing generations"), "got: {msg}");
     }
@@ -11974,9 +11931,26 @@ v(1) {
     fn sig_compact_history_may_end_before_absent_open_draft() {
         // A v(5) header may omit the empty v(5) draft when the compact
         // boundary and surviving suffix run contiguously through v(4).
-        let file = sig("signature app v(5);\n\
-             v(3) {\n  breaking {\n    add {\n      module api {\n        host fn need() -> .;\n      }\n    }\n  }\n}\n\
-             v(4) {\n  nonbreaking {\n    remove {\n      module api {\n        need;\n      }\n    }\n  }\n}\n");
+        let file = sig("sig app v(5);
+v(3) {
+  breaking {
+    add {
+      mod api {
+        host fn need() -> .;
+      }
+    }
+  }
+}
+v(4) {
+  nonbreaking {
+    remove {
+
+        api.need;
+
+    }
+  }
+}
+");
         assert_eq!(file.version, 5);
         assert_eq!(
             file.versions
@@ -11992,8 +11966,17 @@ v(1) {
         // A sealed `v(1)` under a `v(2)` header with no `v(2)` block is a
         // valid empty open draft (the top draft may be absent). The
         // contiguity check must not reject it.
-        let f = sig("signature app v(2);\n\
-             v(1) {\n  nonbreaking {\n    add {\n      module api {\n        pub fn a() -> .;\n      }\n    }\n  }\n}\n");
+        let f = sig("sig app v(2);
+v(1) {
+  nonbreaking {
+    add {
+      mod api {
+        pub fn a() -> .;
+      }
+    }
+  }
+}
+");
         assert_eq!(f.version, 2);
         assert_eq!(f.versions.len(), 1);
     }
@@ -12030,7 +12013,7 @@ v(1) {
 
     #[test]
     fn dep_valid_local_path() {
-        let f = dep("dependency foobar;\nsource { path \"../foo/foo.pkg.kio\"; }\n");
+        let f = dep("dep foobar;\nsource { path \"../foo/foo.pkg.kio\"; }\n");
         assert_eq!(f.name, "foobar");
         assert_eq!(dep_path(&f), "../foo/foo.pkg.kio");
     }
@@ -12039,10 +12022,11 @@ v(1) {
     fn dep_rehost_parsed_and_sorted() {
         // Two `rehost` statements after the source block, given out of
         // canonical order — the formatter sorts them by `from`.
-        let f = dep("dependency foobar;\n\
-             source { path \"../foo/foo.pkg.kio\"; }\n\
-             rehost foobar/types to testapi;\n\
-             rehost foobar/io to testapi/io;\n");
+        let f = dep("dep foobar;
+source { path \"../foo/foo.pkg.kio\"; }
+rehost foobar/types to testapi;
+rehost foobar/io to testapi/io;
+");
         assert_eq!(f.name, "foobar");
         assert_eq!(f.rehost.len(), 2);
         let rendered = crate::pretty::pretty_dependency_file(&f);
@@ -12060,7 +12044,7 @@ v(1) {
     #[test]
     fn dep_rehost_missing_to_rejected() {
         let msg = dep_err(
-            "dependency foobar;\nsource { path \"foo.pkg.kio\"; }\nrehost foobar/io testapi/io;\n",
+            "dep foobar;\nsource { path \"foo.pkg.kio\"; }\nrehost foobar/io testapi/io;\n",
         );
         assert!(msg.contains("to <local>"), "got: {msg}");
     }
@@ -12071,12 +12055,13 @@ v(1) {
         // canonical order and interleaved with a `rehost`. The formatter
         // emits the `rehost` group first, then the `retype` group sorted by
         // `from` (module form before the per-type one on the same module).
-        let f = dep("dependency foobar;\n\
-             source { path \"../foo/foo.pkg.kio\"; }\n\
-             retype foobar/zmod to local/zmod;\n\
-             rehost foobar/io to testapi/io;\n\
-             retype foobar/amod.Tag to local/amod.Tag;\n\
-             retype foobar/amod to local/amod;\n");
+        let f = dep("dep foobar;
+source { path \"../foo/foo.pkg.kio\"; }
+retype foobar/zmod to local/zmod;
+rehost foobar/io to testapi/io;
+retype foobar/amod.Tag to local/amod.Tag;
+retype foobar/amod to local/amod;
+");
         assert_eq!(f.rehost.len(), 1);
         assert_eq!(f.retype.len(), 3);
         // The per-type form records the single newtype name; the module
@@ -12111,17 +12096,18 @@ v(1) {
 
     #[test]
     fn dep_retype_missing_to_rejected() {
-        let msg = dep_err(
-            "dependency foobar;\nsource { path \"foo.pkg.kio\"; }\nretype foobar/m local/m;\n",
-        );
+        let msg =
+            dep_err("dep foobar;\nsource { path \"foo.pkg.kio\"; }\nretype foobar/m local/m;\n");
         assert!(msg.contains("to <local>"), "got: {msg}");
     }
 
     #[test]
     fn dep_retype_per_type_name_mismatch_rejected() {
         let msg = dep_err(
-            "dependency foobar;\nsource { path \"foo.pkg.kio\"; }\n\
-             retype foobar/m.Foo to local/m.Bar;\n",
+            "dep foobar;
+source { path \"foo.pkg.kio\"; }
+retype foobar/m.Foo to local/m.Bar;
+",
         );
         assert!(msg.contains("same newtype on both sides"), "got: {msg}");
     }
@@ -12129,8 +12115,10 @@ v(1) {
     #[test]
     fn dep_retype_lopsided_per_type_rejected() {
         let msg = dep_err(
-            "dependency foobar;\nsource { path \"foo.pkg.kio\"; }\n\
-             retype foobar/m.Foo to local/m;\n",
+            "dep foobar;
+source { path \"foo.pkg.kio\"; }
+retype foobar/m.Foo to local/m;
+",
         );
         assert!(msg.contains("both sides"), "got: {msg}");
     }
@@ -12138,7 +12126,7 @@ v(1) {
     #[test]
     fn dep_header_stem_mismatch_rejected() {
         let msg = match parse_dependency_file(
-            "dependency foobar;\nsource { path \"foo.pkg.kio\"; }\n",
+            "dep foobar;\nsource { path \"foo.pkg.kio\"; }\n",
             Some("other"),
         ) {
             Err(e) => e.diag().1.to_owned(),
@@ -12149,27 +12137,25 @@ v(1) {
 
     #[test]
     fn dep_header_missing_dependency_keyword_rejected() {
-        let msg = dep_err("package foobar;\nsource { path \"foo.pkg.kio\"; }\n");
-        assert!(msg.contains("dependency <local>"), "got: {msg}");
+        let msg = dep_err("pkg foobar;\nsource { path \"foo.pkg.kio\"; }\n");
+        assert!(msg.contains("dep <local>"), "got: {msg}");
     }
 
     #[test]
     fn dep_absolute_path_rejected() {
-        let msg = dep_err("dependency foobar;\nsource { path \"/abs/foo.pkg.kio\"; }\n");
+        let msg = dep_err("dep foobar;\nsource { path \"/abs/foo.pkg.kio\"; }\n");
         assert!(msg.contains("must be relative"), "got: {msg}");
     }
 
     #[test]
     fn dep_backslash_path_rejected() {
-        let msg = dep_err("dependency foobar;\nsource { path \"..\\\\foo\\\\foo.pkg.kio\"; }\n");
+        let msg = dep_err("dep foobar;\nsource { path \"..\\\\foo\\\\foo.pkg.kio\"; }\n");
         assert!(msg.contains("must use `/`"), "got: {msg}");
     }
 
     #[test]
     fn dep_valid_git_ref() {
-        let f = dep(
-            "dependency foobar;\nsource { git \"https://example.com/foo.git\"; ref \"main\"; }\n",
-        );
+        let f = dep("dep foobar;\nsource { git \"https://example.com/foo.git\"; ref \"main\"; }\n");
         assert_eq!(f.name, "foobar");
         assert_eq!(dep_git(&f), ("https://example.com/foo.git", "main"));
     }
@@ -12179,7 +12165,7 @@ v(1) {
         // A `file://` URL and a commit-SHA ref both parse — the parser
         // is uniform over the ref's shape (git resolves branch/tag/sha).
         let f = dep(
-            "dependency lib;\nsource { git \"file:///srv/lib.git\"; ref \"0123456789abcdef0123456789abcdef01234567\"; }\n",
+            "dep lib;\nsource { git \"file:///srv/lib.git\"; ref \"0123456789abcdef0123456789abcdef01234567\"; }\n",
         );
         assert_eq!(
             dep_git(&f),
@@ -12192,7 +12178,7 @@ v(1) {
 
     #[test]
     fn dep_git_without_ref_rejected() {
-        let msg = dep_err("dependency foobar;\nsource { git \"https://example.com/foo.git\"; }\n");
+        let msg = dep_err("dep foobar;\nsource { git \"https://example.com/foo.git\"; }\n");
         assert!(msg.contains("`git` source requires a `ref"), "got: {msg}");
     }
 
@@ -12213,7 +12199,7 @@ v(1) {
             [2, 1, 0],
         ] {
             let input = format!(
-                "dependency lib;\nsource {{\n{}{}{} }}\n",
+                "dep lib;\nsource {{\n{}{}{} }}\n",
                 fields[order[0]], fields[order[1]], fields[order[2]]
             );
             let file = dep(&input);
@@ -12253,8 +12239,7 @@ v(1) {
             r"a\lib.pkg.kio",
         ] {
             let quoted = format!("{path:?}");
-            let input =
-                format!("dependency lib; source {{ git \"repo\"; ref \"main\"; path {quoted}; }}");
+            let input = format!("dep lib; source {{ git \"repo\"; ref \"main\"; path {quoted}; }}");
             let error =
                 parse_dependency_file(&input, None).expect_err("rooted or non-slash selector");
             let (span, message) = error.diag();
@@ -12262,9 +12247,8 @@ v(1) {
             assert!(message.contains("git manifest `path`"), "{message}");
         }
         for path in ["./lib.pkg.kio", "packages/../lib.pkg.kio", "../lib.pkg.kio"] {
-            let input = format!(
-                "dependency lib; source {{ git \"repo\"; ref \"main\"; path \"{path}\"; }}"
-            );
+            let input =
+                format!("dep lib; source {{ git \"repo\"; ref \"main\"; path \"{path}\"; }}");
             assert!(matches!(dep(&input).source.origin, SourceOrigin::Git(_)));
         }
     }
@@ -12283,20 +12267,20 @@ v(1) {
             ("git \"repo\"; path \"a.pkg.kio\";", "requires a `ref"),
             ("ref \"main\"; path \"a.pkg.kio\";", "`ref` without a `git`"),
         ] {
-            let message = dep_err(&format!("dependency lib; source {{ {fields} }}"));
+            let message = dep_err(&format!("dep lib; source {{ {fields} }}"));
             assert!(message.contains(fragment), "{message}");
         }
     }
 
     #[test]
     fn dep_ref_without_git_rejected() {
-        let msg = dep_err("dependency foobar;\nsource { path \"foo.pkg.kio\"; ref \"main\"; }\n");
+        let msg = dep_err("dep foobar;\nsource { path \"foo.pkg.kio\"; ref \"main\"; }\n");
         assert!(msg.contains("`ref` without a `git`"), "got: {msg}");
     }
 
     #[test]
     fn dep_git_requires_string_url() {
-        let msg = dep_err("dependency foobar;\nsource { git foo; ref \"main\"; }\n");
+        let msg = dep_err("dep foobar;\nsource { git foo; ref \"main\"; }\n");
         assert!(
             msg.contains("`git` requires a string-literal value"),
             "got: {msg}"
@@ -12306,7 +12290,7 @@ v(1) {
     #[test]
     fn dep_file_and_url_source_keys_rejected_as_unknown() {
         for key in ["file", "url"] {
-            let msg = dep_err(&format!("dependency foobar;\nsource {{ {key} \"x\"; }}\n"));
+            let msg = dep_err(&format!("dep foobar;\nsource {{ {key} \"x\"; }}\n"));
             assert!(
                 msg.contains(&format!("unknown key `{key}`")),
                 "key {key}: got: {msg}"
@@ -12316,25 +12300,25 @@ v(1) {
 
     #[test]
     fn dep_unknown_source_key_rejected() {
-        let msg = dep_err("dependency foobar;\nsource { wat \"x\"; }\n");
+        let msg = dep_err("dep foobar;\nsource { wat \"x\"; }\n");
         assert!(msg.contains("unknown key `wat`"), "got: {msg}");
     }
 
     #[test]
     fn dep_empty_source_rejected() {
-        let msg = dep_err("dependency foobar;\nsource { }\n");
+        let msg = dep_err("dep foobar;\nsource { }\n");
         assert!(msg.contains("must declare a source"), "got: {msg}");
     }
 
     #[test]
     fn dep_missing_source_block_rejected() {
-        let msg = dep_err("dependency foobar;\n");
+        let msg = dep_err("dep foobar;\n");
         assert!(msg.contains("`source {"), "got: {msg}");
     }
 
     #[test]
     fn dep_path_requires_string_value() {
-        let msg = dep_err("dependency foobar;\nsource { path foo; }\n");
+        let msg = dep_err("dep foobar;\nsource { path foo; }\n");
         assert!(
             msg.contains("requires a string-literal value"),
             "got: {msg}"
@@ -12343,14 +12327,14 @@ v(1) {
 
     #[test]
     fn dep_trailing_garbage_rejected() {
-        let msg = dep_err("dependency foobar;\nsource { path \"foo.pkg.kio\"; }\nextra junk\n");
+        let msg = dep_err("dep foobar;\nsource { path \"foo.pkg.kio\"; }\nextra junk\n");
         assert!(msg.contains("or end of dependency file"), "got: {msg}");
     }
 
     #[test]
     fn dep_second_source_block_rejected() {
         let msg = dep_err(
-            "dependency foobar;\nsource { path \"foo.pkg.kio\"; }\nsource { path \"bar.pkg.kio\"; }\n",
+            "dep foobar;\nsource { path \"foo.pkg.kio\"; }\nsource { path \"bar.pkg.kio\"; }\n",
         );
         assert!(msg.contains("only one `source` block"), "got: {msg}");
     }
@@ -12448,9 +12432,8 @@ v(1) {
 
     #[test]
     fn lock_missing_lock_keyword_rejected() {
-        let msg = lock_err(
-            "dependency foobar;\nresolved { git \"u\"; ref \"r\"; commit \"c\"; sig \"s\"; }\n",
-        );
+        let msg =
+            lock_err("dep foobar;\nresolved { git \"u\"; ref \"r\"; commit \"c\"; sig \"s\"; }\n");
         assert!(msg.contains("lock <local>"), "got: {msg}");
     }
 
@@ -12612,7 +12595,7 @@ mod nominal_declaration_tests {
     #[test]
     fn nominal_compact_forms_keep_exact_names_and_rhs_order() {
         let module = parse(
-            "module x; type { _Name: .; Age: .; } type Result = { Success: .; } | (_Name & Age);",
+            "mod x; type { _Name: .; Age: .; } type Result = { Success: .; } | (_Name & Age);",
         )
         .unwrap();
         let Item::Labels(entries, _) = &module.items[0] else {
@@ -12635,13 +12618,13 @@ mod nominal_declaration_tests {
             owner.type_alias_arms.as_ref().unwrap()[0].entries[0].name,
             "Success"
         );
-        parse("module x; type Result = (Name & Age) | { Failure: .; };").unwrap();
-        parse("module x; type Result = { Tag: .; } & (Existing | { Empty: .; });").unwrap();
+        parse("mod x; type Result = (Name & Age) | { Failure: .; };").unwrap();
+        parse("mod x; type Result = { Tag: .; } & (Existing | { Empty: .; });").unwrap();
     }
 
     #[test]
     fn nominal_explicit_singleton_is_an_ordinary_declaration() {
-        let source = "module x; pub type { Token[A]<X>: A & X { mk; pub get; }; }";
+        let source = "mod x; pub type { Token[A]<X>: A & X { mk; pub get; }; }";
         let module = parse(source).unwrap();
         let Item::Newtype(nominal) = &module.items[0] else {
             panic!("ordinary nominal");
@@ -12666,8 +12649,8 @@ mod nominal_declaration_tests {
 
     #[test]
     fn nominal_body_requires_both_fixed_roles() {
-        parse("module x; type { N: . { mk;;; get; }; }").unwrap();
-        parse("module x; type { N: . { ;;; get;;; mk;;; }; }").unwrap();
+        parse("mod x; type { N: . { mk;;; get; }; }").unwrap();
+        parse("mod x; type { N: . { ;;; get;;; mk;;; }; }").unwrap();
         for source in [
             "type { Token: . {}; }",
             "type { Token: . { mk; }; }",
@@ -12677,7 +12660,7 @@ mod nominal_declaration_tests {
             "type { Token: . { mk custom; get; }; }",
         ] {
             assert!(
-                parse(&format!("module x; {source}")).is_err(),
+                parse(&format!("mod x; {source}")).is_err(),
                 "accepted {source}"
             );
         }
@@ -12701,7 +12684,7 @@ mod nominal_declaration_tests {
             "fn f(x: { Field: .; }) {}",
         ] {
             assert!(
-                parse(&format!("module x; {source}")).is_err(),
+                parse(&format!("mod x; {source}")).is_err(),
                 "accepted {source}"
             );
         }
@@ -12714,26 +12697,24 @@ mod nominal_declaration_tests {
             "rec type Tree = { Leaf: .; } | { Branch: Tree & Tree; };",
             "rec type { Node: Node { mk; get; }; }",
         ] {
-            parse(&format!("module x; {source}")).unwrap();
+            parse(&format!("mod x; {source}")).unwrap();
         }
-        assert!(parse("module x; rec type Loop = Loop;").is_err());
+        assert!(parse("mod x; rec type Loop = Loop;").is_err());
     }
 
     #[cfg(feature = "prime")]
     #[test]
     fn nominal_prime_accepts_only_explicit_singletons_and_aliases() {
         use crate::prime::lower::lower_module;
-        lower_module(
-            parse("module x; type { Token: . { mk; get; }; } type Alias = Token;").unwrap(),
-        )
-        .unwrap();
+        lower_module(parse("mod x; type { Token: . { mk; get; }; } type Alias = Token;").unwrap())
+            .unwrap();
         for source in [
             "type { Token: .; }",
             "type Alias = { Token: . { mk; get; }; };",
             "type { First: . { mk; get; }; Second: . { mk; get; }; }",
         ] {
             assert!(
-                lower_module(parse(&format!("module x; {source}")).unwrap()).is_err(),
+                lower_module(parse(&format!("mod x; {source}")).unwrap()).is_err(),
                 "accepted {source}"
             );
         }

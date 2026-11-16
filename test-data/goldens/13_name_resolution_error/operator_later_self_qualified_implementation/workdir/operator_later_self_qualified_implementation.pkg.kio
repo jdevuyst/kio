@@ -1,4 +1,4 @@
-package operator_later_self_qualified_implementation;
+pkg operator_later_self_qualified_implementation;
 
 build {
   cache "out/.kio-cache/";

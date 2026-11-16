@@ -1,4 +1,4 @@
-package c3_eq;
+pkg c3_eq;
 
 build {
   cache "out/.kio-cache/";

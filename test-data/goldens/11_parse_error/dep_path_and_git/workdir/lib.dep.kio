@@ -1,4 +1,4 @@
-dependency lib;
+dep lib;
 
 source {
   path "/library/lib/lib.pkg.kio";

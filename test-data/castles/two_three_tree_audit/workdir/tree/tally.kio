@@ -2,10 +2,10 @@
 /// events, and an operation reports the ones it caused by handing a tally back
 /// up alongside its result. Splits and root grows come from insertion; borrows,
 /// merges and root shrinks come from deletion.
-module tree/tally;
+mod tree/tally;
 
-import testapi(I32);
-import testapi/arith(add_i32);
+import testapi { type I32 }
+import testapi/arith { fn add_i32 }
 
 pub type Tally = I32 & I32 & I32 & I32 & I32 & I32;
 

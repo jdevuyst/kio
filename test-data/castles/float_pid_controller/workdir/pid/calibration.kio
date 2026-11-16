@@ -1,8 +1,8 @@
-module pid/calibration;
+mod pid/calibration;
 
-import macros/row_macros(macro select);
-import pid/model(Calibration, Offset, Scale);
-import testapi(F64);
+import macros/row_macros { macro select }
+import pid/model { type Calibration; type Offset; type Scale }
+import testapi { type F64 }
 import testapi/arith as arith;
 
 pub fn apply(raw: F64, calibration: Calibration) -> F64 {

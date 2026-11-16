@@ -1,5 +1,5 @@
 /// Lazy conditionals and immediate scoped expressions.
-module shared/option/list/macros/control;
+mod shared/option/list/macros/control;
 
 import __comptime__;
 
@@ -114,10 +114,10 @@ pub fn not(value: Bool) -> Bool {
 }
 
 /// Conjunction with a delayed right operand.
-pub op macro _ && .__ { impl and }
+pub op_macro _ && .__ { impl and }
 
 /// Disjunction with a delayed right operand.
-pub op macro _ || .__ { impl or }
+pub op_macro _ || .__ { impl or }
 
 /// Builds a checked sum dispatch after evaluating its entire input packet once.
 pub pure fn checked_sum_dispatch(

@@ -1,4 +1,4 @@
-package elaborator_public_private_implementation;
+pkg elaborator_public_private_implementation;
 
 build {
   cache "out/.kio-cache/";

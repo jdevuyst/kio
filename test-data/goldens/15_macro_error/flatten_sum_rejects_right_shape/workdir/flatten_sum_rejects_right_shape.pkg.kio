@@ -1,4 +1,4 @@
-package flatten_sum_rejects_right_shape;
+pkg flatten_sum_rejects_right_shape;
 
 build {
   cache "out/.kio-cache/";

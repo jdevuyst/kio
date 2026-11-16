@@ -1,4 +1,4 @@
-module main;
+mod main;
 
 fn view[S][A](get: S -> A, value: S) -> A { get(value) }
 

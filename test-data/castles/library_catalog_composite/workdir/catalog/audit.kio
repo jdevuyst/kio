@@ -1,22 +1,22 @@
-module catalog/audit;
+mod catalog/audit;
 
-import catalog/domain(
-, Audit_list
-, Copies_available
-, Failure
-, Line_list
-, No_copies
-, Not_held
-, Unknown_call
-, Unknown_member
-);
-import catalog/domain(cat, istr);
+import catalog/domain {
+  type Audit_list;
+  type Copies_available;
+  type Failure;
+  type Line_list;
+  type No_copies;
+  type Not_held;
+  type Unknown_call;
+  type Unknown_member
+}
+import catalog/domain { fn cat; fn istr }
 import list/core as lcore;
 import list/list as list;
-import macros/match(macro match);
-import macros/row_macros(macro select, macro with);
-import testapi(I32, String);
-import testapi/arith(add_i32);
+import macros/match { macro match }
+import macros/row_macros { macro select; macro with }
+import testapi { type I32; type String }
+import testapi/arith { fn add_i32 }
 
 type Tally = { E_call: I32; E_member: I32; E_copies: I32; E_held: I32; E_hold: I32 };
 

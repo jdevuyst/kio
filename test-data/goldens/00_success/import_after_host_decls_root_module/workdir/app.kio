@@ -1,4 +1,4 @@
-module app;
+mod app;
 
 host type S role(str);
 

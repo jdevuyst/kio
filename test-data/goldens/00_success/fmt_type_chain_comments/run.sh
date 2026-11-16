@@ -3,7 +3,7 @@ set -eu
 
 # Type-chain separator comments survive formatting and reach a fixpoint.
 formatted=$("$KIO_BIN" fmt - <<'KIO'
-module type_chain_comments;
+mod type_chain_comments;
 
 fn product[A][B](f: (A & B) -> A) -> (& A // product domain
 & B) -> A { f }

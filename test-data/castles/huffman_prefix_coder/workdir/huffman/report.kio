@@ -4,15 +4,15 @@
 /// division, no remainder, and no floats. Every ratio the transcript prints is
 /// therefore a scaled integer produced by the long division below, and the Kraft
 /// check is done in whole numbers by scaling every term by `2^maxlen`.
-module huffman/report;
+mod huffman/report;
 
-import huffman/code(Entry, Entry_len);
-import huffman/list(List, fold, len);
-import macros/control(macro if);
-import macros/row_macros(macro select);
-import testapi(Bool, I32);
-import testapi/arith(add_i32, eq_i32, leq_i32, lt_i32, mul_i32, sub_i32);
-import testapi/iter(loop);
+import huffman/code { type Entry; type Entry_len }
+import huffman/list { type List; fn fold; fn len }
+import macros/control { macro if }
+import macros/row_macros { macro select }
+import testapi { type Bool; type I32 }
+import testapi/arith { fn add_i32; fn eq_i32; fn leq_i32; fn lt_i32; fn mul_i32; fn sub_i32 }
+import testapi/iter { fn loop }
 
 type Divided = { Quotient: I32; Remainder: I32 };
 

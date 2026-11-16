@@ -4,15 +4,15 @@
 /// rebuilt from the board alone, so a bug in the undo trail — a table slot
 /// left set after a retraction, say — cannot make a wrong grid look right:
 /// the two would have to be wrong in the same way.
-module sudoku/verify;
+mod sudoku/verify;
 
-import macros/control(macro if);
+import macros/control { macro if }
 import sudoku/geometry as geo;
 import sudoku/num as num;
-import testapi(Array, Bool, I32);
-import testapi/arith(add_i32, leq_i32);
-import testapi/array(array_get, array_make_filled, array_set);
-import testapi/iter(loop);
+import testapi { type Array; type Bool; type I32 }
+import testapi/arith { fn add_i32; fn leq_i32 }
+import testapi/array { fn array_get; fn array_make_filled; fn array_set }
+import testapi/iter { fn loop }
 
 fn blank_flags() -> Array[I32] { array_make_filled(geo.flag_count(), 0) }
 

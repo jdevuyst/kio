@@ -1,4 +1,4 @@
-package symbolic;
+pkg symbolic;
 
 build {
   cache "out/.kio-cache/";

@@ -1,8 +1,8 @@
-module testapi/main;
+mod testapi/main;
 
 import option/core as o;
-import option/core(macro unwrap_or_lazy);
-import testapi(I32, String);
+import option/core { macro unwrap_or_lazy }
+import testapi { type I32; type String }
 
 pub fn main() {
   let value = o.some(1[I32]);

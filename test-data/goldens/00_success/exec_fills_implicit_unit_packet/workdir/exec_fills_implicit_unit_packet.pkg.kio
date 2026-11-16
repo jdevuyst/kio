@@ -1,4 +1,4 @@
-package exec_fills_implicit_unit_packet;
+pkg exec_fills_implicit_unit_packet;
 
 build {
   cache "out/.kio-cache/";

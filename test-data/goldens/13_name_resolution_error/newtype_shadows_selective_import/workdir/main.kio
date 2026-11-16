@@ -1,7 +1,7 @@
-module main;
+mod main;
 
-import other(Wrap);
-import other(need_wrap);
+import other { fn need_wrap }
+import other { type Wrap }
 
 type { Wrap: . -> . { pub mk; pub get } }
 

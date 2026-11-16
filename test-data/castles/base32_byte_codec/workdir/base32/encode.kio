@@ -5,16 +5,16 @@
 /// Because eight and five share no factor, group boundaries drift through
 /// the payload and the two counters — the accumulator and the number of
 /// bits it still holds — are the whole of the state.
-module base32/encode;
+mod base32/encode;
 
 import base32/alphabet as alphabet;
 import base32/bits as bits;
 import base32/list as list;
-import macros/control(macro if);
-import macros/match(macro match);
-import testapi(Bool, I32, String);
-import testapi/arith(add_i32, lt_i32, mod_i32, sub_i32);
-import testapi/iter(loop);
+import macros/control { macro if }
+import macros/match { macro match }
+import testapi { type Bool; type I32; type String }
+import testapi/arith { fn add_i32; fn lt_i32; fn mod_i32; fn sub_i32 }
+import testapi/iter { fn loop }
 
 /// Padding glyphs needed to round `emitted` glyphs up to a whole quantum.
 fn pad_needed(emitted: I32) -> I32 {

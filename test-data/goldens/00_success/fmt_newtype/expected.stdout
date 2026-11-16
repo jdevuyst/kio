@@ -1,4 +1,4 @@
-module main;
+mod main;
 
 type { Box[A]: A { pub mk; pub get } }
 
@@ -9,7 +9,7 @@ type { Cell: . { pub mk; pub get } }
 rec type { List[A]: . | (A & List[A]) { pub mk; pub get } }
 
 type { Reversed: . { pub mk; pub get } }
-module main;
+mod main;
 
 type { Box[A]: A { pub mk; pub get } }
 

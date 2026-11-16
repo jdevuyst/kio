@@ -1,6 +1,6 @@
-module main;
+mod main;
 
-import macros/match(macro match);
+import macros/match { macro match }
 
 type { Box[A]: A { pub mk; pub get } }
 

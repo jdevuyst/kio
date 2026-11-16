@@ -1,4 +1,4 @@
-package exec_insertion_sort;
+pkg exec_insertion_sort;
 
 build {
   cache "out/.kio-cache/";

@@ -1,9 +1,9 @@
-module testapi/main;
+mod testapi/main;
 
-import macros/match(macro match);
-import macros/spine_macros(macro fit);
-import testapi(I32, String);
-import testapi/io(print);
+import macros/match { macro match }
+import macros/spine_macros { macro fit }
+import testapi { type I32; type String }
+import testapi/io { fn print }
 
 // Spine equivalent of `exec_ease_widen_and_project`. The original
 // used algebraic `ease` to compose product projection and sum

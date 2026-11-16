@@ -1,4 +1,4 @@
-package fills_polymorphic_lambda_inferred_return;
+pkg fills_polymorphic_lambda_inferred_return;
 
 build {
   cache "out/.kio-cache/";

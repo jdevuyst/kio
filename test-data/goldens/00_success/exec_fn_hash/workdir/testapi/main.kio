@@ -1,7 +1,7 @@
-module testapi/main;
+mod testapi/main;
 
-import testapi(String);
-import testapi/io(print);
+import testapi { type String }
+import testapi/io { fn print }
 
 // Identity used as a type annotator: pinning the second arg's
 // type to `String -> .` lets the typer drive

@@ -1,9 +1,9 @@
-module testapi/main;
+mod testapi/main;
 
 import __intrinsics__;
 
-import testapi(String);
-import testapi/io(print);
+import testapi { type String }
+import testapi/io { fn print }
 
 // An existential-bearing newtype hides the witness type behind the
 // nominal boundary. The CPS projector `Boxed_string.get`

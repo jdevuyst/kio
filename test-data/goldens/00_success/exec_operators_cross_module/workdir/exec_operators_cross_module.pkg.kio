@@ -1,4 +1,4 @@
-package exec_operators_cross_module;
+pkg exec_operators_cross_module;
 
 build {
   cache "out/.kio-cache/";

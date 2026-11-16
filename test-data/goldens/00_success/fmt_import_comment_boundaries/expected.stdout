@@ -1,13 +1,13 @@
-module fmt_import_comment_boundaries;
+mod fmt_import_comment_boundaries;
 
 import a as a;
 // statement
-import z(
-// alpha
-, alpha
-// opening selection
+import z {
+  // alpha
+  fn alpha;
+  // opening selection
+  // zebra
+  fn zebra
 
-// zebra
-, zebra
-// closing
-);
+  // closing
+}

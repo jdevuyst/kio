@@ -141,8 +141,7 @@ pub fn lower_package_with_signature(
 ) -> Result<HaskellPackage, EmitError> {
     package.package_file().ok_or_else(|| {
         EmitError::unsupported(
-            "Haskell emitter requires a package file (`<pkg>.pkg.kio`); \
-             a package without one has no package boundary to expose",
+            "Haskell emitter requires a package file (`<pkg>.pkg.kio`); a package without one has no package boundary to expose",
         )
     })?;
 
@@ -453,7 +452,7 @@ mod facade_tests {
         sources: &[(&str, &str)],
         bridge_items: &str,
     ) -> Package<Routed> {
-        let source = format!("package fallback_probe; bridge {{ {bridge_items} }}");
+        let source = format!("pkg fallback_probe; bridge {{ {bridge_items} }}");
         let package_file = crate::pass::parser::parse_package_file(&source, None)
             .expect("parse fallback-probe package file");
         routed_package_files_with_package(sources, Some(package_file))
@@ -523,9 +522,7 @@ mod facade_tests {
     #[test]
     fn boolean_pure_inline_operands_use_native_operators() {
         let emitted = render(
-            "module api; import __intrinsics__; host type Bool role(bool); \
-             pub fn conjunction(left: Bool, right: Bool) -> Bool { __and__[Bool](left, .() { right }) } \
-             pub fn disjunction(left: Bool, right: Bool) -> Bool { __or__[Bool](left, .() { right }) }",
+            "mod api; import __intrinsics__; host type Bool role(bool); pub fn conjunction(left: Bool, right: Bool) -> Bool { __and__[Bool](left, .() { right }) } pub fn disjunction(left: Bool, right: Bool) -> Bool { __or__[Bool](left, .() { right }) }",
         ).expect("emit pure native Boolean operations");
         for (name, operator) in [("conjunction", " && "), ("disjunction", " || ")] {
             let declaration = format!("{} _pkg", module_fn("api", name));
@@ -542,8 +539,7 @@ mod facade_tests {
         let package = routed_package_files_with_bridge(
             &[(
                 "api.kio",
-                "module api; host type String role(str); \
-                 pub fn collision_text() -> String { \"Data.Text.Text\" }",
+                "mod api; host type String role(str); pub fn collision_text() -> String { \"Data.Text.Text\" }",
             )],
             "api;",
         );
@@ -576,17 +572,17 @@ mod facade_tests {
         let package = routed_package_files_with_bridge(
             &[(
                 "api.kio",
-                "module api;\n\
-            /// HOSTTYPEDOC\n\
-            host type Value;\n\
-            /// HOSTFNDOC\n\
-            host fn effect() -> .;\n\
-            /// OPAQUEDOC\n\
-            pub type { Token: . { pub mk; get; }; };\n\
-            /// EXPORTDOC\n\
-            pub fn call() -> . { effect() }\n\
-            /// PRIVATEDOC\n\
-            fn hidden() -> . { () }",
+                "mod api;
+/// HOSTTYPEDOC
+host type Value;
+/// HOSTFNDOC
+host fn effect() -> .;
+/// OPAQUEDOC
+pub type { Token: . { pub mk; get; }; };
+/// EXPORTDOC
+pub fn call() -> . { effect() }
+/// PRIVATEDOC
+fn hidden() -> . { () }",
             )],
             "api;",
         );
@@ -612,7 +608,7 @@ mod facade_tests {
     #[test]
     fn native_docs_do_not_choose_declaration_order() {
         let source =
-            "module api;\n/// ZZZ\npub fn alpha() -> . { () }\n/// AAA\npub fn zeta() -> . { () }";
+            "mod api;\n/// ZZZ\npub fn alpha() -> . { () }\n/// AAA\npub fn zeta() -> . { () }";
         let package = routed_package_files_with_bridge(&[("api.kio", source)], "api;");
         let native = render_package(&package).expect("native docs ordering");
         assert!(native.find("-- | ZZZ").unwrap() < native.find("-- | AAA").unwrap());
@@ -626,11 +622,7 @@ mod facade_tests {
     #[test]
     fn public_callable_facades_retain_monad_specialization_unfoldings() {
         let native = render(
-            "module api; \
-             host fn tick() -> .; \
-             pub fn direct() -> . { () } \
-             pub fn effectful() -> . { tick() } \
-             pub type { Box[A]: A { pub mk; pub get; }; };",
+            "mod api; host fn tick() -> .; pub fn direct() -> . { () } pub fn effectful() -> . { tick() } pub type { Box[A]: A { pub mk; pub get; }; };",
         )
         .expect("native facade unfoldings");
         for wrapper in [
@@ -648,15 +640,15 @@ mod facade_tests {
     #[test]
     fn live_host_type_provenance_suppresses_a_retained_deprecation_pragma() {
         let package = routed_package_files_with_bridge(
-            &[("api.kio", "module api; host type Restored;")],
+            &[("api.kio", "mod api; host type Restored;")],
             "api;",
         );
         let signature = crate::pass::parser::parse_signature_file(
-            r#"signature fallback_probe v(3);
+            r#"sig fallback_probe v(3);
 v(1) {
   nonbreaking {
     add {
-      module api {
+      mod api {
         host type Legacy;
         host type Restored;
       }
@@ -666,10 +658,10 @@ v(1) {
 v(2) {
   nonbreaking {
     remove {
-      module api {
-        Legacy;
-        Restored;
-      }
+
+        api.Legacy;
+        api.Restored;
+
     }
   }
 }
@@ -745,7 +737,7 @@ v(2) {
 
     #[test]
     fn native_emitter_errors_propagate() {
-        let mut package = routed_package("module api; fn native_error() -> . { () }");
+        let mut package = routed_package("mod api; fn native_error() -> . { () }");
         inject_unknown_newtype_constructor(&mut package);
         let error = render_package(&package).expect_err("native emitter errors propagate");
         assert_eq!(
@@ -757,17 +749,7 @@ v(2) {
     #[test]
     fn projected_rank_n_callees_are_annotated_before_every_visible_type_argument() {
         let package = routed_package(
-            "module api; \
-             import __intrinsics__; \
-             host type Cell; \
-             fn specialize_projected(polymorphic: [A] A) -> Cell { \
-               let source = __pair__[[A] A][ .]( polymorphic, ()); \
-               __fst__[[A] A][ .]( source)[Cell] \
-             } \
-             fn apply_projected(polymorphic: [A] A -> A, value: Cell) -> Cell { \
-               let source = __pair__[[A] A -> A][ .]( polymorphic, ()); \
-               __fst__[[A] A -> A][ .]( source)[Cell]( value) \
-             }",
+            "mod api; import __intrinsics__; host type Cell; fn specialize_projected(polymorphic: [A] A) -> Cell { let source = __pair__[[A] A][ .]( polymorphic, ()); __fst__[[A] A][ .]( source)[Cell] } fn apply_projected(polymorphic: [A] A -> A, value: Cell) -> Cell { let source = __pair__[[A] A -> A][ .]( polymorphic, ()); __fst__[[A] A -> A][ .]( source)[Cell]( value) }",
         );
         let definition = |name: &str| {
             package
@@ -850,25 +832,7 @@ v(2) {
     #[test]
     fn projected_rank_n_boundary_values_are_annotated_before_visible_type_arguments() {
         let emitted = render(
-            "module api; \
-             pub type { Pair: . & . { \
-               pub mk; \
-               pub get; \
-             }; }; \
-             pub type { Tuple: . & . { \
-               pub mk; \
-               pub get; \
-             }; }; \
-             pub type { Choice: ([B] B -> B) | . { \
-               pub mk; \
-               pub get; \
-             }; }; \
-             pub type { Shadow[Pair]: Pair & ([A] A -> A) & Tuple & Choice { \
-               pub mk; \
-               pub get; \
-             }; }; \
-             pub fn keep[Pair](value: Pair & ([A] A -> A) & Tuple & Choice) \
-               -> Pair & ([A] A -> A) & Tuple & Choice { value }",
+            "mod api; pub type { Pair: . & . { pub mk; pub get; }; }; pub type { Tuple: . & . { pub mk; pub get; }; }; pub type { Choice: ([B] B -> B) | . { pub mk; pub get; }; }; pub type { Shadow[Pair]: Pair & ([A] A -> A) & Tuple & Choice { pub mk; pub get; }; }; pub fn keep[Pair](value: Pair & ([A] A -> A) & Tuple & Choice) -> Pair & ([A] A -> A) & Tuple & Choice { value }",
         )
         .expect("render projected rank-N boundary value");
         let name = newtype_export_wrapper("api", "Shadow", "get");
@@ -967,11 +931,7 @@ v(2) {
     #[test]
     fn generic_sum_boundaries_demand_payloads_and_convert_callable_slots() {
         let emitted = render(
-            "module api; \
-             host fn choose[A][B](step: . -> (A | B)) -> A | B; \
-             fn roundtrip[A][B](step: . -> (A | B)) -> A | B { choose[A][ B]( step) } \
-             host fn thunks(value: (. -> .) | .) -> (. -> .) | .; \
-             fn converted(value: (. -> .) | .) -> (. -> .) | . { thunks(value) }",
+            "mod api; host fn choose[A][B](step: . -> (A | B)) -> A | B; fn roundtrip[A][B](step: . -> (A | B)) -> A | B { choose[A][ B]( step) } host fn thunks(value: (. -> .) | .) -> (. -> .) | .; fn converted(value: (. -> .) | .) -> (. -> .) | . { thunks(value) }",
         )
         .expect("render generic and callable sum boundaries");
         let equation = |name: &str| {
@@ -998,11 +958,7 @@ v(2) {
     #[test]
     fn rank_n_prepared_callback_and_host_value_returns_use_exact_lifts() {
         let emitted = render(
-            "module api; \
-             host fn host_return(value: .) -> ([A] A -> A) & .; \
-             pub fn keep_callback(value: (. -> (([A] A -> A) & .))) \
-               -> (. -> (([A] A -> A) & .)) { value } \
-             fn host_value() -> (. -> (([A] A -> A) & .)) { host_return }",
+            "mod api; host fn host_return(value: .) -> ([A] A -> A) & .; pub fn keep_callback(value: (. -> (([A] A -> A) & .))) -> (. -> (([A] A -> A) & .)) { value } fn host_value() -> (. -> (([A] A -> A) & .)) { host_return }",
         )
         .expect("render rank-N prepared callbacks and host-function value");
 
@@ -1065,15 +1021,15 @@ v(2) {
         let package = routed_package_files(&[
             (
                 "actual.kio",
-                "module actual; pub type { Box[A]: A { pub mk; pub get; }; };",
+                "mod actual; pub type { Box[A]: A { pub mk; pub get; }; };",
             ),
             (
                 "wrong.kio",
-                "module wrong; pub type { Box[A]: A & A { pub mk; pub get; }; };",
+                "mod wrong; pub type { Box[A]: A & A { pub mk; pub get; }; };",
             ),
             (
                 "caller.kio",
-                "module caller; import actual as a; import wrong as actual; fn keep[A](x: a.Box[A]) -> a.Box[A] { x }",
+                "mod caller; import actual as a; import wrong as actual; fn keep[A](x: a.Box[A]) -> a.Box[A] { x }",
             ),
         ]);
         let caller = &package.module("caller").expect("caller module").module;
@@ -1126,9 +1082,7 @@ v(2) {
         let package = routed_package_files_with_bridge(
             &[(
                 "api.kio",
-                "module api; \
-                 host fn direct[A](value: A) -> A; \
-                 host fn nested(callback: [A] A -> A) -> .;",
+                "mod api; host fn direct[A](value: A) -> A; host fn nested(callback: [A] A -> A) -> .;",
             )],
             "api;",
         );
@@ -1156,14 +1110,7 @@ v(2) {
     #[test]
     fn generic_host_calls_check_demand_under_the_declared_schema() {
         let emitted = render(
-            "module api; \
-             host fn invoke[A](step: A -> A, value: A) -> A; \
-             host fn keep[*F][A](value: F[A]) -> F[A]; \
-             host fn obtain[A](_value: A) -> [B] B -> B; \
-             host fn observe() -> .; \
-             pub fn anonymous() { invoke[.]( .(value) { value }, observe()) } \
-             pub fn opaque[*G][T](value: G[T]) -> G[T] { keep[G][ T]( value) } \
-             pub fn returned() -> [B] B -> B { obtain[.]( ()) }",
+            "mod api; host fn invoke[A](step: A -> A, value: A) -> A; host fn keep[*F][A](value: F[A]) -> F[A]; host fn obtain[A](_value: A) -> [B] B -> B; host fn observe() -> .; pub fn anonymous() { invoke[.]( .(value) { value }, observe()) } pub fn opaque[*G][T](value: G[T]) -> G[T] { keep[G][ T]( value) } pub fn returned() -> [B] B -> B { obtain[.]( ()) }",
         )
         .expect("generic host-call schemas");
         let equation = |name: &str| {
@@ -1220,12 +1167,7 @@ v(2) {
         let package = routed_package_files_with_bridge(
             &[(
                 "api.kio",
-                "module api; \
-                 pub type Unit_alias = .; \
-                 host fn product[A][B](pair: A & B) -> .; \
-                 host fn split[A][B](left: A, right: B) -> .; \
-                 host fn direct_unit() -> .; \
-                 host fn substituted_unit(value: Unit_alias) -> .;",
+                "mod api; pub type Unit_alias = .; host fn product[A][B](pair: A & B) -> .; host fn split[A][B](left: A, right: B) -> .; host fn direct_unit() -> .; host fn substituted_unit(value: Unit_alias) -> .;",
             )],
             "api;",
         );
@@ -1268,14 +1210,7 @@ v(2) {
         let mut package = routed_package_files_with_bridge(
             &[(
                 "api.kio",
-                "module api; \
-             host fn observe() -> .; \
-             type { Receiver: [A][B] A -> A { mk; get }; }; \
-             fn identity[A][B](value: A) -> A { value } \
-             fn factory() -> Receiver { observe(); Receiver.mk(identity) } \
-             fn pure_discard(value: Receiver) -> . { let unused = Receiver.get(value); () } \
-             fn effectful_discard() -> . { let unused = Receiver.get(factory()); observe() } \
-             fn ordinary_discard() -> . { observe(); () }",
+                "mod api; host fn observe() -> .; type { Receiver: [A][B] A -> A { mk; get }; }; fn identity[A][B](value: A) -> A { value } fn factory() -> Receiver { observe(); Receiver.mk(identity) } fn pure_discard(value: Receiver) -> . { let unused = Receiver.get(value); () } fn effectful_discard() -> . { let unused = Receiver.get(factory()); observe() } fn ordinary_discard() -> . { observe(); () }",
             )],
             "**;",
         );
@@ -1328,25 +1263,7 @@ v(2) {
     #[test]
     fn native_rank_n_sum_injections_keep_typed_constructors_and_demand() {
         let emitted = render(
-            "module api; import __intrinsics__; \
-             host type I32 role(i32); \
-             host fn produce() -> [A] I32; \
-             type Stage = [A] I32; \
-             fn left(value: [A] I32) -> ([A] I32) | . { \
-               __left__[[A] I32][ .]( value) \
-             } \
-             fn right(value: [A] I32) -> . | ([A] I32) { \
-               __right__[.][ [A] I32]( value) \
-             } \
-             fn effectful() -> . | ([A] I32) { \
-               __right__[.][ [A] I32]( produce()) \
-             } \
-             fn alias(value: Stage) -> . | Stage { \
-               __right__[.][ Stage]( value) \
-             } \
-             fn nested(value: . & Stage) -> . | (. & Stage) { \
-               __right__[.][ . & Stage]( value) \
-             }",
+            "mod api; import __intrinsics__; host type I32 role(i32); host fn produce() -> [A] I32; type Stage = [A] I32; fn left(value: [A] I32) -> ([A] I32) | . { __left__[[A] I32][ .]( value) } fn right(value: [A] I32) -> . | ([A] I32) { __right__[.][ [A] I32]( value) } fn effectful() -> . | ([A] I32) { __right__[.][ [A] I32]( produce()) } fn alias(value: Stage) -> . | Stage { __right__[.][ Stage]( value) } fn nested(value: . & Stage) -> . | (. & Stage) { __right__[.][ . & Stage]( value) }",
         )
         .expect("render native rank-N sum injections");
         for (name, constructor, effectful) in [
@@ -1371,12 +1288,7 @@ v(2) {
     #[test]
     fn effectful_residual_module_call_uses_rank_n_lift() {
         let emitted = render(
-            "module api; \
-             fn delay[X](value: X)[A] -> X { value } \
-             fn caller() -> . { \
-               let source = delay(.[B](left: B, _right: B) -> B { left }); \
-               () \
-             }",
+            "mod api; fn delay[X](value: X)[A] -> X { value } fn caller() -> . { let source = delay(.[B](left: B, _right: B) -> B { left }); () }",
         )
         .expect("render Haskell");
         let caller = module_fn("api", "caller");
@@ -1396,9 +1308,7 @@ v(2) {
     #[test]
     fn strict_pure_residual_argument_keeps_the_inner_forall_annotation() {
         let emitted = render(
-            "module api; \
-             fn staged[A](_left: A)[B][C](_middle: B, right: C) -> C { right } \
-             pub fn run() -> [B][C] (B & C) -> C { staged(()) }",
+            "mod api; fn staged[A](_left: A)[B][C](_middle: B, right: C) -> C { right } pub fn run() -> [B][C] (B & C) -> C { staged(()) }",
         )
         .expect("render strict residual argument");
         let caller = module_fn("api", "run");
@@ -1432,12 +1342,7 @@ v(2) {
             .collect::<Vec<_>>()
             .join(" & ");
         let source = format!(
-            "module api; \
-             host type I32 role(i32); \
-             fn consume({params}) -> I32 {{ p0 }} \
-             pub fn make() -> ({product}) -> I32 {{ \
-               .({params}) {{ consume({args}) }} \
-             }}"
+            "mod api; host type I32 role(i32); fn consume({params}) -> I32 {{ p0 }} pub fn make() -> ({product}) -> I32 {{ .({params}) {{ consume({args}) }} }}"
         );
 
         let emitted = render(&source).expect("render wide native Haskell closure");
@@ -1460,9 +1365,7 @@ v(2) {
         let package = routed_package_files_with_bridge(
             &[(
                 "api.kio",
-                "module api; \
-                 host type T role(str); \
-                 pub fn ordered(value: T)[T](later: T) -> T { later }",
+                "mod api; host type T role(str); pub fn ordered(value: T)[T](later: T) -> T { later }",
             )],
             "api;",
         );
@@ -1494,19 +1397,7 @@ v(2) {
     #[test]
     fn recursive_newtype_classification_preserves_parametric_carrier_arguments() {
         let package = routed_package(
-            "module api; \
-             pub type { Const[A]: . { \
-               pub mk; pub get; \
-             }; }; \
-             pub rec type { Finite: Const[Finite] { \
-               pub mk; pub get; \
-             }; }; \
-             pub type { Id[A]: A { \
-               pub mk; pub get; \
-             }; }; \
-             pub rec type { Recursive: Id[.] & Id[Recursive] { \
-               pub mk; pub get; \
-             }; };",
+            "mod api; pub type { Const[A]: . { pub mk; pub get; }; }; pub rec type { Finite: Const[Finite] { pub mk; pub get; }; }; pub type { Id[A]: A { pub mk; pub get; }; }; pub rec type { Recursive: Id[.] & Id[Recursive] { pub mk; pub get; }; };",
         );
         let resolution = crate::backends::haskell::skin::NewtypeResolution::build(&package);
         let declaration = |name: &str| {
@@ -1542,33 +1433,7 @@ v(2) {
         let package = routed_package_files_with_bridge(
             &[(
                 "api.kio",
-                "module api; \
-                 type { Hidden_payload: . { mk; get; }; }; \
-                 pub type { Opaque_a: Hidden_payload { mk; get; }; }; \
-                 pub type { Opaque_b: Hidden_payload { mk; get; }; }; \
-                 pub type { Constructor_only[A]: A { pub mk; get; }; }; \
-                 pub type { Projector_only[A]: A { mk; pub get; }; }; \
-                 pub type { Existential <U>: U { mk; pub get; }; }; \
-                 pub type { Transparent_both: . { pub mk; pub get; }; }; \
-                 rec { \
-                   pub type { Outer: Hidden { pub mk; pub get; }; }; \
-                   pub type { Hidden: Outer { mk; get; }; }; \
-                 } \
-                 rec { \
-                   pub type { Constructor_outer: Constructor_hidden { pub mk; pub get; }; }; \
-                   pub type { Constructor_hidden: Constructor_outer { pub mk; get; }; }; \
-                 } \
-                 rec { \
-                   pub type { Projector_outer: Projector_hidden { pub mk; pub get; }; }; \
-                   pub type { Projector_hidden: Projector_outer { mk; pub get; }; }; \
-                 } \
-                 pub rec type { Direct_recursive: . | Direct_recursive { pub mk; pub get; }; }; \
-                 pub fn keep_a(value: Opaque_a) -> Opaque_a { value } \
-                 pub fn keep_b(value: Opaque_b) -> Opaque_b { value } \
-                 host fn echo_outer(value: Outer) -> Outer; \
-                 host fn echo_constructor_outer(value: Constructor_outer) -> Constructor_outer; \
-                 host fn echo_projector_outer(value: Projector_outer) -> Projector_outer; \
-                 host fn echo_direct(value: Direct_recursive) -> Direct_recursive;",
+                "mod api; type { Hidden_payload: . { mk; get; }; }; pub type { Opaque_a: Hidden_payload { mk; get; }; }; pub type { Opaque_b: Hidden_payload { mk; get; }; }; pub type { Constructor_only[A]: A { pub mk; get; }; }; pub type { Projector_only[A]: A { mk; pub get; }; }; pub type { Existential <U>: U { mk; pub get; }; }; pub type { Transparent_both: . { pub mk; pub get; }; }; rec { pub type { Outer: Hidden { pub mk; pub get; }; }; pub type { Hidden: Outer { mk; get; }; }; } rec { pub type { Constructor_outer: Constructor_hidden { pub mk; pub get; }; }; pub type { Constructor_hidden: Constructor_outer { pub mk; get; }; }; } rec { pub type { Projector_outer: Projector_hidden { pub mk; pub get; }; }; pub type { Projector_hidden: Projector_outer { mk; pub get; }; }; } pub rec type { Direct_recursive: . | Direct_recursive { pub mk; pub get; }; }; pub fn keep_a(value: Opaque_a) -> Opaque_a { value } pub fn keep_b(value: Opaque_b) -> Opaque_b { value } host fn echo_outer(value: Outer) -> Outer; host fn echo_constructor_outer(value: Constructor_outer) -> Constructor_outer; host fn echo_projector_outer(value: Projector_outer) -> Projector_outer; host fn echo_direct(value: Direct_recursive) -> Direct_recursive;",
             )],
             "api;",
         );
@@ -1710,15 +1575,11 @@ v(2) {
             &[
                 (
                     "left.kio",
-                    "module left; \
-                     pub type { Token: . { mk; get; }; }; \
-                     host fn round_token(value: Token) -> Token;",
+                    "mod left; pub type { Token: . { mk; get; }; }; host fn round_token(value: Token) -> Token;",
                 ),
                 (
                     "right.kio",
-                    "module right; \
-                     pub type { Token: . { mk; get; }; }; \
-                     host fn round_token(value: Token) -> Token;",
+                    "mod right; pub type { Token: . { mk; get; }; }; host fn round_token(value: Token) -> Token;",
                 ),
             ],
             "left; right;",
@@ -1749,15 +1610,10 @@ v(2) {
     fn unbridged_public_signatures_do_not_export_native_carrier_heads() {
         let package = routed_package_files_with_bridge(
             &[
-                (
-                    "api.kio",
-                    "module api; pub fn keep(value: .) -> . { value }",
-                ),
+                ("api.kio", "mod api; pub fn keep(value: .) -> . { value }"),
                 (
                     "hidden.kio",
-                    "module hidden; \
-                     pub type { Secret[A]: A { mk; get; }; }; \
-                     pub fn keep_secret[A](value: Secret[A]) -> Secret[A] { value }",
+                    "mod hidden; pub type { Secret[A]: A { mk; get; }; }; pub fn keep_secret[A](value: Secret[A]) -> Secret[A] { value }",
                 ),
             ],
             "api;",
@@ -1785,16 +1641,11 @@ v(2) {
             &[
                 (
                     "api.kio",
-                    "module api; pub fn keep(value: . & .) -> . & . { value }",
+                    "mod api; pub fn keep(value: . & .) -> . & . { value }",
                 ),
                 (
                     "hidden.kio",
-                    "module hidden; \
-                     pub fn hidden_pair(value: . & .) -> . & . { value } \
-                     pub type { Hidden_pair: . & . { \
-                       pub mk; \
-                       pub get; \
-                     }; };",
+                    "mod hidden; pub fn hidden_pair(value: . & .) -> . & . { value } pub type { Hidden_pair: . & . { pub mk; pub get; }; };",
                 ),
             ],
             "api;",
@@ -1860,12 +1711,7 @@ v(2) {
     #[test]
     fn nested_closure_type_binder_survives_newtype_result_reconstruction() {
         let output = render(
-            "module api; \
-             type { T: . { mk; get; }; }; \
-             pub type { Box[A]: A { pub mk; pub get; }; }; \
-             pub fn box_value() -> [T] T -> Box[T] { \
-                 .[T](value) { Box.mk[T]( value) } \
-             }",
+            "mod api; type { T: . { mk; get; }; }; pub type { Box[A]: A { pub mk; pub get; }; }; pub fn box_value() -> [T] T -> Box[T] { .[T](value) { Box.mk[T]( value) } }",
         )
         .expect("render nested polymorphic closure");
         let box_value = module_fn("api", "box_value");
@@ -1879,10 +1725,10 @@ v(2) {
 
     #[test]
     fn adding_an_unrelated_same_leaf_alias_cannot_change_a_path_kind() {
-        let baseline = routed_package("module api;");
+        let baseline = routed_package("mod api;");
         let extended = routed_package_files(&[
-            ("api.kio", "module api;"),
-            ("decoy.kio", "module decoy; pub type Shared[*F][A] = F[A];"),
+            ("api.kio", "mod api;"),
+            ("decoy.kio", "mod decoy; pub type Shared[*F][A] = F[A];"),
         ]);
         let names = HaskellNames::derive("FallbackProbe");
         let span = crate::span::Span::new(0, 0);
@@ -1905,14 +1751,7 @@ v(2) {
     #[test]
     fn opaque_application_arguments_keep_canonical_callable_domains() {
         let output = render(
-            "module api; host type N; host type Box[A]; \
-             pub fn boxed(value: Box[. -> N]) -> Box[. -> N] { value } \
-             pub fn abstract_box[*F](value: F[. -> N]) -> F[. -> N] { value } \
-             pub fn direct(value: . -> N) -> . -> N { value } \
-             pub fn compound(value: Box[(. -> N) & ([A] A -> A)]) \
-                 -> Box[(. -> N) & ([A] A -> A)] { value } \
-             pub fn visible(value: (. -> N) & ([A] A -> A)) \
-                 -> (. -> N) & ([A] A -> A) { value }",
+            "mod api; host type N; host type Box[A]; pub fn boxed(value: Box[. -> N]) -> Box[. -> N] { value } pub fn abstract_box[*F](value: F[. -> N]) -> F[. -> N] { value } pub fn direct(value: . -> N) -> . -> N { value } pub fn compound(value: Box[(. -> N) & ([A] A -> A)]) -> Box[(. -> N) & ([A] A -> A)] { value } pub fn visible(value: (. -> N) & ([A] A -> A)) -> (. -> N) & ([A] A -> A) { value }",
         )
         .expect("render opaque native callable arguments");
         let line = |prefix: &str| {
@@ -1944,10 +1783,7 @@ v(2) {
     #[test]
     fn sum_boundary_conversion_retains_exact_polymorphic_arms() {
         let output = render(
-            "module api; host type N; \
-             pub fn direct_choice(value: (. -> N) | ([A] A -> A)) \
-                 -> (. -> N) | ([A] A -> A) { value } \
-             pub fn ordinary(value: N | .) -> N | . { value }",
+            "mod api; host type N; pub fn direct_choice(value: (. -> N) | ([A] A -> A)) -> (. -> N) | ([A] A -> A) { value } pub fn ordinary(value: N | .) -> N | . { value }",
         )
         .expect("render polymorphic sum conversion");
         let direct = output
@@ -1985,18 +1821,7 @@ v(2) {
     #[test]
     fn sum_boundary_conversion_covers_nested_arms_and_callback_legs() {
         let output = render(
-            "module api; host type N; \
-             host fn echo(value: (. -> N) | ([A] A -> A)) \
-                 -> (. -> N) | ([A] A -> A); \
-             pub fn via_host(value: (. -> N) | ([A] A -> A)) \
-                 -> (. -> N) | ([A] A -> A) { echo(value) } \
-             pub fn three(value: (. -> N) | . | ([A] A -> A)) \
-                 -> (. -> N) | . | ([A] A -> A) { value } \
-             pub fn callback(value: (. -> N) | ([A] A -> A), \
-                 apply: ((. -> N) | ([A] A -> A)) -> ((. -> N) | ([A] A -> A))) \
-                 -> (. -> N) | ([A] A -> A) { apply(value) } \
-             pub fn nested[A](value: ((. -> A) | ([B] B -> B)) & N) \
-                 -> ((. -> A) | ([B] B -> B)) & N { value }",
+            "mod api; host type N; host fn echo(value: (. -> N) | ([A] A -> A)) -> (. -> N) | ([A] A -> A); pub fn via_host(value: (. -> N) | ([A] A -> A)) -> (. -> N) | ([A] A -> A) { echo(value) } pub fn three(value: (. -> N) | . | ([A] A -> A)) -> (. -> N) | . | ([A] A -> A) { value } pub fn callback(value: (. -> N) | ([A] A -> A), apply: ((. -> N) | ([A] A -> A)) -> ((. -> N) | ([A] A -> A))) -> (. -> N) | ([A] A -> A) { apply(value) } pub fn nested[A](value: ((. -> A) | ([B] B -> B)) & N) -> ((. -> A) | ([B] B -> B)) & N { value }",
         )
         .expect("render nested and callback sum conversion");
         let wrapper = |name: &str| {
@@ -2029,8 +1854,7 @@ v(2) {
                 .collect::<Vec<_>>()
                 .join(" | ");
             let output = render(&format!(
-                "module api; host type N; \
-                 pub fn wide(value: {sum}) -> {sum} {{ value }}"
+                "mod api; host type N; pub fn wide(value: {sum}) -> {sum} {{ value }}"
             ))
             .expect("render wide polymorphic boundary sum");
             let wrapper = output
@@ -2055,9 +1879,7 @@ v(2) {
     #[test]
     fn rank_n_pattern_normalization_preserves_source_type_equalities() {
         let package = routed_package(
-            "module api; \
-             host fn repeated[A](value: A & A & ([B] B -> B)) -> .; \
-             host fn outer_result[A](value: A & ([B] B -> A)) -> .;",
+            "mod api; host fn repeated[A](value: A & A & ([B] B -> B)) -> .; host fn outer_result[A](value: A & ([B] B -> A)) -> .;",
         );
         let names = HaskellNames::derive("FallbackProbe");
         let shapes = crate::backends::haskell::skin::HaskellShapes::new(&package, &names);
@@ -2107,8 +1929,7 @@ v(2) {
     #[test]
     fn rank_n_patterns_keep_canonical_domains_only_inside_opaque_arguments() {
         let package = routed_package(
-            "module api; host type N; host type Box[A]; \
-             host fn nested(value: Box[(. -> N) & ([A] A -> A)]) -> .;",
+            "mod api; host type N; host type Box[A]; host fn nested(value: Box[(. -> N) & ([A] A -> A)]) -> .;",
         );
         let names = HaskellNames::derive("FallbackProbe");
         let shapes = crate::backends::haskell::skin::HaskellShapes::new(&package, &names);
@@ -2170,17 +1991,11 @@ v(2) {
         let package = routed_package_files(&[
             (
                 "api.kio",
-                "module api; \
-                 pub type Id = [A] (A) -> A; \
-                 pub type { Wrapped_id: [A] (A) -> A { mk; get; }; }; \
-                 host fn alias_product(value: Id & ([A] (A) -> A)) -> .; \
-                 host fn alias_sum(value: Id | ([A] (A) -> A)) -> .; \
-                 host fn newtype_product(value: Wrapped_id & ([A] (A) -> A)) -> .; \
-                 host fn newtype_sum(value: Wrapped_id | ([A] (A) -> A)) -> .;",
+                "mod api; pub type Id = [A] (A) -> A; pub type { Wrapped_id: [A] (A) -> A { mk; get; }; }; host fn alias_product(value: Id & ([A] (A) -> A)) -> .; host fn alias_sum(value: Id | ([A] (A) -> A)) -> .; host fn newtype_product(value: Wrapped_id & ([A] (A) -> A)) -> .; host fn newtype_sum(value: Wrapped_id | ([A] (A) -> A)) -> .;",
             ),
             (
                 "decoy.kio",
-                "module decoy; type Id = .; type { Wrapped_id: . { mk; get; }; };",
+                "mod decoy; type Id = .; type { Wrapped_id: . { mk; get; }; };",
             ),
         ]);
         let names = HaskellNames::derive("FallbackProbe");
@@ -2257,15 +2072,7 @@ v(2) {
         let package = routed_package_files_with_bridge(
             &[(
                 "api.kio",
-                "module api; \
-                 pub type { Carrier[H][M]: H & M { \
-                   pub mk; pub get; \
-                 }; }; \
-                 pub type { Packed[R] <Rp0>: R & Rp0 { \
-                   mk; pub get; \
-                 }; }; \
-                 pub fn rank[Rq0](value: Rq0 & ([X] X -> X)) \
-                   -> Rq0 & ([X] X -> X) { value }",
+                "mod api; pub type { Carrier[H][M]: H & M { pub mk; pub get; }; }; pub type { Packed[R] <Rp0>: R & Rp0 { mk; pub get; }; }; pub fn rank[Rq0](value: Rq0 & ([X] X -> X)) -> Rq0 & ([X] X -> X) { value }",
             )],
             "**;",
         );
@@ -2428,11 +2235,9 @@ v(2) {
         let package = routed_package_files(&[
             (
                 "api.kio",
-                "module api; \
-                 type { F[A]: A { mk; get; }; }; \
-                 host fn keep[*F][A][B](value: F[A & B]) -> F[A & B];",
+                "mod api; type { F[A]: A { mk; get; }; }; host fn keep[*F][A][B](value: F[A & B]) -> F[A & B];",
             ),
-            ("decoy.kio", "module decoy; type F[A] = A;"),
+            ("decoy.kio", "mod decoy; type F[A] = A;"),
         ]);
         let names = HaskellNames::derive("FallbackProbe");
         let shapes = crate::backends::haskell::skin::HaskellShapes::new(&package, &names);
@@ -2483,7 +2288,7 @@ v(2) {
                 pub mk; pub get; \
             }; };";
 
-        let native_source = format!("module api; {PUBLIC_FACADE}");
+        let native_source = format!("mod api; {PUBLIC_FACADE}");
         let native_package =
             routed_package_files_with_bridge(&[("api.kio", &native_source)], "api;");
         let names = HaskellNames::derive("FallbackProbe");
@@ -2521,12 +2326,11 @@ v(2) {
         let package = routed_package_files(&[
             (
                 "api/internal.kio",
-                "module api/internal; pub(api) fn message() -> . { () }",
+                "mod api/internal; pub(api) fn message() -> . { () }",
             ),
             (
                 "api/main.kio",
-                "module api/main; import api/internal(message); \
-                 pub fn run() -> . { message() }",
+                "mod api/main; import api/internal {fn message} pub fn run() -> . { message() }",
             ),
         ]);
         let rendered = render_package(&package).expect("native scoped import");
@@ -2562,22 +2366,14 @@ v(2) {
         let with_unrelated = "host fn exchange(value: . & .) -> . & .; \
             type { Other[A]: A { mk; get; }; };";
         assert_eq!(
-            render_ffi(&format!("module api; {boundary}")),
-            render_ffi(&format!("module api; {with_unrelated}")),
+            render_ffi(&format!("mod api; {boundary}")),
+            render_ffi(&format!("mod api; {with_unrelated}")),
         );
     }
 
     #[test]
     fn bottom_boundary_is_void_in_native_facade() {
-        let native_source = "module api; \
-            import __intrinsics__; \
-            host fn stop(value: .) -> !; \
-            host fn discard(value: !) -> .; \
-            host fn inspect(value: . & !) -> .; \
-            pub type { Never: ! { pub mk; pub get; }; }; \
-            pub fn stop_public(value: .) -> ! { stop(value) } \
-            pub fn discard_public(value: !) -> . { discard(value) } \
-            pub fn absurd_public(value: !) -> . { __absurd__[.]( value) }";
+        let native_source = "mod api; import __intrinsics__; host fn stop(value: .) -> !; host fn discard(value: !) -> .; host fn inspect(value: . & !) -> .; pub type { Never: ! { pub mk; pub get; }; }; pub fn stop_public(value: .) -> ! { stop(value) } pub fn discard_public(value: !) -> . { discard(value) } pub fn absurd_public(value: !) -> . { __absurd__[.]( value) }";
         let native_package =
             routed_package_files_with_bridge(&[("api.kio", native_source)], "api;");
         let native = render_package(&native_package).expect("native Bottom boundary");
@@ -2608,7 +2404,7 @@ v(2) {
         let without_bottom_package = routed_package_files_with_bridge(
             &[(
                 "api.kio",
-                "module api; pub fn public_unit(value: .) -> . { value }",
+                "mod api; pub fn public_unit(value: .) -> . { value }",
             )],
             "api;",
         );
@@ -2623,12 +2419,7 @@ v(2) {
         let package = routed_package_files_with_bridge(
             &[(
                 "api.kio",
-                "module api; \
-                 pub type { Comptime_bool[A]: A { mk; get; }; }; \
-                 pub type { Comptime_str: . { pub mk; pub get; }; }; \
-                 pub fn keep_bool[A](value: Comptime_bool[A]) -> Comptime_bool[A] { value } \
-                 pub fn keep_str(value: Comptime_str) -> Comptime_str { value } \
-                 pub fn keep_binder[Comptime_bool](value: Comptime_bool) -> Comptime_bool { value }",
+                "mod api; pub type { Comptime_bool[A]: A { mk; get; }; }; pub type { Comptime_str: . { pub mk; pub get; }; }; pub fn keep_bool[A](value: Comptime_bool[A]) -> Comptime_bool[A] { value } pub fn keep_str(value: Comptime_str) -> Comptime_str { value } pub fn keep_binder[Comptime_bool](value: Comptime_bool) -> Comptime_bool { value }",
             )],
             "api;",
         );
@@ -2705,10 +2496,7 @@ v(2) {
             ),
         ] {
             // An invalid routed owner pins native emitter-error ownership.
-            let source = format!(
-                "module api; {declaration} \
-                 fn native_error() -> . {{ () }}"
-            );
+            let source = format!("mod api; {declaration} fn native_error() -> . {{ () }}");
             let mut package = routed_package_files_with_bridge(&[("api.kio", &source)], "**;");
             inject_unknown_newtype_constructor(&mut package);
             let error = render_package(&package).expect_err("native emitter errors propagate");
@@ -2723,11 +2511,7 @@ v(2) {
     #[test]
     fn recursive_comptime_payload_keeps_its_structural_boundary() {
         let output = render(
-            "module api; \
-             import __comptime__; \
-             pub rec type { Type_list: . | (__Type__ & Type_list) { \
-               pub mk; pub get; \
-             }; };",
+            "mod api; import __comptime__; pub rec type { Type_list: . | (__Type__ & Type_list) { pub mk; pub get; }; };",
         )
         .expect("recursive comptime payload has a structural Haskell boundary");
 
@@ -2780,11 +2564,7 @@ v(2) {
     #[test]
     fn transparent_newtype_payload_keeps_its_prepared_structural_boundaries() {
         let output = render(
-            "module api; \
-             pub type { Wrapped: . & (. | .) { \
-               pub mk; pub get; \
-             }; }; \
-             host fn nested(value: . & Wrapped) -> .;",
+            "mod api; pub type { Wrapped: . & (. | .) { pub mk; pub get; }; }; host fn nested(value: . & Wrapped) -> .;",
         )
         .expect("transparent nested payload has an exact Haskell facade");
 
@@ -2818,23 +2598,15 @@ v(2) {
         let sources = [
             (
                 "left.kio",
-                "module left; \
-                 pub type { Same: . { mk; get; }; }; \
-                 pub host fn round(value: Same) -> Same; \
-                 pub fn round_public(value: Same) -> Same { round(value) }",
+                "mod left; pub type { Same: . { mk; get; }; }; pub host fn round(value: Same) -> Same; pub fn round_public(value: Same) -> Same { round(value) }",
             ),
             (
                 "right.kio",
-                "module right; \
-                 pub type { Same: (. & .) { mk; get; }; };",
+                "mod right; pub type { Same: (. & .) { mk; get; }; };",
             ),
             (
                 "caller.kio",
-                "module caller; \
-                 import left as l; \
-                 import left(round); \
-                 pub type { Same: (. & .) { mk; get; }; }; \
-                 pub fn call(value: l.Same) -> l.Same { round(value) }",
+                "mod caller; import left as l; import left {fn round} pub type { Same: (. & .) { mk; get; }; }; pub fn call(value: l.Same) -> l.Same { round(value) }",
             ),
         ];
         let package = routed_package_files_with_bridge(&sources, "caller; left; right;");
@@ -2853,9 +2625,7 @@ v(2) {
     #[test]
     fn rank_n_structural_export_keeps_parameterized_boundary_aliases() {
         let output = render(
-            "module api; \
-             pub fn keep(value: [A] (A & .) -> (A & .)) \
-               -> [A] (A & .) -> (A & .) { value }",
+            "mod api; pub fn keep(value: [A] (A & .) -> (A & .)) -> [A] (A & .) -> (A & .) { value }",
         )
         .expect("render rank-N structural export");
         let wrapper = export_wrapper("api", "keep");
@@ -2879,9 +2649,7 @@ v(2) {
     #[test]
     fn sum_patterns_use_the_assigned_three_step_keys() {
         let output = render(
-            "module api; \
-             pub type { Same: . { mk; get; }; }; \
-             pub fn keep(value: Same | Same | .) -> Same | Same | . { value }",
+            "mod api; pub type { Same: . { mk; get; }; }; pub fn keep(value: Same | Same | .) -> Same | Same | . { value }",
         )
         .expect("render repeated sum slots");
 
@@ -2910,17 +2678,11 @@ v(2) {
         let output = render_files(&[
             (
                 "types.kio",
-                "module types; \
-                 pub type { Box[A]: A { mk; get; }; }; \
-                 pub type { Functor[*F]: [A][B] ((A -> B) & F[A]) -> F[B] { \
-                   mk; get; \
-                 }; };",
+                "mod types; pub type { Box[A]: A { mk; get; }; }; pub type { Functor[*F]: [A][B] ((A -> B) & F[A]) -> F[B] { mk; get; }; };",
             ),
             (
                 "api.kio",
-                "module api; \
-                 import types(Box, Functor); \
-                 pub fn keep(value: Functor[Box]) -> Functor[Box] { value }",
+                "mod api; import types {type Box; type Functor} pub fn keep(value: Functor[Box]) -> Functor[Box] { value }",
             ),
         ])
         .expect("render polymorphic-newtype export");
@@ -2949,13 +2711,9 @@ v(2) {
 
     #[test]
     fn polymorphic_function_newtype_members_preserve_product_parameters() {
-        let output = render(
-            "module api; \
-             pub type { Pick_first: [A] (A & A) -> A { \
-               pub mk; pub get; \
-             }; };",
-        )
-        .expect("render polymorphic function newtype members");
+        let output =
+            render("mod api; pub type { Pick_first: [A] (A & A) -> A { pub mk; pub get; }; };")
+                .expect("render polymorphic function newtype members");
         let grouped = standard_hs("forall (t_a :: %KIND%.Type). m ((t_a, t_a) -> m t_a)");
 
         for wrapper in [
@@ -2998,9 +2756,10 @@ fn render_create_package(names: &HaskellNames) -> String {
         &names.host_types_ty,
     );
     format!(
-        "-- {factory} instantiates the package against a host record.\n\
-         {factory} :: forall h m. ({host_types} h, Monad m) => {host_ty} h m -> {handle} h m\n\
-         {factory} h = {handle} {{ pkgHost = h }}\n"
+        "-- {factory} instantiates the package against a host record.
+{factory} :: forall h m. ({host_types} h, Monad m) => {host_ty} h m -> {handle} h m
+{factory} h = {handle} {{ pkgHost = h }}
+"
     )
 }
 

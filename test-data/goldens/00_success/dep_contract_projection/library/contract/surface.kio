@@ -1,10 +1,10 @@
-module surface;
+mod surface;
 
 pub fn add[A](left: A, _right: A) -> A { left }
 
 pub op _ + _ { impl add }
 
-pub literal zero = 0;
+pub lit zero = 0;
 
 pub type { Tag: . { pub mk; pub get }; Other: . { pub mk; pub get } }
 

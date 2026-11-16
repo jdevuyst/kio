@@ -1,32 +1,32 @@
-module minesweeper_frontier/report;
+mod minesweeper_frontier/report;
 
-import macros/control(macro if);
-import minesweeper_frontier/counts(build_counts, sum_revealed_counts);
-import minesweeper_frontier/frontier(
-, build_classes
-, class_mine_frontier
-, class_remote
-, class_revealed
-, class_safe_frontier
-, count_class
-, find_best_safe
-, rotate_recommendations
-, safe_frontier_indices
-);
-import minesweeper_frontier/model(
-, build_mines
-, build_revealed
-, cell_count
-, last_index
-, mine_total
-, revealed_total
-);
-import testapi(Array, Bool, I32, String);
+import macros/control { macro if }
+import minesweeper_frontier/counts { fn build_counts; fn sum_revealed_counts }
+import minesweeper_frontier/frontier {
+  fn build_classes;
+  fn class_mine_frontier;
+  fn class_remote;
+  fn class_revealed;
+  fn class_safe_frontier;
+  fn count_class;
+  fn find_best_safe;
+  fn rotate_recommendations;
+  fn safe_frontier_indices
+}
+import minesweeper_frontier/model {
+  fn build_mines;
+  fn build_revealed;
+  fn cell_count;
+  fn last_index;
+  fn mine_total;
+  fn revealed_total
+}
+import testapi { type Array; type Bool; type I32; type String }
 import testapi/arith as arith;
 import testapi/array as array;
-import testapi/fmt(bool_to_string, int_to_string);
-import testapi/io(print);
-import testapi/text(string_concat);
+import testapi/fmt { fn bool_to_string; fn int_to_string }
+import testapi/io { fn print }
+import testapi/text { fn string_concat }
 
 fn print_i32(value: I32) { print(int_to_string(value)) }
 

@@ -1,4 +1,4 @@
-package river_bytecode_vm;
+pkg river_bytecode_vm;
 
 build {
   cache "out/.kio-cache/";

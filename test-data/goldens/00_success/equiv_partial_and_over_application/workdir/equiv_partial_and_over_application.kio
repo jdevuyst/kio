@@ -1,4 +1,4 @@
-module equiv_partial_and_over_application;
+mod equiv_partial_and_over_application;
 
 host type T;
 

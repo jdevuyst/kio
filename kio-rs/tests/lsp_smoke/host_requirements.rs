@@ -19,7 +19,7 @@ fn host_requirement_locations_follow_provider_only_overlays() {
         ),
         (
             "pub host fn take(value: W) -> .;",
-            "import pkg/provider(take, make);",
+            "import pkg/provider {fn take; fn make}",
             "let f = take; f(())",
             "let f = take; f(make(()))",
             "W",
@@ -41,14 +41,14 @@ fn host_requirement_locations_follow_provider_only_overlays() {
     ] {
         let dir = TempDir::new("host-requirement-source");
         dir.write_pkg_root_package();
-        dir.write("pkg/origin.kio", "module pkg/origin;\npub host type W;\n");
-        dir.write("pkg/decoy.kio", "module pkg/decoy;\npub type W = .;\n");
+        dir.write("pkg/origin.kio", "mod pkg/origin;\npub host type W;\n");
+        dir.write("pkg/decoy.kio", "mod pkg/decoy;\npub type W = .;\n");
         let provider = format!(
-            "module pkg/provider;\nimport pkg/origin as o;\npub type W = o.W;\npub host fn make(value: .) -> W;\n{declaration}\n"
+            "mod pkg/provider;\nimport pkg/origin as o;\npub type W = o.W;\npub host fn make(value: .) -> W;\n{declaration}\n"
         );
         let provider_path = dir.write("pkg/provider.kio", &provider);
         let source = format!(
-            "module pkg/main;\n{import}\n// Caller-only padding places its call well beyond the provider header and annotations.\nfn caller() -> . {{ {body} }}\n"
+            "mod pkg/main;\n{import}\n// Caller-only padding places its call well beyond the provider header and annotations.\nfn caller() -> . {{ {body} }}\n"
         );
         let main_path = dir.write("pkg/main.kio", &source);
         let uri = path_to_file_uri(&main_path);

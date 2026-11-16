@@ -1,4 +1,4 @@
-package test_equiv_structural_recur_closure_probe;
+pkg test_equiv_structural_recur_closure_probe;
 
 build {
   cache "out/.kio-cache/";

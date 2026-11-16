@@ -1,4 +1,4 @@
-package exec_dyn_load_qualified_exports;
+pkg exec_dyn_load_qualified_exports;
 
 build {
   cache "out/.kio-cache/";

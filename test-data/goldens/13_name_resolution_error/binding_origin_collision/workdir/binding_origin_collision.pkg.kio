@@ -1,4 +1,4 @@
-package binding_origin_collision;
+pkg binding_origin_collision;
 
 build {
   target js {

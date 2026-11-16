@@ -1,4 +1,4 @@
-package exec_macro_library_routes;
+pkg exec_macro_library_routes;
 
 build {
   cache "out/.kio-cache/";

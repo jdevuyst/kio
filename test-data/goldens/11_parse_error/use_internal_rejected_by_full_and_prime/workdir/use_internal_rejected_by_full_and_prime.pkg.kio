@@ -1,4 +1,4 @@
-package use_internal_rejected_by_full_and_prime;
+pkg use_internal_rejected_by_full_and_prime;
 
 build {
   cache "out/.kio-cache/";

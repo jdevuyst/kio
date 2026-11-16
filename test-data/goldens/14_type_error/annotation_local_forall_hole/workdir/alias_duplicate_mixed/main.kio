@@ -1,4 +1,4 @@
-module main;
+mod main;
 
 type Mixed[Slot] = Slot & ([Mixed_bound] Slot -> Mixed_bound);
 

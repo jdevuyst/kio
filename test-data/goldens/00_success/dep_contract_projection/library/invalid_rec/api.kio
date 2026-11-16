@@ -1,4 +1,4 @@
-module api;
+mod api;
 
 rec(loop) {
   pub fn left[A](value: A) -> A { recur right(A, value) };

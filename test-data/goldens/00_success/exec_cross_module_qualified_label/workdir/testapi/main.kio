@@ -1,9 +1,9 @@
-module testapi/main;
+mod testapi/main;
 
-import testapi(String);
-import testapi/io(print);
+import testapi { type String }
+import testapi/io { fn print }
 import testapi/labels as t;
-import testapi/labels(Greeting);
+import testapi/labels { type Greeting }
 
 // Both qualified and imported names refer to the same nominal type.
 fn make() -> Greeting { t.Greeting.mk("qualified\n") }

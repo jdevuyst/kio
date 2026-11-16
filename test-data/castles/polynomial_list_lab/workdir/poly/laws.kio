@@ -2,26 +2,26 @@
 ///
 /// These are the point of the workbench. The fixed instances exercise selected
 /// faults in the operations on every run, and their verdicts are printed.
-module poly/laws;
+mod poly/laws;
 
 import list/core as lc;
 import list/list as ll;
-import list/list(varop [] as [* *]);
-import macros/control(macro if);
-import macros/match(macro match);
-import macros/row_macros(macro select);
+import list/list { op_var [] as [* *] }
+import macros/control { macro if }
+import macros/match { macro match }
+import macros/row_macros { macro select }
 import poly/arith as arith;
 import poly/calculus as calculus;
 import poly/core as core;
 import poly/division as division;
-import poly/division(Divided, Not_divisible);
+import poly/division { type Divided; type Not_divisible }
 import poly/fixtures as fx;
 import poly/render as render;
-import testapi(Bool, I32, String);
-import testapi/arith(add_i32, eq_i32, mul_i32);
-import testapi/fmt(int_to_string);
-import testapi/iter(loop);
-import testapi/text(string_concat);
+import testapi { type Bool; type I32; type String }
+import testapi/arith { fn add_i32; fn eq_i32; fn mul_i32 }
+import testapi/fmt { fn int_to_string }
+import testapi/iter { fn loop }
+import testapi/text { fn string_concat }
 
 /// One finite runtime check: its law name, fixture claim, observed value, and verdict.
 pub type Check = { Law: String; Claim: String; Witness: String; Holds: Bool };

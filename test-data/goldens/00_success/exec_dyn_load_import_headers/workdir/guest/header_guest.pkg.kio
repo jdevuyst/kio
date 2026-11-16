@@ -1,4 +1,4 @@
-package header_guest;
+pkg header_guest;
 
 build {
   target kio-prime {

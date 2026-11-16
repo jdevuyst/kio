@@ -1,4 +1,4 @@
-module main;
+mod main;
 
 fn add(a: A, b: A) -> A { a }
 fn mul(a: A, b: A) -> A { a }

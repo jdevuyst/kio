@@ -1,4 +1,4 @@
-module testapi/a;
+mod testapi/a;
 
 pub type State = . & .;
 

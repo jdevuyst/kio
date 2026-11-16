@@ -1,6 +1,6 @@
-module lituniq/main;
+mod lituniq/main;
 
-import lituniq(Int, Str);
+import lituniq {type Int; type Str}
 
 // A sole visible type for each role does not type an independent initializer.
 fn pick_int() -> Int { let n = 100; n }

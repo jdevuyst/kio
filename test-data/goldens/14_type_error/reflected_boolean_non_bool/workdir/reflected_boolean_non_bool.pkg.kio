@@ -1,4 +1,4 @@
-package reflected_boolean_non_bool;
+pkg reflected_boolean_non_bool;
 
 build {
   cache "out/.kio-cache/";

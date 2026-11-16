@@ -1,4 +1,4 @@
-package exec_list_filter;
+pkg exec_list_filter;
 
 build {
   cache "out/.kio-cache/";

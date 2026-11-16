@@ -1,5 +1,5 @@
-module ufcs_receiver_scope;
-import helpers(macro call);
+mod ufcs_receiver_scope;
+import helpers {macro call}
 
 fn forward(left: ., right: .) {
   (left, right).>call(());

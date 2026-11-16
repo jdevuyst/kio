@@ -1,7 +1,7 @@
-module derive_specialization_diagnostic_nested_term/main;
+mod derive_specialization_diagnostic_nested_term/main;
 
-import macros/derive(macro derive);
-import testapi(Int);
+import macros/derive { macro derive }
+import testapi { type Int }
 
 host fn zero_int() -> Int;
 

@@ -1,8 +1,8 @@
-module main;
+mod main;
 
 import __intrinsics__;
 
-import first(Bool as Flag, Bool as Same_flag);
+import first { type Bool as Flag; type Bool as Same_flag }
 import second as other;
 
 type Fallback = other.Bool;

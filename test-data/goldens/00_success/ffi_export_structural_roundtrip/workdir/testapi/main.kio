@@ -1,9 +1,20 @@
-module testapi/main;
+mod testapi/main;
 
-import macros/match(macro match);
-import macros/spine_macros(macro widen_sum);
-import testapi(Bool, I16, I32, I64, I8, String, U16, U32, U64, U8);
-import testapi/fmt(int_to_string);
+import macros/match { macro match }
+import macros/spine_macros { macro widen_sum }
+import testapi {
+  type Bool;
+  type I16;
+  type I32;
+  type I64;
+  type I8;
+  type String;
+  type U16;
+  type U32;
+  type U64;
+  type U8
+}
+import testapi/fmt { fn int_to_string }
 
 pub type Wide_product = I32 & I32 & I32 & I32 & I32 & I32 & I32 & I32 & I32 & I32 & I32 & I32;
 

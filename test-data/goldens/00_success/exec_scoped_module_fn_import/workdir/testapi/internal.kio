@@ -1,5 +1,5 @@
-module testapi/internal;
+mod testapi/internal;
 
-import testapi(String);
+import testapi { type String }
 
 pub(testapi) fn message() -> String { "scoped\n"[String] }

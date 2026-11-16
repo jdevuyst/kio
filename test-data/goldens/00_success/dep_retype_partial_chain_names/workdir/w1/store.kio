@@ -1,4 +1,4 @@
-module w1/store;
+mod w1/store;
 
 import core/store as _rehost_gdgphcgfcphdhegphcgf;
 import w2/store as _rehost_hhdccphdhegphcgf;

@@ -1,4 +1,4 @@
-package do_bind_payload_no_backward_flow;
+pkg do_bind_payload_no_backward_flow;
 
 build {
   cache "out/.kio-cache/";

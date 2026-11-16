@@ -1,7 +1,7 @@
-module main;
+mod main;
 
 import provider as source;
-import provider(F64 as Decimal, I32 as Whole);
+import provider { type F64 as Decimal; type I32 as Whole }
 
 host type I32 role(i32);
 

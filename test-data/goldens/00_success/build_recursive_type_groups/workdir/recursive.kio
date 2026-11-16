@@ -1,4 +1,4 @@
-module recursive;
+mod recursive;
 
 pub rec type Label_list[A] = { Nil[A]: . } | { Cons[A]: A & Label_list[A] };
 

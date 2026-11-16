@@ -1,6 +1,6 @@
-module app;
+mod app;
 
-import core/store(accept);
-import widget/store(make);
+import core/store { fn accept }
+import widget/store { fn make }
 
 pub fn main() { accept(make()) }

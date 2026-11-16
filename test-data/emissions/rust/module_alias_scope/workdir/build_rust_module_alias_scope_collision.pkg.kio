@@ -1,4 +1,4 @@
-package build_rust_module_alias_scope_collision;
+pkg build_rust_module_alias_scope_collision;
 
 build {
   cache "out/.kio-cache/";

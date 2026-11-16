@@ -6,13 +6,13 @@
 /// the two primitives that do exist. `int_to_string` renders an `I32` to its
 /// one decimal spelling, and `string_eq` compares spellings, so comparing the
 /// spellings decides the numbers.
-module cellar/ids;
+mod cellar/ids;
 
-import macros/control(macro if);
-import macros/spine_macros(macro widen_sum);
-import testapi(Bool, I32, String);
-import testapi/fmt(int_to_string);
-import testapi/text(string_eq);
+import macros/control { macro if }
+import macros/spine_macros { macro widen_sum }
+import testapi { type Bool; type I32; type String }
+import testapi/fmt { fn int_to_string }
+import testapi/text { fn string_eq }
 
 /// Decimal rendering is injective on `I32` — one value, one spelling — so
 /// equal spellings mean equal values.

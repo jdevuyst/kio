@@ -1,9 +1,9 @@
-module testapi/main;
+mod testapi/main;
 
 import __intrinsics__;
 
-import testapi(String);
-import testapi/io(print);
+import testapi { type String }
+import testapi/io { fn print }
 
 // `Either[E][A] : E | A` — the arity-2 "one of two shapes" sum,
 // error-arm `e` and value-arm `a`. Kind `*→*→*`; partially applying

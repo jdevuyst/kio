@@ -8,26 +8,32 @@
 /// The two point operations and the narrow `min[16,23]` are here precisely
 /// because they are the cases where the tree does *not* win, and the
 /// transcript should say so.
-module seg/script;
+mod seg/script;
 
-import macros/control(macro if);
-import macros/spine_macros(macro widen_sum);
-import seg/num(int_eq);
-import testapi(Array, Bool, I32);
-import testapi/arith(add_i32, leq_i32, mul_i32, sub_i32);
-import testapi/array(array_get, array_make_empty, array_make_filled, array_push, array_set);
-import testapi/iter(loop);
+import macros/control { macro if }
+import macros/spine_macros { macro widen_sum }
+import seg/num { fn int_eq }
+import testapi { type Array; type Bool; type I32 }
+import testapi/arith { fn add_i32; fn leq_i32; fn mul_i32; fn sub_i32 }
+import testapi/array {
+  fn array_get;
+  fn array_make_empty;
+  fn array_make_filled;
+  fn array_push;
+  fn array_set
+}
+import testapi/iter { fn loop }
 
-literal code_add = 1;
+lit code_add = 1;
 
-literal code_sum = 2;
+lit code_sum = 2;
 
-literal code_min = 3;
+lit code_min = 3;
 
-literal code_set = 4;
+lit code_set = 4;
 
 /// Four cells per script row.
-literal row_width = 4;
+lit row_width = 4;
 
 pub fn leaf_count() -> I32 { 64 }
 

@@ -1,4 +1,4 @@
-package blib;
+pkg blib;
 
 bridge {
   greet

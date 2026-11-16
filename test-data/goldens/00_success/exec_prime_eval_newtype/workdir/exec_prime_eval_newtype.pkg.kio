@@ -1,4 +1,4 @@
-package exec_prime_eval_newtype;
+pkg exec_prime_eval_newtype;
 
 build {
   cache "out/.kio-cache/";

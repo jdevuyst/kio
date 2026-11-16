@@ -624,7 +624,7 @@ mod tests {
     #[test]
     fn alias_directives_select_the_declaration_without_a_value_type() {
         let module =
-            crate::pass::parser::parse("module api; fn field() -> . { () } type Field = Original;")
+            crate::pass::parser::parse("mod api; fn field() -> . { () } type Field = Original;")
                 .unwrap();
         let scope = super::super::refs::module_scope_from_surface(&module);
         let text = "[`@signature Field`]. [`@source Field`]. [`@type Field`]. [`@type field`].";

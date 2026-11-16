@@ -1,4 +1,4 @@
-package user_macro_wide_identity_batch;
+pkg user_macro_wide_identity_batch;
 
 build {
   cache "out/.kio-cache/";

@@ -1,4 +1,4 @@
-package typecheck_type_alias_unfolding;
+pkg typecheck_type_alias_unfolding;
 
 build {
   cache "out/.kio-cache/";

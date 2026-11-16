@@ -1,4 +1,4 @@
-package exec_loop_polymorphic_result;
+pkg exec_loop_polymorphic_result;
 
 build {
   cache "out/.kio-cache/";

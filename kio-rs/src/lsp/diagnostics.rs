@@ -528,7 +528,7 @@ mod tests {
     fn cross_file_secondary_uses_its_own_uri_and_line_index() {
         let root = std::path::absolute("/tmp/pkg").expect("absolute fixture root");
         let primary_source = "fn use(value: Wrap(_)) { value }\n";
-        let provider_source = "module provider;\npub type Wrap[T] = [A] T -> A;\n";
+        let provider_source = "mod provider;\npub type Wrap[T] = [A] T -> A;\n";
         let primary_index = LineIndex::new(primary_source);
         let primary = primary_source.find('_').unwrap() as u32;
         let binder = provider_source.find("[A]").unwrap() as u32 + 1;
@@ -712,7 +712,7 @@ mod tests {
 
     #[test]
     fn empty_ufcs_tail_diagnostic_exposes_both_repairs() {
-        let source = "module main; fn run() -> . { value.>call() }";
+        let source = "mod main; fn run() -> . { value.>call() }";
         let error = crate::pass::parser::parse(source)
             .expect_err("the full parser must reject a written empty UFCS tail");
         let located = LocatedError {
@@ -747,7 +747,7 @@ mod tests {
 
     #[test]
     fn empty_ufcs_tail_trivia_repair_preserves_comment_and_comma() {
-        let source = "module main; fn run() -> . { value.>call(\n// keep this\n,) }";
+        let source = "mod main; fn run() -> . { value.>call(\n// keep this\n,) }";
         let error = crate::pass::parser::parse(source)
             .expect_err("the full parser must reject a written empty UFCS tail");
         let located = LocatedError {

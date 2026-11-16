@@ -1,4 +1,4 @@
-package typed_let_patterns;
+pkg typed_let_patterns;
 
 build {
   cache "out/.kio-cache/";

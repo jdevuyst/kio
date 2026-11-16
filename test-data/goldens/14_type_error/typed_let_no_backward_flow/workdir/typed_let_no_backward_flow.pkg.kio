@@ -1,4 +1,4 @@
-package typed_let_no_backward_flow;
+pkg typed_let_no_backward_flow;
 
 build {
   cache "out/.kio-cache/";

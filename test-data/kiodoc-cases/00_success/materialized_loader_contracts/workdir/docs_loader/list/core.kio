@@ -1,9 +1,9 @@
 /// Cons-list core with O(1) constructors, accessors, ordinary sum results, and fold-step helpers.
 /// A ready-to-use library module for your own Kio package.
-module docs_loader/list/core;
+mod docs_loader/list/core;
 
-import docs_loader/list/macros/match(macro match);
-import docs_loader/list/macros/spine_macros(macro widen_sum);
+import docs_loader/list/macros/match { macro match }
+import docs_loader/list/macros/spine_macros { macro widen_sum }
 
 // Kio' is strongly normalizing — no in-language recursion — so iteration
 // over an arbitrary-length list comes from the host `loop`. The

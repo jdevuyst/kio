@@ -1,9 +1,9 @@
-module testapi/main;
+mod testapi/main;
 
 import __intrinsics__;
 
-import testapi(Bool, I32);
-import testapi/fmt(print_i32);
+import testapi { type Bool; type I32 }
+import testapi/fmt { fn print_i32 }
 
 fn choose[A](condition: Bool, yes: A, no: A) -> A {
   let select = __if_then_else__[Bool];

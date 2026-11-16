@@ -1,4 +1,4 @@
-dependency geomlib;
+dep geomlib;
 
 source {
   path "../library/geomlib/geomlib.pkg.kio"

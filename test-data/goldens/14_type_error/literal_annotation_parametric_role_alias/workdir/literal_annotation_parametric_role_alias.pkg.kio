@@ -1,4 +1,4 @@
-package literal_annotation_parametric_role_alias;
+pkg literal_annotation_parametric_role_alias;
 
 build {
   target js {

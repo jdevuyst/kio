@@ -8,8 +8,8 @@
 /// requalified through the re-rooted `fmtlib/types` and the case runs on
 /// the kio-prime differential, where the printed value flows through the
 /// alias-qualified annotation.
-module testapi/main;
+mod testapi/main;
 
-import fmtlib/show(show);
+import fmtlib/show { fn show }
 
 pub fn main() { show() }

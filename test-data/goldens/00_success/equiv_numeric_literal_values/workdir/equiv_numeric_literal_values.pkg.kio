@@ -1,4 +1,4 @@
-package equiv_numeric_literal_values;
+pkg equiv_numeric_literal_values;
 
 build {
   target js {

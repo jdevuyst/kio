@@ -703,7 +703,7 @@ mod tests {
         let mut items = Vec::new();
         for owner in ["api/left", "api/right"] {
             let source =
-                format!("module {owner}; fn helper() -> . {{ () }} pub fn value() -> . {{ () }}");
+                format!("mod {owner}; fn helper() -> . {{ () }} pub fn value() -> . {{ () }}");
             let scope = scope::ModuleScope::from_source(&source).unwrap();
             let rewrite::LinkTarget::Exact(helper_anchor) = scope.link_target("helper") else {
                 panic!("the actual module scope selects its private helper");

@@ -1,4 +1,4 @@
-package portable_names;
+pkg portable_names;
 
 build {
   target java {

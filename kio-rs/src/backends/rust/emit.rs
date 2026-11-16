@@ -402,8 +402,7 @@ pub fn lower_package_with_options(
 ) -> Result<RustCrate, EmitError> {
     let package_file_entry = package.package_file().ok_or_else(|| {
         EmitError::unsupported(
-            "Rust emitter requires a package file (`<pkg>.pkg.kio`); \
-             a package without one has no package boundary to expose",
+            "Rust emitter requires a package file (`<pkg>.pkg.kio`); a package without one has no package boundary to expose",
         )
     })?;
     let _ = package_file_entry;
@@ -744,7 +743,7 @@ fn unique_newtype_key_by_name(
 }
 
 /// Per-module newtype-import scope: for each module, the bare newtype
-/// leaf names it brings into scope with `import N(…, X, …);`, each
+/// leaf names it brings into scope with `import N { …; type X; … }`, each
 /// mapped to the slash-path of the module that declares the newtype.
 ///
 /// A bare newtype reference inside a module body resolves to the
@@ -2812,7 +2811,7 @@ struct BodyShapeRegistry {
     unique_newtype_key_by_name: BTreeMap<String, String>,
     /// Per-module newtype-import scope, keyed by the importing module's
     /// slash-path: leaf → declaring module path, for each newtype the
-    /// module brings into scope with `import N(…, X, …);`. A bare
+    /// module brings into scope with `import N { …; type X; … }`. A bare
     /// single-segment newtype reference resolves through its module's
     /// own declarations and then this scope, never through the
     /// package-global [`Self::unique_newtype_key_by_name`] table — that
@@ -3607,7 +3606,7 @@ impl BodyShapeRegistry {
     ///
     /// 1. the referring module's **own** declaration of the leaf;
     /// 2. the newtype the module **imports** for that leaf with
-    ///    `import N(…, X, …);` ([`Self::newtype_import_scopes`]);
+    ///    `import N { …; type X; … }` ([`Self::newtype_import_scopes`]);
     /// 3. the package-global by-leaf table, as a last resort.
     ///
     /// Steps 1–2 are open-world-safe: a reference to a newtype the module
@@ -6300,10 +6299,11 @@ fn emit_lib_rs(
 
     out.push_str(&namespace_structs);
     out.push_str(&format!(
-        "/// {} — the package handle. Owns the host implementation for the\n\
-         /// lifetime of the package and exposes its generated namespace\n\
-         /// fields; exported items are invoked through methods on those\n\
-         /// namespace handles.\n",
+        "/// {} — the package handle. Owns the host implementation for the
+/// lifetime of the package and exposes its generated namespace
+/// fields; exported items are invoked through methods on those
+/// namespace handles.
+",
         names.handle
     ));
     // `Clone` is needed when a module fn flows through value position
@@ -10937,7 +10937,6 @@ fn prepared_live_host_binding<'a>(
             });
     if !matches!(binding.origin(), BoundaryHostBindingOrigin::Live)
         || binding.binding() != expected_binding
-        || binding.owned() != declaration.source.owned
         || !same_type_parameters
     {
         unreachable!(
@@ -11118,12 +11117,10 @@ fn emit_prepared_host_type_section(
     let role_note = role
         .map(|role| format!(" role({})", role.as_str()))
         .unwrap_or_default();
-    let owned_note = if binding.owned() { " { owned }" } else { "" };
     out.push_str(&format!(
-        "    /// host `type {}{}{};`\n",
+        "    /// host `type {}{};`\n",
         binding.name().name(),
-        role_note,
-        owned_note
+        role_note
     ));
     let bounds = render_rust_host_type_bounds(&declaration.bounds, role);
     if binding.type_params().is_empty() {
@@ -11390,9 +11387,7 @@ mod tests {
     #[test]
     fn public_word_casing_has_a_crate_wide_naming_lint_allowance() {
         let pkg = build_package(
-            "module word_api; \
-             pub type { Word_box: . { pub mk; pub get; }; }; \
-             pub fn round_trip() -> . { () }",
+            "mod word_api; pub type { Word_box: . { pub mk; pub get; }; }; pub fn round_trip() -> . { () }",
             Some("bridge { word_api; }"),
         );
         let krate = lower_package(&pkg, "word_names").expect("word-cased Rust emission");
@@ -11420,7 +11415,7 @@ mod tests {
     #[test]
     fn ordinary_facades_keep_rusts_default_recursion_limit() {
         let pkg = build_package(
-            "module main; pub fn keep(value: .) -> . { value }",
+            "mod main; pub fn keep(value: .) -> . { value }",
             Some("bridge { main; }"),
         );
         let prepared = PreparedBoundaryCallableSites::collect_live(&pkg)
@@ -11444,11 +11439,15 @@ mod tests {
             .collect::<Vec<_>>()
             .join("\n");
         let source = format!(
-            "module main;\n\n\
-             host type I32 role(i32);\n\n\
-             pub fn make_select() -> (& {parameter_type}) -> I32 {{\n\
-               .(\n{parameters}\n  ) {{ p0 }}\n\
-             }}"
+            "mod main;
+
+host type I32 role(i32);
+
+pub fn make_select() -> (& {parameter_type}) -> I32 {{
+.(
+{parameters}
+  ) {{ p0 }}
+}}"
         );
         let pkg = build_package(&source, Some("bridge { main; }"));
         let prepared =
@@ -11528,7 +11527,7 @@ mod tests {
 
     fn with_routed_invariant_emitter(test: impl FnOnce(&mut BodyEmitter<'_>)) {
         let package = build_package(
-            "module main; host type Flag role(bool); pub fn flag() -> Flag { .t }",
+            "mod main; host type Flag role(bool); pub fn flag() -> Flag { .t }",
             Some("bridge { main; }"),
         );
         let prepared = PreparedBoundaryCallableSites::collect_live(&package).unwrap();
@@ -11640,7 +11639,7 @@ mod tests {
             })
             .collect();
         let parsed_package_file = package_file_src.map(|s| {
-            parse_package_file(&format!("package pkg;\n{s}"), None).expect("parse package file")
+            parse_package_file(&format!("pkg pkg;\n{s}"), None).expect("parse package file")
         });
         let (lowered_modules, lowered_package_file) =
             FullPipeline::lower_package(parsed_modules, parsed_package_file)
@@ -11667,13 +11666,9 @@ mod tests {
     fn routed_nominal_identity_is_not_reexpanded_in_rust_contract() {
         let pkg = build_multi_module_package(
             &[
-                "module list/core; pub rec type { List[A]: . | (A & List[A]) { \
-                 pub mk; pub get; }; };",
-                "module model; import list/core as list; \
-                 pub type Row = list.List[.]; \
-                 pub fn keep(row: Row) -> Row { row }",
-                "module facade; import model as model; \
-                 pub fn keep(row: model.Row) -> model.Row { model.keep(row) }",
+                "mod list/core; pub rec type { List[A]: . | (A & List[A]) { pub mk; pub get; }; };",
+                "mod model; import list/core as list; pub type Row = list.List[.]; pub fn keep(row: Row) -> Row { row }",
+                "mod facade; import model as model; pub fn keep(row: model.Row) -> model.Row { model.keep(row) }",
             ],
             Some("bridge { facade; list/**; model; }"),
         );
@@ -11712,19 +11707,7 @@ mod tests {
     #[test]
     fn recursive_newtype_classification_uses_instantiated_payloads_per_path() {
         let pkg = build_package(
-            "module main; \
-             pub type { Const[A]: . { \
-               pub mk; pub get; \
-             }; }; \
-             pub rec type { Finite: Const[Finite] { \
-               pub mk; pub get; \
-             }; }; \
-             pub type { Id[A]: A { \
-               pub mk; pub get; \
-             }; }; \
-             pub rec type { Recursive: Id[.] & Id[Recursive] { \
-               pub mk; pub get; \
-             }; };",
+            "mod main; pub type { Const[A]: . { pub mk; pub get; }; }; pub rec type { Finite: Const[Finite] { pub mk; pub get; }; }; pub type { Id[A]: A { pub mk; pub get; }; }; pub rec type { Recursive: Id[.] & Id[Recursive] { pub mk; pub get; }; };",
             Some("bridge { main; }"),
         );
         let newtypes = collect_newtypes(&pkg);
@@ -11745,21 +11728,7 @@ mod tests {
     #[test]
     fn public_opaque_newtypes_hide_payload_storage_and_private_payload_types() {
         let pkg = build_package(
-            "module api; \
-             type { Hidden_payload: . { mk; get; }; }; \
-             pub type { Opaque_a: Hidden_payload { mk; get; }; }; \
-             pub type { Opaque_b: Hidden_payload { mk; get; }; }; \
-             pub type { Constructor_only[A]: A { pub mk; get; }; }; \
-             pub type { Projector_only[A]: A { mk; pub get; }; }; \
-             pub type { Function_box[A]: A -> A { pub mk; pub get; }; }; \
-             pub type { Existential <U>: U { mk; pub get; }; }; \
-             rec { \
-               pub type { Outer: Hidden { pub mk; pub get; }; }; \
-               pub type { Hidden: Outer { mk; get; }; }; \
-             } \
-             pub fn keep_a(value: Opaque_a) -> Opaque_a { value } \
-             pub fn keep_b(value: Opaque_b) -> Opaque_b { value } \
-             host fn echo_outer(value: Outer) -> Outer;",
+            "mod api; type { Hidden_payload: . { mk; get; }; }; pub type { Opaque_a: Hidden_payload { mk; get; }; }; pub type { Opaque_b: Hidden_payload { mk; get; }; }; pub type { Constructor_only[A]: A { pub mk; get; }; }; pub type { Projector_only[A]: A { mk; pub get; }; }; pub type { Function_box[A]: A -> A { pub mk; pub get; }; }; pub type { Existential <U>: U { mk; pub get; }; }; rec { pub type { Outer: Hidden { pub mk; pub get; }; }; pub type { Hidden: Outer { mk; get; }; }; } pub fn keep_a(value: Opaque_a) -> Opaque_a { value } pub fn keep_b(value: Opaque_b) -> Opaque_b { value } host fn echo_outer(value: Outer) -> Outer;",
             Some("bridge { api; }"),
         );
         let krate = lower_package(&pkg, "test_pkg").expect("emit Rust");
@@ -11831,7 +11800,7 @@ mod tests {
     #[test]
     fn unreferenced_public_opaque_newtype_needs_no_callable_owner() {
         let pkg = build_package(
-            "module api; pub type { Token: . { mk; get; }; };",
+            "mod api; pub type { Token: . { mk; get; }; };",
             Some("bridge { api; }"),
         );
         let krate = lower_package(&pkg, "test_pkg").expect("emit isolated opaque Rust newtype");
@@ -11841,32 +11810,7 @@ mod tests {
     #[test]
     fn function_newtype_member_facades_match_the_public_function_abi() {
         let pkg = build_package(
-            "module api; \
-             host type I32 role(i32); \
-             pub type { Packed_triple: (I32 & I32 & I32) -> I32 { \
-                 pub mk; \
-                 pub get; \
-             }; }; \
-             pub type { Higher_order_parameter: (I32 -> I32) -> I32 { \
-                 pub mk; \
-                 pub get; \
-             }; }; \
-             pub type { Higher_order_return: I32 -> (I32 -> I32) { \
-                 pub mk; \
-                 pub get; \
-             }; }; \
-             pub type { Generic_parameter[T]: T -> I32 { \
-                 pub mk; \
-                 pub get; \
-             }; }; \
-             pub type { Polymorphic[*F]: [A][B] ((A -> B) & F[A]) -> F[B] { \
-                 pub mk; \
-                 pub get; \
-             }; }; \
-             pub rec type { Recursive_poly: [A] A -> Recursive_poly { \
-                 pub mk; \
-                 pub get; \
-             }; };",
+            "mod api; host type I32 role(i32); pub type { Packed_triple: (I32 & I32 & I32) -> I32 { pub mk; pub get; }; }; pub type { Higher_order_parameter: (I32 -> I32) -> I32 { pub mk; pub get; }; }; pub type { Higher_order_return: I32 -> (I32 -> I32) { pub mk; pub get; }; }; pub type { Generic_parameter[T]: T -> I32 { pub mk; pub get; }; }; pub type { Polymorphic[*F]: [A][B] ((A -> B) & F[A]) -> F[B] { pub mk; pub get; }; }; pub rec type { Recursive_poly: [A] A -> Recursive_poly { pub mk; pub get; }; };",
             Some("bridge { api; }"),
         );
         let krate = lower_package(&pkg, "test_pkg").expect("emit Rust");
@@ -12043,12 +11987,7 @@ mod tests {
     #[test]
     fn user_comptime_named_types_keep_lexical_identity() {
         let pkg = build_package(
-            "module api; \
-             pub type { Comptime_bool[A]: A { mk; get; }; }; \
-             pub type { Comptime_str: . { pub mk; pub get; }; }; \
-             pub fn keep_bool[A](value: Comptime_bool[A]) -> Comptime_bool[A] { value } \
-             pub fn keep_str(value: Comptime_str) -> Comptime_str { value } \
-             pub fn keep_binder[Comptime_bool](value: Comptime_bool) -> Comptime_bool { value }",
+            "mod api; pub type { Comptime_bool[A]: A { mk; get; }; }; pub type { Comptime_str: . { pub mk; pub get; }; }; pub fn keep_bool[A](value: Comptime_bool[A]) -> Comptime_bool[A] { value } pub fn keep_str(value: Comptime_str) -> Comptime_str { value } pub fn keep_binder[Comptime_bool](value: Comptime_bool) -> Comptime_bool { value }",
             Some("bridge { api; }"),
         );
         let krate = lower_package(&pkg, "test_pkg").expect("emit Rust");
@@ -12092,12 +12031,7 @@ mod tests {
     #[test]
     fn existential_function_projector_passes_rc_closure_to_continuation() {
         let pkg = build_package(
-            "module api; \
-             host type Text role(str); \
-             pub type { Existential_function <U>: U -> Text { \
-                 mk; \
-                 pub get; \
-             }; };",
+            "mod api; host type Text role(str); pub type { Existential_function <U>: U -> Text { mk; pub get; }; };",
             Some("bridge { api; }"),
         );
         let krate = lower_package(&pkg, "test_pkg").expect("emit Rust");
@@ -12140,11 +12074,7 @@ mod tests {
     #[test]
     fn existential_outer_forall_payload_erases_existential_below_binder() {
         let pkg = build_package(
-            "module api; \
-             pub type { Existential_spread <U>: [A] (U & A) -> U { \
-                 mk; \
-                 pub get; \
-             }; };",
+            "mod api; pub type { Existential_spread <U>: [A] (U & A) -> U { mk; pub get; }; };",
             Some("bridge { api; }"),
         );
         let krate = lower_package(&pkg, "test_pkg")
@@ -12180,12 +12110,7 @@ mod tests {
     #[test]
     fn host_trait_preserves_descriptor_declaration_order() {
         let pkg = build_package(
-            "module api; \
-             host type Zed role(i32); \
-             host type Alpha role(i64); \
-             host fn zed() -> .; \
-             host fn alpha() -> .; \
-             fn dummy() -> . { () }",
+            "mod api; host type Zed role(i32); host type Alpha role(i64); host fn zed() -> .; host fn alpha() -> .; fn dummy() -> . { () }",
             Some("bridge { api; }"),
         );
         let krate = lower_package(&pkg, "test_pkg").expect("lower_package");
@@ -12216,10 +12141,7 @@ mod tests {
     #[test]
     fn host_trait_translates_descriptor_bound_intents() {
         let pkg = build_package(
-            "module api; \
-             host type Value role(i32); \
-             host type Box[A]; \
-             fn dummy() -> . { () }",
+            "mod api; host type Value role(i32); host type Box[A]; fn dummy() -> . { () }",
             Some("bridge { api; }"),
         );
         let mut descriptor = host_descriptor::build_host_descriptor(&pkg);
@@ -12259,9 +12181,7 @@ mod tests {
         // `From<i32>`; it does not replace the type with the primitive. See
         // `specs/backends/rust.md` § Host record contract.
         let pkg = build_package(
-            "module main; \
-             host type Int role(i32); host fn print(p0: Int) -> .; \
-             fn dummy() -> . { () }",
+            "mod main; host type Int role(i32); host fn print(p0: Int) -> .; fn dummy() -> . { () }",
             Some("bridge { main; }"),
         );
         let krate = lower_package(&pkg, "test_pkg").expect("lower_package");
@@ -12310,12 +12230,8 @@ mod tests {
     fn same_leaf_role_host_types_keep_exact_literal_roles() {
         let pkg = build_multi_module_package(
             &[
-                "module left; \
-                 host type Shared role(i32); \
-                 pub fn left_literal() -> Shared { 1 }",
-                "module right; \
-                 host type Shared role(i64); \
-                 pub fn right_literal() -> Shared { 2 }",
+                "mod left; host type Shared role(i32); pub fn left_literal() -> Shared { 1 }",
+                "mod right; host type Shared role(i64); pub fn right_literal() -> Shared { 2 }",
             ],
             Some("bridge { left; right; }"),
         );
@@ -12380,12 +12296,8 @@ mod tests {
     fn same_leaf_public_newtypes_keep_exact_carrier_identities() {
         let pkg = build_multi_module_package(
             &[
-                "module left; \
-                 pub type { Token: . { mk; get; }; }; \
-                 host fn round_token(value: Token) -> Token;",
-                "module right; \
-                 pub type { Token: . { mk; get; }; }; \
-                 host fn round_token(value: Token) -> Token;",
+                "mod left; pub type { Token: . { mk; get; }; }; host fn round_token(value: Token) -> Token;",
+                "mod right; pub type { Token: . { mk; get; }; }; host fn round_token(value: Token) -> Token;",
             ],
             Some("bridge { left; right; }"),
         );
@@ -12419,17 +12331,13 @@ mod tests {
 
     #[test]
     fn unrelated_declarations_cannot_rename_a_public_nominal_type() {
-        let target = "module zed; \
-            pub type { Token: . { pub mk; pub get; }; }; \
-            host fn round_token(value: Token) -> Token;";
+        let target = "mod zed; pub type { Token: . { pub mk; pub get; }; }; host fn round_token(value: Token) -> Token;";
         let baseline = build_multi_module_package(&[target], Some("bridge { zed; }"));
         let extended = build_multi_module_package(
             &[
                 target,
-                "module zed_; \
-                 pub type { Token: . { pub mk; pub get; }; };",
-                "module other; \
-                 pub type { Token: . { pub mk; pub get; }; };",
+                "mod zed_; pub type { Token: . { pub mk; pub get; }; };",
+                "mod other; pub type { Token: . { pub mk; pub get; }; };",
             ],
             Some("bridge { zed; zed_; other; }"),
         );
@@ -12470,17 +12378,8 @@ mod tests {
         // collision the emitter previously produced.
         let pkg = build_multi_module_package(
             &[
-                "module app; \
-                 import lib as lib; \
-                 host type String role(str); \
-                 host type Box[T]; \
-                 host fn read_string(x: Box[String]) -> String; \
-                 pub fn relay(x: lib.Box[lib.String]) -> lib.String { lib.read_string(x) }",
-                "module lib; \
-                 host type String role(str); \
-                 host type Box[T]; \
-                 host fn read_string(x: Box[String]) -> String; \
-                 pub fn unbox(x: Box[String]) -> String { read_string(x) }",
+                "mod app; import lib as lib; host type String role(str); host type Box[T]; host fn read_string(x: Box[String]) -> String; pub fn relay(x: lib.Box[lib.String]) -> lib.String { lib.read_string(x) }",
+                "mod lib; host type String role(str); host type Box[T]; host fn read_string(x: Box[String]) -> String; pub fn unbox(x: Box[String]) -> String { read_string(x) }",
             ],
             Some("bridge { app; lib; }"),
         );
@@ -12553,13 +12452,7 @@ mod tests {
     #[test]
     fn parameterized_host_storage_is_substitution_stable_across_public_uses() {
         let pkg = build_package(
-            "module api; \
-             host type Box[T]; \
-             pub type Wrapped[T] = Box[T]; \
-             host fn direct[T](value: T, boxed: Box[T]) -> Box[T]; \
-             host fn through_alias[T](boxed: Wrapped[T]) -> Wrapped[T]; \
-             host fn compound[A][B](boxed: Box[A & B]) -> Box[A & B]; \
-             fn dummy() -> . { () }",
+            "mod api; host type Box[T]; pub type Wrapped[T] = Box[T]; host fn direct[T](value: T, boxed: Box[T]) -> Box[T]; host fn through_alias[T](boxed: Wrapped[T]) -> Wrapped[T]; host fn compound[A][B](boxed: Box[A & B]) -> Box[A & B]; fn dummy() -> . { () }",
             Some("bridge { api; }"),
         );
         let krate = lower_package(&pkg, "test_pkg").expect("lower parameterized host storage");
@@ -12636,11 +12529,11 @@ mod tests {
     #[test]
     fn export_namespace_topology_ignores_raw_declaration_from_different_catalog() {
         let authority = build_package(
-            "module api; pub fn admitted() -> . { () }",
+            "mod api; pub fn admitted() -> . { () }",
             Some("bridge { api; }"),
         );
         let unrelated = build_package(
-            "module api; pub fn intruder() -> . { () }",
+            "mod api; pub fn intruder() -> . { () }",
             Some("bridge { api; }"),
         );
         let raw_module_fns = collect_module_fns(&unrelated);
@@ -12665,9 +12558,7 @@ mod tests {
     #[test]
     fn anonymous_product_uses_the_canonical_binary_facade() {
         let pkg = build_package(
-            "module main; \
-             host type Int role(i32); host type Str role(str); host fn pair(p0: Int, p1: Str) -> (Int & Str); \
-             fn dummy() -> . { () }",
+            "mod main; host type Int role(i32); host type Str role(str); host fn pair(p0: Int, p1: Str) -> (Int & Str); fn dummy() -> . { () }",
             Some("bridge { main; }"),
         );
         let krate = lower_package(&pkg, "test_pkg").expect("lower_package");
@@ -12694,9 +12585,7 @@ mod tests {
     #[test]
     fn anonymous_sum_uses_the_canonical_binary_facade() {
         let pkg = build_package(
-            "module main; \
-             host type Int role(i32); host type Str role(str); host fn either() -> (Int | Str); \
-             fn dummy() -> . { () }",
+            "mod main; host type Int role(i32); host type Str role(str); host fn either() -> (Int | Str); fn dummy() -> . { () }",
             Some("bridge { main; }"),
         );
         let krate = lower_package(&pkg, "test_pkg").expect("lower_package");
@@ -12720,8 +12609,7 @@ mod tests {
         // carrier, aliases, and payload facade must therefore come from the
         // prepared public inventory rather than body-shape registration.
         let pkg = build_package(
-            "module main; \
-             pub type { Pair[A][B]: A & B { pub mk; pub get; }; };",
+            "mod main; pub type { Pair[A][B]: A & B { pub mk; pub get; }; };",
             Some("bridge { main; }"),
         );
         let krate = lower_package(&pkg, "test_pkg").expect("lower_package");
@@ -12755,9 +12643,7 @@ mod tests {
     #[test]
     fn polymorphic_host_fn_lowers_to_generic_method() {
         let pkg = build_package(
-            "module main; \
-             host type Int role(i32); host fn id[A](v: A) -> A; \
-             fn dummy() -> . { () }",
+            "mod main; host type Int role(i32); host fn id[A](v: A) -> A; fn dummy() -> . { () }",
             Some("bridge { main; }"),
         );
         let krate = lower_package(&pkg, "test_pkg").expect("polymorphic host fn lowers");
@@ -12783,12 +12669,7 @@ mod tests {
     #[test]
     fn host_callback_uses_named_canonical_carrier() {
         let pkg = build_package(
-            "module main; \
-             host type String role(str); \
-             host type I32 role(i32); \
-             host fn round(f: String -> String -> String) -> String -> String -> String; \
-             host fn higher_order(f: (I32 -> I32) -> I32) -> I32; \
-             fn dummy() -> . { () }",
+            "mod main; host type String role(str); host type I32 role(i32); host fn round(f: String -> String -> String) -> String -> String -> String; host fn higher_order(f: (I32 -> I32) -> I32) -> I32; fn dummy() -> . { () }",
             Some("bridge { main; }"),
         );
         let krate = lower_package(&pkg, "test_pkg").expect("heap callback host fn lowers");
@@ -12808,10 +12689,7 @@ mod tests {
     #[test]
     fn rank_n_host_fn_param_lowers_to_uniform_value_with_typed_ingress() {
         let pkg = build_package(
-            "module main; \
-             host type String role(str); host fn print(s: String) -> .; host fn apply_poly(f: [T]( T) -> T) -> String; \
-             pub fn poly_echo[T](x: T) -> T { x } \
-             pub fn main() -> . { print(apply_poly(poly_echo)) }",
+            "mod main; host type String role(str); host fn print(s: String) -> .; host fn apply_poly(f: [T]( T) -> T) -> String; pub fn poly_echo[T](x: T) -> T { x } pub fn main() -> . { print(apply_poly(poly_echo)) }",
             Some("bridge { main; }"),
         );
         let krate = lower_package(&pkg, "test_pkg").expect("rank-N host fn lowers");
@@ -12868,9 +12746,7 @@ mod tests {
     #[test]
     fn forall_facades_select_one_binder_and_name_each_exact_residual() {
         let pkg = build_package(
-            "module main; \
-             host fn accept(value: [A][B] (A -> B) -> A -> B) -> .; \
-             fn dummy() { () }",
+            "mod main; host fn accept(value: [A][B] (A -> B) -> A -> B) -> .; fn dummy() { () }",
             Some("bridge { main; }"),
         );
         let krate = lower_package(&pkg, "test_pkg").expect("emit staged forall facade");
@@ -12936,9 +12812,7 @@ mod tests {
     #[test]
     fn returned_forall_uses_uniform_value_with_stable_typed_ingress_alias() {
         let pkg = build_package(
-            "module main; \
-             host fn produce(_unit: .) -> [A] A; \
-             fn dummy() -> . { () }",
+            "mod main; host fn produce(_unit: .) -> [A] A; fn dummy() -> . { () }",
             Some("bridge { main; }"),
         );
         let krate = lower_package(&pkg, "test_pkg").expect("returned rank-N host fn lowers");
@@ -12975,9 +12849,7 @@ mod tests {
     #[test]
     fn rank_n_direct_unit_function_is_nullary_in_public_and_private_forms() {
         let pkg = build_package(
-            "module main; \
-             host fn consume(poly: [A](.) -> .) -> .; \
-             pub fn forward(poly: [A](.) -> .) -> . { consume(poly) }",
+            "mod main; host fn consume(poly: [A](.) -> .) -> .; pub fn forward(poly: [A](.) -> .) -> . { consume(poly) }",
             Some("bridge { main; }"),
         );
         let krate = lower_package(&pkg, "test_pkg").expect("emit rank-N Unit function");
@@ -13008,8 +12880,7 @@ mod tests {
     #[test]
     fn staged_unit_head_is_publicly_and_privately_nullary() {
         let pkg = build_package(
-            "module main; \
-             pub fn staged_unit[A](value: .)(result: A) -> A { result }",
+            "mod main; pub fn staged_unit[A](value: .)(result: A) -> A { result }",
             Some("bridge { main; }"),
         );
         let krate =
@@ -13038,26 +12909,7 @@ mod tests {
     #[test]
     fn public_host_and_source_binders_are_collision_free_and_well_formed() {
         let pkg = build_package(
-            "module main; \
-             host type Box[A]; \
-             host fn boxed[H](value: Box[H]) -> Box[H]; \
-             host fn hkt[*F](value: F[.]) -> F[.]; \
-             host fn staged[A](poly: [X](X) -> X)[B](second: B) -> A; \
-             host fn repeated[A](first: A)[A](second: A) -> A; \
-             pub type { Shadow[A][A]: A { \
-                 pub mk; pub get; \
-             }; }; \
-             pub type { Witness[A][A] <Self>: A & Self { \
-                 pub mk; pub get; \
-             }; }; \
-             type { Keyword[Self]: Self { mk; get; }; }; \
-             fn hold_keyword(value: .) -> Keyword[.] { \
-                 Keyword.mk[.]( value) \
-             } \
-             pub fn call_staged[A](poly: [X](X) -> X)[B](second: B) -> A { \
-                 staged[A]( poly)[ B]( second) \
-             } \
-             pub fn identity[H](value: H) -> H { value }",
+            "mod main; host type Box[A]; host fn boxed[H](value: Box[H]) -> Box[H]; host fn hkt[*F](value: F[.]) -> F[.]; host fn staged[A](poly: [X](X) -> X)[B](second: B) -> A; host fn repeated[A](first: A)[A](second: A) -> A; pub type { Shadow[A][A]: A { pub mk; pub get; }; }; pub type { Witness[A][A] <Self>: A & Self { pub mk; pub get; }; }; type { Keyword[Self]: Self { mk; get; }; }; fn hold_keyword(value: .) -> Keyword[.] { Keyword.mk[.]( value) } pub fn call_staged[A](poly: [X](X) -> X)[B](second: B) -> A { staged[A]( poly)[ B]( second) } pub fn identity[H](value: H) -> H { value }",
             Some("bridge { main; }"),
         );
         let krate = lower_package(&pkg, "test_pkg").expect("emit hygienic Rust binders");
@@ -13214,24 +13066,7 @@ mod tests {
     #[test]
     fn ordinary_public_arguments_preserve_source_grouping_and_direct_unit_nullarity() {
         let pkg = build_package(
-            "module main; \
-             host type Int role(i32); \
-             host fn packed(value: Int & Int) -> .; \
-             host fn split(left: Int, right: Int) -> .; \
-             host fn unit(value: .) -> .; \
-             host fn nullary() -> .; \
-             host fn round_unit(callback: . -> .) -> (. -> .); \
-             pub type { Pair: Int & Int { pub mk; pub get; }; }; \
-             pub fn call_packed(value: Int & Int) -> . { packed(value) } \
-             pub fn packed_value() -> ((Int & Int) -> .) { packed } \
-             pub fn keep_pair(value: Int & Int) -> Int & Int { value } \
-             pub fn keep_split(left: Int, right: Int) -> Int & Int { (left, right) } \
-             pub fn call_unit(value: .) -> . { unit(value) } \
-             pub fn unit_value() -> (. -> .) { unit } \
-             pub fn call_round_unit(callback: . -> .) -> (. -> .) { \
-                 round_unit(callback) \
-             } \
-             pub fn call_nullary() -> . { nullary() }",
+            "mod main; host type Int role(i32); host fn packed(value: Int & Int) -> .; host fn split(left: Int, right: Int) -> .; host fn unit(value: .) -> .; host fn nullary() -> .; host fn round_unit(callback: . -> .) -> (. -> .); pub type { Pair: Int & Int { pub mk; pub get; }; }; pub fn call_packed(value: Int & Int) -> . { packed(value) } pub fn packed_value() -> ((Int & Int) -> .) { packed } pub fn keep_pair(value: Int & Int) -> Int & Int { value } pub fn keep_split(left: Int, right: Int) -> Int & Int { (left, right) } pub fn call_unit(value: .) -> . { unit(value) } pub fn unit_value() -> (. -> .) { unit } pub fn call_round_unit(callback: . -> .) -> (. -> .) { round_unit(callback) } pub fn call_nullary() -> . { nullary() }",
             Some("bridge { main; }"),
         );
         let krate = lower_package(&pkg, "test_pkg").expect("emit source-grouped Rust facade");
@@ -13340,24 +13175,7 @@ mod tests {
     #[test]
     fn function_facades_preserve_semantic_abi_arity_at_nested_occurrences() {
         let pkg = build_package(
-            "module main; \
-             host type Text role(str); \
-             pub type Callback[A] = A -> Text; \
-             host fn direct_callback(callback: . -> Text) -> Text; \
-             host fn substituted_callback(callback: Callback[.]) -> Text; \
-             host fn nested_product(value: (. -> Text) & Text) -> Text; \
-             host fn nested_sum(value: (. -> Text) | Text) -> Text; \
-             pub type { Direct_callback: . -> Text { \
-                 pub mk; \
-                 pub get; \
-             }; }; \
-             host fn nested_forall(poly: [A] ((. -> A) & A) -> A) -> Text; \
-             pub type { Existential_callback <U>: (. -> U) & U { \
-                 mk; \
-                 pub get; \
-             }; }; \
-             host fn nested_hkt[*F](value: F[. -> Text]) -> F[. -> Text]; \
-             fn dummy() -> . { () }",
+            "mod main; host type Text role(str); pub type Callback[A] = A -> Text; host fn direct_callback(callback: . -> Text) -> Text; host fn substituted_callback(callback: Callback[.]) -> Text; host fn nested_product(value: (. -> Text) & Text) -> Text; host fn nested_sum(value: (. -> Text) | Text) -> Text; pub type { Direct_callback: . -> Text { pub mk; pub get; }; }; host fn nested_forall(poly: [A] ((. -> A) & A) -> A) -> Text; pub type { Existential_callback <U>: (. -> U) & U { mk; pub get; }; }; host fn nested_hkt[*F](value: F[. -> Text]) -> F[. -> Text]; fn dummy() -> . { () }",
             Some("bridge { main; }"),
         );
         let krate = lower_package(&pkg, "test_pkg").expect("emit semantic function arities");
@@ -13510,12 +13328,7 @@ mod tests {
         // exported fn (the `exp` submodule). The env submodules are
         // themselves rung-2 module-qualified (`main__wrap` etc.).
         let pkg = build_package(
-            "module main; \
-             host type Cell; host type Str role(str); \
-             host fn wrap(s: Str) -> Cell; \
-             host fn id[A](v: A) -> A; \
-             host fn pick(p: (Cell | Str)) -> Str; \
-             pub fn run(s: Str) -> Cell { id(wrap(s)) }",
+            "mod main; host type Cell; host type Str role(str); host fn wrap(s: Str) -> Cell; host fn id[A](v: A) -> A; host fn pick(p: (Cell | Str)) -> Str; pub fn run(s: Str) -> Cell { id(wrap(s)) }",
             Some("bridge { main; }"),
         );
         let krate = lower_package(&pkg, "test_pkg").expect("lower_package");
@@ -13575,18 +13388,7 @@ mod tests {
     #[test]
     fn ffi_callable_aliases_follow_structural_signature_paths() {
         let pkg = build_package(
-            "module main; \
-             host type N; host type Box[A]; \
-             host fn exchange[Outer][ More]( \
-                 choice: (. -> N) | ([A] A -> A), \
-                 product: (Outer -> More) & ([B] B -> Outer), \
-                 wrapped: Box[[C] C -> Outer], \
-                 callback: ((. -> N) | ([D] D -> D)) -> ((. -> N) | ([E] E -> E)) \
-             ) -> Box[[R] R -> More]; \
-             host fn nested(value: (([A] A -> A) & N) & ([B] B -> B)) -> .; \
-             host fn grouped(callback: ((. -> N) & ([A] A -> A)) -> .) -> .; \
-             pub type { Secret: [A] A -> A { mk; get; }; }; \
-             host fn opaque(value: Secret) -> Secret;",
+            "mod main; host type N; host type Box[A]; host fn exchange[Outer][ More]( choice: (. -> N) | ([A] A -> A), product: (Outer -> More) & ([B] B -> Outer), wrapped: Box[[C] C -> Outer], callback: ((. -> N) | ([D] D -> D)) -> ((. -> N) | ([E] E -> E)) ) -> Box[[R] R -> More]; host fn nested(value: (([A] A -> A) & N) & ([B] B -> B)) -> .; host fn grouped(callback: ((. -> N) & ([A] A -> A)) -> .) -> .; pub type { Secret: [A] A -> A { mk; get; }; }; host fn opaque(value: Secret) -> Secret;",
             Some("bridge { main; }"),
         );
         let krate = lower_package(&pkg, "test_pkg").expect("emit structural callable aliases");
@@ -13654,14 +13456,10 @@ mod tests {
 
     #[test]
     fn retained_structural_callable_aliases_keep_origin_and_binder_hygiene() {
-        let pkg = build_package("module api; fn unit() -> . { () }", Some("bridge { api; }"));
+        let pkg = build_package("mod api; fn unit() -> . { () }", Some("bridge { api; }"));
         let krate = lower_with_sig(
             &pkg,
-            "signature pkg v(3); \
-             v(1) { nonbreaking { add { module api { \
-                 host fn old_field0[H](value: ([A] A -> H) | (. -> H)) -> .; \
-             } } } } \
-             v(2) { nonbreaking { remove { module api { old_field0; } } } }",
+            "sig pkg v(3); v(1) { nonbreaking { add { mod api { host fn old_field0[H](value: ([A] A -> H) | (. -> H)) -> .; } } } } v(2) { nonbreaking { remove {  api.old_field0;  } } }",
         );
         let ffi = &krate.ffi_rs;
         assert!(ffi.contains("pub mod api__oldField0 {"), "{ffi}");
@@ -13687,12 +13485,7 @@ mod tests {
     #[test]
     fn ffi_callable_alias_paths_do_not_render_higher_kinded_containers_as_values() {
         let pkg = build_package(
-            "module main; \
-             host type Box[A]; host type Pair[A][B]; \
-             pub type { Holder[*F][A]: . { mk; get; }; }; \
-             host fn higher[*F](bound: Holder[F][ [A] A -> A], \
-                 nominal: Holder[Box][ [B] B -> B], \
-                 partial: Holder[Pair[[C] C -> C]][ .]) -> .;",
+            "mod main; host type Box[A]; host type Pair[A][B]; pub type { Holder[*F][A]: . { mk; get; }; }; host fn higher[*F](bound: Holder[F][ [A] A -> A], nominal: Holder[Box][ [B] B -> B], partial: Holder[Pair[[C] C -> C]][ .]) -> .;",
             Some("bridge { main; }"),
         );
         let krate = lower_package(&pkg, "test_pkg").expect("emit higher-kinded alias paths");
@@ -13710,7 +13503,7 @@ mod tests {
     fn ffi_structural_callable_alias_count_grows_with_occurrences() {
         for width in [4, 16] {
             let arms = vec!["[A] A -> A"; width].join(") | (");
-            let source = format!("module main; host fn many(value: ({arms})) -> .;");
+            let source = format!("mod main; host fn many(value: ({arms})) -> .;");
             let pkg = build_package(&source, Some("bridge { main; }"));
             let krate = lower_package(&pkg, "test_pkg").expect("emit wide aliases");
             assert_eq!(krate.ffi_rs.matches("_impl;").count(), width);
@@ -13731,12 +13524,7 @@ mod tests {
         // A function-typed env arg has a nameable canonical `KioFnN` alias;
         // grouped source-argument and result convenience aliases accompany it.
         let pkg = build_package(
-            "module main; \
-             host type Int role(i32); host type Text role(str); \
-             host fn call_step(step: Int -> Int, seed: Int) -> Int; \
-             host fn call_text(step: Text -> Text, value: Text) -> Text; \
-             host fn call_pair(step: (Int & Text) -> Int, pair: Int & Text) -> Int; \
-             fn dummy() -> . { () }",
+            "mod main; host type Int role(i32); host type Text role(str); host fn call_step(step: Int -> Int, seed: Int) -> Int; host fn call_text(step: Text -> Text, value: Text) -> Text; host fn call_pair(step: (Int & Text) -> Int, pair: Int & Text) -> Int; fn dummy() -> . { () }",
             Some("bridge { main; }"),
         );
         let krate = lower_package(&pkg, "test_pkg").expect("lower_package");
@@ -13795,11 +13583,7 @@ mod tests {
     #[test]
     fn ffi_existential_continuation_names_its_polymorphic_payload() {
         let pkg = build_package(
-            "module main; \
-             pub type { Packed<U>: [A](U & A) -> U { \
-                 mk; pub get; \
-             }; }; \
-             fn dummy() -> . { () }",
+            "mod main; pub type { Packed<U>: [A](U & A) -> U { mk; pub get; }; }; fn dummy() -> . { () }",
             Some("bridge { main; }"),
         );
         let krate = lower_package(&pkg, "test_pkg").expect("lower_package");
@@ -13822,11 +13606,7 @@ mod tests {
     #[test]
     fn ffi_callable_aliases_name_polymorphic_arguments_and_results() {
         let pkg = build_package(
-            "module main; \
-             host fn visit(step: [A] A -> A) -> .; \
-             host fn map(step: [*F][Z][A] ((Z -> A) & F[Z]) -> F[A]) -> .; \
-             pub fn identity() -> [A] A -> A { .[A](value: A) { value } } \
-             pub fn callback() -> . -> ([A] A -> A) { .() { identity() } }",
+            "mod main; host fn visit(step: [A] A -> A) -> .; host fn map(step: [*F][Z][A] ((Z -> A) & F[Z]) -> F[A]) -> .; pub fn identity() -> [A] A -> A { .[A](value: A) { value } } pub fn callback() -> . -> ([A] A -> A) { .() { identity() } }",
             Some("bridge { main; }"),
         );
         let krate = lower_package(&pkg, "test_pkg").expect("lower_package");
@@ -13851,10 +13631,7 @@ mod tests {
     #[test]
     fn ffi_alias_type_params_follow_declaration_order() {
         let pkg = build_package(
-            "module main; \
-             host fn loop_sr[S][R](step: S -> (S | R), state: S) -> R; \
-             host fn loop_ab[A][B](step: A -> (A | B), state: A) -> B; \
-             fn dummy() -> . { () }",
+            "mod main; host fn loop_sr[S][R](step: S -> (S | R), state: S) -> R; host fn loop_ab[A][B](step: A -> (A | B), state: A) -> B; fn dummy() -> . { () }",
             Some("bridge { main; }"),
         );
         let krate = lower_package(&pkg, "test_pkg").expect("lower_package");
@@ -13898,25 +13675,7 @@ mod tests {
     #[test]
     fn private_nominal_storage_keeps_public_markers_out_of_native_slots() {
         let pkg = build_package(
-            "module api; \
-             pub type { Cell[A]: A { mk; get; }; }; \
-             pub rec type { Chain[A]: . | (A & Chain[A]) { mk; get; }; }; \
-             pub type { Applied[*F][A]: F[A] { mk; get; }; }; \
-             type { Direct[A]: Cell[A] { mk; get; }; }; \
-             type { Nested[A]: A & Cell[A] { mk; get; }; }; \
-             type { Callback[A]: Cell[A] -> Cell[A] { mk; get; }; }; \
-             type { Recursive[A]: Chain[A] { mk; get; }; }; \
-             type { Higher[A]: Applied[Cell][ A] { mk; get; }; }; \
-             type { Concrete: Cell[.] { mk; get; }; }; \
-             type { Native[A]: A { mk; get; }; }; \
-             fn direct[A](v: Cell[A]) -> Direct[A] { Direct.mk(v) } \
-             fn nested[A](v: A & Cell[A]) -> Nested[A] { Nested.mk(v) } \
-             fn callback[A](v: Cell[A] -> Cell[A]) -> Callback[A] { Callback.mk(v) } \
-             fn recursive[A](v: Chain[A]) -> Recursive[A] { Recursive.mk(v) } \
-             fn higher[A](v: Applied[Cell][ A]) -> Higher[A] { Higher.mk(v) } \
-             fn concrete(v: Cell[.]) -> Concrete { Concrete.mk(v) } \
-             fn native[A](v: A) -> Native[A] { Native.mk(v) } \
-             pub fn keep[A](v: Cell[A]) -> Cell[A] { v }",
+            "mod api; pub type { Cell[A]: A { mk; get; }; }; pub rec type { Chain[A]: . | (A & Chain[A]) { mk; get; }; }; pub type { Applied[*F][A]: F[A] { mk; get; }; }; type { Direct[A]: Cell[A] { mk; get; }; }; type { Nested[A]: A & Cell[A] { mk; get; }; }; type { Callback[A]: Cell[A] -> Cell[A] { mk; get; }; }; type { Recursive[A]: Chain[A] { mk; get; }; }; type { Higher[A]: Applied[Cell][ A] { mk; get; }; }; type { Concrete: Cell[.] { mk; get; }; }; type { Native[A]: A { mk; get; }; }; fn direct[A](v: Cell[A]) -> Direct[A] { Direct.mk(v) } fn nested[A](v: A & Cell[A]) -> Nested[A] { Nested.mk(v) } fn callback[A](v: Cell[A] -> Cell[A]) -> Callback[A] { Callback.mk(v) } fn recursive[A](v: Chain[A]) -> Recursive[A] { Recursive.mk(v) } fn higher[A](v: Applied[Cell][ A]) -> Higher[A] { Higher.mk(v) } fn concrete(v: Cell[.]) -> Concrete { Concrete.mk(v) } fn native[A](v: A) -> Native[A] { Native.mk(v) } pub fn keep[A](v: Cell[A]) -> Cell[A] { v }",
             Some("bridge { api; }"),
         );
         let krate = lower_package(&pkg, "storage").expect("emit private nominal storage");
@@ -13958,16 +13717,7 @@ mod tests {
     #[test]
     fn phantom_higher_kinded_params_erase_from_private_body_nominals() {
         let pkg = build_package(
-            "module api; \
-             type { Unary[A]: A { mk; get; }; }; \
-             type { Binary[A][B]: A & B { mk; get; }; }; \
-             type { Unary_holder[*F]: . { mk; get; }; }; \
-             type { Binary_holder[**F]: . { mk; get; }; }; \
-             type { Applied[*F]: F[.] { mk; get; }; }; \
-             fn hold_unary() -> Unary_holder[Unary] { Unary_holder.mk[Unary]( ()) } \
-             fn hold_binary() -> Binary_holder[Binary] { Binary_holder.mk[Binary]( ()) } \
-             fn hold_applied(value: Applied[Unary]) -> Applied[Unary] { value } \
-             pub fn run() -> . { () }",
+            "mod api; type { Unary[A]: A { mk; get; }; }; type { Binary[A][B]: A & B { mk; get; }; }; type { Unary_holder[*F]: . { mk; get; }; }; type { Binary_holder[**F]: . { mk; get; }; }; type { Applied[*F]: F[.] { mk; get; }; }; fn hold_unary() -> Unary_holder[Unary] { Unary_holder.mk[Unary]( ()) } fn hold_binary() -> Binary_holder[Binary] { Binary_holder.mk[Binary]( ()) } fn hold_applied(value: Applied[Unary]) -> Applied[Unary] { value } pub fn run() -> . { () }",
             Some("bridge { api; }"),
         );
         let krate = lower_package(&pkg, "test_pkg").expect("emit phantom HKT newtypes");
@@ -14004,15 +13754,7 @@ mod tests {
     fn recursive_state_over_applied_host_nominal_skips_partial_eq() {
         let pkg = build_multi_module_package(
             &[
-                "module main; import control(Bool, macro if); \
-             host type Array[A]; \
-             host type I32 role(i32); \
-             host fn loop[S][R](step: S -> (S | R), state: S) -> R; \
-             type Array_state = { Cells: Array[I32]; }; \
-             type Scalar_state = { Done: Bool; }; \
-             rec(loop) fn keep_array_once(done: Bool, state: Array_state, scalar: Scalar_state) -> Array_state { \
-               if (done) { state } else { recur keep_array_once(.t, state, scalar) } \
-             }",
+                "mod main; import control {type Bool; macro if} host type Array[A]; host type I32 role(i32); host fn loop[S][R](step: S -> (S | R), state: S) -> R; type Array_state = { Cells: Array[I32]; }; type Scalar_state = { Done: Bool; }; rec(loop) fn keep_array_once(done: Bool, state: Array_state, scalar: Scalar_state) -> Array_state { if (done) { state } else { recur keep_array_once(.t, state, scalar) } }",
                 include_str!("../../../../test-data/poc/macros/workdir/control.kio"),
             ],
             Some("bridge { control; main; }"),
@@ -14161,16 +13903,30 @@ mod tests {
 
     #[test]
     fn retained_host_trait_membership_is_descriptor_gated() {
-        let pkg = build_package(
-            "module api; fn dummy() -> . { () }",
-            Some("bridge { api; }"),
-        );
+        let pkg = build_package("mod api; fn dummy() -> . { () }", Some("bridge { api; }"));
         let file = crate::pass::parser::parse_signature_file(
-            "signature pkg v(3);\n\
-             v(1) {\n  nonbreaking {\n    add {\n      module api {\n        \
-             host fn keep() -> .;\n        host fn omit() -> .;\n      }\n    }\n  }\n}\n\
-             v(2) {\n  nonbreaking {\n    remove {\n      module api {\n        \
-             keep;\n        omit;\n      }\n    }\n  }\n}\n",
+            "sig pkg v(3);
+v(1) {
+  nonbreaking {
+    add {
+      mod api {
+        host fn keep() -> .;
+        host fn omit() -> .;
+      }
+    }
+  }
+}
+v(2) {
+  nonbreaking {
+    remove {
+
+        api.keep;
+        api.omit;
+
+    }
+  }
+}
+",
             Some("pkg"),
         )
         .expect("parse sig");
@@ -14223,12 +13979,7 @@ mod tests {
     #[test]
     fn live_and_retained_partial_nominals_use_constructor_markers() {
         let pkg = build_package(
-            "module api; \
-             host type Host_pair[A][B]; \
-             pub type { Pair[A][B]: A & B { pub mk; pub get; }; }; \
-             pub type { Higher[*F]: . { pub mk; pub get; }; }; \
-             host fn live_host(value: Higher[Host_pair[.]]) -> .; \
-             host fn live_new(value: Higher[Pair[.]]) -> .;",
+            "mod api; host type Host_pair[A][B]; pub type { Pair[A][B]: A & B { pub mk; pub get; }; }; pub type { Higher[*F]: . { pub mk; pub get; }; }; host fn live_host(value: Higher[Host_pair[.]]) -> .; host fn live_new(value: Higher[Pair[.]]) -> .;",
             Some("bridge { api; }"),
         );
         let live = lower_package(&pkg, "test_pkg").expect("emit live partial constructors");
@@ -14245,14 +13996,31 @@ mod tests {
 
         let retained = lower_with_sig(
             &pkg,
-            "signature pkg v(3);\n\
-             v(1) {\n  nonbreaking {\n    add {\n      module api {\n        \
-             host type Host_pair[A][B];\n        \
-             type { Pair[A][B]: A & B { pub mk; pub get; }; };\n        \
-             type { Higher[*F]: . { pub mk; pub get; }; };\n        \
-             host fn old_host(value: Higher[Host_pair[.]]) -> .;\n        \
-             host fn old_new(value: Higher[Pair[.]]) -> .;\n      }\n    }\n  }\n}\n\
-             v(2) {\n  nonbreaking {\n    remove {\n      module api {\n        old_host;\n        old_new;\n      }\n    }\n  }\n}\n",
+            "sig pkg v(3);
+v(1) {
+  nonbreaking {
+    add {
+      mod api {
+        host type Host_pair[A][B];
+        type { Pair[A][B]: A & B { pub mk; pub get; }; };
+        type { Higher[*F]: . { pub mk; pub get; }; };
+        host fn old_host(value: Higher[Host_pair[.]]) -> .;
+        host fn old_new(value: Higher[Pair[.]]) -> .;
+      }
+    }
+  }
+}
+v(2) {
+  nonbreaking {
+    remove {
+
+        api.old_host;
+        api.old_new;
+
+    }
+  }
+}
+",
         );
         for (method, marker) in [
             (
@@ -14298,23 +14066,39 @@ mod tests {
         // `specs/backends/rust.md` § Deprecated host items.
         let pkg = build_multi_module_package(
             &[
-                "module main; \
-                 import types(Str); \
-                 host type Handle; \
-                 host fn open() -> Handle; \
-                 fn dummy() -> . { () }",
-                "module types; host type Str role(str);",
+                "mod main; import types {type Str} host type Handle; host fn open() -> Handle; fn dummy() -> . { () }",
+                "mod types; host type Str role(str);",
             ],
             Some("bridge { main; types; }"),
         );
         let krate = lower_with_sig(
             &pkg,
-            "signature pkg v(3);\n\
-             v(1) {\n  nonbreaking {\n    add {\n      module main {\n        \
-             import types(Str);\n        host type Handle;\n        \
-             host fn open() -> Handle;\n        host fn log(p0: Str) -> .;\n      };\n      \
-             module types {\n        host type Str role(str);\n      }\n    }\n  }\n}\n\
-             v(2) {\n  nonbreaking {\n    remove {\n      module main {\n        log;\n      }\n    }\n  }\n}\n",
+            "sig pkg v(3);
+v(1) {
+  nonbreaking {
+    add {
+      mod main {
+        import types {type Str};
+        host type Handle;
+        host fn open() -> Handle;
+        host fn log(p0: Str) -> .;
+      };
+      mod types {
+        host type Str role(str);
+      }
+    }
+  }
+}
+v(2) {
+  nonbreaking {
+    remove {
+
+        main.log;
+
+    }
+  }
+}
+",
         );
         let host_rs = &krate.host_rs;
         // The live `open` is a body-less requirement.
@@ -14343,17 +14127,31 @@ mod tests {
 
     #[test]
     fn retained_host_fn_declares_frozen_nominal_carrier_without_live_members() {
-        let pkg = build_package(
-            "module api; fn dummy() -> . { () }",
-            Some("bridge { api; }"),
-        );
+        let pkg = build_package("mod api; fn dummy() -> . { () }", Some("bridge { api; }"));
         let krate = lower_with_sig(
             &pkg,
-            "signature pkg v(3);\n\
-             v(1) {\n  nonbreaking {\n    add {\n      module api {\n        \
-             type { Token[A][A]: A { pub mk; get; }; };\n        \
-             host fn old(value: Token[.][ .]) -> .;\n      }\n    }\n  }\n}\n\
-             v(2) {\n  nonbreaking {\n    remove {\n      module api {\n        Token;\n        old;\n      }\n    }\n  }\n}\n",
+            "sig pkg v(3);
+v(1) {
+  nonbreaking {
+    add {
+      mod api {
+        type { Token[A][A]: A { pub mk; get; }; };
+        host fn old(value: Token[.][ .]) -> .;
+      }
+    }
+  }
+}
+v(2) {
+  nonbreaking {
+    remove {
+
+        api.Token;
+        api.old;
+
+    }
+  }
+}
+",
         );
 
         assert!(
@@ -14389,20 +14187,35 @@ mod tests {
 
     #[test]
     fn retained_forall_support_uses_an_eligible_nominal_owner() {
-        let pkg = build_package(
-            "module api; fn dummy() -> . { () }",
-            Some("bridge { api; }"),
-        );
+        let pkg = build_package("mod api; fn dummy() -> . { () }", Some("bridge { api; }"));
         let krate = lower_with_sig(
             &pkg,
-            "signature pkg v(3);\n\
-             v(1) {\n  nonbreaking {\n    add {\n      module api {\n        \
-             host type Gone;\n        \
-             type { Poly: [A] A -> A { pub mk; pub get; }; };\n        \
-             host fn a_bad(gone: Gone, value: Poly) -> .;\n        \
-             host fn z_good(value: Poly) -> .;\n      }\n    }\n  }\n}\n\
-             v(2) {\n  nonbreaking {\n    remove {\n      module api {\n        \
-             Gone;\n        Poly;\n        a_bad;\n        z_good;\n      }\n    }\n  }\n}\n",
+            "sig pkg v(3);
+v(1) {
+  nonbreaking {
+    add {
+      mod api {
+        host type Gone;
+        type { Poly: [A] A -> A { pub mk; pub get; }; };
+        host fn a_bad(gone: Gone, value: Poly) -> .;
+        host fn z_good(value: Poly) -> .;
+      }
+    }
+  }
+}
+v(2) {
+  nonbreaking {
+    remove {
+
+        api.Gone;
+        api.Poly;
+        api.a_bad;
+        api.z_good;
+
+    }
+  }
+}
+",
         );
 
         assert!(
@@ -14474,10 +14287,7 @@ mod tests {
     #[test]
     fn nested_retained_payload_foralls_resolve_their_owner_in_bounded_steps() {
         const DECOYS: usize = 32;
-        let pkg = build_package(
-            "module api; fn dummy() -> . { () }",
-            Some("bridge { api; }"),
-        );
+        let pkg = build_package("mod api; fn dummy() -> . { () }", Some("bridge { api; }"));
         let target = QualifiedTypeName::new(vec!["api".to_owned()], "Zpoly".to_owned())
             .expect("test target has a qualified identity");
         let signature = |decoys| {
@@ -14491,20 +14301,31 @@ mod tests {
                 .collect::<Vec<_>>()
                 .join(", ");
             let removals = (0..decoys)
-                .map(|index| format!("A{index:02};"))
-                .chain(["Zpoly;".to_owned(), "z_good;".to_owned()])
+                .map(|index| format!("api.A{index:02};"))
+                .chain(["api.Zpoly;".to_owned(), "api.z_good;".to_owned()])
                 .collect::<Vec<_>>()
                 .join("\n");
             format!(
-                "signature pkg v(3);\n\
-                 v(1) {{\n  nonbreaking {{\n    add {{\n      module api {{\n\
-                 {declarations}\n\
-                 type {{ Zpoly: [A] A -> [B] B -> A {{ pub mk; pub get; }}; }};\n\
-                 host fn z_good({parameters}) -> .;\n\
-                 }}\n    }}\n  }}\n}}\n\
-                 v(2) {{\n  nonbreaking {{\n    remove {{\n      module api {{\n\
-                 {removals}\n\
-                 }}\n    }}\n  }}\n}}\n"
+                "sig pkg v(3);
+v(1) {{
+  nonbreaking {{
+    add {{
+      mod api {{
+{declarations}
+type {{ Zpoly: [A] A -> [B] B -> A {{ pub mk; pub get; }}; }};
+host fn z_good({parameters}) -> .;
+}}
+    }}
+  }}
+}}
+v(2) {{
+  nonbreaking {{
+    remove {{
+{removals}
+    }}
+  }}
+}}
+"
             )
         };
         let lower = |decoys| {
@@ -14613,22 +14434,43 @@ mod tests {
         // Nothing is re-emitted for it. Per `specs/backends/rust.md`
         // § Deprecated host items > Host-type removal is not source-stable.
         let pkg = build_package(
-            "module main; \
-             host type Handle; \
-             host fn open() -> Handle; \
-             fn dummy() -> . { () }",
+            "mod main; host type Handle; host fn open() -> Handle; fn dummy() -> . { () }",
             Some("bridge { main; }"),
         );
         let krate = lower_with_sig(
             &pkg,
-            "signature pkg v(3);\n\
-             v(1) {\n  nonbreaking {\n    add {\n      module main {\n        \
-             host type Handle;\n        host type Gone;\n        host type Oldbox[A];\n        \
-             type { Token: Gone { pub mk; pub get; }; };\n        \
-             host fn open() -> Handle;\n        host fn old(value: Gone) -> .;\n        \
-             host fn old_box(value: Oldbox[Handle]) -> .;\n        host fn old_token(value: Token) -> .;\n      }\n    }\n  }\n}\n\
-             v(2) {\n  nonbreaking {\n    remove {\n      module main {\n        Gone;\n        \
-             Oldbox;\n        Token;\n        old;\n        old_box;\n        old_token;\n      }\n    }\n  }\n}\n",
+            "sig pkg v(3);
+v(1) {
+  nonbreaking {
+    add {
+      mod main {
+        host type Handle;
+        host type Gone;
+        host type Oldbox[A];
+        type { Token: Gone { pub mk; pub get; }; };
+        host fn open() -> Handle;
+        host fn old(value: Gone) -> .;
+        host fn old_box(value: Oldbox[Handle]) -> .;
+        host fn old_token(value: Token) -> .;
+      }
+    }
+  }
+}
+v(2) {
+  nonbreaking {
+    remove {
+
+        main.Gone;
+        main.Oldbox;
+        main.Token;
+        main.old;
+        main.old_box;
+        main.old_token;
+
+    }
+  }
+}
+",
         );
         let host_rs = &krate.host_rs;
         // No associated type re-emitted for the removed `Gone`, and no
@@ -14671,7 +14513,7 @@ mod tests {
         // Without a sig, the Host trait carries no deprecated members —
         // the emitted crate is byte-identical to the pre-sig behavior.
         let pkg = build_package(
-            "module main; host fn open() -> .; fn dummy() -> . { () }",
+            "mod main; host fn open() -> .; fn dummy() -> . { () }",
             Some("bridge { main; }"),
         );
         let with_default = lower_package(&pkg, "test_pkg").expect("lower_package");
@@ -14681,15 +14523,32 @@ mod tests {
     #[test]
     fn live_support_identity_dominates_retained_history() {
         let pkg = build_package(
-            "module api; host type Live role(i32); host fn current(value: Live & Live) -> .; fn dummy() -> . { () }",
+            "mod api; host type Live role(i32); host fn current(value: Live & Live) -> .; fn dummy() -> . { () }",
             Some("bridge { api; }"),
         );
         let krate = lower_with_sig(
             &pkg,
-            "signature pkg v(3);\n\
-             v(1) {\n  nonbreaking {\n    add {\n      module api {\n        \
-             host type Live role(i32);\n        host fn removed(value: Live & Live) -> .;\n      }\n    }\n  }\n}\n\
-             v(2) {\n  nonbreaking {\n    remove {\n      module api {\n        removed;\n      }\n    }\n  }\n}\n",
+            "sig pkg v(3);
+v(1) {
+  nonbreaking {
+    add {
+      mod api {
+        host type Live role(i32);
+        host fn removed(value: Live & Live) -> .;
+      }
+    }
+  }
+}
+v(2) {
+  nonbreaking {
+    remove {
+
+        api.removed;
+
+    }
+  }
+}
+",
         );
         assert!(
             krate.shapes_rs.contains("pub struct Product<"),

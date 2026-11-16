@@ -1,7 +1,7 @@
-module graph_routes/model;
+mod graph_routes/model;
 
-import macros/row_macros(macro record);
-import testapi(I32);
+import macros/row_macros { macro record }
+import testapi { type I32 }
 
 pub type Search_state = {
   Round: I32;

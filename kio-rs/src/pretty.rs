@@ -124,7 +124,7 @@ pub(crate) fn pretty_export_fn_block_entry(export: &crate::ast::SigExportFn) -> 
 /// header with no body and no doc-comment. Used by Kiodoc's
 /// `` [`@signature(term)`] `` directive. For `fn` this is
 /// `fn name[type-params](value-params) -> Ret`; for `type` /
-/// `literal` / `labels` / `op` / `newtype` the declaration is itself header-shaped, so the
+/// literal aliases, compact nominal types, or operators the declaration is itself header-shaped, so the
 /// whole (doc-comment-stripped) form is the signature.
 pub fn pretty_item_signature(item: &Item) -> String {
     let stripped = strip_item_doc(item);
@@ -179,7 +179,7 @@ pub(crate) fn pretty_macro_public_signature(macro_def: &crate::ast::UserMacroDef
 /// Only the value-binding kinds carry a bound value: a `fn` renders
 /// its function type. `type` / `labels` / `newtype` are type-level
 /// names — they bind no value — so this returns `None`; the caller
-/// reports a kind-aware error. `literal` has no single standalone type,
+/// reports a kind-aware error. `lit` has no single standalone type,
 /// because each use site can infer or annotate one. An `op` is an
 /// operator binding, not a plain value query, and likewise yields `None`.
 pub fn pretty_item_type(item: &Item) -> Option<String> {
@@ -339,7 +339,7 @@ fn doc_fn_def_header(d: &FnDef<Surface, impl FnPurityExt>) -> Doc {
 fn doc_module(m: &Module) -> Doc {
     let mut parts: Vec<Doc> = Vec::new();
     // Emit the module's own leading line comments — a `//` file header
-    // above the `module` line — before the `///` doc-comment and the
+    // above the `mod` line — before the `///` doc-comment and the
     // header. `extract_doc_comment` pulled the trailing `///` run into
     // `m.doc`, so `leading_trivia` holds only the non-doc comments;
     // there is no double-emission. Without this, a plain `//` header
@@ -350,7 +350,7 @@ fn doc_module(m: &Module) -> Doc {
         parts.push(doc_doc_comment(dc));
     }
     parts.extend([
-        text("module ".to_owned()),
+        text("mod ".to_owned()),
         doc_module_path(&m.path),
         text(";"),
         hardline(),
@@ -430,7 +430,7 @@ fn doc_doc_comment(dc: &DocComment) -> Doc {
 }
 
 /// Render a pure module reference: every segment joined with the
-/// module-path separator `/` (`module a/b/c;`, `import a/b/c(…);`,
+/// module-path separator `/` (`mod a/b/c;`, `import a/b/c { … }`,
 /// `module m = a/b/c;` in an export block).
 fn module_path_surface_str<S: AsRef<str>>(segs: &[S]) -> String {
     segs.iter()
@@ -474,7 +474,7 @@ fn doc_module_path(p: &ModulePath) -> Doc {
 /// Each import's leading line comments live on `Import::leading_trivia`
 /// and survive into the canonical output, attached to the
 /// corresponding `import` statement after sorting — so
-/// `// docstring` above `import path(foo);` stays above the
+/// `// docstring` above `import path { fn foo }` stays above the
 /// `import` regardless of where the sort places it within its block.
 fn doc_import_blocks(imports: &[Import]) -> Doc {
     let mut intrinsics: Vec<(String, Doc)> = Vec::new();
@@ -515,7 +515,11 @@ fn doc_import_blocks(imports: &[Import]) -> Doc {
 }
 
 fn doc_import(u: &Import) -> Doc {
-    concat(doc_import_entry(u), text(";"))
+    if matches!(u.kind, ImportKind::Selective { .. }) {
+        doc_import_entry(u)
+    } else {
+        concat(doc_import_entry(u), text(";"))
+    }
 }
 
 fn doc_import_entry(u: &Import) -> Doc {
@@ -525,22 +529,22 @@ fn doc_import_entry(u: &Import) -> Doc {
                 .iter()
                 .map(|item| (item, import_item_display(item)))
                 .collect();
-            sorted.sort_by(|a, b| a.1.cmp(&b.1));
+            sorted.sort_by_key(|a| import_item_sort_key(a.0));
             let provider = module_path_surface_str(&from.segments);
-            let item_trivia: Vec<Vec<Trivia>> = sorted
-                .iter()
-                .map(|(item, _)| item.leading_trivia().to_vec())
-                .collect();
-            concat(
+            let mut lines = Vec::new();
+            for (index, (item, rendered)) in sorted.iter().enumerate() {
+                if index > 0 {
+                    lines.push(concat(text(";"), line()));
+                }
+                lines.push(doc_item_leading_trivia(item.leading_trivia()));
+                lines.push(text(rendered.clone()));
+            }
+            let body = append_block_trailing(Some(concat_all(lines)), &u.trailing_trivia);
+            group(doc_braced_block(
                 text(format!("import {provider}")),
-                doc_comma_list_with_trivia(
-                    text("("),
-                    sorted.into_iter().map(|(_, name)| text(name)).collect(),
-                    &item_trivia,
-                    &u.trailing_trivia,
-                    text(")"),
-                ),
-            )
+                body,
+                true,
+            ))
         }
         ImportKind::Qualified { path, alias } => text(format!(
             "import {} as {alias}",
@@ -551,15 +555,40 @@ fn doc_import_entry(u: &Import) -> Doc {
     }
 }
 
+fn import_item_sort_key(item: &ImportItem) -> (u8, String) {
+    match item {
+        ImportItem::Name { kind, name, .. } => (
+            if *kind == crate::ast::ImportNameKind::Macro {
+                1
+            } else {
+                0
+            },
+            name.clone(),
+        ),
+        ImportItem::OperatorPattern { grammar, .. } => {
+            let group = if matches!(grammar, crate::ast::OperatorGrammar::Fixed { .. }) {
+                2
+            } else {
+                3
+            };
+            let spelling = grammar.render();
+            (
+                group,
+                spelling
+                    .split_once(' ')
+                    .map_or("", |(_, pattern)| pattern)
+                    .to_owned(),
+            )
+        }
+    }
+}
+
 fn import_item_display(item: &crate::ast::ImportItem) -> String {
     match item {
         ImportItem::Name {
-            macro_span,
-            name,
-            alias,
-            ..
+            kind, name, alias, ..
         } => {
-            let prefix = if macro_span.is_some() { "macro " } else { "" };
+            let prefix = format!("{} ", kind.spelling());
             alias.as_ref().map_or_else(
                 || format!("{prefix}{name}"),
                 |alias| format!("{prefix}{name} as {}", alias.local),
@@ -573,9 +602,9 @@ fn import_item_display(item: &crate::ast::ImportItem) -> String {
                     crate::ast::OperatorGrammar::Fixed {
                         kind: crate::ast::FixedOperatorKind::Macro,
                         ..
-                    } => "op macro ",
+                    } => "op_macro ",
                     crate::ast::OperatorGrammar::Fixed { .. } => "op ",
-                    crate::ast::OperatorGrammar::Variadic { .. } => "varop ",
+                    crate::ast::OperatorGrammar::Variadic { .. } => "op_var ",
                 };
                 let spelling = local
                     .strip_prefix(tag)
@@ -1008,7 +1037,7 @@ fn doc_literal_alias(a: &LiteralAlias) -> Doc {
     concat_all([
         doc_prefix,
         pubword,
-        text("literal"),
+        text("lit"),
         if has_comments(&a.meta.trailing_trivia) {
             concat_all([
                 hardline(),
@@ -1067,16 +1096,17 @@ fn doc_op(d: &Op) -> Doc {
         parts.push(doc_doc_comment(dc));
     }
     parts.push(doc_vis(&d.vis));
-    parts.push(text("op"));
     match &d.body {
         OpBody::Normal {
             kind,
             pattern,
             function,
         } => {
-            if *kind == crate::ast::FixedOperatorKind::Macro {
-                parts.push(text(" macro"));
-            }
+            parts.push(text(if *kind == crate::ast::FixedOperatorKind::Macro {
+                "op_macro"
+            } else {
+                "op"
+            }));
             for part in pattern {
                 parts.push(text(" "));
                 match part {
@@ -1109,7 +1139,7 @@ fn doc_fold(d: &VariadicOperator) -> Doc {
         parts.push(doc_doc_comment(dc));
     }
     parts.push(doc_vis(&d.vis));
-    parts.push(text("varop"));
+    parts.push(text("op_var"));
     doc_fold_pattern_and_body(
         &mut parts,
         &d.open,
@@ -3765,7 +3795,7 @@ fn chunk_string_value(value: &str, target: usize) -> Vec<String> {
 fn doc_package_file(e: &PackageFile, materialize_baselines: bool) -> Doc {
     let mut parts: Vec<Doc> = Vec::new();
     parts.push(doc_item_leading_trivia(e.meta.leading_trivia.as_slice()));
-    parts.push(text(format!("package {};", e.name)));
+    parts.push(text(format!("pkg {};", e.name)));
     parts.push(hardline());
     if let Some(build) = &e.build {
         parts.push(hardline());
@@ -3819,7 +3849,7 @@ fn doc_bridge_glob(glob: &crate::ast::BridgeGlob) -> String {
 fn doc_dependency_file(dep: &DependencyFile) -> Doc {
     let mut parts = vec![
         doc_item_leading_trivia(dep.meta.leading_trivia.as_slice()),
-        text(format!("dependency {};", dep.name)),
+        text(format!("dep {};", dep.name)),
         hardline(),
         hardline(),
         doc_item_leading_trivia(dep.source.leading_trivia.as_slice()),
@@ -4049,8 +4079,7 @@ fn doc_host_type(h: &HostType) -> Doc {
         Some(role) => text(format!(" role({})", role.role.as_str())),
         None => empty(),
     };
-    let owned = if h.owned { text(" { owned }") } else { empty() };
-    concat_all([doc_prefix, head, params, role, owned])
+    concat_all([doc_prefix, head, params, role])
 }
 
 fn doc_host_fn(h: &HostFn) -> Doc {
@@ -4310,14 +4339,30 @@ fn doc_config_entry((name, value, trivia): ConfigEntry<'_>) -> Doc {
 mod tests {
 
     #[test]
+    fn import_sorting_compares_fixed_patterns_across_kinds() {
+        let source = "mod m; import syntax { op_macro _ + _; op _ * _; type Zebra; lit alpha; fn beta; macro gamma }";
+        let rendered = roundtrip(source);
+        let alpha = rendered.find("lit alpha").unwrap();
+        let beta = rendered.find("fn beta").unwrap();
+        let zebra = rendered.find("type Zebra").unwrap();
+        let gamma = rendered.find("macro gamma").unwrap();
+        let multiply = rendered.find("op _ * _").unwrap();
+        let add = rendered.find("op_macro _ + _").unwrap();
+        assert!(
+            zebra < alpha && alpha < beta && beta < gamma && gamma < multiply && multiply < add,
+            "{rendered}"
+        );
+    }
+
+    #[test]
     fn semicolon_owners_preserve_outer_terminators_and_nested_separators() {
-        let source = "module m;
+        let source = "mod m;
             fn id(x: .) -> . { x };
             type { Box : . { ; mk; get; }; };
             op _ + _ { ; impl add; };
-            varop [% %] { ; foldl step initial; finalize finish; };
+            op_var [% %] { ; foldl step initial; finalize finish; };
             macro identity : . -> . { ; captures id; impl identity_impl; };
-            host type Text role(str) { owned };
+            host type Text role(str);
             type Alias = .;
             type Choice = { Left: . } | { Right: . };
             rec(loop) { ; fn first(x: .) -> . { x }; fn second(x: .) -> . { x }; };
@@ -4327,9 +4372,9 @@ mod tests {
             "fn id(x: .) { x }\n",
             "type { Box: . { mk; get } }\n",
             "op _ + _ { impl add }\n",
-            "varop [% %] { foldl step initial; finalize finish }\n",
+            "op_var [% %] { foldl step initial; finalize finish }\n",
             "macro identity : . -> . { captures id; impl identity_impl }\n",
-            "host type Text role(str) { owned };",
+            "host type Text role(str);",
             "type Alias = .;",
             "type Choice = { Left: . } | { Right: . };",
             "fn first(x: .) { x };\n",
@@ -4398,7 +4443,7 @@ mod tests {
     #[test]
     fn removed_outer_semicolon_comments_stay_outside_declaration_bodies() {
         let formatted = roundtrip(
-            "module m;
+            "mod m;
             type { Box : . { mk; get; }; }
             // before outer token
             ; // after outer token
@@ -4431,7 +4476,7 @@ mod tests {
     #[test]
     fn semicolon_dependency_and_lock_fields_keep_boundary_comments() {
         let dep = dependency_roundtrip(
-            "dependency dep;
+            "dep dep;
             // origin
             source { ; // ref note
                 ref \"main\";
@@ -4483,9 +4528,7 @@ mod tests {
 
     #[test]
     fn contextual_let_calls_preserve_expression_meaning() {
-        let source = "module m; fn let(x: .) -> . { x } \
-            fn left(x: ., y: .) -> . { x } op _ <- _ { impl left; }; \
-            fn run(f: ., x: .) -> . { (let(f) <- x); f }";
+        let source = "mod m; fn let(x: .) -> . { x } fn left(x: ., y: .) -> . { x } op _ <- _ { impl left; }; fn run(f: ., x: .) -> . { (let(f) <- x); f }";
         let before = parse(source).unwrap();
         let formatted = roundtrip(source);
         let after = parse(&formatted).unwrap();
@@ -4509,7 +4552,7 @@ mod tests {
                 "let .(whole: (x: Int, y: Int)) =",
             ),
         ] {
-            let source = format!("module m; fn run() {{ let {binder} = value; () }}");
+            let source = format!("mod m; fn run() {{ let {binder} = value; () }}");
             let formatted = roundtrip(&source);
             assert!(formatted.contains(expected), "{formatted}");
         }
@@ -4522,32 +4565,32 @@ mod tests {
                 ".(whole: (x: Int, y: Int))",
             ] {
                 roundtrip(&format!(
-                    "module m; fn run() {{ do(m) {{ let {binder} {connective} value; result }} }}"
+                    "mod m; fn run() {{ do(m) {{ let {binder} {connective} value; result }} }}"
                 ));
             }
         }
-        roundtrip("module m; fn run() { let .(<U> x) = value; x }");
+        roundtrip("mod m; fn run() { let .(<U> x) = value; x }");
     }
 
     #[test]
     fn removed_let_forms_are_not_binding_aliases() {
         for binder in ["x: Int", "(x, y)", "whole: (x: Int, y: Int)", "<U> x"] {
-            let source = format!("module m; fn run() {{ let {binder} = value; () }}");
+            let source = format!("mod m; fn run() {{ let {binder} = value; () }}");
             assert!(parse(&source).is_err(), "{source}");
         }
         for binder in ["x", "(x, y)"] {
-            let source = format!("module m; fn run() {{ .{binder} = value; () }}");
+            let source = format!("mod m; fn run() {{ .{binder} = value; () }}");
             assert!(parse(&source).is_err(), "{source}");
         }
     }
 
     #[test]
     fn import_grammar_import_a1_comments() {
-        let source = "module c; // provider comment\nimport z( // list comment\n , zebra, // item comment\n alpha, Field, op _ + _); import a as alias;";
+        let source = "mod c; // provider comment\nimport z { // list comment\n ; fn zebra; // item comment\n fn alpha; type Field; op _ + _} import a as alias;";
         let module = crate::pass::parser::parse(source).expect("consumer grammar");
         let formatted = pretty_module(&module);
         assert!(
-            formatted.find("import a as alias;").unwrap() < formatted.find("import z(").unwrap()
+            formatted.find("import a as alias;").unwrap() < formatted.find("import z {").unwrap()
         );
         for comment in ["provider comment", "list comment", "item comment"] {
             assert_eq!(formatted.matches(comment).count(), 1, "{formatted}");
@@ -4557,13 +4600,13 @@ mod tests {
             pretty_module(&crate::pass::parser::parse(&formatted).unwrap()),
             formatted
         );
-        let long = crate::pass::parser::parse("module c; import long_provider_name(first_long_selected_name, second_long_selected_name, third_long_selected_name, varop [% %]);").unwrap();
+        let long = crate::pass::parser::parse("mod c; import long_provider_name {fn first_long_selected_name; fn second_long_selected_name; fn third_long_selected_name; op_var [% %]}").unwrap();
         let rendered = pretty_module(&long);
         assert!(
-            rendered.contains("import long_provider_name(\n, "),
+            rendered.contains("import long_provider_name {\n  "),
             "{rendered}"
         );
-        assert!(rendered.contains("\n);"));
+        assert!(rendered.contains("\n}"));
         assert_eq!(
             pretty_module(&crate::pass::parser::parse(&rendered).unwrap()),
             rendered
@@ -4572,13 +4615,13 @@ mod tests {
 
     #[test]
     fn selective_alias_formatting_keeps_explicit_identity_and_comments() {
-        let source = "module c; import p(foo // source\n as // separator\n foo, Bar as Baz, op _ + __ as _ ++ __, varop [* *] as [% %]);";
+        let source = "mod c; import p {fn foo // source\n as // separator\n foo; type Bar as Baz; op _ + __ as _ ++ __; op_var [* *] as [% %]}";
         let parsed = crate::pass::parser::parse(source).expect("alias source");
         let formatted = pretty_module(&parsed);
         assert!(formatted.contains("foo as foo"), "{formatted}");
         assert!(formatted.contains("Bar as Baz"), "{formatted}");
         assert!(formatted.contains("op _ + __ as _ ++ __"), "{formatted}");
-        assert!(formatted.contains("varop [* *] as [% %]"), "{formatted}");
+        assert!(formatted.contains("op_var [* *] as [% %]"), "{formatted}");
         for comment in ["// source", "// separator"] {
             assert_eq!(formatted.matches(comment).count(), 1, "{formatted}");
         }
@@ -4596,10 +4639,10 @@ mod tests {
         for signature in [
             "op _ (=) _",
             "op _ &&++ _",
-            "varop [<** **<]",
+            "op_var [<** **<]",
             "op _ ? ___ : _",
         ] {
-            let source = format!("module c; import p({signature});");
+            let source = format!("mod c; import p {{{signature}}}");
             let parsed = crate::pass::parser::parse(&source).expect("signature");
             let formatted = pretty_module(&parsed);
             let reparsed = crate::pass::parser::parse(&formatted).expect("formatted signature");
@@ -4625,40 +4668,36 @@ mod tests {
 
     #[test]
     fn selective_import_comments_follow_items_and_container_boundaries() {
-        let source = r#"module c;
+        let source = r#"mod c;
 // statement
-import z( // opening selection
-  , // zebra comment
-    zebra
-  , // alpha comment
-    alpha
-  , // type comment
-    Field
-  , op _ // operator comment
+import z { // opening selection
+  ; // zebra comment
+    fn zebra
+  ; // alpha comment
+    fn alpha
+  ; // type comment
+    type Field
+  ; op _ // operator comment
       + _
   // list closer
-  );
+  }
 import a as a;
 "#;
         let module = parse(source).unwrap();
         let formatted = pretty_module(&module);
-        assert!(
-            formatted.contains("import a as a;\n// statement\nimport z(\n// type comment\n, Field"),
-            "{formatted}"
-        );
-        assert!(
-            formatted.contains("// operator comment\n, op _ + _"),
-            "{formatted}"
-        );
-        assert!(
-            formatted.contains("// opening selection\n\n// zebra comment\n, zebra"),
-            "{formatted}"
-        );
-        assert!(
-            formatted.contains("// alpha comment\n, alpha"),
-            "{formatted}"
-        );
-        assert!(formatted.contains("\n// list closer\n);"), "{formatted}");
+        assert!(formatted.find("import a as a;").unwrap() < formatted.find("import z {").unwrap());
+        for (comment, item) in [
+            ("// type comment", "type Field"),
+            ("// alpha comment", "fn alpha"),
+            ("// zebra comment", "fn zebra"),
+            ("// operator comment", "op _ + _"),
+        ] {
+            assert!(
+                formatted.find(comment).unwrap() < formatted.find(item).unwrap(),
+                "{formatted}"
+            );
+        }
+        assert!(formatted.contains("// list closer"), "{formatted}");
         for comment in [
             "statement",
             "opening selection",
@@ -4675,26 +4714,20 @@ import a as a;
 
     #[test]
     fn selective_import_repeated_comma_comments_keep_the_next_item() {
-        let source = r#"module c;
-import p( // opening selection
-  , // zebra
-    zebra
+        let source = r#"mod c;
+import p { // opening selection
+  ; // zebra
+    fn zebra
   // next slot
-  , // alpha
-  , alpha,
+  ; // alpha
+  ; fn alpha;
   // dangling
-  );
+  }
 "#;
         let formatted = roundtrip(source);
-        assert!(
-            formatted.contains("import p(\n// next slot\n\n// alpha\n, alpha"),
-            "{formatted}"
-        );
-        assert!(
-            formatted.contains("// opening selection\n\n// zebra\n, zebra"),
-            "{formatted}"
-        );
-        assert!(formatted.contains("\n// dangling\n);"), "{formatted}");
+        assert!(formatted.find("// alpha").unwrap() < formatted.find("fn alpha").unwrap());
+        assert!(formatted.find("// zebra").unwrap() < formatted.find("fn zebra").unwrap());
+        assert!(formatted.contains("// dangling"), "{formatted}");
         for comment in [
             "opening selection",
             "next slot",
@@ -4709,21 +4742,21 @@ import p( // opening selection
     #[test]
     fn selective_import_width_and_comment_paths_keep_the_base_column() {
         for source in [
-            "module c; import p(first_long_selected_name, second_long_selected_name, third_long_selected_name, fourth_long_selected_name);",
-            "module c; import p(, // attached\n short);",
+            "mod c; import p {fn first_long_selected_name; fn second_long_selected_name; fn third_long_selected_name; fn fourth_long_selected_name}",
+            "mod c; import p {; // attached\n fn short}",
         ] {
             let formatted = roundtrip(source);
-            assert!(formatted.contains("\n, "), "{formatted}");
-            assert!(formatted.contains("\n);"), "{formatted}");
-            assert!(!formatted.contains("\n  );"), "{formatted}");
+            assert!(formatted.contains("import p {\n"), "{formatted}");
+            assert!(formatted.contains("\n}"), "{formatted}");
         }
-        assert!(roundtrip("module c; import p(short);").contains("import p(short);"));
+        assert!(roundtrip("mod c; import p {fn short}").contains("import p { fn short }"));
     }
 
     #[test]
     fn variadic_import_delimiter_comments_belong_to_one_selection() {
         for (open, close) in [("[%", "%]"), ("[<**", "**<]")] {
-            let source = format!("module c; import p(varop {open} // delimiter\n {close}, beta);");
+            let source =
+                format!("mod c; import p {{op_var {open} // delimiter\n {close}; fn beta}}");
             let module = parse(&source).unwrap();
             let ImportKind::Selective { items, .. } = &module.imports[0].kind else {
                 panic!("selective import");
@@ -4734,7 +4767,8 @@ import p( // opening selection
             };
             let formatted = pretty_module(&module);
             assert!(
-                formatted.contains(&format!("// delimiter\n, varop {open} {close}")),
+                formatted.find("// delimiter").unwrap()
+                    < formatted.find(&format!("op_var {open} {close}")).unwrap(),
                 "{formatted}"
             );
             assert_eq!(formatted.matches("// delimiter").count(), 1, "{formatted}");
@@ -4770,25 +4804,25 @@ import p( // opening selection
     #[test]
     fn fixed_operator_grouping_survives_native_suffixes_and_pending_words() {
         for (imports, expression, expected) in [
-            ("op _ $ ___, op ___ < _ >", "a $ (b < k >)", "a $ (b < k >)"),
-            ("op _ $ ___, op ___ < _ >", "(a $ b) < k >", "(a $ b) < k >"),
+            ("op _ $ ___; op ___ < _ >", "a $ (b < k >)", "a $ (b < k >)"),
+            ("op _ $ ___; op ___ < _ >", "(a $ b) < k >", "(a $ b) < k >"),
             (
-                "op _ + _, op ___ < _ >",
+                "op _ + _; op ___ < _ >",
                 "a + ((b < k >)(arg))",
                 "a + (b < k >(arg))",
             ),
             (
-                "op _ + _, op ___ < _ >",
+                "op _ + _; op ___ < _ >",
                 "a + ((b < k >).>f)",
                 "a + (b < k >.>f)",
             ),
             (
-                "op _ + ___, op ___ < _ >, op _ * _",
+                "op _ + ___; op ___ < _ >; op _ * _",
                 "a + ((b < k >) * c)",
                 "a + (b < k > * c)",
             ),
             (
-                "op _ ? ___ : _, op ! ___, op _ : _",
+                "op _ ? ___ : _; op ! ___; op _ : _",
                 "a ? (! (b : c)) : d",
                 "a ? (! b : c) : d",
             ),
@@ -4800,7 +4834,7 @@ import p( // opening selection
             ("op _ ?", "a ? ?", "a ? ?"),
             ("op __ + _", "a + b + c", "a + b + c"),
         ] {
-            let source = format!("module m; import ops({imports}); fn run() {{ {expression} }}");
+            let source = format!("mod m; import ops {{{imports}}} fn run() {{ {expression} }}");
             let formatted = roundtrip(&source);
             assert!(formatted.contains(expected), "{expression}: {formatted}");
             assert_eq!(
@@ -4813,7 +4847,7 @@ import p( // opening selection
 
     #[test]
     fn operator_boundary_cache_uses_semantic_contexts() {
-        let module = parse("module m; import ops(op _ + __); fn run() { a + b + c }").unwrap();
+        let module = parse("mod m; import ops {op _ + __} fn run() { a + b + c }").unwrap();
         let expr = function_body(&module, "run");
         let Expr::OpChain {
             kind: crate::ast::OpChainKind::Normal { pattern, .. },
@@ -4859,7 +4893,7 @@ import p( // opening selection
                     (0..size)
                         .map(|index| format!("op ~{} ___", "!".repeat(index + 1)))
                         .collect::<Vec<_>>()
-                        .join(", "),
+                        .join("; "),
                     format!(
                         "{} value",
                         (0..size)
@@ -4872,7 +4906,7 @@ import p( // opening selection
                     (0..size)
                         .map(|index| format!("op _ ~{} ___", "!".repeat(index + 1)))
                         .collect::<Vec<_>>()
-                        .join(", "),
+                        .join("; "),
                     format!(
                         "value{}",
                         (0..size)
@@ -4882,7 +4916,7 @@ import p( // opening selection
                 ),
             ] {
                 let module = parse(&format!(
-                    "module m; import ops({imports}); fn run() {{ {expression} }}"
+                    "mod m; import ops {{{imports}}} fn run() {{ {expression} }}"
                 ))
                 .unwrap();
                 let Expr::OpChain {
@@ -4932,12 +4966,12 @@ import p( // opening selection
             ("do(bind) { run(); wait() }", "do(bind) { run(); wait() }"),
             ("scope { let x = run(); x }", "scope { let x = run(); x }"),
         ] {
-            let parsed = parse(&format!("module x; fn f() {{ {body} }}")).unwrap();
+            let parsed = parse(&format!("mod x; fn f() {{ {body} }}")).unwrap();
             let Item::FnDef(function) = &parsed.items[0] else {
                 panic!("function")
             };
             assert_eq!(render(&doc_expr(&function.body), WIDTH), expected);
-            let output = roundtrip(&format!("module x; fn f() {{ {body} }}"));
+            let output = roundtrip(&format!("mod x; fn f() {{ {body} }}"));
             assert!(output.contains("fn f() {\n"), "{output}");
         }
     }
@@ -4976,13 +5010,13 @@ import p( // opening selection
                 "choose(a) {\n  nested {}\n} otherwise {\n}",
             ),
         ] {
-            let parsed = parse(&format!("module x; fn f() {{ {body} }}")).unwrap();
+            let parsed = parse(&format!("mod x; fn f() {{ {body} }}")).unwrap();
             let Item::FnDef(function) = &parsed.items[0] else {
                 panic!("function")
             };
             let actual = render(&doc_expr(&function.body), width);
             assert_eq!(actual, expected);
-            roundtrip(&format!("module x; fn f() {{ {actual} }}"));
+            roundtrip(&format!("mod x; fn f() {{ {actual} }}"));
         }
     }
 
@@ -4996,7 +5030,7 @@ import p( // opening selection
         ] {
             for arguments in ["", "()", "value", "value, other"] {
                 let invocation = format!("({callee})({arguments})");
-                let source = format!("module x; fn run() {{ {invocation} }}");
+                let source = format!("mod x; fn run() {{ {invocation} }}");
                 let output = roundtrip(&source);
                 assert!(output.contains(&invocation), "{output}");
                 let reparsed = parse(&output).unwrap();
@@ -5013,7 +5047,7 @@ import p( // opening selection
 
     #[test]
     fn existential_let_preserves_source_spelling_and_owned_comments() {
-        let source = "module main;
+        let source = "mod main;
             fn open() -> . {
                 // opening
                 let .(<Hidden> payload) =
@@ -5060,7 +5094,7 @@ import p( // opening selection
     #[test]
     fn existential_let_nested_openings_and_ordinary_call_inverse() {
         let printed = roundtrip(
-            "module main; fn open() -> . {
+            "mod main; fn open() -> . {
             let ordinary = seed;
             let .(<Left> <Right> pair) = unpack(ordinary);
             let .(<Hidden> value) = unpack_again(pair);
@@ -5076,9 +5110,9 @@ import p( // opening selection
             "{printed}"
         );
         for source in [
-            "module main; fn explicit() -> . { rhs[_](.[Hidden](payload) { payload }) }",
-            "module main; fn explicit() -> . { (rhs)[_](.[Hidden](payload) { payload }) }",
-            "module main; fn explicit() -> . {
+            "mod main; fn explicit() -> . { rhs[_](.[Hidden](payload) { payload }) }",
+            "mod main; fn explicit() -> . { (rhs)[_](.[Hidden](payload) { payload }) }",
+            "mod main; fn explicit() -> . {
                 // authored call
                 rhs[_](.[Hidden](payload) { let local = payload; local })
             }",
@@ -5102,7 +5136,7 @@ import p( // opening selection
             "(whole: (left: Hidden, right: Hidden), _: Hidden)",
         ] {
             let source = format!(
-                "module main; fn open() -> . {{
+                "mod main; fn open() -> . {{
                 // opening
                 let .(<Hidden> {pattern}) =
                     // source
@@ -5134,15 +5168,15 @@ import p( // opening selection
             );
         }
         for source in [
-            "module main; fn explicit() -> . { rhs[_](.[Hidden]((left: Hidden, right: Hidden)) { left }) }",
-            "module main; fn explicit() -> . { (rhs)[_](.[Hidden]((left: _, right: _)) { left }) }",
+            "mod main; fn explicit() -> . { rhs[_](.[Hidden]((left: Hidden, right: Hidden)) { left }) }",
+            "mod main; fn explicit() -> . { (rhs)[_](.[Hidden]((left: _, right: _)) { left }) }",
         ] {
             let printed = roundtrip(source);
             assert!(!printed.contains("let .(<"), "{printed}");
             assert!(printed.contains("rhs[_]("), "{printed}");
         }
         assert!(
-            parse("module main; fn open() -> . { let .(<Hidden> (left, right)) = rhs; left }")
+            parse("mod main; fn open() -> . { let .(<Hidden> (left, right)) = rhs; left }")
                 .is_err()
         );
     }
@@ -5211,38 +5245,62 @@ import p( // opening selection
 
         for name in ["value", "_"] {
             let source = format!(
-                "module m; fn f() {{ let // binder\n{name} // connector\n= \
-                 // value\n(); () }}"
+                "mod m; fn f() {{ let // binder
+{name} // connector
+= // value
+(); () }}"
             );
             let expected = format!(
-                "module m;\n\nfn f() {{\n  // binder\n  let {name} =\n    \
-                 // connector\n\n    // value\n    ();\n  ()\n}}\n"
+                "mod m;
+
+fn f() {{
+  // binder
+  let {name} =
+    // connector
+
+    // value
+    ();
+  ()
+}}
+"
             );
             assert_eq!(roundtrip(&source), expected);
             assert_eq!(parsed_structure(&source), parsed_structure(&expected));
             assert_eq!(
-                roundtrip(&format!("module m; fn f() {{ let {name} = (); () }}")),
-                format!("module m;\n\nfn f() {{ let {name} = (); () }}\n")
+                roundtrip(&format!("mod m; fn f() {{ let {name} = (); () }}")),
+                format!("mod m;\n\nfn f() {{ let {name} = (); () }}\n")
             );
 
             for connective in ["=", "<-"] {
                 let source = format!(
-                    "module m; fn f() {{ do(bind) {{ let // binder\n{name} \
-                     // connector\n{connective} // value\n(); () }} }}"
+                    "mod m; fn f() {{ do(bind) {{ let // binder
+{name} // connector
+{connective} // value
+(); () }} }}"
                 );
                 let expected = format!(
-                    "module m;\n\nfn f() {{\n  do(bind) {{\n    // binder\n    \
-                     let {name} {connective} // connector\n\n    // value\n    \
-                     ();\n    ()\n  }}\n}}\n"
+                    "mod m;
+
+fn f() {{
+  do(bind) {{
+    // binder
+    let {name} {connective} // connector
+
+    // value
+    ();
+    ()
+  }}
+}}
+"
                 );
                 assert_eq!(roundtrip(&source), expected);
                 assert_eq!(parsed_structure(&source), parsed_structure(&expected));
                 assert_eq!(
                     roundtrip(&format!(
-                        "module m; fn f() {{ do(bind) {{ let {name} {connective} (); () }} }}"
+                        "mod m; fn f() {{ do(bind) {{ let {name} {connective} (); () }} }}"
                     )),
                     format!(
-                        "module m;\n\nfn f() {{\n  do(bind) {{ let {name} {connective} (); () }}\n}}\n"
+                        "mod m;\n\nfn f() {{\n  do(bind) {{ let {name} {connective} (); () }}\n}}\n"
                     )
                 );
             }
@@ -5252,20 +5310,33 @@ import p( // opening selection
     #[test]
     fn let_header_comments_around_dot_patterns_survive() {
         for intro in ["let // binder\n.", "let . // binder\n"] {
-            let source = format!("module m; fn f() {{ {intro}(first, second) = packet; first }}");
-            let expected = "module m;\n\nfn f() {\n  // binder\n  \
-                            let .(first, second) = packet;\n  first\n}\n";
+            let source = format!("mod m; fn f() {{ {intro}(first, second) = packet; first }}");
+            let expected = "mod m;
+
+fn f() {
+  // binder
+  let .(first, second) = packet;
+  first
+}
+";
             assert_eq!(roundtrip(&source), expected);
             assert_eq!(parsed_structure(&source), parsed_structure(expected));
 
             for connective in ["=", "<-"] {
                 let source = format!(
-                    "module m; fn f() {{ do(bind) {{ {intro}(first, second) \
-                     {connective} packet; first }} }}"
+                    "mod m; fn f() {{ do(bind) {{ {intro}(first, second) {connective} packet; first }} }}"
                 );
                 let expected = format!(
-                    "module m;\n\nfn f() {{\n  do(bind) {{\n    // binder\n    \
-                     let .(first, second) {connective} packet;\n    first\n  }}\n}}\n"
+                    "mod m;
+
+fn f() {{
+  do(bind) {{
+    // binder
+    let .(first, second) {connective} packet;
+    first
+  }}
+}}
+"
                 );
                 assert_eq!(roundtrip(&source), expected);
                 assert_eq!(parsed_structure(&source), parsed_structure(&expected));
@@ -5293,8 +5364,11 @@ import p( // opening selection
         ] {
             for (prefix, suffix) in [("", ""), ("do(bind) {", "}")] {
                 let source = format!(
-                    "module m; fn f() {{ {prefix} let // before dot\n. \
-                     // before opener\n{pattern} // equals\n= // value\npacket; () {suffix} }}"
+                    "mod m; fn f() {{ {prefix} let // before dot
+. // before opener
+{pattern} // equals
+= // value
+packet; () {suffix} }}"
                 );
                 let formatted = roundtrip(&source);
                 assert_eq!(
@@ -5307,9 +5381,9 @@ import p( // opening selection
         }
 
         for source in [
-            "module m; fn f() { . // signature opener\n(pair: (x: ., y: .)) { x } }",
-            "module m; fn f() { . // signature opener\n(// pattern opener\n(x: ., y: .)) { x } }",
-            "module m; fn f() { . // type opener\n[A] // value opener\n(value: A) { value } }",
+            "mod m; fn f() { . // signature opener\n(pair: (x: ., y: .)) { x } }",
+            "mod m; fn f() { . // signature opener\n(// pattern opener\n(x: ., y: .)) { x } }",
+            "mod m; fn f() { . // type opener\n[A] // value opener\n(value: A) { value } }",
         ] {
             let formatted = roundtrip(source);
             assert_eq!(
@@ -5352,18 +5426,16 @@ import p( // opening selection
              // trailing comma\n, // final close\n)",
         ] {
             for source in [
-                format!("module m; fn example({pattern}) {{ () }}"),
-                format!("module m; fn example(whole: {pattern}) {{ () }}"),
-                format!("module m; equiv example({pattern}) {{ (); () }}"),
-                format!("module m; fn example() {{ .({pattern}) {{ () }} }}"),
+                format!("mod m; fn example({pattern}) {{ () }}"),
+                format!("mod m; fn example(whole: {pattern}) {{ () }}"),
+                format!("mod m; equiv example({pattern}) {{ (); () }}"),
+                format!("mod m; fn example() {{ .({pattern}) {{ () }} }}"),
+                format!("mod m; fn example() {{ let .{pattern} // after pattern\n= value; () }}"),
+                format!("mod m; fn example() {{ do(m) {{ let .{pattern} = value; () }} }}"),
+                format!("mod m; fn example() {{ do(m) {{ let .{pattern} <- value; () }} }}"),
+                format!("mod m; fn example() {{ let .(<Hidden> {pattern}) = value; () }}"),
                 format!(
-                    "module m; fn example() {{ let .{pattern} // after pattern\n= value; () }}"
-                ),
-                format!("module m; fn example() {{ do(m) {{ let .{pattern} = value; () }} }}"),
-                format!("module m; fn example() {{ do(m) {{ let .{pattern} <- value; () }} }}"),
-                format!("module m; fn example() {{ let .(<Hidden> {pattern}) = value; () }}"),
-                format!(
-                    "module m; fn example() {{ do(m) {{ let .(<Hidden> {pattern}) = value; () }} }}"
+                    "mod m; fn example() {{ do(m) {{ let .(<Hidden> {pattern}) = value; () }} }}"
                 ),
             ] {
                 // A bare single name after `whole:` denotes a type, not a pattern.
@@ -5390,7 +5462,7 @@ import p( // opening selection
     #[test]
     fn pattern_disambiguating_written_inference_annotations_are_preserved() {
         let printed = roundtrip(
-            "module main; fn open() -> . {
+            "mod main; fn open() -> . {
             let .(whole: (left: _, right: _)) = rhs;
             let .(first, second) = whole;
             first
@@ -5487,7 +5559,7 @@ import p( // opening selection
             ("_ + _", "left // marker1\n\n // marker2\n + right"),
         ] {
             let source = format!(
-                "module sample;\nop {pattern} {{ impl pick }}\nfn example() -> . {{ {expression} }}"
+                "mod sample;\nop {pattern} {{ impl pick }}\nfn example() -> . {{ {expression} }}"
             );
             let before = parse(&source).unwrap();
             let output = roundtrip(&source);
@@ -5537,27 +5609,19 @@ import p( // opening selection
 
     #[test]
     fn empty_module() {
-        let pp = roundtrip("module foo;");
-        assert_eq!(pp, "module foo;\n");
+        let pp = roundtrip("mod foo;");
+        assert_eq!(pp, "mod foo;\n");
     }
 
     #[test]
     fn nested_module_path() {
-        roundtrip("module pkg/utils/string;");
+        roundtrip("mod pkg/utils/string;");
     }
 
     #[test]
     fn pure_function_and_rec_modifiers_render_canonical_order() {
         let pp = roundtrip(
-            "module x; \
-             pure pub fn f() -> . { () } \
-             pub type T = .; \
-             pub type { N : . { pub mk; pub get; }; }; \
-             pub type L = { A: . }; \
-             pub macro checked : [A] A -> A { impl checked_impl; }; \
-             pub op _ + _ { impl plus; }; \
-             pub varop [* *] { foldr append empty; }; \
-             rec(loop) pub fn g() -> . { () }",
+            "mod x; pure pub fn f() -> . { () } pub type T = .; pub type { N : . { pub mk; pub get; }; }; pub type L = { A: . }; pub macro checked : [A] A -> A { impl checked_impl; }; pub op _ + _ { impl plus; }; pub op_var [* *] { foldr append empty; }; rec(loop) pub fn g() -> . { () }",
         );
         assert!(pp.contains("pub pure fn f() {"));
         assert!(pp.contains("pub type T = .;"));
@@ -5565,26 +5629,20 @@ import p( // opening selection
         assert!(pp.contains("pub type L ="));
         assert!(pp.contains("pub macro checked :"));
         assert!(pp.contains("pub op _ + _ { impl plus }"));
-        assert!(pp.contains("pub varop [* *] { foldr append empty }"));
+        assert!(pp.contains("pub op_var [* *] { foldr append empty }"));
         assert!(pp.contains("pub rec(loop) fn g() {"));
     }
 
     #[test]
     fn fills_macro_schedule_has_a_stable_canonical_spelling() {
-        let pp = roundtrip("module x; macro demo : . -> . { impl (fills) demo_impl; };");
+        let pp = roundtrip("mod x; macro demo : . -> . { impl (fills) demo_impl; };");
         assert!(pp.contains("{ impl(fills) demo_impl }"), "got:\n{pp}");
     }
 
     #[test]
     fn declaration_callable_paths_round_trip_all_dotted_shapes() {
         let pp = roundtrip(
-            "module x; \
-             op _ + _ { impl helpers.add; }; \
-             varop [* *] { \
-               foldr helpers.Box.push Box.empty; \
-               finalize finish; \
-             }; \
-             macro demo : . -> . { impl(fills) helpers.demo_impl; };",
+            "mod x; op _ + _ { impl helpers.add; }; op_var [* *] { foldr helpers.Box.push Box.empty; finalize finish; }; macro demo : . -> . { impl(fills) helpers.demo_impl; };",
         );
         for expected in [
             "impl helpers.add }",
@@ -5598,13 +5656,13 @@ import p( // opening selection
 
     #[test]
     fn declaration_callable_path_comments_stay_once_in_source_order() {
-        let source = r#"module x;
+        let source = r#"mod x;
 op _ + _ {
   impl helpers // op owner
     . // op separator
     add;
 };
-varop [* *] {
+op_var [* *] {
   foldr helpers // step owner
     .push helpers // base owner
     . // base separator
@@ -5644,7 +5702,7 @@ macro demo : . -> . {
 
     #[test]
     fn compact_declaration_keeps_body_comments_separate_from_item_docs() {
-        let source = r#"module x;
+        let source = r#"mod x;
 
 /// declaration docs
 macro demo : Box[
@@ -5736,15 +5794,15 @@ macro demo : Box[
     fn variadic_modes_preserve_direction_and_seed_mode() {
         for (source, expected) in [
             (
-                "module x/right; varop [* *] { foldr append empty; };",
+                "mod x/right; op_var [* *] { foldr append empty; };",
                 "foldr append empty }",
             ),
             (
-                "module x/left; varop [* *] { foldl append_left empty; };",
+                "mod x/left; op_var [* *] { foldl append_left empty; };",
                 "foldl append_left empty }",
             ),
             (
-                "module x/positive; varop [% %] { foldr1 push seed; };",
+                "mod x/positive; op_var [% %] { foldr1 push seed; };",
                 "foldr1 push seed }",
             ),
         ] {
@@ -5756,15 +5814,15 @@ macro demo : Box[
     fn singleton_rec_braces_expand_to_visibility_preserving_shorthand() {
         for (source, expected) in [
             (
-                "module x/y; rec(loop) { fn local() -> . { () } }",
+                "mod x/y; rec(loop) { fn local() -> . { () } }",
                 "rec(loop) fn local() {",
             ),
             (
-                "module x/y; rec(loop) { pub(x) fn scoped() -> . { () } }",
+                "mod x/y; rec(loop) { pub(x) fn scoped() -> . { () } }",
                 "pub(x) rec(loop) fn scoped() {",
             ),
             (
-                "module x/y; rec(loop) { pub fn exported() -> . { () } }",
+                "mod x/y; rec(loop) { pub fn exported() -> . { () } }",
                 "pub rec(loop) fn exported() {",
             ),
         ] {
@@ -5777,8 +5835,8 @@ macro demo : Box[
     #[test]
     fn singleton_rec_modifier_orders_share_one_canonical_form() {
         for source in [
-            "module x/y; pub(x) rec(loop) fn f() -> . { () }",
-            "module x/y; rec(loop) pub(x) fn f() -> . { () }",
+            "mod x/y; pub(x) rec(loop) fn f() -> . { () }",
+            "mod x/y; rec(loop) pub(x) fn f() -> . { () }",
         ] {
             let pp = roundtrip(source);
             assert!(pp.contains("pub(x) rec(loop) fn f() {"), "got:\n{pp}");
@@ -5787,7 +5845,7 @@ macro demo : Box[
 
     #[test]
     fn singleton_rec_signature_keeps_visibility_before_rec() {
-        let module = parse("module x/y; rec(loop) { pub(x) fn f(value: .) -> . { value } }")
+        let module = parse("mod x/y; rec(loop) { pub(x) fn f(value: .) -> . { value } }")
             .expect("fixture parses");
         assert_eq!(
             pretty_item_signature(&module.items[0]),
@@ -5799,75 +5857,75 @@ macro demo : Box[
 
     #[test]
     fn import_selective_single() {
-        roundtrip("module x; import a/b(foo);");
+        roundtrip("mod x; import a/b {fn foo}");
     }
 
     #[test]
     fn import_selective_multi() {
-        roundtrip("module x; import pkg/mod(foo, bar, baz);");
+        roundtrip("mod x; import pkg/mod {fn foo; fn bar; fn baz}");
     }
 
     #[test]
     fn import_selective_type_and_value_names() {
-        roundtrip("module x; import pkg/mod(Item, item, Field);");
+        roundtrip("mod x; import pkg/mod {type Item; fn item; type Field}");
     }
 
     #[test]
     fn import_qualified_multi_segment() {
-        roundtrip("module x; import a/b/c as m;");
+        roundtrip("mod x; import a/b/c as m;");
     }
 
     #[test]
     fn import_qualified_single_segment() {
-        roundtrip("module x; import a as m;");
+        roundtrip("mod x; import a as m;");
     }
 
     #[test]
     fn import_selective_round_trips() {
-        roundtrip("module x; import pkg/mod(Foo, Bar);");
-        roundtrip("module x; import match(macro match);");
+        roundtrip("mod x; import pkg/mod {type Foo; type Bar}");
+        roundtrip("mod x; import match {macro match}");
     }
 
     #[test]
     fn import_intrinsics() {
-        roundtrip("module x; import __intrinsics__;");
+        roundtrip("mod x; import __intrinsics__;");
     }
 
     // ---- fn ----------------------------------------------------------
 
     #[test]
     fn fn_def_zero_arg_unit() {
-        roundtrip("module x; fn main() -> . { () }");
+        roundtrip("mod x; fn main() -> . { () }");
     }
 
     #[test]
     fn fn_def_pub() {
-        roundtrip("module x; pub fn main() -> . { () }");
+        roundtrip("mod x; pub fn main() -> . { () }");
     }
 
     #[test]
     fn fn_def_identity_function() {
-        roundtrip("module x; pub fn id[A](x: A) -> A { x }");
+        roundtrip("mod x; pub fn id[A](x: A) -> A { x }");
     }
 
     #[test]
     fn fn_def_rejects_comma_binder_group() {
-        assert!(parse("module x; pub fn pair[A, B](x: A, y: B) -> A { x }").is_err());
+        assert!(parse("mod x; pub fn pair[A, B](x: A, y: B) -> A { x }").is_err());
     }
 
     #[test]
     fn fn_def_intermixed_params() {
-        roundtrip("module x; fn f[A](x: A)[B](y: B) -> A { x }");
+        roundtrip("mod x; fn f[A](x: A)[B](y: B) -> A { x }");
     }
 
     #[test]
     fn fn_def_elided_unit_return_round_trips() {
-        roundtrip("module x; fn say_hi() { () }");
+        roundtrip("mod x; fn say_hi() { () }");
     }
 
     #[test]
     fn named_unit_results_are_canonical_defaults() {
-        let pp = roundtrip("module x; host fn print(s: String) -> .; fn say_hi() -> . { () }");
+        let pp = roundtrip("mod x; host fn print(s: String) -> .; fn say_hi() -> . { () }");
         assert!(pp.contains("host fn print(s: String);"), "{pp}");
         assert!(pp.contains("fn say_hi() { () }"), "{pp}");
         assert!(!pp.contains("->"), "{pp}");
@@ -5876,7 +5934,7 @@ macro demo : Box[
     #[test]
     fn unit_default_does_not_collapse_function_results_or_lambda_annotations() {
         let pp = roundtrip(
-            "module x; type Unit = .; host fn factory() -> . -> .; fn alias() -> Unit { () } fn factory() -> . -> . { .(value: .) -> . { value } }",
+            "mod x; type Unit = .; host fn factory() -> . -> .; fn alias() -> Unit { () } fn factory() -> . -> . { .(value: .) -> . { value } }",
         );
         assert!(pp.contains("host fn factory() -> . -> .;"), "{pp}");
         assert!(pp.contains("fn alias() -> Unit"), "{pp}");
@@ -5887,10 +5945,10 @@ macro demo : Box[
     #[test]
     fn host_unit_result_comments_survive_formatting() {
         for source in [
-            "module x; host fn tick() // arrow\n -> .;",
-            "module x; host fn tick() -> // result\n .;",
-            "module x; host fn tick() -> . // end\n;",
-            "module x; host fn tick() // end\n;",
+            "mod x; host fn tick() // arrow\n -> .;",
+            "mod x; host fn tick() -> // result\n .;",
+            "mod x; host fn tick() -> . // end\n;",
+            "mod x; host fn tick() // end\n;",
         ] {
             let pp = roundtrip(source);
             for comment in ["// arrow", "// result", "// end"] {
@@ -5906,10 +5964,7 @@ macro demo : Box[
     #[test]
     fn op_call_symbol_word_keeps_internal_punctuation() {
         let output = roundtrip(
-            "module x; type { A : . { mk; get; }; }; \
-             fn cat(a: A, b: A) -> A { a } \
-             op _ &&++ _ { impl cat; }; \
-             fn main(x: A, y: A) -> A { x&&++y }",
+            "mod x; type { A : . { mk; get; }; }; fn cat(a: A, b: A) -> A { a } op _ &&++ _ { impl cat; }; fn main(x: A, y: A) -> A { x&&++y }",
         );
         assert!(output.contains("x &&++ y"), "{output}");
     }
@@ -5917,45 +5972,38 @@ macro demo : Box[
     #[test]
     fn operator_forms_round_trip_with_run_boundaries() {
         let fused = roundtrip(
-            "module fused; fn pick(a: A, b: A) -> A { a } \
-             op _ <! _ !> { impl pick; }; \
-             fn run(a: A, b: A) -> A { a <! b !> }",
+            "mod fused; fn pick(a: A, b: A) -> A { a } op _ <! _ !> { impl pick; }; fn run(a: A, b: A) -> A { a <! b !> }",
         );
         assert!(fused.contains("op _ <! _ !> { impl pick }"));
         assert!(fused.contains("a <! b !>"));
 
         let compact = roundtrip(
-            "module separated; fn pick(a: A, b: A) -> A { a } \
-             op _ <! _ !> { impl pick; }; \
-             fn run(a: A, b: A) -> A { a<!b !> }",
+            "mod separated; fn pick(a: A, b: A) -> A { a } op _ <! _ !> { impl pick; }; fn run(a: A, b: A) -> A { a<!b !> }",
         );
         assert!(compact.contains("op _ <! _ !> { impl pick }"));
         assert!(compact.contains("a <! b !>"));
-        assert!(parse("module separated; import syntax(op _ < ! _ ! >);").is_err());
+        assert!(parse("mod separated; import syntax {op _ < ! _ ! >}").is_err());
 
         let fold = roundtrip(
-            "module folded; fn empty() -> A { value } \
-             fn push(a: A, b: A) -> A { a } \
-             varop [! !] { foldr push empty; }; \
-             fn run(a: A, b: A) -> A { [! a, b !] }",
+            "mod folded; fn empty() -> A { value } fn push(a: A, b: A) -> A { a } op_var [! !] { foldr push empty; }; fn run(a: A, b: A) -> A { [! a, b !] }",
         );
-        assert!(fold.contains("varop [! !] { foldr push empty }"));
+        assert!(fold.contains("op_var [! !] { foldr push empty }"));
         assert!(fold.contains("[! a, b !]"));
 
-        let import_source = "module imported; import syntax(op _ <, op _ <!, op < _, op <! _);";
+        let import_source = "mod imported; import syntax {op _ <; op _ <!; op < _; op <! _}";
         let first =
             crate::pass::parser::parse_lazy(import_source).expect("operator-import header parses");
         let rendered = pretty_module(first.module());
-        assert!(rendered.contains("import syntax(op < _, op <! _, op _ <, op _ <!);"));
+        assert!(rendered.contains("import syntax { op < _; op <! _; op _ <; op _ <! }"));
         crate::pass::parser::parse_lazy(&rendered)
             .expect("formatted operator-import header reparses");
     }
 
     #[test]
     fn delayed_operator_headers_canonicalize_dots_and_preserve_comments() {
-        for head in ["op", "op macro"] {
+        for head in ["op", "op_macro"] {
             let source = format!(
-                "module m; {head} . // first operand\n _ && . // chain operand\n __ {{ impl target; }} fn run(left: A, right: A) {{ left && right }}"
+                "mod m; {head} . // first operand\n _ && . // chain operand\n __ {{ impl target; }} fn run(left: A, right: A) {{ left && right }}"
             );
             let formatted = roundtrip(&source);
             assert!(
@@ -5966,7 +6014,7 @@ macro demo : Box[
                 assert_eq!(formatted.matches(comment).count(), 1, "{formatted}");
             }
             let source = format!(
-                "module m; import absent({head} . // import operand\n _ && . __ as . _ %% . __);"
+                "mod m; import absent {{{head} . // import operand\n _ && . __ as . _ %% . __}}"
             );
             let formatted = roundtrip(&source);
             assert!(
@@ -5985,8 +6033,7 @@ macro demo : Box[
     fn op_chain_layout_preserves_right_left_and_greedy_topology() {
         for pattern in ["_ + __", "__ + _", "_ + ___"] {
             let module_prefix = format!(
-                "module x; fn combine(a: A, b: A) -> A {{ a }} \
-                 op {pattern} {{ impl combine; }};"
+                "mod x; fn combine(a: A, b: A) -> A {{ a }} op {pattern} {{ impl combine; }};"
             );
             assert_op_expr_layout_and_topology(
                 &module_prefix,
@@ -6014,8 +6061,7 @@ macro demo : Box[
             ("_ ~", "value ~ ~ ~", "value ~ ~\n  ~"),
         ] {
             let module_prefix = format!(
-                "module x; fn unary(value: A) -> A {{ value }} \
-                 op {pattern} {{ impl unary; }};"
+                "mod x; fn unary(value: A) -> A {{ value }} op {pattern} {{ impl unary; }};"
             );
             assert_op_expr_layout_and_topology(
                 &module_prefix,
@@ -6056,10 +6102,8 @@ macro demo : Box[
                 "a\n  &&++ b\n  &&++ c",
             ),
         ] {
-            let module_prefix = format!(
-                "module x; {implementation} \
-                 op {pattern} {{ impl {implementation_name}; }};"
-            );
+            let module_prefix =
+                format!("mod x; {implementation} op {pattern} {{ impl {implementation_name}; }};");
             assert_op_expr_layout_and_topology(
                 &module_prefix,
                 "fn use_op() -> A",
@@ -6073,11 +6117,7 @@ macro demo : Box[
 
     #[test]
     fn op_chain_layout_keeps_different_pattern_parentheses() {
-        let module_prefix = "module x; \
-             fn add(a: A, b: A) -> A { a } \
-             fn maybe(a: A, b: A) -> A { a } \
-             op _ + __ { impl add; }; \
-             op _ ? _ { impl maybe; };";
+        let module_prefix = "mod x; fn add(a: A, b: A) -> A { a } fn maybe(a: A, b: A) -> A { a } op _ + __ { impl add; }; op _ ? _ { impl maybe; };";
         assert_op_expr_layout_and_topology(
             module_prefix,
             "fn use_op() -> A",
@@ -6090,8 +6130,7 @@ macro demo : Box[
 
     #[test]
     fn op_chain_layout_anchors_nested_inline_expressions() {
-        let normal_prefix =
-            "module x; fn combine(a: A, b: A) -> A { a } op _ + __ { impl combine; };";
+        let normal_prefix = "mod x; fn combine(a: A, b: A) -> A { a } op _ + __ { impl combine; };";
         assert_op_expr_layout_and_topology(
             normal_prefix,
             "fn nested_op() -> A",
@@ -6101,7 +6140,7 @@ macro demo : Box[
             "wrap(a\n       + b\n       + c)",
         );
 
-        let variadic_prefix = "module x; varop [! !] { foldr push empty; };";
+        let variadic_prefix = "mod x; op_var [! !] { foldr push empty; };";
         assert_op_expr_layout_and_topology(
             variadic_prefix,
             "fn nested_list() -> A",
@@ -6114,7 +6153,7 @@ macro demo : Box[
 
     #[test]
     fn variadic_op_layout_preserves_elements_delimiters_and_topology() {
-        let list_prefix = "module x; varop [! !] { foldr push empty; };";
+        let list_prefix = "mod x; op_var [! !] { foldr push empty; };";
         assert_op_expr_layout_and_topology(
             list_prefix,
             "fn list() -> A",
@@ -6149,7 +6188,7 @@ macro demo : Box[
         );
 
         let entries_prefix =
-            "module x; op _ => _ { impl pair; }; varop [% %] { foldr insert empty; };";
+            "mod x; op _ => _ { impl pair; }; op_var [% %] { foldr insert empty; };";
         assert_op_expr_layout_and_topology(
             entries_prefix,
             "fn entries() -> A",
@@ -6159,7 +6198,7 @@ macro demo : Box[
             "[%\n, a => b\n, c => d\n%]",
         );
 
-        let repeated_comma_prefix = "module x; varop [! !] { foldr push empty; };";
+        let repeated_comma_prefix = "mod x; op_var [! !] { foldr push empty; };";
         assert_op_expr_layout_and_topology(
             repeated_comma_prefix,
             "fn separated() -> A",
@@ -6183,62 +6222,50 @@ macro demo : Box[
 
     #[test]
     fn type_alias_nullary() {
-        roundtrip("module x; type Logger = String -> .;");
+        roundtrip("mod x; type Logger = String -> .;");
     }
 
     #[test]
     fn type_alias_parametric_pub() {
-        roundtrip("module x; pub type Pair[A][B] = (A & B);");
+        roundtrip("mod x; pub type Pair[A][B] = (A & B);");
     }
 
     #[test]
     fn type_alias_rejects_comma_binder_group() {
-        assert!(parse("module x; type F[A, B] = [A, B] A -> B;").is_err());
+        assert!(parse("mod x; type F[A, B] = [A, B] A -> B;").is_err());
     }
 
     // ---- newtype -------------------------------------------------------
 
     #[test]
     fn newtype_nullary() {
-        roundtrip("module x; type { Celsius : . { pub mk; pub get; }; };");
+        roundtrip("mod x; type { Celsius : . { pub mk; pub get; }; };");
     }
 
     #[test]
     fn newtype_recursive() {
-        roundtrip(
-            "module x; rec type { List[A] : (. | (A & List[A])) { \
-             pub mk; pub get; }; };",
-        );
+        roundtrip("mod x; rec type { List[A] : (. | (A & List[A])) { pub mk; pub get; }; };");
     }
 
     #[test]
     fn newtype_with_single_existential_header_roundtrip() {
         // Existential binders live in the newtype header, emitted as
         // `<U>` atoms between the universal-parameter list and `:`.
-        roundtrip(
-            "module x; type { Pack[A] <U> : (A & U) { \
-             pub mk; pub get; }; };",
-        );
+        roundtrip("mod x; type { Pack[A] <U> : (A & U) { pub mk; pub get; }; };");
     }
 
     #[test]
     fn newtype_with_multi_existential_header_roundtrip() {
         // Multi-binder existential header — whitespace-separated atoms.
-        roundtrip(
-            "module x; type { Box <A> <B> : (A & B) { \
-             pub mk; pub get; }; };",
-        );
+        roundtrip("mod x; type { Box <A> <B> : (A & B) { pub mk; pub get; }; };");
     }
 
     #[test]
     fn newtype_member_comments_follow_canonical_member_order() {
         let pp = roundtrip(
-            "module x; type { Box : . { \
-             // projector comment\n\
-             get; \
-             // constructor comment\n\
-             mk; \
-             }; };",
+            "mod x; type { Box : . { // projector comment
+get; // constructor comment
+mk; }; };",
         );
         let constructor_comment = pp.find("// constructor comment").unwrap();
         let constructor = pp.find("mk;").unwrap();
@@ -6256,14 +6283,14 @@ macro demo : Box[
 
     #[test]
     fn ordinary_alias_round_trip_preserves_visibility_and_exact_path() {
-        let formatted = roundtrip("module x; pub(x) type Local = provider.Original;");
+        let formatted = roundtrip("mod x; pub(x) type Local = provider.Original;");
         assert!(formatted.contains("pub(x) type Local = provider.Original;"));
     }
 
     #[test]
     fn ordinary_alias_target_comments_survive_once_in_order() {
         let formatted = roundtrip(
-            "module x;\n/// Alias family.\npub type Local = (\n// target module\nprovider.\n// target type\nOriginal\n// after target\n);",
+            "mod x;\n/// Alias family.\npub type Local = (\n// target module\nprovider.\n// target type\nOriginal\n// after target\n);",
         );
         let mut previous = 0;
         for comment in ["// target module", "// target type", "// after target"] {
@@ -6280,7 +6307,7 @@ macro demo : Box[
     fn ordinary_alias_keeps_body_comments_separate_from_declaration_docs() {
         for external_doc in ["", "/// External alias documentation.\n"] {
             let source = format!(
-                "module x;\n{external_doc}type Local = (\n// Interior target note.\nprovider.Original &\n// Interior unit note.\n.);"
+                "mod x;\n{external_doc}type Local = (\n// Interior target note.\nprovider.Original &\n// Interior unit note.\n.);"
             );
             let parsed = parse(&source).expect("parse source");
             let Item::TypeAlias(before) = &parsed.items[0] else {
@@ -6305,35 +6332,34 @@ macro demo : Box[
 
     #[test]
     fn compact_nominal_anonymous_round_trip() {
-        roundtrip("module x; type { Foo : . };");
+        roundtrip("mod x; type { Foo : . };");
     }
 
     #[test]
     fn compact_nominal_anonymous_multi_round_trip() {
-        roundtrip("module x; type { Foo : .; Bar : I32 };");
+        roundtrip("mod x; type { Foo : .; Bar : I32 };");
     }
 
     #[test]
     fn compact_nominal_named_round_trip() {
-        roundtrip("module x; type T = { Foo : . };");
+        roundtrip("mod x; type T = { Foo : . };");
     }
 
     #[test]
     fn compact_nominal_named_parametric_round_trip() {
-        roundtrip("module x; type T[A] = { Foo[A] : A };");
+        roundtrip("mod x; type T[A] = { Foo[A] : A };");
     }
 
     #[test]
     fn nominal_rhs_references_round_trip() {
         roundtrip(
-            "module x; type { Value[*F][A]: F[A]; }; \
-             type Choice[*G][B] = Value[G][B] & { Other: .; };",
+            "mod x; type { Value[*F][A]: F[A]; }; type Choice[*G][B] = Value[G][B] & { Other: .; };",
         );
     }
 
     #[test]
     fn compact_nominal_pub_round_trip() {
-        roundtrip("module x; pub type { Foo : I32; Bar : Bool };");
+        roundtrip("mod x; pub type { Foo : I32; Bar : Bool };");
     }
 
     #[test]
@@ -6353,7 +6379,7 @@ macro demo : Box[
             "rec type // 1\n{ List[A] // 2\n: // 3\n(. | (A & List[A])) };",
             "rec { /// Labels documentation.\npub type // 1\nChoice = // 2\n{ Field // 3\n: // 4\n. }; }",
         ] {
-            let source = format!("module m; {declaration}");
+            let source = format!("mod m; {declaration}");
             let printed = roundtrip(&source);
             let comments = |text: &str| {
                 let (tokens, trailing) = crate::pass::lexer::lex_with_trailing(text).unwrap();
@@ -6401,7 +6427,7 @@ macro demo : Box[
                 "Existing // 1\nOP // 2\n(// 3\n{ Middle: . } // 4\nOP // 5\n{ Last: . } // 6\n) // 7\nOP // 8\nFinal // 9\nOP // 10\n",
                 "// 1\nOP // 2\n{ // 3\nOnly: . } // 4\nOP // 5\n",
             ] {
-                let source = format!("module m; type Choice = {};", rhs.replace("OP", op));
+                let source = format!("mod m; type Choice = {};", rhs.replace("OP", op));
                 let formatted = roundtrip(&source);
                 assert_eq!(
                     comments(&source),
@@ -6444,7 +6470,7 @@ macro demo : Box[
             "(.() { // function body\n() } // after function\n)",
         ] {
             for (prefix, suffix) in [("", ""), ("", ", next"), ("first, ", "")] {
-                let source = format!("module x; fn f() {{ consume({prefix}{payload}{suffix}) }}");
+                let source = format!("mod x; fn f() {{ consume({prefix}{payload}{suffix}) }}");
                 let printed = roundtrip(&source);
                 assert_eq!(comments(&printed), comments(&source), "{source}\n{printed}");
                 assert_eq!(
@@ -6460,7 +6486,7 @@ macro demo : Box[
     fn call_arguments_keep_closing_comments() {
         for entries in ["ready", "ready, other", "ready,"] {
             let body = format!("target({entries} // close\n)");
-            let source = format!("module x; fn f() {{ {body} }}");
+            let source = format!("mod x; fn f() {{ {body} }}");
             let printed = roundtrip(&source);
             assert_eq!(
                 printed.matches("// close").count(),
@@ -6480,7 +6506,7 @@ macro demo : Box[
             format!("call({expression})"),
             format!("({expression}, value)"),
         ] {
-            let source = format!("module x; fn f() {{ {body} }}");
+            let source = format!("mod x; fn f() {{ {body} }}");
             let printed = roundtrip(&source);
             assert_eq!(
                 printed.matches("// inside").count(),
@@ -6501,8 +6527,8 @@ macro demo : Box[
             }
         }
         assert_eq!(
-            roundtrip("module x; fn f() { {} }"),
-            "module x;\n\nfn f() { () }\n"
+            roundtrip("mod x; fn f() { {} }"),
+            "mod x;\n\nfn f() { () }\n"
         );
     }
 
@@ -6513,7 +6539,7 @@ macro demo : Box[
             format!("{path} // before call\n()"),
             format!("call({path} // before close\n)"),
         ] {
-            let source = format!("module x; fn f() {{ {body} }}");
+            let source = format!("mod x; fn f() {{ {body} }}");
             let printed = roundtrip(&source);
             let comments = |source: &str| {
                 source
@@ -6534,7 +6560,7 @@ macro demo : Box[
             "row // first receiver\n.> // first callee\nselect // next receiver\n.> // next callee\nfinish",
         ];
         for body in bodies {
-            let source = format!("module x; fn f() {{ {body} }}");
+            let source = format!("mod x; fn f() {{ {body} }}");
             let printed = roundtrip(&source);
             let comments = |source: &str| {
                 source
@@ -6550,14 +6576,13 @@ macro demo : Box[
 
     #[test]
     fn compact_nominal_recursive_round_trip() {
-        roundtrip("module x; rec type { List[A] : (. | (A & List[A])) };");
+        roundtrip("mod x; rec type { List[A] : (. | (A & List[A])) };");
     }
 
     #[test]
     fn recursive_type_group_round_trip() {
-        let formatted = roundtrip(
-            "module x; rec { pub type A = B; pub type { B : A { pub mk; pub get; }; }; }",
-        );
+        let formatted =
+            roundtrip("mod x; rec { pub type A = B; pub type { B : A { pub mk; pub get; }; }; }");
         assert!(formatted.contains("rec {\n  pub type A = B;"));
     }
 
@@ -6574,16 +6599,16 @@ macro demo : Box[
         };
         for source in [
             include_str!("../../test-data/goldens/00_success/fmt_declaration_header_comments/workdir/main.kio").to_owned(),
-            "module m; /// Function docs.\npure // purity\npub // before scope\n( // scope open\nm // scope close\n) // before fn\nfn // before name\nf // before params\n() { () }".to_owned(),
-            "module m; rec(loop) { /// Member docs.\npub // visibility\nfn // name\nf() { () } }".to_owned(),
-            "module m; /// Recursive docs.\npub // visibility\nrec(loop) fn // name\nf() { () }".to_owned(),
-            "module m; equiv // name\ne[ // binder\nA](x: A) // body\n{ x; x }".to_owned(),
-            "module m; equiv e() // body\n{ (); () }".to_owned(),
-            "module m; /// Host docs.\nhost pub // modifier\nfn f[ // first binder\nA // first\n][ // second binder\nB // second\n] // empty group\n( // inside empty\n) // next group\n[C](value: C) -> C;".to_owned(),
-            "module m; host fn f( // leading\n, value // colon\n: // type\n. // first comma\n, // repeated\n, next: . , // trailing\n);".to_owned(),
-            "module m; host fn f[ // opening\n* // kind\nF // closing\n]( // empty\n);".to_owned(),
-            "module m; /// Labels docs.\npub // modifier\nrec type List = {Nil: .} | {Cons: List};".to_owned(),
-            "module m; /// Literal docs.\npub // modifier\nliteral // name\nanswer // equals\n= // value\n42 // terminator\n;".to_owned(),
+            "mod m; /// Function docs.\npure // purity\npub // before scope\n( // scope open\nm // scope close\n) // before fn\nfn // before name\nf // before params\n() { () }".to_owned(),
+            "mod m; rec(loop) { /// Member docs.\npub // visibility\nfn // name\nf() { () } }".to_owned(),
+            "mod m; /// Recursive docs.\npub // visibility\nrec(loop) fn // name\nf() { () }".to_owned(),
+            "mod m; equiv // name\ne[ // binder\nA](x: A) // body\n{ x; x }".to_owned(),
+            "mod m; equiv e() // body\n{ (); () }".to_owned(),
+            "mod m; /// Host docs.\nhost pub // modifier\nfn f[ // first binder\nA // first\n][ // second binder\nB // second\n] // empty group\n( // inside empty\n) // next group\n[C](value: C) -> C;".to_owned(),
+            "mod m; host fn f( // leading\n, value // colon\n: // type\n. // first comma\n, // repeated\n, next: . , // trailing\n);".to_owned(),
+            "mod m; host fn f[ // opening\n* // kind\nF // closing\n]( // empty\n);".to_owned(),
+            "mod m; /// Labels docs.\npub // modifier\nrec type List = {Nil: .} | {Cons: List};".to_owned(),
+            "mod m; /// Literal docs.\npub // modifier\nlit // name\nanswer // equals\n= // value\n42 // terminator\n;".to_owned(),
         ] {
             let printed = roundtrip(&source);
             assert_eq!(comments(&source), comments(&printed), "{source}\n{printed}");
@@ -6599,11 +6624,11 @@ macro demo : Box[
         for declaration in [
             "pub pure fn f() { () }",
             "host fn f[A][B](value: A) -> B;",
-            "pub literal answer = 42;",
+            "pub lit answer = 42;",
         ] {
             assert_eq!(
-                roundtrip(&format!("module m; {declaration}")),
-                format!("module m;\n\n{declaration}\n")
+                roundtrip(&format!("mod m; {declaration}")),
+                format!("mod m;\n\n{declaration}\n")
             );
         }
     }
@@ -6616,7 +6641,7 @@ macro demo : Box[
             "pub // modifier\nfn f[ // binder\nA];",
         ] {
             let source = format!(
-                "signature app v(1); v(1) {{ nonbreaking {{ add {{ module api {{ {declaration} }} }} }} }}"
+                "sig app v(1); v(1) {{ nonbreaking {{ add {{ mod api {{ {declaration} }} }} }} }}"
             );
             let parsed = crate::pass::parser::parse_signature_file(&source, None).unwrap();
             let printed = crate::sig::emit_signature_file(&parsed);
@@ -6672,7 +6697,7 @@ macro demo : Box[
                 "{header}{{ fn f() {{ // first body\n() }}; fn g() {{ // second body\n() }} }}"
             ),
         ] {
-            let source = format!("module m; {declaration}");
+            let source = format!("mod m; {declaration}");
             let formatted = roundtrip(&source);
             let mut previous = 0;
             for comment in source
@@ -6707,14 +6732,14 @@ macro demo : Box[
     #[test]
     fn recursive_type_group_member_and_closer_comments_round_trip() {
         let formatted = roundtrip(
-            "module x; rec {\n\
-             // group-leading context\n\
-             /// Alias docs.\n\
-             pub type A = B;\n\
-             /// Nominal docs.\n\
-             pub type { B : A { pub mk; pub get; }; };\n\
-             // group-trailing context\n\
-             }",
+            "mod x; rec {
+// group-leading context
+/// Alias docs.
+pub type A = B;
+/// Nominal docs.
+pub type { B : A { pub mk; pub get; }; };
+// group-trailing context
+}",
         );
         for preserved in [
             "// group-leading context",
@@ -6733,25 +6758,22 @@ macro demo : Box[
 
     #[test]
     fn equiv_two_term_round_trip() {
-        roundtrip(
-            "module x; fn id[A](v: A) -> A { v } \
-             equiv id_id[A](x: A) { id(x); id(id(x)) }",
-        );
+        roundtrip("mod x; fn id[A](v: A) -> A { v } equiv id_id[A](x: A) { id(x); id(id(x)) }");
     }
 
     #[test]
     fn equiv_three_term_round_trip() {
-        roundtrip("module x; equiv three { (); (); () }");
+        roundtrip("mod x; equiv three { (); (); () }");
     }
 
     #[test]
     fn equiv_no_params_round_trip() {
-        roundtrip("module x; equiv simple { (); () }");
+        roundtrip("mod x; equiv simple { (); () }");
     }
 
     #[test]
     fn equiv_extra_semicolons_canonicalize() {
-        let pp = roundtrip("module x; equiv simple { ;; ();;; ();;; }");
+        let pp = roundtrip("mod x; equiv simple { ;; ();;; ();;; }");
         assert!(
             pp.contains("equiv simple() {\n  ();\n  ()\n}"),
             "got:\n{pp}"
@@ -6761,7 +6783,7 @@ macro demo : Box[
 
     #[test]
     fn equiv_clause_comment_survives_round_trip() {
-        let pp = roundtrip("module x; equiv simple { (); // second\n () }");
+        let pp = roundtrip("mod x; equiv simple { (); // second\n () }");
         assert!(
             pp.contains("equiv simple() {\n  ();\n  // second\n  ()\n}"),
             "expected comment before second equiv arm; got:\n{pp}"
@@ -6773,11 +6795,7 @@ macro demo : Box[
     #[test]
     fn ordinary_and_marked_type_names_round_trip_identically() {
         let output = roundtrip(
-            "module x; type Alias[A] = A; type _Alias[_A] = _A; \
-             type { Box[B] : B { mk; get; }; }; \
-             type { _Box[_B] : _B { mk; get; }; }; \
-             fn id[T](x: T) -> T { x } \
-             fn marked[_A](x: _A) -> _A { id[_A](x) }",
+            "mod x; type Alias[A] = A; type _Alias[_A] = _A; type { Box[B] : B { mk; get; }; }; type { _Box[_B] : _B { mk; get; }; }; fn id[T](x: T) -> T { x } fn marked[_A](x: _A) -> _A { id[_A](x) }",
         );
         for retained in [
             "type _Alias[_A] = _A;",
@@ -6794,19 +6812,18 @@ macro demo : Box[
 
     #[test]
     fn type_function_zero_param() {
-        roundtrip("module x; type F = . -> Int;");
+        roundtrip("mod x; type F = . -> Int;");
     }
 
     #[test]
     fn type_function_zero_param_after_binder_round_trips() {
-        roundtrip("module x; type F = [T] . -> T;");
+        roundtrip("mod x; type F = [T] . -> T;");
     }
 
     #[test]
     fn compact_forall_runs_remain_compact_after_formatting() {
         let output = roundtrip(
-            "module x; type Poly = [A][*F] F[A] -> A; \
-             fn make() -> . { .[*F](x: F[.]) -> F[.] { x } }",
+            "mod x; type Poly = [A][*F] F[A] -> A; fn make() -> . { .[*F](x: F[.]) -> F[.] { x } }",
         );
         assert!(output.contains("[A][*F] F[A] -> A"));
         assert!(output.contains(".[*F](x: F[.]) -> F[.]"));
@@ -6819,61 +6836,61 @@ macro demo : Box[
             ".arg. { let arg2 = arg1; arg2 }",
             "._x. {\n    _x1.>apply(._y. { _y1 })\n  }",
         ] {
-            let output = roundtrip(&format!("module m; fn make() {{ {expression} }}"));
+            let output = roundtrip(&format!("mod m; fn make() {{ {expression} }}"));
             assert!(output.contains(expression), "{output}");
         }
     }
 
     #[test]
     fn type_function_grouped_unit_domain_canonicalizes() {
-        let pp = roundtrip("module x; type F = (.) -> Int;");
+        let pp = roundtrip("mod x; type F = (.) -> Int;");
         assert!(pp.contains("type F = . -> Int;"), "got:\n{pp}");
     }
 
     #[test]
     fn type_function_grouped_atomic_domain_canonicalizes() {
-        let pp = roundtrip("module x; type F = (A) -> Int;");
+        let pp = roundtrip("mod x; type F = (A) -> Int;");
         assert!(pp.contains("type F = A -> Int;"), "got:\n{pp}");
     }
 
     #[test]
     fn type_function_multi_param() {
-        roundtrip("module x; type F = (Int & Bool & String) -> .;");
+        roundtrip("mod x; type F = (Int & Bool & String) -> .;");
     }
 
     #[test]
     fn type_function_curried_return_stays_curried() {
-        roundtrip("module x; type F = A -> B -> C;");
+        roundtrip("mod x; type F = A -> B -> C;");
     }
 
     #[test]
     fn type_alias_mixed_signature_binders_round_trip() {
-        roundtrip("module x; type F = A -> [B] B -> [C] C;");
+        roundtrip("mod x; type F = A -> [B] B -> [C] C;");
     }
 
     #[test]
     fn type_alias_trailing_signature_binder_round_trip() {
-        roundtrip("module x; type F = A -> [B] B;");
+        roundtrip("mod x; type F = A -> [B] B;");
     }
 
     #[test]
     fn value_param_rank_n_type_round_trips() {
-        roundtrip("module x; fn use[A](f: A -> [B] B -> A) -> . { () }");
+        roundtrip("mod x; fn use[A](f: A -> [B] B -> A) -> . { () }");
     }
 
     #[test]
     fn type_unit_and_bottom() {
-        roundtrip("module x; type U = .; type Z = !;");
+        roundtrip("mod x; type U = .; type Z = !;");
     }
 
     #[test]
     fn type_sum_and_product() {
-        roundtrip("module x; type S = (A | B); type P = (A & B);");
+        roundtrip("mod x; type S = (A | B); type P = (A & B);");
     }
 
     #[test]
     fn type_product_chain_three_round_trip() {
-        let pp = roundtrip("module x; type T = (A & B & C);");
+        let pp = roundtrip("mod x; type T = (A & B & C);");
         assert!(
             pp.contains("A & B & C") && !pp.contains("(A & "),
             "expected bare chain form, got:\n{pp}"
@@ -6882,7 +6899,7 @@ macro demo : Box[
 
     #[test]
     fn type_sum_chain_three_round_trip() {
-        let pp = roundtrip("module x; type T = (A | B | C);");
+        let pp = roundtrip("mod x; type T = (A | B | C);");
         assert!(
             pp.contains("A | B | C") && !pp.contains("(A | "),
             "expected bare chain form, got:\n{pp}"
@@ -6895,7 +6912,7 @@ macro demo : Box[
         // (left-leaning vs right-leaning). The printer flattens
         // right-leaning runs, so the inner left-leaning chain stays
         // wrapped in load-bearing parens to preserve the AST shape.
-        let pp = roundtrip("module x; type T = ((A & B) & C);");
+        let pp = roundtrip("mod x; type T = ((A & B) & C);");
         assert!(pp.contains("(A & B) & C"), "got:\n{pp}");
     }
 
@@ -6904,7 +6921,7 @@ macro demo : Box[
         // No-paren input round-trips identically with the printer's
         // bare-chain emission — both inputs collapse to the same
         // AST.
-        let pp = roundtrip("module x; type T = A & B;");
+        let pp = roundtrip("mod x; type T = A & B;");
         assert!(
             pp.contains("type T = A & B;"),
             "expected bare chain output, got:\n{pp}"
@@ -6915,7 +6932,7 @@ macro demo : Box[
     fn type_chain_mixing_prints_with_load_bearing_parens() {
         // `(A & B) | C` keeps inner parens because the inner chain
         // is a child of the outer (different-op) chain.
-        let pp = roundtrip("module x; type T = ((A & B) | C);");
+        let pp = roundtrip("mod x; type T = ((A & B) | C);");
         assert!(
             pp.contains("(A & B) | C"),
             "expected mixing parens preserved, got:\n{pp}"
@@ -6926,7 +6943,7 @@ macro demo : Box[
     fn type_chain_function_child_keeps_parens() {
         // A function-type child of a `|` chain needs surrounding
         // parens to delimit the function-valued chain item.
-        let pp = roundtrip("module x; type T = ((A -> B) | C);");
+        let pp = roundtrip("mod x; type T = ((A -> B) | C);");
         assert!(
             pp.contains("(A -> B) | C"),
             "expected function parens preserved, got:\n{pp}"
@@ -6974,7 +6991,7 @@ macro demo : Box[
                 format!("type T = (. & {ty});"),
                 format!("type {{ T : {ty} {{ mk; get }}; }}"),
             ] {
-                let source = format!("module x; {declaration}");
+                let source = format!("mod x; {declaration}");
                 let printed = roundtrip(&source);
                 assert_eq!(comments(&source), comments(&printed), "{source}\n{printed}");
                 assert_eq!(
@@ -6985,12 +7002,12 @@ macro demo : Box[
             }
         }
         assert_eq!(
-            roundtrip("module x; fn f() -> ((.)) { () }"),
-            roundtrip("module x; fn f() { () }")
+            roundtrip("mod x; fn f() -> ((.)) { () }"),
+            roundtrip("mod x; fn f() { () }")
         );
         assert_eq!(
-            roundtrip("module x; type T = ((A));"),
-            roundtrip("module x; type T = A;")
+            roundtrip("mod x; type T = ((A));"),
+            roundtrip("mod x; type T = A;")
         );
     }
 
@@ -7026,7 +7043,7 @@ macro demo : Box[
                         format!("type T = Pair[{ty}][.];"),
                         format!("type T = Pair[.][{ty}];"),
                     ] {
-                        let source = format!("module x; {declaration}");
+                        let source = format!("mod x; {declaration}");
                         let printed = roundtrip(&source);
                         assert_eq!(comments(&source), comments(&printed), "{source}\n{printed}");
                         assert_eq!(
@@ -7051,7 +7068,7 @@ macro demo : Box[
                 })
                 .collect::<Vec<_>>()
         };
-        assert!(parse("module x; type T = Box(// first\n, // last\n);").is_err());
+        assert!(parse("mod x; type T = Box(// first\n, // last\n);").is_err());
         for ty in [
             "[// first\nA // second\n] // last\nA",
             "[A] // first\n[B] // last\nA -> B",
@@ -7075,7 +7092,7 @@ macro demo : Box[
                 format!("host fn f() -> {ty};"),
                 format!("type {{ T : {ty} {{ mk; get }}; }}"),
             ] {
-                let source = format!("module x; {declaration}");
+                let source = format!("mod x; {declaration}");
                 let printed = roundtrip(&source);
                 assert_eq!(comments(&source), comments(&printed), "{source}\n{printed}");
                 assert_eq!(
@@ -7085,11 +7102,11 @@ macro demo : Box[
                 );
             }
         }
-        assert!(parse("module x; type T = Box();").is_err());
-        assert!(parse("module x; type T = [A,B] ((A)) -> B;").is_err());
+        assert!(parse("mod x; type T = Box();").is_err());
+        assert!(parse("mod x; type T = [A,B] ((A)) -> B;").is_err());
         assert_eq!(
-            roundtrip("module x; type T = [A][B] ((A)) -> B;"),
-            roundtrip("module x; type T = [A][B] A -> B;")
+            roundtrip("mod x; type T = [A][B] ((A)) -> B;"),
+            roundtrip("mod x; type T = [A][B] A -> B;")
         );
     }
 
@@ -7109,13 +7126,12 @@ macro demo : Box[
             "pub // first\nhost // second\ntype // third\nT // last\n;",
             "host type T // first\n[// second\nA // third\n] // last\n;",
             "host type T // first\nrole // second\n(// third\nstr // fourth\n) // last\n;",
-            "host type T role(str) // first\n{ // second\nowned // third\n} // last\n;",
             "type // first\n{ T // second\n[A] // third\n: // fourth\nA // last\n{ mk; get }; }",
             "pub // first\ntype { T[// second\nA // third\n] <// fourth\nB // fifth\n> // sixth\n: // seventh\n(A & B) // last\n{ mk; get }; }",
             "type { T : . { pub // first\n// second\nmk; pub // third\n// last\nget }; }",
             "type { T : . { pub(// first\nx // second\n) // third\n// fourth\nmk; // last\nget }; }",
         ] {
-            let source = format!("module x;\n/// Type documentation.\n{declaration}");
+            let source = format!("mod x;\n/// Type documentation.\n{declaration}");
             let printed = roundtrip(&source);
             assert_eq!(comments(&source), comments(&printed), "{source}\n{printed}");
             assert_eq!(
@@ -7136,7 +7152,7 @@ macro demo : Box[
             "type T = [// first\nA] A // second\n-> // last\nA",
         ] {
             let source = format!(
-                "signature app v(1); v(1) {{ nonbreaking {{ add {{ module api {{\n/// Type documentation.\n{declaration}\n}} }} }} }}"
+                "sig app v(1); v(1) {{ nonbreaking {{ add {{ mod api {{\n/// Type documentation.\n{declaration}\n}} }} }} }}"
             );
             let parsed = crate::pass::parser::parse_signature_file(&source, None).unwrap();
             let printed = crate::sig::emit_signature_file(&parsed);
@@ -7164,13 +7180,13 @@ macro demo : Box[
     #[test]
     #[cfg(all(feature = "surface", feature = "cli"))]
     fn signature_recursive_newtype_docs_survive_projection() {
-        let source = "signature app v(1); v(1) { with { module api {\n\
-            rec {\n\
-            /// First member.\n\
-            pub type { A : . | B { pub mk; pub get }; };\n\
-            /// Second member.\n\
-            pub type { B : . | A { pub mk; pub get }; }\n\
-            } } }; nonbreaking { add { api.A; api.B } } }";
+        let source = "sig app v(1); v(1) { with { mod api {
+rec {
+/// First member.
+pub type { A : . | B { pub mk; pub get }; };
+/// Second member.
+pub type { B : . | A { pub mk; pub get }; }
+} } }; nonbreaking { add { api.A; api.B } } }";
         let parsed = crate::pass::parser::parse_signature_file(source, None).unwrap();
         let printed = crate::sig::emit_signature_file(&parsed);
         assert_eq!(printed.matches("/// First member.").count(), 1, "{printed}");
@@ -7204,7 +7220,7 @@ macro demo : Box[
             pub type { T <Hidden> : Hidden {\n\
             // private constructor comment\nmk;\n\
             // private projector comment\nget }; }";
-        let module = parse(&format!("module api; {declaration}")).unwrap();
+        let module = parse(&format!("mod api; {declaration}")).unwrap();
         let Item::Newtype(newtype) = &module.items[0] else {
             panic!("fixture declares a newtype");
         };
@@ -7220,7 +7236,7 @@ macro demo : Box[
         assert!(projected.projector.leading_trivia.is_empty());
 
         let source = format!(
-            "signature app v(1); v(1) {{ nonbreaking {{ add {{ module api {{ {declaration} }} }} }} }}"
+            "sig app v(1); v(1) {{ nonbreaking {{ add {{ mod api {{ {declaration} }} }} }} }}"
         );
         let parsed = crate::pass::parser::parse_signature_file(&source, None).unwrap();
         let printed = crate::sig::emit_signature_file(&parsed);
@@ -7276,8 +7292,8 @@ macro demo : Box[
             "type T = // first\nmodule_path.A;",
         ] {
             for source in [
-                format!("module x;\n/// Alias documentation.\n{declaration}"),
-                format!("module x; rec {{\n/// Alias documentation.\n{declaration}\n}}"),
+                format!("mod x;\n/// Alias documentation.\n{declaration}"),
+                format!("mod x; rec {{\n/// Alias documentation.\n{declaration}\n}}"),
             ] {
                 let printed = roundtrip(&source);
                 assert_eq!(comments(&source), comments(&printed), "{source}\n{printed}");
@@ -7288,20 +7304,26 @@ macro demo : Box[
                 );
             }
         }
-        assert!(parse("module x; type T[,,*F,, A,,] = F[A];").is_err());
+        assert!(parse("mod x; type T[,,*F,, A,,] = F[A];").is_err());
         assert_eq!(
-            roundtrip("module x; type T[*F][A] = (F[A]);"),
-            roundtrip("module x; type T[*F][A] = F[A];")
+            roundtrip("mod x; type T[*F][A] = (F[A]);"),
+            roundtrip("mod x; type T[*F][A] = F[A];")
         );
     }
 
     #[test]
     #[cfg(feature = "surface")]
     fn signature_alias_header_comments_survive() {
-        let source = "signature app v(1); v(1) { nonbreaking { add { module api {\n\
-            /// Alias documentation.\n\
-            pub // first\ntype // second\nT[// third\nA // fourth\n] // fifth\n= // last\nA;\n\
-            } } } }";
+        let source = "sig app v(1); v(1) { nonbreaking { add { mod api {
+/// Alias documentation.
+pub // first
+type // second
+T[// third
+A // fourth
+] // fifth
+= // last
+A;
+} } } }";
         let parsed = crate::pass::parser::parse_signature_file(source, None).unwrap();
         let printed = crate::sig::emit_signature_file(&parsed);
         let mut previous = 0;
@@ -7334,7 +7356,7 @@ macro demo : Box[
     fn grouped_signature_return_comments_survive() {
         for declaration in ["pub fn exported", "host fn supplied"] {
             let source = format!(
-                "signature app v(1); v(1) {{ nonbreaking {{ add {{ module api {{ {declaration}() -> (// before result\n. // after result\n); }} }} }} }}"
+                "sig app v(1); v(1) {{ nonbreaking {{ add {{ mod api {{ {declaration}() -> (// before result\n. // after result\n); }} }} }} }}"
             );
             let parsed = crate::pass::parser::parse_signature_file(&source, None).unwrap();
             let printed = crate::sig::emit_signature_file(&parsed);
@@ -7356,11 +7378,11 @@ macro demo : Box[
     #[test]
     fn type_chain_later_operand_comments_keep_separator_ownership() {
         for op in ["&", "|"] {
-            let source = format!("module x; type T = A // next operand\n{op} B;");
+            let source = format!("mod x; type T = A // next operand\n{op} B;");
             let printed = roundtrip(&source);
             assert_eq!(
                 printed,
-                format!("module x;\n\ntype T =\n  {op} A\n  // next operand\n  {op} B\n  ;\n")
+                format!("mod x;\n\ntype T =\n  {op} A\n  // next operand\n  {op} B\n  ;\n")
             );
             assert_eq!(parsed_structure(&source), parsed_structure(&printed));
 
@@ -7368,7 +7390,7 @@ macro demo : Box[
                 format!("(// first operand\nA) {op} B"),
                 format!("A {op} (// second operand\nB // operand end\n)"),
             ] {
-                let source = format!("module x; type T = {ty};");
+                let source = format!("mod x; type T = {ty};");
                 let printed = roundtrip(&source);
                 let comments = |text: &str| {
                     text.lines()
@@ -7403,9 +7425,9 @@ macro demo : Box[
                     format!("{leading}A // first\n{op} (B // second\n{op} C)"),
                 ] {
                     for source in [
-                        format!("module x; type T = {chain};"),
-                        format!("module x; fn f() -> ({chain}) -> D {{ () }}"),
-                        format!("module x; fn f(x: Container[({chain}) -> D]) {{ () }}"),
+                        format!("mod x; type T = {chain};"),
+                        format!("mod x; fn f() -> ({chain}) -> D {{ () }}"),
+                        format!("mod x; fn f(x: Container[({chain}) -> D]) {{ () }}"),
                     ] {
                         let printed = roundtrip(&source);
                         let comments = |text: &str| {
@@ -7433,7 +7455,7 @@ macro demo : Box[
         // The function-arrow's parameter list already supplies
         // `(...)` for its single chain parameter; no extra parens
         // around the chain itself.
-        let pp = roundtrip("module x; type T = (A & B) -> C;");
+        let pp = roundtrip("mod x; type T = (A & B) -> C;");
         assert!(
             pp.contains("(A & B) -> C"),
             "expected single layer of parens for fn-param chain, got:\n{pp}"
@@ -7446,9 +7468,7 @@ macro demo : Box[
         // leading-operator multi-line layout: `=` ends the head
         // line, items at +2 prefixed with `| `, `;` on its own
         // line at +2.
-        let src = "module x; type Event = Click_event_kind_one_pretty_long_name_here \
-                   | Hover_event_kind_two_also_pretty_long | Focus_event_kind_three_lengthy \
-                   | Drag_event_kind_four_yet_more;";
+        let src = "mod x; type Event = Click_event_kind_one_pretty_long_name_here | Hover_event_kind_two_also_pretty_long | Focus_event_kind_three_lengthy | Drag_event_kind_four_yet_more;";
         let pp = roundtrip(src);
         assert!(
             pp.contains("type Event =\n  | Click_event_kind_one_pretty_long_name_here"),
@@ -7466,9 +7486,7 @@ macro demo : Box[
         // leading-operator layout: `:` ends the head's line, the
         // chain items at +2, `{` lands on its own line at the same
         // indent before the member-list block.
-        let src = "module x; type { Token : Int_lit_token_a_pretty_long_name \
-                   | String_lit_token_b_also_pretty_long_indeed | Bool_lit_token_c_lengthy_too \
-                   | Float_lit_token_d_yet_more { pub mk; pub get; }; };";
+        let src = "mod x; type { Token : Int_lit_token_a_pretty_long_name | String_lit_token_b_also_pretty_long_indeed | Bool_lit_token_c_lengthy_too | Float_lit_token_d_yet_more { pub mk; pub get; }; };";
         let pp = roundtrip(src);
         assert_eq!(parsed_structure(src), parsed_structure(&pp));
         assert!(
@@ -7491,7 +7509,7 @@ macro demo : Box[
                 for nonfinal in [false, true] {
                     let following = if nonfinal { "; Next: ." } else { "" };
                     let source =
-                        format!("module x; type {{ Token: {payload}{members}{following}; }};");
+                        format!("mod x; type {{ Token: {payload}{members}{following}; }};");
                     let printed = roundtrip(&source);
                     assert_eq!(parsed_structure(&source), parsed_structure(&printed));
                     assert!(
@@ -7541,17 +7559,17 @@ macro demo : Box[
 
     #[test]
     fn nominal_payload_chain_comments_preserve_order_and_structure() {
-        let source = "module x; type { // entry\n\
-            Token: First_payload_type_with_a_deliberately_long_name // first payload\n\
-            | Second_payload_type_with_another_long_name // last payload\n\
-            { // before mk\n\
-            pub mk // after mk\n\
-            ; // before get\n\
-            get // after get\n\
-            } // before separator\n\
-            ; // next entry\n\
-            Next: . // after next\n\
-            };";
+        let source = "mod x; type { // entry
+Token: First_payload_type_with_a_deliberately_long_name // first payload
+| Second_payload_type_with_another_long_name // last payload
+{ // before mk
+pub mk // after mk
+; // before get
+get // after get
+} // before separator
+; // next entry
+Next: . // after next
+};";
         let printed = roundtrip(source);
         assert_eq!(parsed_structure(source), parsed_structure(&printed));
         let comments = |text: &str| {
@@ -7579,7 +7597,7 @@ macro demo : Box[
                     "type Choice = {{ Token: {payload} // payload boundary\n{{ mk; get }} }} | {{ Other: . }};"
                 ),
             ] {
-                let source = format!("module x; {declaration}");
+                let source = format!("mod x; {declaration}");
                 let printed = roundtrip(&source);
                 assert_eq!(parsed_structure(&source), parsed_structure(&printed));
                 assert_eq!(
@@ -7598,7 +7616,7 @@ macro demo : Box[
     fn named_nominal_rhs_wide_payloads_preserve_compact_groups() {
         for op in ["&", "|"] {
             let source = format!(
-                "module x; type Choice[A] = {{ First: First_payload_type_with_a_deliberately_long_name {op} Second_payload_type_with_another_long_name {op} Third_payload_type_with_a_long_name {{ mk; pub get; }}; Another: A; }} | (Existing & {{ Last: .; }});"
+                "mod x; type Choice[A] = {{ First: First_payload_type_with_a_deliberately_long_name {op} Second_payload_type_with_another_long_name {op} Third_payload_type_with_a_long_name {{ mk; pub get; }}; Another: A; }} | (Existing & {{ Last: .; }});"
             );
             let printed = roundtrip(&source);
             assert_eq!(parsed_structure(&source), parsed_structure(&printed));
@@ -7616,9 +7634,7 @@ macro demo : Box[
 
     #[test]
     fn fn_def_wide_chain_return_breaks() {
-        let src = "module x; fn f() -> Long_event_kind_one_pretty_long_name \
-                   | Hover_event_kind_two_pretty_long | Focus_event_kind_three_lengthy \
-                   | Drag_event_kind_four_more_chars { f() }";
+        let src = "mod x; fn f() -> Long_event_kind_one_pretty_long_name | Hover_event_kind_two_pretty_long | Focus_event_kind_three_lengthy | Drag_event_kind_four_more_chars { f() }";
         let pp = roundtrip(src);
         assert!(
             pp.contains("fn f() ->\n  | Long_event_kind_one_pretty_long_name"),
@@ -7628,7 +7644,7 @@ macro demo : Box[
 
     #[test]
     fn rec_call_annotations_print_in_canonical_order() {
-        let pp = roundtrip("module x; rec(loop) fn f() -> . { recur(escape, cont, poly) f() }");
+        let pp = roundtrip("mod x; rec(loop) fn f() -> . { recur(escape, cont, poly) f() }");
         assert!(
             pp.contains("recur(poly, escape) f()"),
             "expected canonical rec-call annotation order; got:\n{pp}"
@@ -7640,9 +7656,7 @@ macro demo : Box[
         // A function-type return that's a wide chain breaks to
         // the leading-operator multi-line layout inside the
         // function-type doc.
-        let src = "module x; type F = A -> (Long_event_kind_one_pretty_long_name \
-                   | Hover_event_kind_two_pretty_long | Focus_event_kind_three_lengthy \
-                   | Drag_event_kind_four_more_chars);";
+        let src = "mod x; type F = A -> (Long_event_kind_one_pretty_long_name | Hover_event_kind_two_pretty_long | Focus_event_kind_three_lengthy | Drag_event_kind_four_more_chars);";
         let pp = roundtrip(src);
         assert!(
             pp.contains("A -> (\n  | Long_event_kind_one_pretty_long_name"),
@@ -7652,10 +7666,7 @@ macro demo : Box[
 
     #[test]
     fn newtype_short_payload_stays_inline() {
-        let pp = roundtrip(
-            "module x; type { Pair[A][B] : (A & B) \
-             { pub mk; pub get; }; };",
-        );
+        let pp = roundtrip("mod x; type { Pair[A][B] : (A & B) { pub mk; pub get; }; };");
         assert!(
             pp.contains(": A & B {"),
             "expected inline payload; got:\n{pp}"
@@ -7669,7 +7680,7 @@ macro demo : Box[
     #[test]
     fn type_alias_short_chain_stays_inline() {
         // Short chain bodies stay inline: `type T = A & B;`.
-        let pp = roundtrip("module x; type T = A & B;");
+        let pp = roundtrip("mod x; type T = A & B;");
         assert!(
             pp.contains("type T = A & B;"),
             "expected inline chain; got:\n{pp}"
@@ -7681,12 +7692,10 @@ macro demo : Box[
     #[test]
     fn arrow_result_chains_keep_load_bearing_parentheses() {
         for operator in ["&", "|"] {
-            let pp = roundtrip(&format!("module x; type T = A -> (B {operator} C);"));
+            let pp = roundtrip(&format!("mod x; type T = A -> (B {operator} C);"));
             assert!(pp.contains(&format!("A -> (B {operator} C)")), "{pp}");
             let signatures = roundtrip(&format!(
-                "module x; fn f() -> B {operator} C {{ () }} \
-                 fn g() {{ .() -> B {operator} C {{ () }} }} \
-                 fn h() -> A -> (B {operator} C) {{ () }}"
+                "mod x; fn f() -> B {operator} C {{ () }} fn g() {{ .() -> B {operator} C {{ () }} }} fn h() -> A -> (B {operator} C) {{ () }}"
             ));
             assert!(
                 signatures.contains(&format!("fn f() -> B {operator} C")),
@@ -7701,10 +7710,10 @@ macro demo : Box[
                 "{signatures}"
             );
             let wide = format!(
-                "module x; type T = A -> (Very_long_first_result_type {operator} Very_long_second_result_type {operator} Very_long_third_result_type);"
+                "mod x; type T = A -> (Very_long_first_result_type {operator} Very_long_second_result_type {operator} Very_long_third_result_type);"
             );
             roundtrip(&wide);
-            let commented = format!("module x; type T = A -> (B {operator} // result\n C);");
+            let commented = format!("mod x; type T = A -> (B {operator} // result\n C);");
             let formatted = roundtrip(&commented);
             assert_eq!(formatted.matches("// result").count(), 1, "{formatted}");
         }
@@ -7714,27 +7723,27 @@ macro demo : Box[
 
     #[test]
     fn fn_round_trips_without_annotations() {
-        roundtrip("module x; fn f() -> . { .(x) { x }(0) }");
+        roundtrip("mod x; fn f() -> . { .(x) { x }(0) }");
     }
 
     #[test]
     fn let_round_trips_without_annotation() {
-        roundtrip("module x; fn f() -> . { let x = (); x }");
+        roundtrip("mod x; fn f() -> . { let x = (); x }");
     }
 
     #[test]
     fn dotted_path_value_position() {
-        roundtrip("module x; fn f() -> . { Foo.mk_foo() }");
+        roundtrip("mod x; fn f() -> . { Foo.mk_foo() }");
     }
 
     #[test]
     fn call_with_mixed_args() {
-        roundtrip(r#"module x; fn f() -> . { id[String]("hi") }"#);
+        roundtrip(r#"mod x; fn f() -> . { id[String]("hi") }"#);
     }
 
     #[test]
     fn block_unit_prefix_keeps_required_grouping() {
-        let output = roundtrip("module x; fn f() -> . { do({}) { final_value } }");
+        let output = roundtrip("mod x; fn f() -> . { do({}) { final_value } }");
         assert!(
             output.contains("do(()) {"),
             "unit prefix lost its disambiguating parentheses:\n{output}"
@@ -7755,8 +7764,8 @@ macro demo : Box[
             "factory // boundary\n(()) + value",
         ] {
             let source = format!(
-                "module x; op _ + _ {{ impl add; }}; \
-                 fn f() {{ choose ({prefix}) {{ // body\n() }} }}"
+                "mod x; op _ + _ {{ impl add; }}; fn f() {{ choose ({prefix}) {{ // body
+() }} }}"
             );
             let output = roundtrip(&source);
             assert_eq!(
@@ -7778,8 +7787,8 @@ macro demo : Box[
             "value + factory(// boundary\n())",
         ] {
             let source = format!(
-                "module x; op _ + _ {{ impl add; }}; \
-                 fn f() {{ choose({prefix}) {{ // body\n() }} }}"
+                "mod x; op _ + _ {{ impl add; }}; fn f() {{ choose({prefix}) {{ // body
+() }} }}"
             );
             let output = roundtrip(&source);
             assert_eq!(
@@ -7810,10 +7819,7 @@ macro demo : Box[
             "choose ((// first\nleft) + right) { // second\n() }",
         ] {
             let source = format!(
-                "module x; op _ + _ {{ impl add; }}; op _ :: __ {{ impl cons; }}; \
-                 op __ ++ _ {{ impl append; }}; op _ %% {{ impl finish; }}; \
-                 op _ ?? ___ {{ impl select; }}; op _ @@ ___ {{ impl pick; }}; \
-                 fn f() {{ {expression} }}"
+                "mod x; op _ + _ {{ impl add; }}; op _ :: __ {{ impl cons; }}; op __ ++ _ {{ impl append; }}; op _ %% {{ impl finish; }}; op _ ?? ___ {{ impl select; }}; op _ @@ ___ {{ impl pick; }}; fn f() {{ {expression} }}"
             );
             let output = roundtrip(&source);
             assert_eq!(
@@ -7831,7 +7837,7 @@ macro demo : Box[
 
     #[test]
     fn bare_literal_callee_keeps_required_grouping() {
-        let output = roundtrip("module x; fn f() -> . { (\"literal\")(argument) }");
+        let output = roundtrip("mod x; fn f() -> . { (\"literal\")(argument) }");
         assert!(
             output.contains("(\"literal\")(argument)"),
             "bare literal callee lost its disambiguating parentheses:\n{output}"
@@ -7841,11 +7847,7 @@ macro demo : Box[
     #[test]
     fn composite_callee_keeps_required_grouping() {
         let output = roundtrip(
-            "module x; \
-             fn prefix_impl(value: Formtype) -> Formtype { value } \
-             op - __ { impl prefix_impl; }; \
-             fn operator_call() -> . { (- form_value)(context_arg) } \
-             fn splice_call() -> . { (context_callee.<form_receiver)(context_arg) }",
+            "mod x; fn prefix_impl(value: Formtype) -> Formtype { value } op - __ { impl prefix_impl; }; fn operator_call() -> . { (- form_value)(context_arg) } fn splice_call() -> . { (context_callee.<form_receiver)(context_arg) }",
         );
         assert!(
             output.contains("(- form_value)(context_arg)"),
@@ -7864,7 +7866,7 @@ macro demo : Box[
             "(recur(poly, cont) step[A](value))[B](other)",
             "(recur(escape) step())(())",
         ] {
-            let source = format!("module x; fn subject() {{ {expression} }}");
+            let source = format!("mod x; fn subject() {{ {expression} }}");
             let output = roundtrip(&source);
             assert_eq!(
                 parsed_structure(&source),
@@ -7877,7 +7879,7 @@ macro demo : Box[
 
     #[test]
     fn left_splice_boolean_argument_keeps_required_grouping() {
-        let output = roundtrip("module x; fn f() -> . { context_callee.<(.t) }");
+        let output = roundtrip("mod x; fn f() -> . { context_callee.<(.t) }");
         assert!(
             output.contains("context_callee.<(.t)"),
             "boolean left-splice argument lost its disambiguating parentheses:\n{output}"
@@ -7891,7 +7893,7 @@ macro demo : Box[
                 "// 1\n[ // 2\nTarget // 3\n]",
                 "// 1\n[ // 2\n(( // 3\nTarget // 4\n) // 5\n) // 6\n]",
             ] {
-                let source = format!("module x; fn f() {{ ({literal} {annotation}).>>id }}");
+                let source = format!("mod x; fn f() {{ ({literal} {annotation}).>>id }}");
                 let printed = roundtrip(&source);
                 let comments = |text: &str| {
                     text.lines()
@@ -7908,15 +7910,15 @@ macro demo : Box[
                 );
             }
         }
-        let source = "module x; fn f() { 915 // before\n[I16] }";
+        let source = "mod x; fn f() { 915 // before\n[I16] }";
         assert_eq!(
             roundtrip(source),
-            "module x;\n\nfn f() {\n  915[\n    // before\n    I16\n  ]\n}\n"
+            "mod x;\n\nfn f() {\n  915[\n    // before\n    I16\n  ]\n}\n"
         );
-        let source = "module x; fn f() { 915 // before\n[ // inside\nI16] }";
+        let source = "mod x; fn f() { 915 // before\n[ // inside\nI16] }";
         assert_eq!(
             roundtrip(source),
-            "module x;\n\nfn f() {\n  915[\n    // before\n\n    // inside\n    I16\n  ]\n}\n"
+            "mod x;\n\nfn f() {\n  915[\n    // before\n\n    // inside\n    I16\n  ]\n}\n"
         );
     }
 
@@ -7931,7 +7933,7 @@ macro demo : Box[
                 ".() { .() { () } }()()",
                 "(.() { () } // callee\n)()",
             ] {
-                let source = format!("module x; fn f() {{ fit(id{splice}({argument})) }}");
+                let source = format!("mod x; fn f() {{ fit(id{splice}({argument})) }}");
                 let printed = roundtrip(&source);
                 assert_eq!(
                     parsed_structure(&source),
@@ -7939,15 +7941,15 @@ macro demo : Box[
                     "{source}\n{printed}"
                 );
             }
-            let source = format!("module x; fn f() {{ id{splice}(.() {{ () }}()) }}");
+            let source = format!("mod x; fn f() {{ id{splice}(.() {{ () }}()) }}");
             assert_eq!(
                 roundtrip(&source),
-                format!("module x;\n\nfn f() {{\n  id{splice}(.() {{ () }}())\n}}\n")
+                format!("mod x;\n\nfn f() {{\n  id{splice}(.() {{ () }}())\n}}\n")
             );
-            let source = format!("module x; fn f() {{ id{splice}(g()()) }}");
+            let source = format!("mod x; fn f() {{ id{splice}(g()()) }}");
             assert_eq!(
                 roundtrip(&source),
-                format!("module x;\n\nfn f() {{ id{splice}g()() }}\n")
+                format!("mod x;\n\nfn f() {{ id{splice}g()() }}\n")
             );
         }
     }
@@ -7955,12 +7957,7 @@ macro demo : Box[
     #[test]
     fn operator_right_splice_receiver_keeps_required_grouping() {
         let output = roundtrip(
-            "module x; \
-             fn prefix_impl(value: Formtype) -> Formtype { value } \
-             op - __ { impl prefix_impl; }; \
-             varop [% %] { foldr form_push form_empty; }; \
-             fn normal_splice() -> . { (- form_value).>context_callee } \
-             fn variadic_splice() -> . { ([% form_left, form_right %]).>context_callee }",
+            "mod x; fn prefix_impl(value: Formtype) -> Formtype { value } op - __ { impl prefix_impl; }; op_var [% %] { foldr form_push form_empty; }; fn normal_splice() -> . { (- form_value).>context_callee } fn variadic_splice() -> . { ([% form_left, form_right %]).>context_callee }",
         );
         assert!(
             output.contains("(- form_value).>context_callee"),
@@ -7975,7 +7972,7 @@ macro demo : Box[
     #[test]
     fn literals_int_float_bool_string() {
         roundtrip(
-            r#"module x; fn f() -> . { let s = "hi"; let n = 42; let f = 3.14; let b = .t; () }"#,
+            r#"mod x; fn f() -> . { let s = "hi"; let n = 42; let f = 3.14; let b = .t; () }"#,
         );
     }
 
@@ -7983,12 +7980,12 @@ macro demo : Box[
 
     #[test]
     fn string_escapes_round_trip() {
-        roundtrip(r#"module x; fn f() -> . { let s = "a\nb\t\"c\"\\dé中"; () }"#);
+        roundtrip(r#"mod x; fn f() -> . { let s = "a\nb\t\"c\"\\dé中"; () }"#);
     }
 
     #[test]
     fn string_unicode_escape_emits_lowercase_hex() {
-        let module = parse("module x; fn f() -> . { let s = \"\u{0001}\"; () }").unwrap();
+        let module = parse("mod x; fn f() -> . { let s = \"\u{0001}\"; () }").unwrap();
         let out = pretty_module(&module);
         assert!(
             out.contains("\\u0001"),
@@ -7998,8 +7995,7 @@ macro demo : Box[
 
     #[test]
     fn float_exponent_canonicalises_to_lowercase_e_and_drops_plus() {
-        let module =
-            parse("module x; fn f() -> . { let a = 1.5E+10; let b = 1.5e-10; () }").unwrap();
+        let module = parse("mod x; fn f() -> . { let a = 1.5E+10; let b = 1.5e-10; () }").unwrap();
         let out = pretty_module(&module);
         assert!(
             out.contains("1.5e10"),
@@ -8023,10 +8019,11 @@ macro demo : Box[
 
     #[test]
     fn item_leading_comments_survive_round_trip() {
-        let src = "module x;\n\
-                   \n\
-                   // docstring for `id`\n\
-                   fn id() -> . { () }\n";
+        let src = "mod x;
+
+// docstring for `id`
+fn id() -> . { () }
+";
         let m = parse(src).unwrap();
         let out = pretty_module(&m);
         assert!(
@@ -8040,10 +8037,11 @@ macro demo : Box[
 
     #[test]
     fn import_leading_comments_survive_round_trip() {
-        let src = "module x;\n\
-                   \n\
-                   // pull in the unit type\n\
-                   import a/b(T);\n";
+        let src = "mod x;
+
+// pull in the unit type
+import a/b {type T}
+";
         let m = parse(src).unwrap();
         let out = pretty_module(&m);
         assert!(
@@ -8057,12 +8055,13 @@ macro demo : Box[
 
     #[test]
     fn comment_paragraphs_keep_blank_line_separator() {
-        let src = "module x;\n\
-                   \n\
-                   // First paragraph.\n\
-                   \n\
-                   // Second paragraph.\n\
-                   fn id() -> . { () }\n";
+        let src = "mod x;
+
+// First paragraph.
+
+// Second paragraph.
+fn id() -> . { () }
+";
         let m = parse(src).unwrap();
         let out = pretty_module(&m);
         assert!(out.contains("// First paragraph."), "got:\n{out}");
@@ -8103,11 +8102,11 @@ macro demo : Box[
                 "  // header\n\n  // binding\n  let x = ();\n  x\n",
             ),
         ] {
-            let source = format!("module x;\n/// Attached documentation.\n{source}\n");
+            let source = format!("mod x;\n/// Attached documentation.\n{source}\n");
             let out = roundtrip(&source);
             assert_eq!(
                 out,
-                format!("module x;\n\n/// Attached documentation.\nfn f() {{\n{expected_body}}}\n"),
+                format!("mod x;\n\n/// Attached documentation.\nfn f() {{\n{expected_body}}}\n"),
             );
         }
     }
@@ -8164,10 +8163,10 @@ macro demo : Box[
                 "fn f() {\n  .() -> . {\n    // arrow\n\n    // return type\n\n    // body opener\n\n    // body note\n    ()\n  }\n}",
             ),
         ] {
-            let printed = roundtrip(&format!("module x; {source}"));
+            let printed = roundtrip(&format!("mod x; {source}"));
             assert_eq!(
                 printed,
-                format!("module x;\n\n{expected}\n"),
+                format!("mod x;\n\n{expected}\n"),
                 "source: {source}"
             );
         }
@@ -8209,10 +8208,10 @@ macro demo : Box[
                 "fn f() {\n  let a =\n    (\n      g()\n      // value\n      );\n  a\n}",
             ),
         ] {
-            let printed = roundtrip(&format!("module x; {source}"));
+            let printed = roundtrip(&format!("mod x; {source}"));
             assert_eq!(
                 printed,
-                format!("module x;\n\n{expected}\n"),
+                format!("mod x;\n\n{expected}\n"),
                 "source: {source}"
             );
         }
@@ -8253,7 +8252,7 @@ macro demo : Box[
             "import // first\nm // second\nas alias;",
             "op _ + // first\n_ { impl // second\nadd }",
         ] {
-            let source = format!("module m; {declaration}");
+            let source = format!("mod m; {declaration}");
             let printed = roundtrip(&source);
             let lines: Vec<_> = printed.lines().map(str::trim).collect();
             let first = lines.iter().position(|line| *line == "// first").unwrap();
@@ -8269,7 +8268,7 @@ macro demo : Box[
             "// first\n//\n// second\n",
             "// first\n\n// second\n",
         ] {
-            let source = format!("module m; type T = {comments}.;");
+            let source = format!("mod m; type T = {comments}.;");
             let printed = roundtrip(&source);
             let normalized = printed
                 .lines()
@@ -8280,8 +8279,8 @@ macro demo : Box[
             assert_eq!(parsed_structure(&source), parsed_structure(&printed));
         }
         assert_eq!(
-            roundtrip("module m; fn f() { // only block\n() }"),
-            "module m;\n\nfn f() {\n  // only block\n  ()\n}\n"
+            roundtrip("mod m; fn f() { // only block\n() }"),
+            "mod m;\n\nfn f() {\n  // only block\n  ()\n}\n"
         );
     }
 
@@ -8289,16 +8288,16 @@ macro demo : Box[
     #[test]
     fn redundant_file_terminators_preserve_comment_blocks() {
         for (filename, source) in [
-            ("main.kio", "module main; fn f() { () }"),
-            ("app.pkg.kio", "package app; build { cache (); }"),
-            ("lib.dep.kio", "dependency lib; source { path \".\"; }"),
+            ("main.kio", "mod main; fn f() { () }"),
+            ("app.pkg.kio", "pkg app; build { cache (); }"),
+            ("lib.dep.kio", "dep lib; source { path \".\"; }"),
             (
                 "lib.lock.kio",
                 "lock lib; resolved { git \"u\"; ref \"r\"; commit \"c\"; sig \"s\"; }",
             ),
             (
                 "app.sig.kio",
-                "signature app v(1); v(1) { nonbreaking { add { module api { pub fn f(); } } } }",
+                "sig app v(1); v(1) { nonbreaking { add { mod api { pub fn f(); } } } }",
             ),
         ] {
             let source = format!("{source} // before terminator\n; // after terminator\n");
@@ -8336,7 +8335,7 @@ macro demo : Box[
             "fn f(){ let .(<Hidden> payload) = g() // 1\n; payload }",
             "fn f(){ let .x. = g() // 1\n; x1 }",
         ] {
-            let source = format!("module x; {source}");
+            let source = format!("mod x; {source}");
             let printed = roundtrip(&source);
             let comments = |text: &str| {
                 text.lines()
@@ -8380,7 +8379,7 @@ macro demo : Box[
             "fn f(){ g // 1\n( // 2\nx // 3\n) }",
             "fn f(){ g // 1\n(x) { () } }",
         ] {
-            let source = format!("module x; {source}");
+            let source = format!("mod x; {source}");
             let printed = roundtrip(&source);
             let comments = |text: &str| {
                 text.lines()
@@ -8395,19 +8394,19 @@ macro demo : Box[
             );
         }
         assert_eq!(
-            roundtrip("module x; fn f(){ x.>g // before\n( // inside\ny) }"),
-            "module x;\n\nfn f() {\n  x\n    .>g(\n    // before\n\n    // inside\n    , y\n    )\n}\n"
+            roundtrip("mod x; fn f(){ x.>g // before\n( // inside\ny) }"),
+            "mod x;\n\nfn f() {\n  x\n    .>g(\n    // before\n\n    // inside\n    , y\n    )\n}\n"
         );
         assert_eq!(
-            roundtrip("module x; fn f(){ g // before\n.< // after\n(x) }"),
-            "module x;\n\nfn f() {\n  g.<(\n    // before\n\n    // after\n    x\n    )\n}\n"
+            roundtrip("mod x; fn f(){ g // before\n.< // after\n(x) }"),
+            "mod x;\n\nfn f() {\n  g.<(\n    // before\n\n    // after\n    x\n    )\n}\n"
         );
         for source in [
             "x.>g // comment\n()",
             "x.>>g // comment\n()",
             "g // comment\n().<x",
         ] {
-            assert!(parse(&format!("module x; fn f(){{ {source} }}")).is_err());
+            assert!(parse(&format!("mod x; fn f(){{ {source} }}")).is_err());
         }
     }
 
@@ -8433,7 +8432,7 @@ macro demo : Box[
             "fn f(x // 1\n: (a: .)) { a }",
             "rec(loop) fn f( // 1\n) // 2\n-> // 3\n. { () }",
         ] {
-            let printed = roundtrip(&format!("module x; {source}"));
+            let printed = roundtrip(&format!("mod x; {source}"));
             let comments = |text: &str| {
                 text.lines()
                     .filter_map(|line| line.find("//").map(|start| line[start..].trim().to_owned()))
@@ -8452,24 +8451,25 @@ macro demo : Box[
         let comments = "//\n///\n///\n/// raw documentation\n//\n//\n\n// paragraph\n";
         let cases = [
             (
-                format!("module m;\n{comments}fn f() {{ () }}\n"),
-                "module m;\n\n//\n///\n///\n/// raw documentation\n//\n\n// paragraph\nfn f() { () }\n",
+                format!("mod m;\n{comments}fn f() {{ () }}\n"),
+                "mod m;\n\n//\n///\n///\n/// raw documentation\n//\n\n// paragraph\nfn f() { () }\n",
             ),
             (
-                format!("module m;\nfn f() {{\n{comments}() }}\n"),
-                "module m;\n\nfn f() {\n  //\n\n  // paragraph\n  ()\n}\n",
+                format!("mod m;\nfn f() {{\n{comments}() }}\n"),
+                "mod m;\n\nfn f() {\n  //\n\n  // paragraph\n  ()\n}\n",
             ),
             (
-                format!("module m;\nfn f() {{ ()\n{comments}}}\n"),
-                "module m;\n\nfn f() {\n  ()\n  //\n\n  // paragraph\n}\n",
+                format!("mod m;\nfn f() {{ ()\n{comments}}}\n"),
+                "mod m;\n\nfn f() {\n  ()\n  //\n\n  // paragraph\n}\n",
             ),
             (
-                "module m;\n//\n//\n\n// paragraph\nimport z as z;\n// first import\nimport a as a;\n".to_owned(),
-                "module m;\n\n// first import\nimport a as a;\n//\n\n// paragraph\nimport z as z;\n",
+                "mod m;\n//\n//\n\n// paragraph\nimport z as z;\n// first import\nimport a as a;\n"
+                    .to_owned(),
+                "mod m;\n\n// first import\nimport a as a;\n//\n\n// paragraph\nimport z as z;\n",
             ),
             (
-                "module m;\nfn f() {\n///\n/// ignored\n() }\n".to_owned(),
-                "module m;\n\nfn f() { () }\n",
+                "mod m;\nfn f() {\n///\n/// ignored\n() }\n".to_owned(),
+                "mod m;\n\nfn f() { () }\n",
             ),
         ];
         for (source, expected) in cases {
@@ -8479,12 +8479,13 @@ macro demo : Box[
 
     #[test]
     fn empty_comment_lines_collapse() {
-        let src = "module x;\n\
-                   \n\
-                   //\n\
-                   //\n\
-                   //\n\
-                   fn id() -> . { () }\n";
+        let src = "mod x;
+
+//
+//
+//
+fn id() -> . { () }
+";
         let m = parse(src).unwrap();
         let out = pretty_module(&m);
         let count = out.lines().filter(|l| l.trim() == "//").count();
@@ -8496,7 +8497,7 @@ macro demo : Box[
     #[test]
     fn hello_world_module_file() {
         roundtrip(
-            r#"module hello/main;
+            r#"mod hello/main;
 
 host type String role(str);
 
@@ -8509,7 +8510,7 @@ pub fn main() -> . { print("Hello, world") }"#,
     #[test]
     fn host_type_and_fn_roundtrip() {
         let pp =
-            roundtrip("module x; host type Map[K][V]; host fn get[K][V](m: Map[K][V], k: K) -> V;");
+            roundtrip("mod x; host type Map[K][V]; host fn get[K][V](m: Map[K][V], k: K) -> V;");
         assert!(pp.contains("host type Map[K][V];"), "got:\n{pp}");
         assert!(
             pp.contains("host fn get[K][V](m: Map[K][V], k: K) -> V;"),
@@ -8519,7 +8520,7 @@ pub fn main() -> . { print("Hello, world") }"#,
 
     #[test]
     fn host_pub_canonicalizes_to_plain_host() {
-        let pp = roundtrip("module x; pub host type Foo;");
+        let pp = roundtrip("mod x; pub host type Foo;");
         assert!(pp.contains("host type Foo;"), "got:\n{pp}");
         assert!(!pp.contains("pub host"), "got:\n{pp}");
     }
@@ -8528,7 +8529,7 @@ pub fn main() -> . { print("Hello, world") }"#,
 
     fn package_roundtrip(src: &str) -> String {
         use crate::pass::parser::parse_package_file;
-        let full = format!("package pkg;\n{src}");
+        let full = format!("pkg pkg;\n{src}");
         let e1 = parse_package_file(&full, None)
             .unwrap_or_else(|e| panic!("parse failed for {full:?}: {e:?}"));
         let pp1 = pretty_package_file(&e1);
@@ -8546,7 +8547,7 @@ pub fn main() -> . { print("Hello, world") }"#,
 
     #[test]
     fn module_header_comments_keep_path_and_documentation() {
-        let source = "// file note\n/// Module documentation.\nmodule // keyword\napp // slash\n/ // segment\nmain // terminator\n;\n/// Function documentation.\nfn f() { () }";
+        let source = "// file note\n/// Module documentation.\nmod // keyword\napp // slash\n/ // segment\nmain // terminator\n;\n/// Function documentation.\nfn f() { () }";
         let printed = roundtrip(source);
         assert_eq!(parsed_structure(source), parsed_structure(&printed));
         let mut previous = 0;
@@ -8558,7 +8559,7 @@ pub fn main() -> . { print("Hello, world") }"#,
             previous = position;
         }
         assert!(
-            printed.contains("/// Module documentation.\nmodule app/main;"),
+            printed.contains("/// Module documentation.\nmod app/main;"),
             "{printed}"
         );
         assert!(
@@ -8572,18 +8573,30 @@ pub fn main() -> . { print("Hello, world") }"#,
         use crate::pass::parser::parse_package_file;
         for cache in ["\"out/cache/\"", "(// cache interior\n)"] {
             let source = format!(
-                "package // package name\npkg // package terminator\n;\n\
-                 build // build opener\n{{\n\
-                   cache // cache value\n{cache};\n\
-                   docs // docs opener\n{{\n\
-                     md // md value\n\"do\" // string chunk\n\"cs\";\n\
-                     support // support value\n\"support\";\n\
-                     md_out // md_out value\n\"out/md/\";\n\
-                     html // html value\n\"out/html/\"\n\
-                   }};\n\
-                   target rust {{ out // target value\n\"out/rust/\"; baseline v1_85; namespace \"pkg\"; thread_safety () }}\n\
-                 }}\n\
-                 bridge // bridge opener\n{{ main }}"
+                "pkg // package name
+pkg // package terminator
+;
+build // build opener
+{{
+cache // cache value
+{cache};
+docs // docs opener
+{{
+md // md value
+\"do\" // string chunk
+\"cs\";
+support // support value
+\"support\";
+md_out // md_out value
+\"out/md/\";
+html // html value
+\"out/html/\"
+}};
+target rust {{ out // target value
+\"out/rust/\"; baseline v1_85; namespace \"pkg\"; thread_safety () }}
+}}
+bridge // bridge opener
+{{ main }}"
             );
             let before = parse_package_file(&source, Some("pkg")).unwrap();
             let printed = pretty_package_file(&before);
@@ -8624,7 +8637,7 @@ pub fn main() -> . { print("Hello, world") }"#,
             previous = position;
         }
         let dependency = dependency_roundtrip(
-            "dependency local; source { path // dependency path\n\"../other.pkg.kio\" }",
+            "dep local; source { path // dependency path\n\"../other.pkg.kio\" }",
         );
         assert!(
             dependency.contains("// dependency path\n  path \"../other.pkg.kio\""),
@@ -8686,11 +8699,10 @@ pub fn main() -> . { print("Hello, world") }"#,
     /// `path "<rel>"` line at +2 indent, and a trailing newline.
     #[test]
     fn dependency_canonical_layout_is_exact() {
-        let pp = dependency_roundtrip(
-            "dependency mathlib;\n\nsource {\n  path \"../lib/m.pkg.kio\";\n}\n",
-        );
+        let pp =
+            dependency_roundtrip("dep mathlib;\n\nsource {\n  path \"../lib/m.pkg.kio\";\n}\n");
         assert_eq!(
-            pp, "dependency mathlib;\n\nsource {\n  path \"../lib/m.pkg.kio\"\n}\n",
+            pp, "dep mathlib;\n\nsource {\n  path \"../lib/m.pkg.kio\"\n}\n",
             "canonical .dep.kio layout drifted:\n{pp}"
         );
     }
@@ -8700,21 +8712,21 @@ pub fn main() -> . { print("Hello, world") }"#,
     #[test]
     fn dependency_messy_canonicalises() {
         let pp = dependency_roundtrip(
-            "dependency mathlib  ;\n\n\n\nsource   {\n\n    path    \"../lib/m.pkg.kio\"  ;\n\n}\n",
+            "dep mathlib  ;\n\n\n\nsource   {\n\n    path    \"../lib/m.pkg.kio\"  ;\n\n}\n",
         );
         assert_eq!(
-            pp, "dependency mathlib;\n\nsource {\n  path \"../lib/m.pkg.kio\"\n}\n",
+            pp, "dep mathlib;\n\nsource {\n  path \"../lib/m.pkg.kio\"\n}\n",
             "messy .dep.kio did not canonicalise:\n{pp}"
         );
     }
 
-    /// A `//` header comment above the `dependency` line and a `//`
+    /// A `//` header comment above the `dep` line and a `//`
     /// comment above the `path` line survive the round-trip (the parser
     /// stashes them in `meta.leading_trivia` / `path_leading_trivia`).
     #[test]
     fn dependency_preserves_leading_comments() {
         let pp = dependency_roundtrip(
-            "// pin the local math library\ndependency mathlib;\n\nsource {\n  // relative to the consumer package root\n  path \"../lib/m.pkg.kio\";\n}\n",
+            "// pin the local math library\ndep mathlib;\n\nsource {\n  // relative to the consumer package root\n  path \"../lib/m.pkg.kio\";\n}\n",
         );
         assert!(pp.contains("// pin the local math library\n"), "got:\n{pp}");
         assert!(
@@ -8728,11 +8740,10 @@ pub fn main() -> . { print("Hello, world") }"#,
     #[test]
     fn dependency_git_canonical_layout_is_exact() {
         let pp = dependency_roundtrip(
-            "dependency foo;\n\nsource {\n  git \"https://example.com/foo.git\";\n  ref \"main\"\n}\n",
+            "dep foo;\n\nsource {\n  git \"https://example.com/foo.git\";\n  ref \"main\"\n}\n",
         );
         assert_eq!(
-            pp,
-            "dependency foo;\n\nsource {\n  git \"https://example.com/foo.git\";\n  ref \"main\"\n}\n",
+            pp, "dep foo;\n\nsource {\n  git \"https://example.com/foo.git\";\n  ref \"main\"\n}\n",
             "canonical git .dep.kio layout drifted:\n{pp}"
         );
     }
@@ -8743,11 +8754,10 @@ pub fn main() -> . { print("Hello, world") }"#,
     #[test]
     fn dependency_git_messy_canonicalises() {
         let pp = dependency_roundtrip(
-            "dependency foo ;\n\n\nsource  {\n\n  git   \"file:///srv/foo.git\"  ;\n  ref \"v1.2.3\" ;\n\n}\n",
+            "dep foo ;\n\n\nsource  {\n\n  git   \"file:///srv/foo.git\"  ;\n  ref \"v1.2.3\" ;\n\n}\n",
         );
         assert_eq!(
-            pp,
-            "dependency foo;\n\nsource {\n  git \"file:///srv/foo.git\";\n  ref \"v1.2.3\"\n}\n",
+            pp, "dep foo;\n\nsource {\n  git \"file:///srv/foo.git\";\n  ref \"v1.2.3\"\n}\n",
             "messy git .dep.kio did not canonicalise:\n{pp}"
         );
     }
@@ -8756,7 +8766,7 @@ pub fn main() -> . { print("Hello, world") }"#,
     #[test]
     fn dependency_git_preserves_leading_comments() {
         let pp = dependency_roundtrip(
-            "dependency foo;\n\nsource {\n  // the upstream mirror\n  git \"https://example.com/foo.git\";\n  // track the release branch\n  ref \"release\";\n}\n",
+            "dep foo;\n\nsource {\n  // the upstream mirror\n  git \"https://example.com/foo.git\";\n  // track the release branch\n  ref \"release\";\n}\n",
         );
         assert!(pp.contains("  // the upstream mirror\n"), "got:\n{pp}");
         assert!(pp.contains("  // track the release branch\n"), "got:\n{pp}");
@@ -8828,7 +8838,7 @@ pub fn main() -> . { print("Hello, world") }"#,
         assert!(!package_roundtrip("").contains("build"));
         assert!(!build_roundtrip("target js { out \"js\" }").contains("docs"));
         assert!(
-            !dependency_roundtrip("dependency dep; source { git \"url\"; ref \"main\" }")
+            !dependency_roundtrip("dep dep; source { git \"url\"; ref \"main\" }")
                 .contains("path ()")
         );
         assert!(
@@ -8838,8 +8848,7 @@ pub fn main() -> . { print("Hello, world") }"#,
             .contains("path ()")
         );
         assert!(
-            !dependency_roundtrip("dependency dep; source { path \"dep.pkg.kio\" }")
-                .contains("path ()")
+            !dependency_roundtrip("dep dep; source { path \"dep.pkg.kio\" }").contains("path ()")
         );
         let explicit = package_roundtrip(
             "build { cache (); docs { md \"docs\"; md_out (); html \"out/docs/\" }; target rust { out \"out\"; namespace (); thread_safety ((send_sync)) } }",
@@ -8854,7 +8863,7 @@ pub fn main() -> . { print("Hello, world") }"#,
             assert!(explicit.contains(field), "lost {field}:\n{explicit}");
         }
         assert!(
-            dependency_roundtrip("dependency dep; source { git \"url\"; ref \"main\"; path () }")
+            dependency_roundtrip("dep dep; source { git \"url\"; ref \"main\"; path () }")
                 .contains("path ()")
         );
         assert!(lock_roundtrip("lock dep; resolved { git \"url\"; ref \"main\"; path (); commit \"sha\"; sig \"digest\" }").contains("path ()"));
@@ -8877,7 +8886,7 @@ pub fn main() -> . { print("Hello, world") }"#,
             );
         }
         let dependency = dependency_roundtrip(
-            "dependency dep; source { path ( // selection\n()); git (\"url\"); ref ((\"main\")) }",
+            "dep dep; source { path ( // selection\n()); git (\"url\"); ref ((\"main\")) }",
         );
         assert!(
             dependency.contains("// selection\n  path ()"),
@@ -8902,7 +8911,7 @@ pub fn main() -> . { print("Hello, world") }"#,
         // body parser wants the inner body, so re-parse via the
         // package-file parser to confirm the rendered block is
         // well-formed and stable.
-        let wrapped = format!("package pkg;\n\n{pp1}\n");
+        let wrapped = format!("pkg pkg;\n\n{pp1}\n");
         let e2 = crate::pass::parser::parse_package_file(&wrapped, Some("pkg"))
             .unwrap_or_else(|e| panic!("re-parse failed: {e:?}\noutput was:\n{wrapped}"));
         let b2 = e2
@@ -9133,7 +9142,7 @@ pub fn main() -> . { print("Hello, world") }"#,
     /// `comma_list` Doc helper picks the flat layout.
     #[test]
     fn call_args_fit_on_one_line() {
-        let pp = roundtrip(r#"module x; fn f() -> . { id[String]("hi") }"#);
+        let pp = roundtrip(r#"mod x; fn f() -> . { id[String]("hi") }"#);
         assert!(pp.contains("id[String](\"hi\")"), "got:\n{pp}");
     }
 
@@ -9145,7 +9154,7 @@ pub fn main() -> . { print("Hello, world") }"#,
     /// nest 2 + call's nest 2).
     #[test]
     fn call_args_overflow_breaks_to_a1() {
-        let src = r#"module x;
+        let src = r#"mod x;
 fn f() -> . {
   call_with_long_name_to_push_over_a_hundred_columns(arg_alpha, arg_beta, arg_gamma, arg_delta, arg_epsilon)
 }"#;
@@ -9163,8 +9172,8 @@ fn f() -> . {
     /// Successive type-argument brackets retain their singleton stages.
     #[test]
     fn type_app_args_use_separate_bracket_stages() {
-        let src = "module x;\n\
-                   type Result = Outer[Inner_one][Inner_two][Inner_three][Inner_four][Inner_five][Inner_six][Inner_seven];";
+        let src = "mod x;
+type Result = Outer[Inner_one][Inner_two][Inner_three][Inner_four][Inner_five][Inner_six][Inner_seven];";
         let pp = roundtrip(src);
         assert!(
             pp.contains("Outer[Inner_one][Inner_two][Inner_three][Inner_four][Inner_five][Inner_six][Inner_seven]"),
@@ -9182,24 +9191,26 @@ fn f() -> . {
     /// with the item content and the `}` level with the commas.
     #[test]
     fn lambda_item_block_body_nests_inside_the_lambda() {
-        let src = "module x;\n\
-                   fn filter[A](keep: A -> Bool, xs: A, whole: A) -> A {\n\
-                     reverse(fold_list(xs, whole, .(carry: A, x: A) -> A { if(keep(x)) { cons(x, carry) } else { carry } }))\n\
-                   }\n";
+        let src = "mod x;
+fn filter[A](keep: A -> Bool, xs: A, whole: A) -> A {
+reverse(fold_list(xs, whole, .(carry: A, x: A) -> A { if(keep(x)) { cons(x, carry) } else { carry } }))
+}
+";
         let pp = roundtrip(src);
         assert_eq!(
             pp,
-            "module x;\n\
-             \n\
-             fn filter[A](keep: A -> Bool, xs: A, whole: A) -> A {\n\
-             \x20 reverse(fold_list(\n\
-             \x20 , xs\n\
-             \x20 , whole\n\
-             \x20 , .(carry: A, x: A) -> A {\n\
-             \x20     if(keep(x)) { cons(x, carry) } else { carry }\n\
-             \x20   }\n\
-             \x20 ))\n\
-             }\n"
+            "mod x;
+
+fn filter[A](keep: A -> Bool, xs: A, whole: A) -> A {
+\x20 reverse(fold_list(
+\x20 , xs
+\x20 , whole
+\x20 , .(carry: A, x: A) -> A {
+\x20     if(keep(x)) { cons(x, carry) } else { carry }
+\x20   }
+\x20 ))
+}
+"
         );
     }
 
@@ -9210,29 +9221,31 @@ fn f() -> . {
     /// its clause header.
     #[test]
     fn match_clause_bodies_nest_inside_their_clause() {
-        let src = "module x;\n\
-                   import match(macro match);\n\
-                   fn step[A](v: A | A, dflt: A) -> A {\n\
-                     match(v, (.(l: A) { if(is_good(l)) { l } else { dflt } }, .(r: A) { r }))\n\
-                   }\n";
+        let src = "mod x;
+import match {macro match}
+fn step[A](v: A | A, dflt: A) -> A {
+match(v, (.(l: A) { if(is_good(l)) { l } else { dflt } }, .(r: A) { r }))
+}
+";
         let pp = roundtrip(src);
         assert_eq!(
             pp,
-            "module x;\n\
-             \n\
-             import match(macro match);\n\
-             \n\
-             fn step[A](v: A | A, dflt: A) -> A {\n\
-             \x20 match(\n\
-             \x20 , v\n\
-             \x20 , (\n\
-             \x20   , .(l: A) {\n\
-             \x20       if(is_good(l)) { l } else { dflt }\n\
-             \x20     }\n\
-             \x20   , .(r: A) { r }\n\
-             \x20   )\n\
-             \x20 )\n\
-             }\n"
+            "mod x;
+
+import match { macro match }
+
+fn step[A](v: A | A, dflt: A) -> A {
+\x20 match(
+\x20 , v
+\x20 , (
+\x20   , .(l: A) {
+\x20       if(is_good(l)) { l } else { dflt }
+\x20     }
+\x20   , .(r: A) { r }
+\x20   )
+\x20 )
+}
+"
         );
     }
 
@@ -9240,11 +9253,11 @@ fn f() -> . {
     /// its opening brace on the declaration line.
     #[test]
     fn compact_nominal_wide_group_uses_indented_semicolon_entries() {
-        let src = "module x; type Wide = { First_long_label_name: Someextremelylongtypeconstructorname[Aaaaaaaa][Bbbbbbbb][Gggggggg][Hhhhhhhh]; Second_label: I32 };";
+        let src = "mod x; type Wide = { First_long_label_name: Someextremelylongtypeconstructorname[Aaaaaaaa][Bbbbbbbb][Gggggggg][Hhhhhhhh]; Second_label: I32 };";
         let pp = roundtrip(src);
         assert_eq!(
             pp,
-            r#"module x;
+            r#"mod x;
 
 type Wide = {
   First_long_label_name: Someextremelylongtypeconstructorname[Aaaaaaaa][Bbbbbbbb][Gggggggg][Hhhhhhhh];
@@ -9257,8 +9270,8 @@ type Wide = {
     /// Width-driven and comment-forced compact layouts differ only by the comment.
     #[test]
     fn compact_nominal_width_and_comment_paths_agree() {
-        let plain = "module x; type Wide = { First_long_label_name: Someextremelylongtypeconstructorname[Aaaaaaaa][Bbbbbbbb][Gggggggg][Hhhhhhhh]; Second_label: I32 };";
-        let commented = r#"module x;
+        let plain = "mod x; type Wide = { First_long_label_name: Someextremelylongtypeconstructorname[Aaaaaaaa][Bbbbbbbb][Gggggggg][Hhhhhhhh]; Second_label: I32 };";
+        let commented = r#"mod x;
 type Wide = {
   // keep me
   First_long_label_name: Someextremelylongtypeconstructorname[Aaaaaaaa][Bbbbbbbb][Gggggggg][Hhhhhhhh];
@@ -9283,7 +9296,7 @@ type Wide = {
     /// Short string literals (value ≤ 72 chars) emit single-line.
     #[test]
     fn short_string_stays_single_line() {
-        let pp = roundtrip(r#"module x; fn f() -> . { let s = "hello world"; () }"#);
+        let pp = roundtrip(r#"mod x; fn f() -> . { let s = "hello world"; () }"#);
         assert!(pp.contains(r#""hello world""#), "got:\n{pp}");
         // No reflow → no "..." "..." sequence on adjacent lines.
         assert!(
@@ -9300,7 +9313,7 @@ type Wide = {
         let value =
             "the quick brown fox jumps over the lazy dog and then continues running to home";
         assert!(value.chars().count() > 72);
-        let src = format!(r#"module x; fn f() -> . {{ let s = "{value}"; () }}"#);
+        let src = format!(r#"mod x; fn f() -> . {{ let s = "{value}"; () }}"#);
         let pp = roundtrip(&src);
         // The output should contain at least two adjacent string
         // literals on consecutive lines (the canonical reflow shape).
@@ -9320,7 +9333,7 @@ type Wide = {
     /// fit, so the whole declaration stays inline.
     #[test]
     fn short_fn_def_body_stays_single_line() {
-        let pp = roundtrip("module x; fn id[A](x: A) -> A { x }");
+        let pp = roundtrip("mod x; fn id[A](x: A) -> A { x }");
         assert!(
             pp.contains(") -> A { x }"),
             "short fn body should stay inline; got:\n{pp}"
@@ -9329,14 +9342,14 @@ type Wide = {
 
     #[test]
     fn final_block_semicolon_canonicalizes_away() {
-        let pp = roundtrip("module x; fn f() -> . { (); }");
+        let pp = roundtrip("mod x; fn f() -> . { (); }");
         assert!(pp.contains("fn f() { () }"), "got:\n{pp}");
         assert!(!pp.contains("();"), "got:\n{pp}");
     }
 
     #[test]
     fn scope_call_round_trips_as_block_expression() {
-        let pp = roundtrip("module x; fn f() -> . { scope { let x = (); x } }");
+        let pp = roundtrip("mod x; fn f() -> . { scope { let x = (); x } }");
         assert!(pp.contains("scope { let x = (); x }"), "got:\n{pp}");
         assert!(pp.contains("let x = ();"), "got:\n{pp}");
     }
@@ -9344,9 +9357,8 @@ type Wide = {
     #[test]
     fn scope_call_comment_survives_round_trip() {
         let pp = roundtrip(
-            "module x; fn f() -> . { scope { \
-             // local binding\n\
-             let x = (); x } }",
+            "mod x; fn f() -> . { scope { // local binding
+let x = (); x } }",
         );
         assert!(
             pp.contains("scope {\n    // local binding\n    let x = ();"),
@@ -9357,10 +9369,8 @@ type Wide = {
     #[test]
     fn sequence_call_comment_survives_round_trip() {
         let pp = roundtrip(
-            "module x; fn bind[A][B](x: A, k: A -> B) -> B { k(x) } \
-             fn f() -> . { do(bind) { \
-               // sequence step\n\
-               (); () } }",
+            "mod x; fn bind[A][B](x: A, k: A -> B) -> B { k(x) } fn f() -> . { do(bind) { // sequence step
+(); () } }",
         );
         assert!(
             pp.contains("do(bind) {\n    // sequence step\n    ();"),
@@ -9378,14 +9388,13 @@ type Wide = {
         // intended target — a baseline check below confirms the
         // comment-free multi-clause parses, then the with-comment
         // form is round-tripped.
-        let bare =
-            "module x; import match(macro match); fn f[A](v: A) -> . { match(v, .() { () }) }";
+        let bare = "mod x; import match {macro match} fn f[A](v: A) -> . { match(v, .() { () }) }";
         parse(bare).expect("single-clause baseline parses");
         // The comment-free multi-clause control must parse before
         // checking the same shape with interstitial trivia.
-        let multi_bare = "module x; import match(macro match); fn f[A](v: A) -> . { match(v, (.() { () }, .[B](n: B) { () })) }";
+        let multi_bare = "mod x; import match {macro match} fn f[A](v: A) -> . { match(v, (.() { () }, .[B](n: B) { () })) }";
         parse(multi_bare).expect("multi-clause baseline parses");
-        let src = "module x; import match(macro match); fn f[A](v: A) -> . { match(v, (.() { () }, // sec\n.[B](n: B) { () })) }";
+        let src = "mod x; import match {macro match} fn f[A](v: A) -> . { match(v, (.() { () }, // sec\n.[B](n: B) { () })) }";
         let m = parse(src)
             .unwrap_or_else(|e| panic!("with-comment parse failed: {e:?}\nsource:\n{src}"));
         let out = pretty_module(&m);
@@ -9403,12 +9412,13 @@ type Wide = {
     /// multi-line so the comment can sit there.
     #[test]
     fn within_body_comment_before_let_survives_round_trip() {
-        let src = "module x;\n\
-                   fn f() -> . {\n\
-                     // initialize x\n\
-                     let x = ();\n\
-                     x\n\
-                   }\n";
+        let src = "mod x;
+fn f() -> . {
+// initialize x
+let x = ();
+x
+}
+";
         let m = parse(src).unwrap();
         let out = pretty_module(&m);
         assert!(
@@ -9427,11 +9437,12 @@ type Wide = {
 
     #[test]
     fn within_body_comment_before_final_call_emits_once() {
-        let src = "module x;\n\
-                   fn f() -> . {\n\
-                     // finish\n\
-                     g()\n\
-                   }\n";
+        let src = "mod x;
+fn f() -> . {
+// finish
+g()
+}
+";
         let out = roundtrip(src);
         assert_eq!(
             out.matches("// finish").count(),
@@ -9442,13 +9453,14 @@ type Wide = {
 
     #[test]
     fn within_closure_body_comment_before_final_call_emits_once() {
-        let src = "module x;\n\
-                   fn f() -> . {\n\
-                     .() {\n\
-                       // finish\n\
-                       g()\n\
-                     }()\n\
-                   }\n";
+        let src = "mod x;
+fn f() -> . {
+.() {
+// finish
+g()
+}()
+}
+";
         let out = roundtrip(src);
         assert_eq!(
             out.matches("// finish").count(),
@@ -9468,16 +9480,17 @@ type Wide = {
     /// the pretty-printer emitted it twice.
     #[test]
     fn within_closure_body_comment_before_let_emits_once() {
-        let src = "module x;\n\
-                   import match(macro match);\n\
-                   fn apply[A](x: A, f: A -> A) -> A { f(x) }\n\
-                   fn g[A](p: A & A) -> A & A {\n\
-                     apply[A & A](p, .(q) {\n\
-                       // keep q\n\
-                       let kept = match(q, .(l: A, r: A) { (l, r) });\n\
-                       kept\n\
-                     })\n\
-                   }\n";
+        let src = "mod x;
+import match {macro match}
+fn apply[A](x: A, f: A -> A) -> A { f(x) }
+fn g[A](p: A & A) -> A & A {
+apply[A & A](p, .(q) {
+// keep q
+let kept = match(q, .(l: A, r: A) { (l, r) });
+kept
+})
+}
+";
         let m = parse(src).unwrap_or_else(|e| panic!("parse failed: {e:?}\nsource:\n{src}"));
         let out = pretty_module(&m);
         assert_eq!(
@@ -9496,11 +9509,12 @@ type Wide = {
     /// so the trailing-trivia channel is the only thing that keeps it.
     #[test]
     fn trailing_dangling_block_comment_survives() {
-        let src = "module x;\n\
-                   fn f() -> . {\n\
-                     ()\n\
-                     // dangling\n\
-                   }\n";
+        let src = "mod x;
+fn f() -> . {
+()
+// dangling
+}
+";
         let out = roundtrip(src);
         assert_eq!(
             out.matches("// dangling").count(),
@@ -9513,10 +9527,11 @@ type Wide = {
     /// `}`) survives.
     #[test]
     fn trailing_comment_on_final_expr_survives() {
-        let src = "module x;\n\
-                   fn f() -> . {\n\
-                     () // the result\n\
-                   }\n";
+        let src = "mod x;
+fn f() -> . {
+() // the result
+}
+";
         let out = roundtrip(src);
         assert_eq!(out.matches("// the result").count(), 1, "got:\n{out}");
     }
@@ -9525,13 +9540,14 @@ type Wide = {
     /// survives in the call container's closing trivia.
     #[test]
     fn trailing_comment_on_last_call_arg_survives() {
-        let src = "module x;\n\
-                   fn f() -> . {\n\
-                     g(\n\
-                       a,\n\
-                       b // last arg\n\
-                     )\n\
-                   }\n";
+        let src = "mod x;
+fn f() -> . {
+g(
+a,
+b // last arg
+)
+}
+";
         let out = roundtrip(src);
         assert_eq!(out.matches("// last arg").count(), 1, "got:\n{out}");
     }
@@ -9541,8 +9557,9 @@ type Wide = {
     /// end-of-file trivia run).
     #[test]
     fn trailing_comment_after_last_item_survives() {
-        let src = "module x;\n\
-                   fn f() -> . { () } // after item\n";
+        let src = "mod x;
+fn f() -> . { () } // after item
+";
         let out = roundtrip(src);
         assert_eq!(out.matches("// after item").count(), 1, "got:\n{out}");
     }
@@ -9551,9 +9568,10 @@ type Wide = {
     /// survives.
     #[test]
     fn end_of_file_comment_survives() {
-        let src = "module x;\n\
-                   fn f() -> . { () }\n\
-                   // file footer\n";
+        let src = "mod x;
+fn f() -> . { () }
+// file footer
+";
         let out = roundtrip(src);
         assert_eq!(out.matches("// file footer").count(), 1, "got:\n{out}");
     }
@@ -9562,13 +9580,14 @@ type Wide = {
     /// survives.
     #[test]
     fn trailing_comment_in_scope_call_survives() {
-        let src = "module x;\n\
-                   fn f() -> . {\n\
-                     scope {\n\
-                       ()\n\
-                       // dangling in do\n\
-                     }\n\
-                   }\n";
+        let src = "mod x;
+fn f() -> . {
+scope {
+()
+// dangling in do
+}
+}
+";
         let out = roundtrip(src);
         assert_eq!(out.matches("// dangling in do").count(), 1, "got:\n{out}");
     }
@@ -9582,13 +9601,14 @@ type Wide = {
     /// pins that an interstitial comment is not lost.
     #[test]
     fn interstitial_comment_hoisted_and_idempotent() {
-        let src = "module x;\n\
-                   fn f() -> . {\n\
-                     let y =\n\
-                       // between = and value\n\
-                       ();\n\
-                     y\n\
-                   }\n";
+        let src = "mod x;
+fn f() -> . {
+let y =
+// between = and value
+();
+y
+}
+";
         let out = roundtrip(src);
         assert_eq!(
             out.matches("// between = and value").count(),
@@ -9605,7 +9625,7 @@ type Wide = {
     /// group fits flat in the budget so no break fires.
     #[test]
     fn short_let_rhs_stays_inline() {
-        let pp = roundtrip("module x; fn f() -> . { let x = (); x }");
+        let pp = roundtrip("mod x; fn f() -> . { let x = (); x }");
         assert!(
             pp.contains("let x = ();"),
             "short let should stay inline; got:\n{pp}"
@@ -9617,7 +9637,7 @@ type Wide = {
     /// indent, with `;` trailing the value's last token.
     #[test]
     fn wide_let_rhs_breaks_at_equals() {
-        let src = r#"module x;
+        let src = r#"mod x;
 fn f() -> . {
   let result =
     call_with_long_name_to_push_over_a_hundred_columns(arg_alpha, arg_beta, arg_gamma, arg_delta);
@@ -9640,7 +9660,7 @@ fn f() -> . {
     #[test]
     fn wide_let_and_trivia_let_share_broken_shape() {
         // Width-driven version (no trivia).
-        let width_src = r#"module x;
+        let width_src = r#"mod x;
 fn f() -> . {
   let result =
     call_with_long_name_to_push_over_a_hundred_columns(arg_alpha, arg_beta, arg_gamma, arg_delta);
@@ -9648,13 +9668,14 @@ fn f() -> . {
 }"#;
         let width_pp = roundtrip(width_src);
         // Trivia-driven version (short value, but a comment forces break).
-        let trivia_src = "module x;\n\
-                          fn f() -> . {\n\
-                            let result =\n\
-                              // explainer\n\
-                              compute();\n\
-                            result\n\
-                          }\n";
+        let trivia_src = "mod x;
+fn f() -> . {
+let result =
+// explainer
+compute();
+result
+}
+";
         let trivia_pp = roundtrip(trivia_src);
         // Both render the let with `=\n` followed by an indented
         // value line and a trailing `;` on that line.
@@ -9678,7 +9699,7 @@ fn f() -> . {
     /// wide let additionally breaks internally at `=`.
     #[test]
     fn wide_let_in_chain_stacks_and_breaks_internally() {
-        let src = r#"module x;
+        let src = r#"mod x;
 fn f() -> . {
   let a = ();
   let big_result =
@@ -9709,7 +9730,7 @@ fn f() -> . {
     /// nest, and `;` trails the call's `)` close-token.
     #[test]
     fn wide_let_with_internally_broken_rhs_composes() {
-        let src = r#"module x;
+        let src = r#"mod x;
 fn f() -> . {
   let result =
     call_with_long_name_to_push_over_a_hundred_columns(arg_alpha, arg_beta, arg_gamma, arg_delta, arg_epsilon);
@@ -9738,7 +9759,7 @@ fn f() -> . {
     /// A short UFCS chain fits on one line: `r.>f(x).>g(y).>h(z)`.
     #[test]
     fn short_ufcs_chain_stays_flat() {
-        let pp = roundtrip("module x; fn f() -> . { let r = receiver.>f(x).>g(y).>h(z); () }");
+        let pp = roundtrip("mod x; fn f() -> . { let r = receiver.>f(x).>g(y).>h(z); () }");
         assert!(
             pp.contains("receiver.>f(x).>g(y).>h(z)"),
             "short chain should stay flat; got:\n{pp}"
@@ -9750,7 +9771,7 @@ fn f() -> . {
     /// Idempotent round-trip.
     #[test]
     fn wide_ufcs_chain_breaks_to_leading_arrow_layout() {
-        let src = r#"module x;
+        let src = r#"mod x;
 fn f() -> . {
   let r =
     some_long_receiver_expression_value
@@ -9784,12 +9805,12 @@ fn f() -> . {
     /// parens whether at the head of a chain or standalone.
     #[test]
     fn ufcs_zero_arg_segment_omits_parens() {
-        let flat = roundtrip("module x; fn f() -> . { let r = r.>bare; () }");
+        let flat = roundtrip("mod x; fn f() -> . { let r = r.>bare; () }");
         assert!(
             flat.contains("r.>bare"),
             "single bare UFCS should have no parens; got:\n{flat}"
         );
-        let chain = roundtrip("module x; fn f() -> . { let r = r.>bare.>next(x); () }");
+        let chain = roundtrip("mod x; fn f() -> . { let r = r.>bare.>next(x); () }");
         assert!(
             chain.contains("r.>bare.>next(x)"),
             "bare segment inside a flat chain should have no parens; got:\n{chain}"
@@ -9801,7 +9822,7 @@ fn f() -> . {
         for head in ["select", "let", "recur"] {
             for argument in ["value", "compute(value)", ".t", "-1"] {
                 let source = format!(
-                    "module x; import provider(macro {head}); fn run(value: .) -> . {{ {head}({argument}) {{ () }} }}"
+                    "mod x; import provider {{macro {head}}} fn run(value: .) -> . {{ {head}({argument}) {{ () }} }}"
                 );
                 let output = roundtrip(&source);
                 assert!(
@@ -9815,7 +9836,7 @@ fn f() -> . {
     #[test]
     fn macro_block_result_call_keeps_its_callee_grouped() {
         let output = roundtrip(
-            "module x; import provider(macro choose); fn run(value: .) -> . { (choose { value })(()) }",
+            "mod x; import provider {macro choose} fn run(value: .) -> . { (choose { value })(()) }",
         );
         assert!(output.contains("(choose { value })(())"), "{output}");
     }
@@ -9823,7 +9844,7 @@ fn f() -> . {
     #[test]
     fn macro_left_call_splice_preserves_selected_import() {
         let pp = roundtrip(
-            "module x; import palette(macro iso); fn f() -> . { let r = iso[T].<<value; () }",
+            "mod x; import palette {macro iso} fn f() -> . { let r = iso[T].<<value; () }",
         );
         assert!(
             pp.contains("iso[T].<<value"),
@@ -9833,7 +9854,7 @@ fn f() -> . {
 
     #[test]
     fn bare_and_explicit_unit_ufcs_forms_roundtrip() {
-        let source = r#"module x;
+        let source = r#"mod x;
 fn f() -> . {
   receiver.>call;
   receiver.>>call;
@@ -9880,7 +9901,7 @@ fn f() -> . {
     /// breaks at `.>`, and `doc_call` handles the inner arg list.
     #[test]
     fn ufcs_wide_args_segment_falls_back_to_a1() {
-        let src = r#"module x;
+        let src = r#"mod x;
 fn f() -> . {
   let r =
     receiver
@@ -9918,12 +9939,13 @@ fn f() -> . {
     /// the segment it precedes.
     #[test]
     fn ufcs_receiver_trailing_comment_survives_round_trip() {
-        let src = "module x;\n\
-                   fn f() -> . {\n\
-                     let r = recv // before the step\n\
-                       .>step(arg);\n\
-                     ()\n\
-                   }\n";
+        let src = "mod x;
+fn f() -> . {
+let r = recv // before the step
+.>step(arg);
+()
+}
+";
         let out = roundtrip(src);
         assert_eq!(out.matches("// before the step").count(), 1, "got:\n{out}");
         assert!(
@@ -9939,13 +9961,14 @@ fn f() -> . {
     /// element-trailing comment survive in source order.
     #[test]
     fn ufcs_chain_in_comma_list_element_keeps_step_comment() {
-        let src = "module x;\n\
-                   fn f() -> . {\n\
-                     g(\n\
-                       , receiver_with_a_name // step comment\n\
-                         .>chain_step_with_a_long_name(some_argument_value) // element comment\n\
-                       )\n\
-                   }\n";
+        let src = "mod x;
+fn f() -> . {
+g(
+, receiver_with_a_name // step comment
+.>chain_step_with_a_long_name(some_argument_value) // element comment
+)
+}
+";
         let out = roundtrip(src);
         assert_eq!(out.matches("// step comment").count(), 1, "got:\n{out}");
         assert_eq!(out.matches("// element comment").count(), 1, "got:\n{out}");
@@ -9962,7 +9985,7 @@ fn f() -> . {
     /// back at column 0.
     #[test]
     fn long_fn_def_body_breaks_to_multi_line() {
-        let src = r#"module x;
+        let src = r#"mod x;
 fn f() -> . {
   call_with_long_name_to_push_over_a_hundred_columns(arg_alpha, arg_beta, arg_gamma, arg_delta, arg_epsilon)
 }"#;
@@ -9987,7 +10010,7 @@ fn f() -> . {
         let value = "https://example.com/api/v1/some/very/long/path/that/has/many/segments/and/no/spaces/at/all/yes";
         assert!(value.chars().count() > 72);
         assert!(!value.chars().any(|c| c.is_whitespace()));
-        let src = format!(r#"module x; fn f() -> . {{ let s = "{value}"; () }}"#);
+        let src = format!(r#"mod x; fn f() -> . {{ let s = "{value}"; () }}"#);
         let pp = roundtrip(&src);
         // The whole URL appears as a single literal — overflow is
         // accepted per `specs/style.md`'s "Unbreakable strings
@@ -10014,7 +10037,7 @@ mod nominal_format_tests {
             "rec type Tree = { Leaf: .; } | { Branch: Tree & Tree; };",
             "rec type { Node: Node { mk; get; }; }",
         ] {
-            let source = format!("module x; {declaration}");
+            let source = format!("mod x; {declaration}");
             let parsed = crate::pass::parser::parse(&source).unwrap();
             let formatted = super::pretty_module(&parsed);
             let reparsed = crate::pass::parser::parse(&formatted).unwrap_or_else(|error| {
@@ -10031,7 +10054,7 @@ mod nominal_format_tests {
 
     #[test]
     fn nominal_rhs_chains_follow_the_type_chain_width_layout() {
-        let source = "module x; type Result = { Field: .; } & Alpha_payload_type & Beta_payload_type & Gamma_payload_type & Delta_payload_type & Epsilon_payload_type & Zeta_payload_type & Eta_payload_type & Theta_payload_type;";
+        let source = "mod x; type Result = { Field: .; } & Alpha_payload_type & Beta_payload_type & Gamma_payload_type & Delta_payload_type & Epsilon_payload_type & Zeta_payload_type & Eta_payload_type & Theta_payload_type;";
         let parsed = crate::pass::parser::parse(source).unwrap();
         let formatted = super::pretty_module(&parsed);
         assert!(
@@ -10051,11 +10074,11 @@ mod nominal_format_tests {
     fn nominal_rhs_group_comments_roundtrip_once() {
         for (source, comments) in [
             (
-                "module x; type Result = { First: .; } | // next-operand\n(Existing & { Other: .; });",
+                "mod x; type Result = { First: .; } | // next-operand\n(Existing & { Other: .; });",
                 &["next-operand"][..],
             ),
             (
-                "module x; type Result = { First: .; } | (// group-body\nExisting & { Other: .; } // group-end\n);",
+                "mod x; type Result = { First: .; } | (// group-body\nExisting & { Other: .; } // group-end\n);",
                 &["group-body", "group-end"][..],
             ),
         ] {
@@ -10071,7 +10094,7 @@ mod nominal_format_tests {
 
     #[test]
     fn nominal_format_preserves_comment_ownership() {
-        let source = "module x; pub type { // entry-start\n Token: . { // member-start\n pub // visibility\n get; // member-between\n mk; // member-end\n }; // entry-end\n }";
+        let source = "mod x; pub type { // entry-start\n Token: . { // member-start\n pub // visibility\n get; // member-between\n mk; // member-end\n }; // entry-end\n }";
         let formatted = super::pretty_module(&crate::pass::parser::parse(source).unwrap());
         for comment in [
             "entry-start",

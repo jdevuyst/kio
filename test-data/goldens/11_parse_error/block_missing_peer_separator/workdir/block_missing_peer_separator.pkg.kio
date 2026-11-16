@@ -1,4 +1,4 @@
-package block_missing_peer_separator;
+pkg block_missing_peer_separator;
 
 build {
   target js { out "out/js/"; }

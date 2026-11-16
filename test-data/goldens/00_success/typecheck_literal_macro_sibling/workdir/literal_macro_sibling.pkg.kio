@@ -1,4 +1,4 @@
-package literal_macro_sibling;
+pkg literal_macro_sibling;
 
 build {
   cache "out/.kio-cache/";

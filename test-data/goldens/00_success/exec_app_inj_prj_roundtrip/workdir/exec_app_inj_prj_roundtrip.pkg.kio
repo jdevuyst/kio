@@ -1,4 +1,4 @@
-package exec_app_inj_prj_roundtrip;
+pkg exec_app_inj_prj_roundtrip;
 
 build {
   cache "out/.kio-cache/";

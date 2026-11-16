@@ -1,4 +1,4 @@
-package type_short_name_compact_scope;
+pkg type_short_name_compact_scope;
 
 build {
   cache "out/.kio-cache/";

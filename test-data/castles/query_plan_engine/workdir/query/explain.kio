@@ -1,19 +1,19 @@
 /// The plan printer: a plan drawn as an indented tree, parent above its
 /// children, so the shape the evaluator will walk is visible before the
 /// rows are.
-module query/explain;
+mod query/explain;
 
-import macros/control(macro if);
-import macros/match(macro match);
+import macros/control { macro if }
+import macros/match { macro match }
 import query/list as list;
 import query/plan as plan;
 import query/schema as schema;
 import query/text as text;
-import testapi(Bool, I32, String);
-import testapi/arith(add_i32, mul_i32);
-import testapi/fmt(int_to_string);
-import testapi/io(print);
-import testapi/iter(loop);
+import testapi { type Bool; type I32; type String }
+import testapi/arith { fn add_i32; fn mul_i32 }
+import testapi/fmt { fn int_to_string }
+import testapi/io { fn print }
+import testapi/iter { fn loop }
 
 fn line(depth: I32, body: String) { print(text.cat3(text.spaces(mul_i32(depth, 2)), body, "\n")) }
 

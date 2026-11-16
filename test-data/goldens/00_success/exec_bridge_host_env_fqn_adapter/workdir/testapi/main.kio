@@ -1,7 +1,7 @@
-module testapi/main;
+mod testapi/main;
 
-import support/lib(emit);
-import testapi(String);
-import testapi/io(print);
+import support/lib { fn emit }
+import testapi { type String }
+import testapi/io { fn print }
 
 pub fn main() { print(emit("bridge FQN adapter\n"[String])) }

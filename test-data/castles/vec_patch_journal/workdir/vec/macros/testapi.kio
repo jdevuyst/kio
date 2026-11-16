@@ -1,4 +1,4 @@
-module vec/macros/testapi;
+mod vec/macros/testapi;
 
 import testapi as _rehost_hegfhdhegbhagj;
 

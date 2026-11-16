@@ -62,17 +62,11 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("kio-atomic-test-{}", std::process::id()));
         fs::create_dir_all(&dir).unwrap();
         let target = dir.join("out.sig.kio");
-        write_atomic(&target, b"signature app v(1);\n").unwrap();
-        assert_eq!(
-            fs::read_to_string(&target).unwrap(),
-            "signature app v(1);\n"
-        );
+        write_atomic(&target, b"sig app v(1);\n").unwrap();
+        assert_eq!(fs::read_to_string(&target).unwrap(), "sig app v(1);\n");
         // Overwriting replaces the contents atomically.
-        write_atomic(&target, b"signature app v(2);\n").unwrap();
-        assert_eq!(
-            fs::read_to_string(&target).unwrap(),
-            "signature app v(2);\n"
-        );
+        write_atomic(&target, b"sig app v(2);\n").unwrap();
+        assert_eq!(fs::read_to_string(&target).unwrap(), "sig app v(2);\n");
         // No temp file is left behind at the target's directory.
         let leftover = fs::read_dir(&dir)
             .unwrap()

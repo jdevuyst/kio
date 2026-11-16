@@ -1,9 +1,9 @@
-module testapi/main;
+mod testapi/main;
 
 import __intrinsics__;
 
-import testapi(Bool, String);
-import testapi/io(print);
+import testapi { type Bool; type String }
+import testapi/io { fn print }
 
 fn left(value: Bool) -> Bool { print("L"); value }
 

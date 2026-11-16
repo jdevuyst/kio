@@ -14,7 +14,7 @@
 /// silhouette's area twice — once from the key points, once by rasterizing the
 /// buildings onto a column array the sweep never touches — and `main` prints
 /// whether the two agree.
-module testapi/main;
+mod testapi/main;
 
 import skyline/area as area;
 import skyline/city as city;

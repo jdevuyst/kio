@@ -1,6 +1,6 @@
-module same_leaf_newtypes/left;
+mod same_leaf_newtypes/left;
 
-import same_leaf_newtypes(I32);
+import same_leaf_newtypes { type I32 }
 
 pub type { Box: I32 { pub mk; pub get } }
 

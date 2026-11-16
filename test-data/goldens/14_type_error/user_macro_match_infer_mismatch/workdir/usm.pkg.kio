@@ -1,4 +1,4 @@
-package usm;
+pkg usm;
 
 build {
   cache "out/.kio-cache/";

@@ -14,7 +14,7 @@ bridge {
   main;
 }
 
-module main;
+mod main;
 
 host type String role(str);
 host fn print(p0: String);
@@ -56,7 +56,7 @@ greeter/
 `greeter.pkg.kio` is the package file. Its filename stem (`greeter`) is the package name.
 
 ```kio {variant=package}
-package greeter;
+pkg greeter;
 
 build {
   cache "out/.kio-cache/";
@@ -85,10 +85,10 @@ the compiler's newest supported baseline, even after formatting. See
 
 ### The starting module
 
-`main.kio` is the package's **root module** — just a `module <name>;` file at the package root. The generated one declares a string type and a print capability it asks the host to supply, then exports a `main` that prints a greeting:
+`main.kio` is the package's **root module** — just a `mod <name>;` file at the package root. The generated one declares a string type and a print capability it asks the host to supply, then exports a `main` that prints a greeting:
 
 ```kio {variant=module}
-module main;
+mod main;
 
 host type String role(str);
 
@@ -117,7 +117,7 @@ fn greeting(name: String) -> String {string_concat("hello, "[String],name)}
 `greeting` concatenates a literal prefix with its argument. That call needs one more host capability — string concatenation — so add its declaration alongside the existing `host` lines in `main.kio`:
 
 <!--kio {harness=concat_declaration placeholder="__INSERT_CODE_HERE__"}
-module guide/concat;
+mod guide/concat;
 
 host type String role(str);
 
@@ -136,7 +136,7 @@ fn greeting(name: String) -> String { string_concat("hello, "[String], name) }
 pub fn main() { print(greeting("Kio"[String])) }
 ```
 
-The module now reads, top to bottom: a `module main;` header, three `host` declarations (`String`, `print`, `string_concat`), then `greeting` and `main`.
+The module now reads, top to bottom: a `mod main;` header, three `host` declarations (`String`, `print`, `string_concat`), then `greeting` and `main`.
 
 ## Chapter 3 — Format with `kio fmt`
 

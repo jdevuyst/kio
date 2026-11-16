@@ -1,4 +1,4 @@
-module producer;
+mod producer;
 
 host type Count role(i32);
 

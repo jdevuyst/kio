@@ -86,10 +86,10 @@ export KIO_CI_SCHEDULE_COMPILER_JOBS
 export RUSTC_WRAPPER RUSTC_WORKSPACE_WRAPPER
 export CARGO_BUILD_RUSTC_WRAPPER CARGO_BUILD_RUSTC_WORKSPACE_WRAPPER
 export KIO_TEST_RUNNER_COMPILER_WRAPPER
-printf 'module core;\n' >"$src/core.kio"
-printf 'module list.item;\n' >"$src/list/item.kio"
-printf 'module loader.item;\n' >"$src/loader/item.kio"
-printf 'module macros.item;\n' >"$src/macros/item.kio"
+printf 'mod core;\n' >"$src/core.kio"
+printf 'mod list.item;\n' >"$src/list/item.kio"
+printf 'mod loader.item;\n' >"$src/loader/item.kio"
+printf 'mod macros.item;\n' >"$src/macros/item.kio"
 
 cat >"$scratch/bin/kio-a" <<'EOF'
 #!/bin/sh

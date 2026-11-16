@@ -44,7 +44,7 @@ expect_exit 40 "$KIO_BIN" sig uncommit --force
 expect_exit 0 "$KIO_BIN" sig stage
 expect_exit 0 "$KIO_BIN" sig commit
 # The header now names the open draft v(2); v(1) is sealed.
-grep -q '^signature app v(2);$' app.sig.kio || {
+grep -q '^sig app v(2);$' app.sig.kio || {
   printf 'after commit the header should be v(2); file:\n' >&2
   cat app.sig.kio >&2
   exit 1
@@ -63,7 +63,7 @@ fi
 # header steps back to v(1) and the v(1) block's changes return as the
 # open draft.
 expect_exit 0 "$KIO_BIN" sig uncommit --force
-grep -q '^signature app v(1);$' app.sig.kio || {
+grep -q '^sig app v(1);$' app.sig.kio || {
   # shellcheck disable=SC2016
   printf 'after `uncommit --force` the header should be v(1); file:\n' >&2
   cat app.sig.kio >&2

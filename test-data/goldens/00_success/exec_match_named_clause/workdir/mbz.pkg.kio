@@ -1,4 +1,4 @@
-package mbz;
+pkg mbz;
 
 build {
   cache "out/.kio-cache/";

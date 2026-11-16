@@ -4,16 +4,31 @@
 /// parenthesis spellings first, then asks `string_to_int` about the remaining
 /// text, before the resulting token stream reaches the shunting-yard pass. Thus
 /// `-` classifies as subtraction while `-3` classifies as an integer.
-module desk/lex;
+mod desk/lex;
 
-import desk/op(as_binary, as_unary);
-import desk/op(divide_op, minus_op, modulo_op, negate_op, plus_op, power_op, times_op);
-import desk/token(Token, bad_token, lparen_token, num_token, oper_token, rparen_token);
-import macros/control(macro if);
-import macros/match(macro match);
-import testapi(Bool, I32, String);
-import testapi/fmt(string_to_int);
-import testapi/text(string_eq);
+import desk/op {
+  fn divide_op;
+  fn minus_op;
+  fn modulo_op;
+  fn negate_op;
+  fn plus_op;
+  fn power_op;
+  fn times_op
+}
+import desk/op { fn as_binary; fn as_unary }
+import desk/token {
+  type Token;
+  fn bad_token;
+  fn lparen_token;
+  fn num_token;
+  fn oper_token;
+  fn rparen_token
+}
+import macros/control { macro if }
+import macros/match { macro match }
+import testapi { type Bool; type I32; type String }
+import testapi/fmt { fn string_to_int }
+import testapi/text { fn string_eq }
 
 pub fn classify(line: String) -> Token {
   if(string_eq(line, "+")) {

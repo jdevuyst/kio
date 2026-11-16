@@ -1,4 +1,4 @@
-package ecv;
+pkg ecv;
 
 build {
   cache "out/.kio-cache/";

@@ -1,26 +1,26 @@
-module symbolic_units/algebra;
+mod symbolic_units/algebra;
 
-import macros/control(macro if);
-import macros/match(macro match);
-import macros/row_macros(macro select);
+import macros/control { macro if }
+import macros/match { macro match }
+import macros/row_macros { macro select }
 import symbolic_units/model as model;
-import symbolic_units/model(
-, Expr
-, Kilogram
-, Kilogram_exp
-, Meter
-, Meter_exp
-, Pow
-, Product
-, Quotient
-, Score
-, Second
-, Second_exp
-, Summary
-);
-import testapi(Bool, I32);
+import symbolic_units/model {
+  type Expr;
+  type Kilogram;
+  type Kilogram_exp;
+  type Meter;
+  type Meter_exp;
+  type Pow;
+  type Product;
+  type Quotient;
+  type Score;
+  type Second;
+  type Second_exp;
+  type Summary
+}
+import testapi { type Bool; type I32 }
 import testapi/arith as arith;
-import testapi/iter(loop);
+import testapi/iter { fn loop }
 
 fn add_summary(left: Summary, right: Summary) -> Summary {
   let .(lm, ls, lk) = left.>select { Meter_exp.get; Second_exp.get; Kilogram_exp.get };

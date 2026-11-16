@@ -1,4 +1,4 @@
-package typecheck_defn_unit_return_elided;
+pkg typecheck_defn_unit_return_elided;
 
 build {
   cache "out/.kio-cache/";

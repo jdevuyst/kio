@@ -1,4 +1,4 @@
-package exec_array_clear;
+pkg exec_array_clear;
 
 build {
   cache "out/.kio-cache/";

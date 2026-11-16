@@ -1,4 +1,4 @@
-package exec_surface_import_aliases;
+pkg exec_surface_import_aliases;
 
 build {
   cache "out/.kio-cache/";

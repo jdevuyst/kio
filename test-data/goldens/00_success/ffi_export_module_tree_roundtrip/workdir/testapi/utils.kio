@@ -1,5 +1,5 @@
-module testapi/utils;
+mod testapi/utils;
 
-import testapi(String);
+import testapi { type String }
 
 pub fn echo(s: String) -> String { s }

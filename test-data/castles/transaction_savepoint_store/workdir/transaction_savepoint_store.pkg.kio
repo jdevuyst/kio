@@ -1,4 +1,4 @@
-package transaction_savepoint_store;
+pkg transaction_savepoint_store;
 
 build {
   cache "out/.kio-cache/";

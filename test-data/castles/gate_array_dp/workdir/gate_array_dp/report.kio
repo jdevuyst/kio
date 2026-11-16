@@ -1,12 +1,12 @@
-module gate_array_dp/report;
+mod gate_array_dp/report;
 
-import gate_array_dp/constants(days, max_age, states);
-import gate_array_dp/dp(final_score, reachable, table_index);
-import testapi(Array, I32, String);
-import testapi/array(array_get, array_len);
-import testapi/fmt(bool_to_string, int_to_string);
-import testapi/io(print);
-import testapi/text(string_concat, string_eq);
+import gate_array_dp/constants { fn days; fn max_age; fn states }
+import gate_array_dp/dp { fn final_score; fn reachable; fn table_index }
+import testapi { type Array; type I32; type String }
+import testapi/array { fn array_get; fn array_len }
+import testapi/fmt { fn bool_to_string; fn int_to_string }
+import testapi/io { fn print }
+import testapi/text { fn string_concat; fn string_eq }
 
 fn line2(a: String, b: String) { print(string_concat(string_concat(a, b), "\n")) }
 

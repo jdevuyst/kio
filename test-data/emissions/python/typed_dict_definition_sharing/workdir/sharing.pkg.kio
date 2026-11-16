@@ -1,4 +1,4 @@
-package sharing;
+pkg sharing;
 
 build {
   target python {

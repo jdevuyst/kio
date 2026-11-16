@@ -1,2 +1,2 @@
-dependency pkg;
+dep pkg;
 source { ref (("main")); git ("https://example.invalid/pkg.git") }

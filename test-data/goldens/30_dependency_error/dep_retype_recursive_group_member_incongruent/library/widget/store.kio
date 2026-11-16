@@ -1,6 +1,6 @@
-module store;
+mod store;
 
 rec {
-  pub type { Even: . | Odd { pub mk; pub get; }; };
-  pub type { Odd: . | Even { pub mk; pub get; }; };
+  pub type { Even: . | Odd { pub mk; pub get } };
+  pub type { Odd: . | Even { pub mk; pub get } }
 }

@@ -5,6 +5,6 @@
 /// ```kio {@}
 /// identity(identity)
 /// ```
-module doctest/broken;
+mod doctest/broken;
 
 pub fn identity(x: .) { x }

@@ -1,4 +1,4 @@
-package exec_imported_callable_owner;
+pkg exec_imported_callable_owner;
 
 build {
   cache "out/.kio-cache/";

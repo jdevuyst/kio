@@ -1,4 +1,4 @@
-package exec_match_cross_module_qualified_alias_carrier;
+pkg exec_match_cross_module_qualified_alias_carrier;
 
 build {
   cache "out/.kio-cache/";

@@ -1,4 +1,4 @@
-module main;
+mod main;
 
 host fn loop[S][R](step: ((S -> R) & S) -> (S | R), state: S) -> R;
 

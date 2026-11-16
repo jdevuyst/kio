@@ -1,11 +1,11 @@
-module testapi/main;
+mod testapi/main;
 
-import macros/control(macro if);
-import testapi(Bool, I32, String);
-import testapi/arith(leq_i32, sub_i32);
-import testapi/fmt(i32_to_string);
-import testapi/io(print);
-import testapi/iter(loop);
+import macros/control { macro if }
+import testapi { type Bool; type I32; type String }
+import testapi/arith { fn leq_i32; fn sub_i32 }
+import testapi/fmt { fn i32_to_string }
+import testapi/io { fn print }
+import testapi/iter { fn loop }
 
 rec(loop) fn map_after[A][B](remaining: I32, transform: A -> B, value: A) -> B {
   if(leq_i32(remaining, 0)) {

@@ -1,4 +1,4 @@
-package operator_type_syntax;
+pkg operator_type_syntax;
 
 build {
   cache "out/.kio-cache/";

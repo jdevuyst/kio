@@ -1,6 +1,6 @@
-module use_op_pattern_no_match/helper;
+mod use_op_pattern_no_match/helper;
 
-import use_op_pattern_no_match(A);
+import use_op_pattern_no_match { type A }
 
 pub fn add(a: A, b: A) -> A { a }
 

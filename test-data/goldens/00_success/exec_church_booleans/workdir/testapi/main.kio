@@ -1,8 +1,8 @@
-module testapi/main;
+mod testapi/main;
 
-import testapi(String);
-import testapi/io(print);
-import testapi/text(string_concat);
+import testapi { type String }
+import testapi/io { fn print }
+import testapi/text { fn string_concat }
 
 // Church-encoded booleans on `Boolc = forall A. (A & A) -> A`. `t`
 // and `f` are the two polymorphic projections; `if_c` is their

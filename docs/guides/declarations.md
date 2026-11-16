@@ -14,9 +14,9 @@ bridge {
   kiodoc;
 }
 
-module kiodoc;
+mod kiodoc;
 
-import macros/spine_macros(macro widen_sum);
+import macros/spine_macros {macro widen_sum}
 
 host type Int role(i32);
 host type String role(str);
@@ -103,13 +103,13 @@ does not inherit its payload's literal capability. See
 
 ## Literal aliases
 
-A `literal` declaration stores exactly one string, number, or boolean token.
+A `lit` declaration stores exactly one string, number, or boolean token.
 It acquires a type only where it is used:
 
 ```kio {@declarations}
-literal greeting = "hello";
+lit greeting = "hello";
 
-literal limit = 100;
+lit limit = 100;
 
 fn greeting_text() -> String { greeting }
 
@@ -122,15 +122,15 @@ not a cached value or an arbitrary expression binding: expansion substitutes
 the stored token at each use. Use a zero-argument `fn` when evaluation itself
 is part of the abstraction.
 
-A literal alias keeps its lexical category: `literal count = 2000;` stores an
-integer token, while `literal scale = 2.0e3;` stores a float token. Its expected
+A literal alias keeps its lexical category: `lit count = 2000;` stores an
+integer token, while `lit scale = 2.0e3;` stores a float token. Its expected
 type or annotation at the use does not convert one category
 into the other. After expansion, an explicit literal annotation or the
 concrete local context at the use site determines its carrier; the provider
 contributes the token without a preselected type.
 
 Prefix a literal alias with `pub` to import it from another module with
-`import module(name);`. Write that import once: repeating it is a
+`import module { lit name }`. Write that import once: repeating it is a
 name-resolution error, as is selecting one visible name from distinct exported
 literals or from both an import and a local declaration.
 
@@ -277,7 +277,7 @@ member remains callable by later declarations in the same module.
 module:
 
 ```kio {variant=module}
-module internal;
+mod internal;
 
 pub(internal) fn helper() { () }
 ```
@@ -357,6 +357,6 @@ use the ordinary type rules and may mention `host type`s, aliases, nominal types
 any other type in scope, as `keep_int` does above. Types do not themselves have
 a purity classification.
 
-`pure` applies only to an ordinary `fn`; it is rejected on `type`, `macro`, `op`, `fold`, `literal`, `equiv`, host declarations, and
+`pure` applies only to an ordinary `fn`; it is rejected on `type`, `macro`, `op`, `fold`, `lit`, `equiv`, host declarations, and
 `rec(loop)` groups or members. Visibility is orthogonal: `pub pure fn` is both
 exported and pure, while a private `pure fn` remains module-local.

@@ -1,4 +1,4 @@
-package nested_lambda_outer_binder;
+pkg nested_lambda_outer_binder;
 
 build {
   cache "out/.kio-cache/";

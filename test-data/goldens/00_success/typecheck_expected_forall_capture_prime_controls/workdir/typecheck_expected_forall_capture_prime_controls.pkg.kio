@@ -1,4 +1,4 @@
-package typecheck_expected_forall_capture_prime_controls;
+pkg typecheck_expected_forall_capture_prime_controls;
 
 build {
   cache "out/.kio-cache/";

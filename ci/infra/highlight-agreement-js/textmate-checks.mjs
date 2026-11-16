@@ -13,17 +13,17 @@ const identifier = "variable.other.kio";
 const functionName = "entity.name.function.kio";
 const fixtures = [];
 
-fixture("ordinary imported nominal and alias keep type roles", "import provider(Field); type Alias = provider.Field;", [
-  ["(Field)", "Field", identifier],
+fixture("ordinary imported nominal and alias keep type roles", "import provider {type Field} type Alias = provider.Field;", [
+  ["type Field", "Field", identifier],
   ["Alias =", "Alias", "entity.name.type.kio"],
   ["provider.Field", "Field", identifier],
 ]);
 
 for (const ending of ["]", "\n]", " // closing\n]"]) {
-  fixture(`ambiguous square bang marker ${JSON.stringify(ending)}`, `module m; fn run() { [!x!${ending} }`, [["x!", "x!", null]]);
-  fixture(`ambiguous bare square bang ${JSON.stringify(ending)}`, `module m; fn run() { [x!${ending} }`, [["x!", "x!", null]]);
+  fixture(`ambiguous square bang marker ${JSON.stringify(ending)}`, `mod m; fn run() { [!x!${ending} }`, [["x!", "x!", null]]);
+  fixture(`ambiguous bare square bang ${JSON.stringify(ending)}`, `mod m; fn run() { [x!${ending} }`, [["x!", "x!", null]]);
 }
-fixture("square bang fallback preserves ordinary interior and outside calls", "module m; fn run() { [!helper(arg)!]; helper(arg); outside\n{ arg } }", [
+fixture("square bang fallback preserves ordinary interior and outside calls", "mod m; fn run() { [!helper(arg)!]; helper(arg); outside\n{ arg } }", [
   ["[!helper(arg)", "helper", functionName],
   ["; helper(arg)", "helper", functionName],
   ["outside\n", "outside", identifier],
@@ -46,108 +46,117 @@ function fixture(name, source, targets) {
   }) });
 }
 
-fixture("marked blocks use generic heads and labels", "module controls; fn f() { outer (value) { a() } fallback inner (next) { b() } otherwise { c() } }", [
+fixture("marked blocks use generic heads and labels", "mod controls; fn f() { outer (value) { a() } fallback inner (next) { b() } otherwise { c() } }", [
   ["outer (value)", "outer", functionName],
   ["fallback inner", "fallback", "keyword.control.kio"],
   ["inner (next)", "inner", functionName],
   ["otherwise {", "otherwise", "keyword.control.kio"],
 ]);
-fixture("marked blocks preserve prefix and ordinary names", "module controls; fn f(if: ., do: ., fallback: .) { outer (convert(if)) { do; fallback } else { if } }", [
+fixture("marked blocks preserve prefix and ordinary names", "mod controls; fn f(if: ., do: ., fallback: .) { outer (convert(if)) { do; fallback } else { if } }", [
   ["if: .", "if", identifier], ["do: .", "do", identifier],
   ["(convert(if))", "convert", functionName],
   ["{ do;", "do", identifier], ["; fallback }", "fallback", identifier],
   ["else {", "else", "keyword.control.kio"], ["{ if }", "if", identifier],
 ]);
-fixture("marked blocks preserve grouped child ownership", "module controls; fn f() { outer(inner (value) { a() } fallback { b() }) { c() } cleanup { d() } }", [
+fixture("marked blocks preserve grouped child ownership", "mod controls; fn f() { outer(inner (value) { a() } fallback { b() }) { c() } cleanup { d() } }", [
   ["inner (value)", "inner", functionName],
   ["fallback {", "fallback", "keyword.control.kio"],
   ["cleanup {", "cleanup", "keyword.control.kio"],
 ]);
-fixture("marked blocks multiline and comments", "module controls; fn f() { outer\n (value)\n { a() } // edge\n fallback // label\n { b() } }", [
+fixture("marked blocks multiline and comments", "mod controls; fn f() { outer\n (value)\n { a() } // edge\n fallback // label\n { b() } }", [
   ["outer\n", "outer", identifier],
   ["fallback //", "fallback", identifier],
 ]);
-fixture("trailing descriptors are declaration local", "module controls; macro form: . -> . { trailing thunk; impl helper; trailing product fallback; trailing sequence cleanup } fn f(trailing: ., sequence: .) { trailing; sequence }", [
+fixture("trailing descriptors are declaration local", "mod controls; macro form: . -> . { trailing thunk; impl helper; trailing product fallback; trailing sequence cleanup } fn f(trailing: ., sequence: .) { trailing; sequence }", [
   ["trailing thunk", "trailing", keyword], ["thunk;", "thunk", keyword],
   ["trailing product", "product", keyword], ["fallback;", "fallback", "keyword.control.kio"],
   ["trailing sequence", "sequence", keyword], ["cleanup }", "cleanup", "keyword.control.kio"],
   ["trailing: .", "trailing", identifier], ["sequence: .", "sequence", identifier],
   ["{ trailing;", "trailing", identifier], ["; sequence }", "sequence", identifier],
 ]);
-fixture("unmarked control spellings are ordinary", "module controls; fn f() { if(value); do(value); else(value) }", [
+fixture("unmarked control spellings are ordinary", "mod controls; fn f() { if(value); do(value); else(value) }", [
   ["if(value)", "if", functionName], ["do(value)", "do", functionName],
   ["else(value)", "else", functionName],
 ]);
 
-fixture("signature nominal members", "signature example v(1); v(1) { with { module api { pub rec type { Cell: . | Cell { pub mk; pub get; }; }; } }; breaking { remove { api.old; } } }", [
+fixture("signature nominal members", "sig example v(1); v(1) { with { mod api { pub rec type { Cell: . | Cell { pub mk; pub get; }; }; } }; breaking { remove { api.old; } } }", [
   ["rec type", "rec", keyword], ["type {", "type", keyword],
   ["Cell:", "Cell", "entity.name.type.kio"],
   ["pub mk;", "mk", functionName], ["pub get;", "get", functionName],
 ]);
-fixture("nominal members and names", "module members;\ntype { Cell: . { mk; pub get; }; }", [
+fixture("nominal members and names", "mod members;\ntype { Cell: . { mk; pub get; }; }", [
   ["type {", "type", keyword], ["Cell:", "Cell", "entity.name.type.kio"],
   ["mk;", "mk", functionName], ["get;", "get", functionName],
 ]);
-fixture("multiline scoped members", "module members;\nrec type { Cell: . | Cell {\n pub(api)\n get // member\n ;\n mk;\n}; }", [
+fixture("multiline scoped members", "mod members;\nrec type { Cell: . | Cell {\n pub(api)\n get // member\n ;\n mk;\n}; }", [
   ["pub(api)", "pub", keyword], ["get //", "get", functionName], ["mk;", "mk", functionName],
 ]);
-fixture("same-line declaration owners", "module source; import helper as h; host type Text { owned }; op _ + _ { impl add; }; fn keep(owned: .) -> . { (owned) }", [
+fixture("same-line declaration owners", "mod source; import helper as h; host type Text; op _ + _ { impl add; }; fn keep(owned: .) -> . { (owned) }", [
   ["import helper", "import", keyword], ["op _", "op", keyword], ["impl add", "impl", keyword],
-  ["{ owned }", "owned", keyword], ["owned:", "owned", identifier], ["(owned)", "owned", identifier],
+  ["owned:", "owned", identifier], ["(owned)", "owned", identifier],
 ]);
 for (const sourceName of ["as", "op", "varop"]) {
   for (const localName of ["as", "op", "varop"]) {
     fixture(`selective alias same-line contextual names ${sourceName} ${localName}`,
-      `module source; import m(${sourceName} as ${localName});`, [
-        [`(${sourceName} as`, sourceName, identifier],
-        [`as ${localName});`, "as", keyword],
-        [`${localName});`, localName, identifier],
+      `mod source; import m {fn ${sourceName} as ${localName}}`, [
+        [`fn ${sourceName} as`, sourceName, identifier],
+        [`as ${localName}}`, "as", keyword],
+        [`${localName}}`, localName, identifier],
       ]);
     fixture(`selective alias contextual names ${sourceName} ${localName}`,
-      `module source; import m(${sourceName} // selector\n as // separator\n ${localName});`, [
-        [`(${sourceName} // selector`, sourceName, sourceName === "as" ? identifier : null],
+      `mod source; import m {fn ${sourceName} // selector\n as // separator\n ${localName}}`, [
+        [`fn ${sourceName} // selector`, sourceName, identifier],
         ["as // separator", "as", keyword],
-        [`${localName});`, localName, identifier],
+        [`${localName}}`, localName, identifier],
       ]);
   }
 }
-fixture("selective contextual names without aliases", "module source; import m(as, op, varop);", [
-  ["(as,", "as", identifier], ["op,", "op", identifier], ["varop);", "varop", identifier],
+fixture("selective separator runs and outer suffix", "mod source; import m { ; fn value;; type Entry; ; }; fn after() { value() }", [
+  ["fn value", "fn", keyword], ["type Entry", "type", keyword],
+  ["fn after", "fn", keyword], ["after()", "after", functionName],
 ]);
-fixture("selective ambiguous fixed tag continues into pattern", "module source; import m(op // selector\n _ + _ as _ ++ _);", [
-  ["(op // selector", "op", null], ["as _ ++", "as", keyword],
+for (const name of ["fn", "type", "lit"]) {
+  fixture(`selective named kind keeps multiline ${name} ordinary`, `mod m; import p {fn // keep\n ${name}}`, [
+    ["{fn //", "fn", keyword], [` ${name}}`, name, identifier],
+  ]);
+}
+fixture("selective contextual names without aliases", "mod source; import m {fn as; fn op; fn varop}", [
+  ["fn as;", "as", identifier], ["fn op;", "op", identifier], ["fn varop}", "varop", identifier],
 ]);
-fixture("selective ambiguous variadic tag continues into pattern", "module source; import m(varop // selector\n [* *] as [% %]);", [
-  ["(varop // selector", "varop", null], ["as [%", "as", keyword],
+fixture("selective ambiguous fixed tag continues into pattern", "mod source; import m {op // selector\n _ + _ as _ ++ _}", [
+  ["{op // selector", "op", null], ["as _ ++", "as", keyword],
 ]);
-fixture("selective operator aliases across trivia", "module source; import m(op _ + _ // fixed\n as _ ++ _, varop [* *] // variadic\n as [% %]);", [
+fixture("selective ambiguous variadic tag continues into pattern", "mod source; import m {op_var // selector\n [* *] as [% %]}", [
+  ["op_var // selector", "op_var", null], ["as [%", "as", keyword],
+]);
+fixture("selective operator aliases across trivia", "mod source; import m {op _ + _ // fixed\n as _ ++ _; op_var [* *] // variadic\n as [% %]}", [
   ["op _", "op", keyword], ["as _", "as", keyword],
-  ["varop [*", "varop", keyword], ["as [%", "as", keyword],
+  ["op_var [*", "op_var", keyword], ["as [%", "as", keyword],
 ]);
-fixture("same-line signature import", "signature app v(1); v(1) { with { module imports { import helper as h }; module empty {} }; breaking { remove { api.old } } }", [
+fixture("same-line signature import", "sig app v(1); v(1) { with { mod imports { import helper as h }; mod empty {} }; breaking { remove { api.old } } }", [
   ["import helper", "import", keyword], ["helper as", "helper", "entity.name.module.kio"],
 ]);
-fixture("host role and role name", "module roles;\nhost type Number\n role // annotation\n (i32);\nfn role(role: .) -> . { role }", [
+fixture("host role and role name", "mod roles;\nhost type Number\n role // annotation\n (i32);\nfn role(role: .) -> . { role }", [
   ["role //", "role", keyword], ["fn role", "role", functionName],
   ["role:", "role", identifier], ["{ role }", "role", identifier],
 ]);
-fixture("incomplete role retained", "module roles;\nhost type Number role(\nfn after(role: .) -> . { role }", [
+fixture("incomplete role retained", "mod roles;\nhost type Number role(\nfn after(role: .) -> . { role }", [
   ["role(", "role", keyword], ["role:", "role", identifier], ["{ role }", "role", identifier],
 ]);
-fixture("incomplete member recovery", "module members;\ntype { Cell: . { mk\nfn after(get: .) -> . { get }", [
+fixture("incomplete member recovery", "mod members;\ntype { Cell: . { mk\nfn after(get: .) -> . { get }", [
   ["mk\n", "mk", functionName], ["get:", "get", identifier], ["{ get }", "get", identifier],
 ]);
-fixture("nominal member words in ordinary parents", "module members;\nfn mk(get: .) -> . { role(get); mk }", [
+fixture("nominal member words in ordinary parents", "mod members;\nfn mk(get: .) -> . { role(get); mk }", [
   ["fn mk", "mk", functionName], ["get:", "get", identifier],
   ["role(", "role", functionName], ["; mk", "mk", identifier],
 ]);
-fixture("named configuration choices and optional Unit scalars", 'package modes;\nbuild { docs { md "docs"; md_out ((())); html (()) }; target rust { out "out/rust"; namespace ((())); thread_safety ((send_sync)) } }', [
+fixture("named configuration choices and optional Unit scalars", 'pkg modes;\nbuild { docs { md "docs"; md_out ((())); html (()) }; target rust { out "out/rust"; namespace ((())); thread_safety ((send_sync)) } }', [
   ["md_out ((()))", "md_out", keyword], ["md_out ((()))", "(", "punctuation.bracket.kio"],
   ["html (())", "html", keyword], ["namespace ((()))", "namespace", identifier],
   ["namespace ((()))", "(", "punctuation.bracket.kio"], ["((send_sync))", "send_sync", identifier],
   ["((send_sync))", "(", "punctuation.bracket.kio"],
 ]);
-fixture("grouped package configuration scalars", 'package app;\nbuild { cache ((())); docs { md (("guide.md")); support ("support"); md_out ("out/md"); html (("out/html")) }; target (rust, (("r" "s"))) { out (("out/rust")); thread_safety ((())) } }', [
+fixture("grouped package configuration scalars", 'pkg app;\nbuild { cache ((())); docs { md (("guide.md")); support ("support"); md_out ("out/md"); html (("out/html")) }; target (rust, (("r" "s"))) { out (("out/rust")); thread_safety ((())) } }', [
   ["cache ((()))", "cache", keyword], ["cache ((()))", "(", "punctuation.bracket.kio"],
   ["md ((\"guide.md\"))", "md", keyword], ['"guide.md"', "guide.md", "string.quoted.double.kio"],
   ["support (", "support", keyword], ["md_out (", "md_out", keyword], ["html ((", "html", keyword],
@@ -155,7 +164,7 @@ fixture("grouped package configuration scalars", 'package app;\nbuild { cache ((
   ['"s")))', "s", "string.quoted.double.kio"], ["out ((", "out", identifier],
   ["thread_safety ((()))", "thread_safety", identifier],
 ]);
-fixture("grouped dependency configuration scalars", 'dependency helper;\nsource { git (("https://example.com/libraries.git")); ref ((("main"))); path ( // lookup\n (())\n) }', [
+fixture("grouped dependency configuration scalars", 'dep helper;\nsource { git (("https://example.com/libraries.git")); ref ((("main"))); path ( // lookup\n (())\n) }', [
   ["source {", "source", keyword], ["git ((", "git", keyword], ["ref (((", "ref", keyword],
   ["path (", "path", keyword], ["path (", "(", "punctuation.bracket.kio"],
   ['"main"', "main", "string.quoted.double.kio"],
@@ -166,7 +175,7 @@ fixture("grouped lock configuration scalars", 'lock helper;\nresolved { git (("h
   ["commit ((", "commit", keyword], ["sig (((", "sig", keyword], ["path ((", "path", keyword],
   ['"digest"', "digest", "string.quoted.double.kio"], ["path ((", "(", "punctuation.bracket.kio"],
 ]);
-fixture("grouped callable reference fields", 'module m;\nop _ + _ { impl ((ops.add)) }\nvarop [* *] { foldl ((ops.join)) (ops.empty); finalize ((())) }\nmacro form: . -> . { captures ((helper), ((Type))); impl ((helpers.run)) }\nrec ((host.drive)) fn again(value: .) -> . { value.>((helpers.keep)) }', [
+fixture("grouped callable reference fields", 'mod m;\nop _ + _ { impl ((ops.add)) }\nop_var [* *] { foldl ((ops.join)) (ops.empty); finalize ((())) }\nmacro form: . -> . { captures ((helper), ((Type))); impl ((helpers.run)) }\nrec ((host.drive)) fn again(value: .) -> . { value.>((helpers.keep)) }', [
   ["impl ((ops", "impl", keyword], ["ops.add", "add", identifier],
   ["foldl ((", "foldl", keyword], ["foldl ((", "(", "punctuation.bracket.kio"],
   ["ops.join", "join", identifier], ["ops.empty", "empty", identifier],
@@ -176,23 +185,23 @@ fixture("grouped callable reference fields", 'module m;\nop _ + _ { impl ((ops.a
   ["(host.drive))", "(", "punctuation.bracket.kio"], [") fn", ")", "punctuation.bracket.kio"],
   ["helpers.keep", "keep", identifier],
 ]);
-fixture("standalone grouped fills is a callable", 'module m;\nmacro form: . -> . { impl (fills) }', [["(fills)", "fills", identifier]]);
-fixture("nested grouped fills is a callable", 'module m;\nmacro form: . -> . { impl ((fills)) }', [["((fills))", "fills", identifier]]);
-fixture("fills marker precedes grouped callable", 'module m;\nmacro form: . -> . { impl (fills) ((helpers.run)) }', [
+fixture("standalone grouped fills is a callable", 'mod m;\nmacro form: . -> . { impl (fills) }', [["(fills)", "fills", identifier]]);
+fixture("nested grouped fills is a callable", 'mod m;\nmacro form: . -> . { impl ((fills)) }', [["((fills))", "fills", identifier]]);
+fixture("fills marker precedes grouped callable", 'mod m;\nmacro form: . -> . { impl (fills) ((helpers.run)) }', [
   ["(fills)", "fills", keyword], ["helpers.run", "run", identifier],
 ]);
 for (const comment of ["", " // shared"]) {
-  const prefix = `module m;\nmacro form: . -> . { impl (fills)${comment}`;
+  const prefix = `mod m;\nmacro form: . -> . { impl (fills)${comment}`;
   fixture(`fills later-line marker${comment}`, `${prefix}\n helpers.run }`, [[`(fills)${comment}`, "fills", null]]);
   fixture(`fills later-line callable${comment}`, `${prefix}\n }`, [[`(fills)${comment}`, "fills", null]]);
 }
-fixture("package fields", 'package cache;\nbuild { cache (); docs { md "a.md"; } target js { target "out"; docs "d"; cache "c"; } }\nbridge { cache/docs/target; }', [
-  ["package cache", "cache", identifier], ["cache ()", "cache", keyword], ["docs {", "docs", keyword],
+fixture("package fields", 'pkg cache;\nbuild { cache (); docs { md "a.md"; } target js { target "out"; docs "d"; cache "c"; } }\nbridge { cache/docs/target; }', [
+  ["pkg cache", "cache", identifier], ["cache ()", "cache", keyword], ["docs {", "docs", keyword],
   ["target js", "target", keyword], ['target "out"', "target", identifier],
   ['docs "d"', "docs", identifier], ['cache "c"', "cache", identifier],
   ["cache/docs", "cache", identifier], ["/docs/", "docs", identifier], ["/target;", "target", identifier],
 ]);
-fixture("config field owner and value roles", 'package palette; build { docs { md html; support md; md_out "guide"; html "html"; }; target js { md "data"; path "data"; } }', [
+fixture("config field owner and value roles", 'pkg palette; build { docs { md html; support md; md_out "guide"; html "html"; }; target js { md "data"; path "data"; } }', [
   ['md html', 'md', keyword], ['md html', 'html', identifier],
   ['support md', 'support', keyword], ['support md', 'md', identifier],
   ['md_out "guide"', 'md_out', keyword], ['html "html"', 'html', keyword],
@@ -205,7 +214,7 @@ fixture("resolved field owner and value roles", 'lock helper; resolved { ;; git 
   ['commit sig', 'commit', keyword], ['commit sig', 'sig', identifier],
   ['sig commit', 'sig', keyword], ['sig commit', 'commit', identifier],
 ]);
-fixture("resolved names outside lock owner", 'module source; fn resolved(git: ., ref: ., path: ., commit: ., sig: .) -> . { (git, ref, path, commit, sig) }', [
+fixture("resolved names outside lock owner", 'mod source; fn resolved(git: ., ref: ., path: ., commit: ., sig: .) -> . { (git, ref, path, commit, sig) }', [
   ['fn resolved', 'resolved', functionName],
   ...['git', 'ref', 'path', 'commit', 'sig'].map(name => [name+':', name, identifier]),
 ]);
@@ -213,46 +222,46 @@ fixture("multiline lock field owner", 'lock // header\nhelper; resolved { git "u
   ['lock //', 'lock', null], ['helper;', 'helper', identifier],
   ...['git', 'ref', 'commit', 'sig'].map(name => [name+' "', name, keyword]),
 ]);
-fixture("package multiline and incomplete", 'package docs;\nbuild\n{\n cache // value\n "cache";\n docs // body\n { md "index.md"; }\n target // id\n js { output "out"; }\n target rust {\n', [
+fixture("package multiline and incomplete", 'pkg docs;\nbuild\n{\n cache // value\n "cache";\n docs // body\n { md "index.md"; }\n target // id\n js { output "out"; }\n target rust {\n', [
   ["cache //", "cache", keyword], ["docs //", "docs", keyword], ["target //", "target", keyword], ["target rust", "target", keyword],
 ]);
-fixture("malformed package neighbor recovery", 'package p;\nbuild { cache ; docs { md "index.md"; } target js { output "out"; } }\nbridge { target; }', [
+fixture("malformed package neighbor recovery", 'pkg p;\nbuild { cache ; docs { md "index.md"; } target js { output "out"; } }\nbridge { target; }', [
   ["cache ;", "cache", keyword], ["docs {", "docs", keyword], ["target js", "target", keyword], ["{ target;", "target", identifier],
 ]);
-fixture("package field wrong parent", "module source;\nfn build(cache: ., docs: ., target: .) -> . { cache; docs; target }", [
+fixture("package field wrong parent", "mod source;\nfn build(cache: ., docs: ., target: .) -> . { cache; docs; target }", [
   ["fn build", "build", functionName], ["cache:", "cache", identifier], ["docs:", "docs", identifier],
   ["target:", "target", identifier], ["{ cache;", "cache", identifier], ["; docs;", "docs", identifier], ["; target }", "target", identifier],
 ]);
-fixture("named package targets", 'package app;\nbuild {\n target (js, "web") { out "out/web"; }\n target (\n rust,\n "worker"\n ) { namespace "app"; }\n}', [
+fixture("named package targets", 'pkg app;\nbuild {\n target (js, "web") { out "out/web"; }\n target (\n rust,\n "worker"\n ) { namespace "app"; }\n}', [
   ["target (js", "target", keyword], ["(js,", "js", identifier],
   ["target (js", "(", "punctuation.bracket.kio"],
   ["js,", ",", "punctuation.separator.kio"],
   ["target (\n", "target", keyword], ["rust,", "rust", identifier],
   ['out "out/web"', 'out', identifier], ['namespace "app"', 'namespace', identifier],
 ]);
-fixture("named target recovery after incomplete body", 'package app;\nbuild {\n target js { out "out/js";\n target (rust, "worker") { out "out/worker"; }\n}', [
+fixture("named target recovery after incomplete body", 'pkg app;\nbuild {\n target js { out "out/js";\n target (rust, "worker") { out "out/worker"; }\n}', [
   ["target js", "target", keyword], ["target (rust", "target", keyword],
   ["(rust,", "rust", identifier], ['out "out/worker"', 'out', identifier],
 ]);
 
-const recursive = (body) => `module recursive;\nrec(loop) fn again(value: .) -> . {\n  ${body}\n}`;
+const recursive = (body) => `mod recursive;\nrec(loop) fn again(value: .) -> . {\n  ${body}\n}`;
 fixture("monomorphic recursive call", recursive("recur again(value)"), [["recur again", "recur", keyword]]);
 fixture("marked recursive callee", recursive("recur _again(value)"), [["recur _again", "recur", keyword]]);
 fixture("recursive argument opener on next line", recursive("recur again\n  (value)"), [["recur again", "recur", keyword]]);
 fixture("incomplete recursive call", recursive("recur again("), [["recur again", "recur", keyword]]);
-fixture("recursive spelling parameter", "module source;\nfn again(\n rec // parameter\n : .\n) -> . { other.rec }", [
+fixture("recursive spelling parameter", "mod source;\nfn again(\n rec // parameter\n : .\n) -> . { other.rec }", [
   ["rec //", "rec", identifier], ["other.rec", "rec", identifier],
 ]);
-fixture("recursive declaration name and ordinary call", "module source;\nfn rec(value: .) -> . { value }\nfn caller(value: .) -> . { rec(value) }", [
+fixture("recursive declaration name and ordinary call", "mod source;\nfn rec(value: .) -> . { value }\nfn caller(value: .) -> . { rec(value) }", [
   ["fn rec", "rec", functionName], ["{ rec(value)", "rec", functionName],
 ]);
-fixture("recursive call word declaration name and ordinary call", "module source;\nfn recur(value: .) -> . { value }\nfn caller(value: .) -> . { recur(value) }", [
+fixture("recursive call word declaration name and ordinary call", "mod source;\nfn recur(value: .) -> . { value }\nfn caller(value: .) -> . { recur(value) }", [
   ["fn recur", "recur", functionName], ["{ recur(value)", "recur", functionName],
 ]);
-fixture("recursive call word parameter and value", "module source;\nfn caller(recur: .) { recur; other.recur }", [
+fixture("recursive call word parameter and value", "mod source;\nfn caller(recur: .) { recur; other.recur }", [
   ["recur:", "recur", identifier], ["{ recur;", "recur", identifier], ["other.recur", "recur", identifier],
 ]);
-fixture("recursive call word annotation-shaped arguments", "module source;\nfn caller(poly: ., cont: ., escape: .) { recur(poly, cont, escape) }", [
+fixture("recursive call word annotation-shaped arguments", "mod source;\nfn caller(poly: ., cont: ., escape: .) { recur(poly, cont, escape) }", [
   ["recur(poly", "recur", functionName], ["poly, cont", "poly", identifier],
   ["cont, escape", "cont", identifier], ["escape) }", "escape", identifier],
 ]);
@@ -276,84 +285,84 @@ fixture("multiline recursive annotations", recursive("recur(\n poly, // annotati
   ["recur(\n", "recur", null], ["poly,", "poly", null], ["cont,", "cont", null], ["again(value)", "again", functionName],
 ]);
 for (const body of ["rec", "rec; rec", "(rec)", "rec.field", "other.rec", "(other.rec)"]) {
-  fixture(`ordinary recursive spelling value ${body}`, `module m; fn f(rec: .) { ${body} }`, [
+  fixture(`ordinary recursive spelling value ${body}`, `mod m; fn f(rec: .) { ${body} }`, [
     ["rec:", "rec", identifier], [`${body} }`, "rec", identifier],
   ]);
 }
 for (const args of ["()", "(())", "(poly, cont)", '("rec(poly)")', "(other.rec)"]) {
-  fixture(`ordinary recursive spelling call ${args}`, `module m; fn f() { rec${args}; () }`, [[`rec${args};`, "rec", functionName]]);
+  fixture(`ordinary recursive spelling call ${args}`, `mod m; fn f() { rec${args}; () }`, [[`rec${args};`, "rec", functionName]]);
 }
-fixture("ordinary recursive annotation names are arguments", "module m; fn f(poly: ., cont: ., escape: .) { rec(poly, cont, escape) }", [
+fixture("ordinary recursive annotation names are arguments", "mod m; fn f(poly: ., cont: ., escape: .) { rec(poly, cont, escape) }", [
   ["rec(poly", "rec", functionName], ["poly, cont, escape)", "poly", identifier],
   ["cont, escape)", "cont", identifier], ["escape) }", "escape", identifier],
 ]);
 for (const fragment of ["recur(", "recur(poly)", "recur( // shared\n poly", "recur(\n poly,", "recur(value, poly)", "recur(value, poly"] ) {
-  const prefix = `module m; fn f(poly: ., cont: .) {\n ${fragment}`;
+  const prefix = `mod m; fn f(poly: ., cont: .) {\n ${fragment}`;
   const close = fragment.endsWith(")") ? "" : fragment.endsWith(",") ? " cont)" : ")";
   const target = fragment.includes("poly") ? "poly" : "recur";
   const needle = fragment;
   fixture(`recursive annotation later-line owner ${fragment}`, `${prefix}\n ${close} again(()) }`, [[needle, target, null]]);
   fixture(`recursive annotation later-line ordinary ${fragment}`, `${prefix}\n ${close}; () }`, [[needle, target, null]]);
 }
-fixture("recursive annotation closer proves local modes", "module m; fn f() { recur(\n poly, cont) again(()) }", [
+fixture("recursive annotation closer proves local modes", "mod m; fn f() { recur(\n poly, cont) again(()) }", [
   ["recur(\n", "recur", null], ["poly,", "poly", "keyword.control.kio"], ["cont)", "cont", "keyword.control.kio"],
 ]);
-fixture("ordinary recursive annotation closer proves arguments", "module m; fn f() { rec(\n poly, cont); () }", [
+fixture("ordinary recursive annotation closer proves arguments", "mod m; fn f() { rec(\n poly, cont); () }", [
   ["rec(\n", "rec", functionName], ["poly,", "poly", identifier], ["cont)", "cont", identifier],
 ]);
-fixture("ordinary recursive spelling chained call", "module m; fn f() { rec(\n poly)(cont); () }", [
+fixture("ordinary recursive spelling chained call", "mod m; fn f() { rec(\n poly)(cont); () }", [
   ["rec(\n", "rec", functionName], ["poly)", "poly", identifier], ["cont)", "cont", identifier],
 ]);
-fixture("ordinary recursive spelling later chained call", "module m; fn f() { rec(\n poly)\n (cont); () }", [
+fixture("ordinary recursive spelling later chained call", "mod m; fn f() { rec(\n poly)\n (cont); () }", [
   ["rec(\n", "rec", functionName], ["poly)", "poly", identifier], ["cont)", "cont", identifier],
 ]);
-fixture("ordinary recursive call word annotation closer proves arguments", "module m; fn f() { recur(\n poly, cont); () }", [
+fixture("ordinary recursive call word annotation closer proves arguments", "mod m; fn f() { recur(\n poly, cont); () }", [
   ["recur(\n", "recur", null], ["poly,", "poly", identifier], ["cont)", "cont", identifier],
 ]);
-fixture("ordinary recursive call word chained call", "module m; fn f() { recur(\n poly)(cont); () }", [
+fixture("ordinary recursive call word chained call", "mod m; fn f() { recur(\n poly)(cont); () }", [
   ["recur(\n", "recur", null], ["poly)", "poly", identifier], ["cont)", "cont", identifier],
 ]);
-fixture("ordinary recursive call word later chained call", "module m; fn f() { recur(\n poly)\n (cont); () }", [
+fixture("ordinary recursive call word later chained call", "mod m; fn f() { recur(\n poly)\n (cont); () }", [
   ["recur(\n", "recur", null], ["poly)", "poly", null], ["cont)", "cont", identifier],
 ]);
-fixture("recursive callee after split annotation group", "module m; fn f() { recur // annotation\n (poly) again\n (()) }", [
+fixture("recursive callee after split annotation group", "mod m; fn f() { recur // annotation\n (poly) again\n (()) }", [
   ["recur //", "recur", null], ["poly)", "poly", "keyword.control.kio"], ["again\n", "again", functionName],
 ]);
 for (const lead of ["", "\n "]) {
   for (const tail of [") again() }", "\n ) again() }", ""]) {
-    fixture(`invalid recursive annotation name ${JSON.stringify([lead, tail])}`, `module m; fn f() { recur(${lead}value, poly${tail}`, [
+    fixture(`invalid recursive annotation name ${JSON.stringify([lead, tail])}`, `mod m; fn f() { recur(${lead}value, poly${tail}`, [
       ["value,", "value", identifier], ["poly", "poly", tail.startsWith(")") ? "keyword.control.kio" : null],
       ...(tail ? [["again()", "again", functionName]] : []),
     ]);
   }
-  fixture(`valid recursive mode before invalid name ${JSON.stringify(lead)}`, `module m; fn f() { recur(${lead}poly, value, cont) again() }`, [
+  fixture(`valid recursive mode before invalid name ${JSON.stringify(lead)}`, `mod m; fn f() { recur(${lead}poly, value, cont) again() }`, [
     ["poly,", "poly", "keyword.control.kio"], ["value,", "value", identifier], ["cont)", "cont", "keyword.control.kio"], ["again()", "again", functionName],
   ]);
-  fixture(`ordinary call with annotation-shaped names ${JSON.stringify(lead)}`, `module m; fn f() { rec(${lead}poly, value, cont); () }`, [
+  fixture(`ordinary call with annotation-shaped names ${JSON.stringify(lead)}`, `mod m; fn f() { rec(${lead}poly, value, cont); () }`, [
     ["poly,", "poly", identifier], ["value,", "value", identifier], ["cont)", "cont", identifier],
   ]);
-  fixture(`invalid recursive annotation nested tail ${JSON.stringify(lead)}`, `module m; fn f() { recur(${lead}value(poly, (cont)), escape) again() }`, [
+  fixture(`invalid recursive annotation nested tail ${JSON.stringify(lead)}`, `mod m; fn f() { recur(${lead}value(poly, (cont)), escape) again() }`, [
     [`recur(${lead}`, "recur", lead ? null : keyword],
   ]);
 }
-fixture("invalid recursive annotation comment continuation", "module m; fn f() { recur(\n value, // invalid mode\n poly, cont) again() }", [
+fixture("invalid recursive annotation comment continuation", "mod m; fn f() { recur(\n value, // invalid mode\n poly, cont) again() }", [
   ["value,", "value", identifier], ["poly,", "poly", "keyword.control.kio"], ["cont)", "cont", "keyword.control.kio"],
 ]);
-fixture("invalid recursive annotation unfinished parent", "module m; fn f() { recur(value, poly\nfn sibling(cont: .) { cont }", [
+fixture("invalid recursive annotation unfinished parent", "mod m; fn f() { recur(value, poly\nfn sibling(cont: .) { cont }", [
   ["value,", "value", identifier], ["poly\n", "poly", null], ["cont:", "cont", identifier],
 ]);
 for (const lead of ["", "\n "]) {
-  fixture(`ordinary recursive call unknown mode name ${JSON.stringify(lead)}`, `module m; fn f() { rec(${lead}value, poly); () }`, [
+  fixture(`ordinary recursive call unknown mode name ${JSON.stringify(lead)}`, `mod m; fn f() { rec(${lead}value, poly); () }`, [
     ["value,", "value", identifier], ["poly)", "poly", identifier],
   ]);
-  fixture(`recursive duplicate mode keeps syntactic roles ${JSON.stringify(lead)}`, `module m; fn f() { recur(${lead}poly, poly) again() }`, [
+  fixture(`recursive duplicate mode keeps syntactic roles ${JSON.stringify(lead)}`, `mod m; fn f() { recur(${lead}poly, poly) again() }`, [
     ["poly,", "poly", "keyword.control.kio"], ["poly)", "poly", "keyword.control.kio"], ["again()", "again", functionName],
   ]);
-  fixture(`ordinary recursive call duplicate mode names ${JSON.stringify(lead)}`, `module m; fn f() { rec(${lead}poly, poly); () }`, [
+  fixture(`ordinary recursive call duplicate mode names ${JSON.stringify(lead)}`, `mod m; fn f() { rec(${lead}poly, poly); () }`, [
     ["poly,", "poly", identifier], ["poly)", "poly", identifier],
   ]);
 }
-fixture("ordinary recursive call nested argument callee", "module m; fn f() { rec(\n value(poly), escape); () }", [
+fixture("ordinary recursive call nested argument callee", "mod m; fn f() { rec(\n value(poly), escape); () }", [
   ["value(", "value", functionName], ["poly)", "poly", identifier], ["escape)", "escape", identifier],
 ]);
 for (const lead of ["", "\n "]) {
@@ -362,56 +371,56 @@ for (const lead of ["", "\n "]) {
     if (content.includes("poly")) targets.push(["poly", "poly", content.startsWith("(") ? identifier : "keyword.control.kio"]);
     if (content.includes("cont") && !content.includes('"')) targets.push(["cont", "cont", identifier]);
     if (content.includes("escape")) targets.push(["escape", "escape", "keyword.control.kio"]);
-    fixture(`recursive balanced non-identifier annotation ${JSON.stringify([lead, content])}`, `module m; fn f() { recur(${lead}${content}) again() }`, targets);
+    fixture(`recursive balanced non-identifier annotation ${JSON.stringify([lead, content])}`, `mod m; fn f() { recur(${lead}${content}) again() }`, targets);
   }
 }
 for (const lead of ["", "\n "]) {
-  fixture(`recursive annotation returns to parent slot ${JSON.stringify(lead)}`, `module m; fn f() { recur(${lead}(poly), cont) again() }`, [
+  fixture(`recursive annotation returns to parent slot ${JSON.stringify(lead)}`, `mod m; fn f() { recur(${lead}(poly), cont) again() }`, [
     ["poly", "poly", identifier], ["cont)", "cont", "keyword.control.kio"], ["again()", "again", functionName],
   ]);
-  fixture(`ordinary recursive call parent slot inverse ${JSON.stringify(lead)}`, `module m; fn f() { rec(${lead}(poly), cont); () }`, [
+  fixture(`ordinary recursive call parent slot inverse ${JSON.stringify(lead)}`, `mod m; fn f() { rec(${lead}(poly), cont); () }`, [
     ["poly", "poly", identifier], ["cont)", "cont", identifier],
   ]);
-  fixture(`ordinary recursive call nested group callee ${JSON.stringify(lead)}`, `module m; fn f() { rec(${lead}(value(poly)), cont); () }`, [
+  fixture(`ordinary recursive call nested group callee ${JSON.stringify(lead)}`, `mod m; fn f() { rec(${lead}(value(poly)), cont); () }`, [
     ["value(", "value", functionName], ["poly)", "poly", identifier], ["cont)", "cont", identifier],
   ]);
-  fixture(`recursive annotation comma runs ${JSON.stringify(lead)}`, `module m; fn f() { recur(${lead},,poly,, cont,,) again() }`, [
+  fixture(`recursive annotation comma runs ${JSON.stringify(lead)}`, `mod m; fn f() { recur(${lead},,poly,, cont,,) again() }`, [
     ["poly,", "poly", "keyword.control.kio"], ["cont,", "cont", "keyword.control.kio"], ["again()", "again", functionName],
   ]);
-  fixture(`ordinary recursive call comma runs ${JSON.stringify(lead)}`, `module m; fn f() { rec(${lead},,poly,, cont,,); () }`, [
+  fixture(`ordinary recursive call comma runs ${JSON.stringify(lead)}`, `mod m; fn f() { rec(${lead},,poly,, cont,,); () }`, [
     ["poly,", "poly", identifier], ["cont,", "cont", identifier],
   ]);
-  fixture(`recursive comma-only annotation envelope ${JSON.stringify(lead)}`, `module m; fn f() { recur(${lead},,,) again() }`, [
+  fixture(`recursive comma-only annotation envelope ${JSON.stringify(lead)}`, `mod m; fn f() { recur(${lead},,,) again() }`, [
     ["again()", "again", functionName],
   ]);
-  fixture(`recursive missing comma retains item boundary ${JSON.stringify(lead)}`, `module m; fn f() { recur(${lead}value poly, cont) again() }`, [
+  fixture(`recursive missing comma retains item boundary ${JSON.stringify(lead)}`, `mod m; fn f() { recur(${lead}value poly, cont) again() }`, [
     ["value poly", "value", identifier], ["poly,", "poly", identifier], ["cont)", "cont", "keyword.control.kio"], ["again()", "again", functionName],
   ]);
 }
 for (const word of ["poly", "cont"]) {
   for (const tail of [") again() }", "); () }"]) {
-    fixture(`recursive comma runs later-line ${word} ${tail}`, `module m; fn f() { recur(\n ,,poly,, cont,, // shared\n ${tail}`, [
+    fixture(`recursive comma runs later-line ${word} ${tail}`, `mod m; fn f() { recur(\n ,,poly,, cont,, // shared\n ${tail}`, [
       [`${word},`, word, null],
     ]);
   }
 }
-fixture("recursive item boundary survives comment newline", "module m; fn f() { recur(\n value // same item\n poly, cont) again() }", [
+fixture("recursive item boundary survives comment newline", "mod m; fn f() { recur(\n value // same item\n poly, cont) again() }", [
   ["value //", "value", identifier], ["poly,", "poly", identifier], ["cont)", "cont", "keyword.control.kio"], ["again()", "again", functionName],
 ]);
 for (const lead of ["", "\n "]) {
-  fixture(`recursive annotation variadic item ${JSON.stringify(lead)}`, `module m; fn f() { recur(${lead}[* poly, poly *], cont) again() }`, [
+  fixture(`recursive annotation variadic item ${JSON.stringify(lead)}`, `mod m; fn f() { recur(${lead}[* poly, poly *], cont) again() }`, [
     ["poly,", "poly", identifier], ["poly *]", "poly", identifier], ["cont)", "cont", "keyword.control.kio"], ["again()", "again", functionName],
   ]);
-  fixture(`recursive annotation nested variadic item ${JSON.stringify(lead)}`, `module m; fn f() { recur(${lead}[* [% poly, cont %], escape *], poly) again() }`, [
+  fixture(`recursive annotation nested variadic item ${JSON.stringify(lead)}`, `mod m; fn f() { recur(${lead}[* [% poly, cont %], escape *], poly) again() }`, [
     ["poly,", "poly", identifier], ["cont %]", "cont", identifier], ["escape *]", "escape", identifier], ["poly)", "poly", "keyword.control.kio"], ["again()", "again", functionName],
   ]);
-  fixture(`recursive annotation unclosed variadic item ${JSON.stringify(lead)}`, `module m; fn f() { recur(${lead}[* poly, poly, cont) again() }`, [
+  fixture(`recursive annotation unclosed variadic item ${JSON.stringify(lead)}`, `mod m; fn f() { recur(${lead}[* poly, poly, cont) again() }`, [
     ["[* poly,", "poly", identifier], ["poly, cont", "poly", identifier], ["cont)", "cont", identifier], ["again()", "again", functionName],
   ]);
-  fixture(`recursive annotation mismatched variadic item ${JSON.stringify(lead)}`, `module m; fn f() { recur(${lead}[* poly, poly +], cont) again() }`, [
+  fixture(`recursive annotation mismatched variadic item ${JSON.stringify(lead)}`, `mod m; fn f() { recur(${lead}[* poly, poly +], cont) again() }`, [
     ["poly,", "poly", identifier], ["poly +]", "poly", identifier], ["again()", "again", functionName],
   ]);
-  fixture(`recursive annotation non-ASCII item boundary ${JSON.stringify(lead)}`, `module m; fn f() { recur(${lead}\u00a0poly, cont) again() }`, [
+  fixture(`recursive annotation non-ASCII item boundary ${JSON.stringify(lead)}`, `mod m; fn f() { recur(${lead}\u00a0poly, cont) again() }`, [
     ["poly,", "poly", identifier], ["cont)", "cont", "keyword.control.kio"],
   ]);
 }
@@ -445,86 +454,86 @@ for (const prefix of ["recur", "recur(poly)", "recur(\n poly"]) {
   fixture(`raw recursive call later-line owner ${prefix}`, `${prefix}\n ${suffix} again(())`, [[prefix, target, null]]);
   fixture(`raw recursive call later-line ordinary ${prefix}`, `${prefix}\n ${suffix};`, [[prefix, target, null]]);
 }
-fixture("annotation inverse", "module m;\nfn f(poly: ., cont: .) -> . { poly(cont) }", [
+fixture("annotation inverse", "mod m;\nfn f(poly: ., cont: .) -> . { poly(cont) }", [
   ["poly:", "poly", identifier], ["cont:", "cont", identifier], ["poly(cont)", "poly", functionName], ["(cont)", "cont", identifier],
 ]);
-fixture("recursive group callable", "module m;\nrec(\n loop\n) fn f(loop: .) -> . { loop }", [
+fixture("recursive group callable", "mod m;\nrec(\n loop\n) fn f(loop: .) -> . { loop }", [
   ["rec(\n", "rec", keyword], ["\n loop\n", "loop", identifier], ["loop:", "loop", identifier], ["{ loop }", "loop", identifier],
 ]);
-fixture("recursive group qualified callable", "module m;\nrec(helper.rec) fn f() -> . { () }", [["helper.rec", "rec", identifier]]);
-fixture("multiline declaration-word parameter", "module m;\nfn f(\n fn\n : .,\n newtype\n : .,\n host\n : .\n) -> . { fn; newtype; host }", [
+fixture("recursive group qualified callable", "mod m;\nrec(helper.rec) fn f() -> . { () }", [["helper.rec", "rec", identifier]]);
+fixture("multiline declaration-word parameter", "mod m;\nfn f(\n fn\n : .,\n newtype\n : .,\n host\n : .\n) -> . { fn; newtype; host }", [
   ["\n fn\n", "fn", identifier], ["\n newtype\n", "newtype", identifier], ["\n host\n", "host", identifier],
   ["{ fn;", "fn", identifier], ["; newtype;", "newtype", identifier], ["; host }", "host", identifier],
 ]);
 
-fixture("split varop declaration", "module ops;\nvarop [* *] { foldl join empty; finalize finish; };", [
-  ["varop [", "varop", keyword], ["foldl join", "foldl", keyword], ["finalize finish", "finalize", keyword],
+fixture("split varop declaration", "mod ops;\nop_var [* *] { foldl join empty; finalize finish; };", [
+  ["op_var [", "op_var", keyword], ["foldl join", "foldl", keyword], ["finalize finish", "finalize", keyword],
 ]);
-fixture("split varop import", "module ops;\nimport collect(varop [* *], varop);", [
-  ["varop [", "varop", keyword], ["varop);", "varop", identifier],
+fixture("split varop import", "mod ops;\nimport collect {op_var [* *]; fn varop}", [
+  ["op_var [", "op_var", keyword], ["varop}", "varop", identifier],
 ]);
-fixture("varop multiline head", "module ops;\nvarop [+\n +] { foldr join empty; };", [
-  ["varop [+", "varop", keyword], ["foldr join", "foldr", keyword],
+fixture("varop multiline head", "mod ops;\nop_var [+\n +] { foldr join empty; };", [
+  ["op_var [+", "op_var", keyword], ["foldr join", "foldr", keyword],
 ]);
-fixture("varop inverse", "module ops;\nfn varop(varop: .) -> . { varop }", [
+fixture("varop inverse", "mod ops;\nfn varop(varop: .) -> . { varop }", [
   ["fn varop", "varop", functionName], ["varop:", "varop", identifier], ["{ varop }", "varop", identifier],
 ]);
-fixture("maximal bracket runs and rejected marker", "module ops;\nfn apply() -> . { #[* #1, #2 *]; .+[+ 1, 2 +] }", [
+fixture("maximal bracket runs and rejected marker", "mod ops;\nfn apply() -> . { #[* #1, #2 *]; .+[+ 1, 2 +] }", [
   ["#[*", "#", "keyword.operator.user.kio"], ["#[*", "[", "punctuation.bracket.kio"], ["#[*", "*", "keyword.operator.user.kio"], [".+[+", ".", "punctuation.separator.kio"], [".+[+", "+", "keyword.operator.user.kio"], [".+[+", "[", "punctuation.bracket.kio"], ["[+ 1", "+", "keyword.operator.user.kio"],
 ]);
-fixture("multiline target keys", 'package p;\nbuild { target js {\n target "a";\n docs "b";\n cache "c";\n} }', [
+fixture("multiline target keys", 'pkg p;\nbuild { target js {\n target "a";\n docs "b";\n cache "c";\n} }', [
   ['target "a"', "target", identifier], ['docs "b"', "docs", identifier], ['cache "c"', "cache", identifier],
 ]);
-fixture("wrong host role parent", "module h;\nhost type N { role };\nfn next(role: .) -> . { role }", [
+fixture("wrong host role parent", "mod h;\nhost type N { role };\nfn next(role: .) -> . { role }", [
   ["{ role };", "role", identifier], ["role:", "role", identifier], ["-> . { role }", "role", identifier],
 ]);
-fixture("member missing terminator", "module m;\ntype { N: . { mk get; }; }", [["mk get", "get", identifier]]);
-fixture("multiline function name", "module m;\nfn // declaration\n again(value: .) -> . { recur again(value) }", [
+fixture("member missing terminator", "mod m;\ntype { N: . { mk get; }; }", [["mk get", "get", identifier]]);
+fixture("multiline function name", "mod m;\nfn // declaration\n again(value: .) -> . { recur again(value) }", [
   ["again(value:", "again", functionName], ["recur again", "recur", keyword],
 ]);
-fixture("multiline host head", "module m;\nhost // declaration\n type Number role(i32);", [["role(i32)", "role", keyword]]);
-fixture("recursive name in member path", "module m;\nfn f() -> . { other.rec again(); other.\n rec again() }", [
+fixture("multiline host head", "mod m;\nhost // declaration\n type Number role(i32);", [["role(i32)", "role", keyword]]);
+fixture("recursive name in member path", "mod m;\nfn f() -> . { other.rec again(); other.\n rec again() }", [
   ["other.rec", "rec", identifier], ["\n rec again", "rec", identifier],
 ]);
-fixture("recursive call word in member path", "module m;\nfn f() -> . { other.recur again(); other.\n recur again() }", [
+fixture("recursive call word in member path", "mod m;\nfn f() -> . { other.recur again(); other.\n recur again() }", [
   ["other.recur", "recur", identifier], ["\n recur again", "recur", identifier],
 ]);
-fixture("nominal missing payload", "module m;\ntype { N { mk; }; }", [["mk;", "mk", identifier]]);
-fixture("nominal empty payload", "module m;\ntype { N: { get; }; }", [["get;", "get", identifier]]);
-fixture("nominal polymorphic payload", "module m;\ntype { Cell[A]<B>: Pair[A][B] { mk; get; }; }", [
+fixture("nominal missing payload", "mod m;\ntype { N { mk; }; }", [["mk;", "mk", identifier]]);
+fixture("nominal empty payload", "mod m;\ntype { N: { get; }; }", [["get;", "get", identifier]]);
+fixture("nominal polymorphic payload", "mod m;\ntype { Cell[A]<B>: Pair[A][B] { mk; get; }; }", [
   ["mk;", "mk", functionName], ["get;", "get", functionName],
 ]);
 for (const payload of ["{field}", "Box[{field}]", "T | {field}", "T -> {field}", "{\n field\n}"]) {
-  fixture(`rejected nominal braced payload ${payload}`, `module m;\ntype { N: ${payload} { mk; get; }; }\nfn after(projector: .) -> . { projector }`, [
+  fixture(`rejected nominal braced payload ${payload}`, `mod m;\ntype { N: ${payload} { mk; get; }; }\nfn after(projector: .) -> . { projector }`, [
     ["mk;", "mk", identifier], ["get;", "get", identifier],
     ["fn after", "after", functionName], ["projector:", "projector", identifier], ["{ projector }", "projector", identifier],
   ]);
 }
 for (const payload of ["Box", "Box[.]", "(T & U)", "[A] A -> A", "T | U", "T -> U", "(\n T\n)", "!"]) {
-  fixture(`admitted nominal payload ${payload}`, `module m;\ntype { N: ${payload} { mk; get; }; }`, [
+  fixture(`admitted nominal payload ${payload}`, `mod m;\ntype { N: ${payload} { mk; get; }; }`, [
     ["mk;", "mk", functionName], ["get;", "get", functionName],
   ]);
 }
 for (const [sibling, targets] of [
   ["type Next = .;", [["type Next", "type", keyword]]],
-  ["literal unit = .t;", [["literal unit", "literal", keyword]]],
+  ["lit unit = .t;", [["lit unit", "lit", keyword]]],
   ["type { Tag: .; };", [["type { Tag", "type", keyword]]],
   ["macro macro : . -> . { impl handler; };", [["macro macro", "macro", keyword], ["impl handler", "impl", keyword]]],
-  ["varop [* *] { foldl join empty; };", [["varop [*", "varop", keyword], ["foldl join", "foldl", keyword]]],
+  ["op_var [* *] { foldl join empty; };", [["op_var [*", "op_var", keyword], ["foldl join", "foldl", keyword]]],
   ["op _ + _ { impl add; };", [["op _", "op", keyword], ["impl add", "impl", keyword]]],
   ["import app as local;", [["import app", "import", keyword]]],
   ["equiv same() { (); () }", [["equiv same", "equiv", keyword], ["same()", "same", functionName]]],
   ["rec(loop) fn again() { recur again() }", [["rec(loop)", "rec", keyword], ["recur again", "recur", keyword]]],
 ]) {
-  fixture(`invalid nominal sibling ${sibling}`, `module m;\ntype { N: Box[{field}] { mk; }; }\n${sibling}`, [
+  fixture(`invalid nominal sibling ${sibling}`, `mod m;\ntype { N: Box[{field}] { mk; }; }\n${sibling}`, [
     ["mk;", "mk", identifier], ...targets,
   ]);
-  for (const head of ["varop(())", "varop", "varop [+"]) {
-    fixture(`invalid varop sibling ${head} ${sibling}`, `module m;\n${head}\n${sibling}`, targets);
+  for (const head of ["varop(())", "varop", "op_var [+"]) {
+    fixture(`invalid varop sibling ${head} ${sibling}`, `mod m;\n${head}\n${sibling}`, targets);
   }
 }
 fixture("comment keywords", "// rec again() constructor projector role cache docs target", [["// rec again() constructor projector role cache docs target", "// rec again() constructor projector role cache docs target", "comment.line.double-slash.kio"]]);
-fixture("invalid nominal nested-group recovery", "module m;\ntype { N: Box[{field(} { mk; }; }\ntype Next = .;", [
+fixture("invalid nominal nested-group recovery", "mod m;\ntype { N: Box[{field(} { mk; }; }\ntype Next = .;", [
   ["mk;", "mk", identifier], ["type Next", "type", keyword],
 ]);
 fixture("string keywords", '"rec again() constructor projector role cache docs target"', [
@@ -532,207 +541,258 @@ fixture("string keywords", '"rec again() constructor projector role cache docs t
   ["rec again() constructor projector role cache docs target", "rec again() constructor projector role cache docs target", "string.quoted.double.kio"],
   ['target"', '"', "string.quoted.double.kio"],
 ]);
-fixture("marker before comment", "module m;\nfn f() -> . { .+// trailing\n () }", [
+fixture("marker before comment", "mod m;\nfn f() -> . { .+// trailing\n () }", [
   [".+//", ".", "punctuation.separator.kio"], [".+//", "+", "keyword.operator.user.kio"], ["// trailing", "// trailing", "comment.line.double-slash.kio"],
 ]);
-fixture("marker second slash", "module m;\nfn f() -> . { .+/+/ }", [[".+/+/", ".", "punctuation.separator.kio"], [".+/+/", "+/+", "keyword.operator.user.kio"]]);
+fixture("marker second slash", "mod m;\nfn f() -> . { .+/+/ }", [[".+/+/", ".", "punctuation.separator.kio"], [".+/+/", "+/+", "keyword.operator.user.kio"]]);
 for (const word of ["if", "do"]) {
-  fixture(`${word} ordinary body value`, `module m;\nfn f(${word}: .) -> . { ${word} }`, [
+  fixture(`${word} ordinary body value`, `mod m;\nfn f(${word}: .) -> . { ${word} }`, [
     [`${word}:`, word, identifier], [`{ ${word} }`, word, identifier],
   ]);
-  fixture(`${word} ordinary call`, `module m;\nfn f() -> . { ${word}(()) }`, [[`${word}(()`, word, functionName]]);
-  fixture(`${word} parenthesized control`, `module m;\nfn f() -> . { ${word}(pred(())) { () }${word === "if" ? " else { () }" : ""} }`, [[`${word}(pred`, `${word}`, functionName]]);
-  fixture(`${word} multiline receiver`, `module m;\nfn f() -> . { ${word}(pred(()))\n { () }${word === "if" ? " else { () }" : ""}\n}`, [[`${word}(pred`, `${word}`, functionName]]);
+  fixture(`${word} ordinary call`, `mod m;\nfn f() -> . { ${word}(()) }`, [[`${word}(()`, word, functionName]]);
+  fixture(`${word} parenthesized control`, `mod m;\nfn f() -> . { ${word}(pred(())) { () }${word === "if" ? " else { () }" : ""} }`, [[`${word}(pred`, `${word}`, functionName]]);
+  fixture(`${word} multiline receiver`, `mod m;\nfn f() -> . { ${word}(pred(()))\n { () }${word === "if" ? " else { () }" : ""}\n}`, [[`${word}(pred`, `${word}`, functionName]]);
   for (const suffix of ["", " // shared trivia", "(pred())"]) {
-    const prefix = `module m;\nfn f() -> . {\n ${word}${suffix}`;
+    const prefix = `mod m;\nfn f() -> . {\n ${word}${suffix}`;
     fixture(`${word} later-line construct ${suffix}`, `${prefix}\n ${suffix.startsWith("(") ? "" : "(pred(())) "}{ () }${word === "if" ? " else { () }" : ""}\n}`, [[`${word}${suffix}\n`, `${word}`, suffix.startsWith("(") ? functionName : identifier]]);
     fixture(`${word} later-line ordinary ${suffix}`, `${prefix}\n}`, [[`${word}${suffix}\n`, `${word}`, suffix.startsWith("(") ? functionName : identifier]]);
   }
 }
-fixture("conditional else owner", "module m;\nfn f(else: .) -> . { if (.t) { else } else { else } }", [
+fixture("conditional else owner", "mod m;\nfn f(else: .) -> . { if (.t) { else } else { else } }", [
   ["else:", "else", identifier], ["{ else } else", "else", identifier],
   ["else { else", "else", "keyword.control.kio"], ["{ else } }", "else", identifier],
 ]);
-fixture("else multiline owner", "module m;\nfn f() -> . {\n if (.t) { () }\n // branch\n else\n { () }\n}", [["else\n", "else", "keyword.control.kio"]]);
-fixture("else identifier condition", "module m;\nfn f(else: .) -> . { if (else) { () } else { () } }", [
+fixture("else multiline owner", "mod m;\nfn f() -> . {\n if (.t) { () }\n // branch\n else\n { () }\n}", [["else\n", "else", "keyword.control.kio"]]);
+fixture("else identifier condition", "mod m;\nfn f(else: .) -> . { if (else) { () } else { () } }", [
   ["if (else)", "else", identifier], ["} else", "else", "keyword.control.kio"],
 ]);
-fixture("else outside conditional", "module m;\nfn f(else: .) -> . { scope { () }; else(else); else }", [
+fixture("else outside conditional", "mod m;\nfn f(else: .) -> . { scope { () }; else(else); else }", [
   ["else(else", "else", functionName], ["(else)", "else", identifier], ["; else }", "else", identifier],
 ]);
-fixture("nested if condition", "module m;\nfn f() -> . { if(if (.t) { .t } else { .f }) { () } else { () } }", [
+fixture("nested if condition", "mod m;\nfn f() -> . { if(if (.t) { .t } else { .f }) { () } else { () } }", [
   ["if(if", "if", functionName], ["if (.t)", "if", functionName],
   ["else { .f", "else", "keyword.control.kio"], ["else { ()", "else", "keyword.control.kio"],
 ]);
-fixture("conditional grouped condition", "module m;\nfn f() -> . { if((flag)) { () } else { () } }", [["else {", "else", "keyword.control.kio"]]);
-fixture("conditional do condition", "module m;\nfn f() -> . { if(scope { .t }) { () } else { () } }", [
+fixture("conditional grouped condition", "mod m;\nfn f() -> . { if((flag)) { () } else { () } }", [["else {", "else", "keyword.control.kio"]]);
+fixture("conditional do condition", "mod m;\nfn f() -> . { if(scope { .t }) { () } else { () } }", [
   ["scope {", "scope", functionName], ["else {", "else", "keyword.control.kio"],
 ]);
-fixture("else if chain", "module m;\nfn f() -> . { if (.t) { () } else if (.f) { () } else { () } }", [
+fixture("else if chain", "mod m;\nfn f() -> . { if (.t) { () } else if (.f) { () } else { () } }", [
   ["else if", "else", "keyword.control.kio"], ["if (.f)", "if", functionName], ["else {", "else", "keyword.control.kio"],
 ]);
-fixture("conditional lambda condition", "module m;\nfn f() -> . { if(.(if: .) { if }) { () } else { () } }", [
+fixture("conditional lambda condition", "mod m;\nfn f() -> . { if(.(if: .) { if }) { () } else { () } }", [
   ["if:", "if", identifier], ["{ if }", "if", identifier], ["else {", "else", "keyword.control.kio"],
 ]);
-fixture("recursive conditional condition", "module m;\nfn f() -> . { if (recur again()) { () } else { () } }", [
+fixture("recursive conditional condition", "mod m;\nfn f() -> . { if (recur again()) { () } else { () } }", [
   ["(recur again", "recur", keyword], ["else {", "else", "keyword.control.kio"],
 ]);
-fixture("macro conditional condition", "module m;\nfn f() -> . { if (pred()) { () } else { () } }", [
+fixture("macro conditional condition", "mod m;\nfn f() -> . { if (pred()) { () } else { () } }", [
   ["(pred", "pred", functionName], ["else {", "else", "keyword.control.kio"],
 ]);
 for (const [open, close] of [["[*", "*]"], ["*[", "]*"]]) {
-  fixture(`varop conditional condition ${open}`, `module m;\nfn f() -> . { if(${open} flag, .t ${close}) { () } else { () } }`, [["else {", "else", "keyword.control.kio"]]);
-  fixture(`varop contextual element ${open}`, `module m;\nfn f() -> . { ${open} if, do ${close} }`, [["if,", "if", identifier], [`do ${close}`, "do", identifier]]);
+  fixture(`varop conditional condition ${open}`, `mod m;\nfn f() -> . { if(${open} flag, .t ${close}) { () } else { () } }`, [["else {", "else", "keyword.control.kio"]]);
+  fixture(`varop contextual element ${open}`, `mod m;\nfn f() -> . { ${open} if, do ${close} }`, [["if,", "if", identifier], [`do ${close}`, "do", identifier]]);
 }
-fixture("local binding keyword", "module m;\nfn f(let: .) -> . { let x = let; x }", [
+fixture("local binding keyword", "mod m;\nfn f(let: .) -> . { let x = let; x }", [
   ["let:", "let", identifier], ["let x", "let", keyword], ["= let;", "let", identifier],
 ]);
-fixture("binding is statement only", "module m;\nfn f() -> . { call(let x = ()); let y = call(let z = ()); y }", [
+fixture("binding is statement only", "mod m;\nfn f() -> . { call(let x = ()); let y = call(let z = ()); y }", [
   ["let x", "let", identifier], ["let y", "let", keyword], ["let z", "let", identifier],
 ]);
-fixture("binding contextual names", "module m;\nfn f() -> . { let .(if: .) = (); let .(do: ., else: .) = pair; let .(<Type> rec) = packed; rec }", [
+fixture("binding contextual names", "mod m;\nfn f() -> . { let .(if: .) = (); let .(do: ., else: .) = pair; let .(<Type> rec) = packed; rec }", [
   ["let .(if", "let", keyword], ["if:", "if", identifier], ["let .(do", "let", keyword],
   ["do:", "do", identifier], ["else:", "else", identifier], ["let .(<", "let", keyword], ["rec)", "rec", identifier],
 ]);
-fixture("ordinary let calls and operators", "module m;\nfn f() -> . { let(value); let(value) == other; let x == other }", [
+fixture("ordinary let calls and operators", "mod m;\nfn f() -> . { let(value); let(value) == other; let x == other }", [
   ["let(value);", "let", functionName], ["let(value) ==", "let", functionName], ["let x", "let", keyword],
 ]);
 for (const suffix of ["", " // shared trivia", " ."]) {
-  const prefix = `module m;\nfn f() -> . {\n let${suffix}`;
+  const prefix = `mod m;\nfn f() -> . {\n let${suffix}`;
   fixture(`binding later-line keyword ${suffix}`, `${prefix}\n ${suffix === " ." ? "(x)" : "x"} = (); x\n}`, [[`let${suffix}\n`, "let", null]]);
   fixture(`binding later-line identifier ${suffix}`, `${prefix}\n}`, [[`let${suffix}\n`, "let", null]]);
 }
-fixture("do statement siblings", "module m;\nfn f() -> . { do (receiver) { let if <- action(); let do = if; do }; let else = (); else }", [
+fixture("do statement siblings", "mod m;\nfn f() -> . { do (receiver) { let if <- action(); let do = if; do }; let else = (); else }", [
   ["do (receiver)", "do", functionName], ["let if", "let", keyword], ["if <-", "if", identifier],
   ["let do", "let", keyword], ["do =", "do", identifier], ["if;", "if", identifier], ["do };", "do", identifier],
   ["let else", "let", keyword], ["else =", "else", identifier], ["else }", "else", identifier],
 ]);
-fixture("conditional statement siblings", "module m;\nfn f() -> . { if (.t) { let else = (); else } else { let if = (); if }; let do = (); do }", [
+fixture("conditional statement siblings", "mod m;\nfn f() -> . { if (.t) { let else = (); else } else { let if = (); if }; let do = (); do }", [
   ["let else", "let", keyword], ["else =", "else", identifier], ["else } else", "else", identifier],
   ["} else", "else", "keyword.control.kio"], ["let if", "let", keyword], ["if =", "if", identifier],
   ["if };", "if", identifier], ["let do", "let", keyword], ["do }", "do", identifier],
 ]);
-fixture("incomplete control sibling", "module m;\nfn broken() -> . { if value(\nfn after(if: ., do: ., else: .) -> . { if; do; else }", [
+fixture("incomplete control sibling", "mod m;\nfn broken() -> . { if value(\nfn after(if: ., do: ., else: .) -> . { if; do; else }", [
   ["if value", "if", identifier], ["if:", "if", identifier], ["do:", "do", identifier], ["else:", "else", identifier],
   ["{ if;", "if", identifier], ["; do;", "do", identifier], ["; else }", "else", identifier],
 ]);
-fixture("declaration payload parents", "module m;\nliteral if = .t;\ntype T = if.T;\ntype { Do: else.T; Let: rec.T; };\nmacro let: if.T { captures do.else; impl(fills) if.let; };\nequiv do() -> . { if(()) }", [
-  ["literal if", "if", identifier], ["= if.T", "if", identifier], ["{ Do:", "Do", "entity.name.type.kio"], ["Do: else", "else", identifier],
+fixture("declaration payload parents", "mod m;\nlit if = .t;\ntype T = if.T;\ntype { Do: else.T; Let: rec.T; };\nmacro let: if.T { captures do.else; impl(fills) if.let; };\nequiv do() -> . { if(()) }", [
+  ["lit if", "if", identifier], ["= if.T", "if", identifier], ["{ Do:", "Do", "entity.name.type.kio"], ["Do: else", "else", identifier],
   ["macro let", "let", "entity.name.macro.kio"], ["let: if", "if", identifier], ["captures do", "captures", keyword], ["do.else", "do", identifier],
   ["impl(fills)", "impl", keyword], ["fills)", "fills", keyword], ["if.let", "if", identifier],
   ["equiv do", "do", functionName], ["{ if(())", "if", functionName],
 ]);
-fixture("macro operator declarations and imports", "module m; import ops(op macro _ && .__ as _ %% .__);\nop macro _ && .__ { impl controls.and; }\nfn after(macro: .) -> . { macro }", [
-  ["(op macro _", "op", keyword], ["(op macro _", "macro", keyword], ["as _", "as", keyword],
+for (const name of ["pkg", "sig", "mod", "lit"]) {
+  fixture(`bare header word ${name} is ambiguous`, name, [[name, name, null]]);
+  fixture(`header word ${name} remains an ordinary raw call`, `${name}(())`, [
+    [`${name}(())`, name, functionName],
+  ]);
+  fixture(`header word ${name} remains an ordinary typed call`, `${name}[.](())`, [
+    [`${name}[.]`, name, functionName],
+  ]);
+  fixture(`header word ${name} remains an ordinary member path`, `${name}.value`, [
+    [`${name}.value`, name, identifier],
+  ]);
+}
+fixture("split package head retains later body", "pkg // header\n demo; build { cache (); }", [
+  ["pkg //", "pkg", null], ["build {", "build", keyword], ["cache ();", "cache", keyword],
+]);
+fixture("split module head retains later declaration", "mod // header\n demo; fn next() { () }", [
+  ["mod //", "mod", null], ["fn next", "fn", keyword], ["next()", "next", functionName],
+]);
+fixture("split literal head retains later declaration", "lit // header\n value = 1; fn next() { () }", [
+  ["lit //", "lit", null], ["fn next", "fn", keyword], ["next()", "next", functionName],
+]);
+for (const [name, declaration] of [
+  ["pkg", "pkg demo;"],
+  ["dep", "dep demo; source { path \"demo\"; }"],
+  ["sig", "sig demo v(1);"],
+  ["mod", "mod demo;"],
+  ["lit", "lit one = 1;"],
+  ["op_macro", "op_macro _ ? _ { impl choose; }"],
+  ["op_var", "op_var [* *] { foldl choose empty; }"],
+]) {
+  fixture(`root vocabulary ${name} declaration`, declaration, [[name, name, keyword]]);
+  fixture(`root vocabulary ${name} call`, `${name}(())`, [[name, name, functionName]]);
+  fixture(`root vocabulary ${name} type application`, `${name}[.](())`, [[name, name, functionName]]);
+  fixture(`root vocabulary ${name} member`, `${name}.value`, [[name, name, identifier]]);
+  fixture(`root vocabulary ${name} split head`, `${name} // pending\n`, [[name, name, null]]);
+}
+fixture("split macro operator head retains later body", "op_macro // pending\n _ ? _ { impl choose; }\nfn next() { () }", [
+  ["op_macro //", "op_macro", null], [" impl choose", " impl choose", null], ["fn next", "fn", keyword],
+]);
+fixture("split macro operator word with ordinary block call", "op_macro\n(()) { impl(()) }", [
+  ["op_macro\n", "op_macro", null], [" impl(())", " impl", null],
+]);
+fixture("headerless macro operator declaration", "op_macro _ ? _ { impl choose; }", [
+  ["op_macro _", "op_macro", keyword], ["impl choose", "impl", keyword],
+]);
+fixture("headerless quoted macro operator declaration", "op_macro (+) _ { impl choose; }", [
+  ["op_macro (+)", "op_macro", keyword], ["impl choose", "impl", keyword],
+]);
+fixture("headerless macro operator word remains callable", "op_macro(())", [
+  ["op_macro(())", "op_macro", functionName],
+]);
+fixture("macro operator declarations and imports", "mod m; import ops {op_macro _ && .__ as _ %% .__}\nop_macro _ && .__ { impl controls.and; }\nfn after(macro: .) -> . { macro }", [
+  ["{op_macro _", "op_macro", keyword], ["as _", "as", keyword],
   ["&& .__ as", ".", "punctuation.separator.kio"], ["&& .__ as", "__", "variable.parameter.slot.kio"],
   ["impl controls", "impl", keyword], ["macro:", "macro", identifier], ["{ macro }", "macro", identifier],
 ]);
-fixture("malformed dot pair keeps punctuation and neighbor", "module source;\nimport ops(varop ..[ ]..);\nfn run() { id(..[ let(x) ]..) }\nfn after() { let(x) }", [
+fixture("malformed dot pair keeps punctuation and neighbor", "mod source;\nimport ops {op_var ..[ ]..}\nfn run() { id(..[ let(x) ]..) }\nfn after() { let(x) }", [
   [".[ let(x)", ".", "punctuation.separator.kio"], ["fn after", "fn", keyword], ["after()", "after", functionName],
 ]);
-fixture("incomplete macro operator recovers at next declaration", "module m;\nop macro _ && .\nfn after(value: .) -> . { value }", [
+fixture("incomplete macro operator recovers at next declaration", "mod m;\nop_macro _ && .\nfn after(value: .) -> . { value }", [
   ["fn after", "fn", keyword], ["after(", "after", functionName], ["{ value }", "value", identifier],
 ]);
-fixture("fixed operator body parents", "module m;\nop _ + _ { impl if.let; };", [
+fixture("fixed operator body parents", "mod m;\nop _ + _ { impl if.let; };", [
   ["op _", "op", keyword], ["impl if", "impl", keyword], ["if.let", "if", identifier], ["let;", "let", identifier],
 ]);
 for (const head of ["[* *]", "[+ +]", "[]", "[/ /]", "[**]", "[****]", "[!? ?!]", "[+ + ]"]) {
-  fixture(`varop delimiter ${head}`, `module ops;\nvarop ${head} { foldl join empty; };`, [
-    [`varop ${head}`, "varop", keyword], ["foldl join", "foldl", keyword],
+  fixture(`varop delimiter ${head}`, `mod ops;\nop_var ${head} { foldl join empty; };`, [
+    [`op_var ${head}`, "op_var", keyword], ["foldl join", "foldl", keyword],
   ]);
 }
 for (const head of ["[ _ ]", "[[ ]]", "/[ ]/", "*[ ]*", "[***]"]) {
-  fixture(`invalid varop head ${head}`, `module ops;\nvarop ${head} { foldl join empty; };`, [
-    [`varop ${head}`, "varop", keyword], ["foldl join", "foldl", null],
+  fixture(`invalid varop head ${head}`, `mod ops;\nop_var ${head} { foldl join empty; };`, [
+    [`op_var ${head}`, "op_var", keyword], ["foldl join", "foldl", null],
   ]);
 }
 for (const head of ["[+ *]", "[+< >+]", "[+\n *]", "[+ +] extra"]) {
-  fixture(`mismatched varop head ${head}`, `module ops;\nvarop ${head} { foldl join empty; };\nfn after(foldl: .) -> . { foldl }`, [
+  fixture(`mismatched varop head ${head}`, `mod ops;\nop_var ${head} { foldl join empty; };\nfn after(foldl: .) -> . { foldl }`, [
     ["foldl join", "foldl", null], ["foldl:", "foldl", identifier], ["{ foldl }", "foldl", identifier],
   ]);
 }
 for (const head of ["[+< <+]", "[+<\n <+]", "[** **]", "[\n ]", "[+ // split\n +]", "[+ +// split\n ]"]) {
-  fixture(`mirrored varop head ${head}`, `module ops;\nvarop ${head} { foldl join empty; };`, [["foldl join", "foldl", keyword]]);
+  fixture(`mirrored varop head ${head}`, `mod ops;\nop_var ${head} { foldl join empty; };`, [["foldl join", "foldl", keyword]]);
 }
 for (const width of [32, 128, 512]) {
   const marker = "+!?".repeat(width);
   const close = [...marker].reverse().join("");
   for (const gap of ["", " ", "\n"]) {
     fixture(`long mirrored head ${width} ${JSON.stringify(gap)}`,
-      `module ops;\nvarop [${marker}${gap}${close}] { foldl join empty; };`,
+      `mod ops;\nop_var [${marker}${gap}${close}] { foldl join empty; };`,
       [["foldl join", "foldl", gap === "" ? null : keyword]]);
   }
   fixture(`long mismatched head ${width}`,
-    `module ops;\nvarop [${marker} ${close.slice(0, -1)}%] { foldl join empty; };\nfn after() { () }`,
+    `mod ops;\nop_var [${marker} ${close.slice(0, -1)}%] { foldl join empty; };\nfn after() { () }`,
     [["foldl join", "foldl", null], ["fn after", "fn", keyword]]);
 }
 
-fixture("slots in type and scalar binding positions", "module m;\ntype { Field: _; };\nfn run() -> . { let _ = (); let scalar = (); scalar }", [
+fixture("slots in type and scalar binding positions", "mod m;\ntype { Field: _; };\nfn run() -> . { let _ = (); let scalar = (); scalar }", [
   ["Field: _", "_", "variable.parameter.slot.kio"], ["let _", "_", "variable.parameter.slot.kio"],
   ["let scalar", "scalar", identifier], ["; scalar }", "scalar", identifier],
 ]);
-fixture("monadic binding arrow taxonomy", "module m;\nfn run() -> . { do (bind) { let scalar <- value; scalar } }", [
+fixture("monadic binding arrow taxonomy", "mod m;\nfn run() -> . { do (bind) { let scalar <- value; scalar } }", [
   ["scalar <-", "<-", "keyword.operator.user.kio"], ["let scalar", "scalar", identifier],
 ]);
-fixture("placeholder lambda owns executable body", "module m;\nfn run() -> . { .x. { print(x1) } }", [["print(x1)", "print", functionName]]);
-fixture("placeholder lambda missing reference buffer", "module m;\nfn run() -> . { .x. // stem\n { let item = (); print(item) } }", [
+fixture("placeholder lambda owns executable body", "mod m;\nfn run() -> . { .x. { print(x1) } }", [["print(x1)", "print", functionName]]);
+fixture("placeholder lambda missing reference buffer", "mod m;\nfn run() -> . { .x. // stem\n { let item = (); print(item) } }", [
   ["let item", "let", keyword], ["print(item)", "print", functionName],
 ]);
-fixture("multiline placeholder lambda body", "module m;\nfn run() -> . { .x. // stem\n { let item = x1; print(item) } }", [
+fixture("multiline placeholder lambda body", "mod m;\nfn run() -> . { .x. // stem\n { let item = x1; print(item) } }", [
   ["let item", "let", keyword], ["print(item)", "print", functionName],
 ]);
-fixture("placeholder lambda in do receiver", "module m;\nfn run() -> . { do(.x. { bind(x1) }) { let item <- value; item } }", [
+fixture("placeholder lambda in do receiver", "mod m;\nfn run() -> . { do(.x. { bind(x1) }) { let item <- value; item } }", [
   ["do(.x.", "do", functionName], ["bind(x1)", "bind", functionName], ["let item", "let", keyword],
 ]);
 for (const stem of ["x", "t", "f", "_arg", "x1_y"]) {
-  fixture(`placeholder stem and ordinary references ${stem}`, `module m;\nfn run() { .${stem}. { (${stem}1, ${stem}2()) } }`, [
+  fixture(`placeholder stem and ordinary references ${stem}`, `mod m;\nfn run() { .${stem}. { (${stem}1, ${stem}2()) } }`, [
     [`.${stem}.`, stem, "variable.parameter.kio"],
     [`${stem}1,`, `${stem}1`, identifier], [`${stem}2()`, `${stem}2`, functionName],
   ]);
 }
-fixture("booleans retain their ordinary role", "module m;\nfn run() { (.t, .f) }", [
+fixture("booleans retain their ordinary role", "mod m;\nfn run() { (.t, .f) }", [
   [".t,", ".t", "constant.language.boolean.kio"], [".f)", ".f", "constant.language.boolean.kio"],
 ]);
-fixture("existential let pattern", "module m;\nfn run() { let .(<A> packed) = value; packed }", [
+fixture("existential let pattern", "mod m;\nfn run() { let .(<A> packed) = value; packed }", [
   ["let .(<", "let", keyword], ["packed)", "packed", identifier],
 ]);
-fixture("ordinary contextual let call before binding arrow", "module m;\nfn run() { let(f) <- x }", [
+fixture("ordinary contextual let call before binding arrow", "mod m;\nfn run() { let(f) <- x }", [
   ["let(f)", "let", functionName], ["<-", "<-", "keyword.operator.user.kio"],
 ]);
-fixture("reserved names keep ordinary roles", "module m;\nfn run(value: __Type__) { (__term__, __call__()) }", [
+fixture("reserved names keep ordinary roles", "mod m;\nfn run(value: __Type__) { (__term__, __call__()) }", [
   ["__term__,", "__term__", identifier], ["__call__()", "__call__", functionName],
 ]);
-fixture("qualified members are not placeholder stems", "module m;\nfn run() { provider.item.call(value) }", [
+fixture("qualified members are not placeholder stems", "mod m;\nfn run() { provider.item.call(value) }", [
   ["provider.item", "provider", identifier], [".item.", "item", identifier], [".call(", "call", identifier],
 ]);
-fixture("callable references follow identifier word grammar", "module m;\nfn run() { (__helper2_name__(), helper2_name(), bad1word!()) }", [
+fixture("callable references follow identifier word grammar", "mod m;\nfn run() { (__helper2_name__(), helper2_name(), bad1word!()) }", [
   ["__helper2_name__", "__helper2_name__", functionName],
   [" helper2_name", "helper2_name", functionName],
   ["bad1word!", "bad1word", identifier],
 ]);
-fixture("forall argument compact unit body", "module m;\nfn run() -> . { consume[[A].](value) }", [
+fixture("forall argument compact unit body", "mod m;\nfn run() -> . { consume[[A].](value) }", [
   ["[A]", "[", "punctuation.bracket.kio"], ["[A]", "]", "punctuation.bracket.kio"],
   ["].]", ".", "punctuation.separator.kio"],
 ]);
 for (const head of ["[_A]", "[ // binder\n A]", "[\n A]", "[* F]", "[ * F]", "[ * // kind\n F]"]) {
-  fixture(`forall binder domain ${head}`, `module m;\nfn run() -> . { consume[${head}.](value) }`, [
+  fixture(`forall binder domain ${head}`, `mod m;\nfn run() -> . { consume[${head}.](value) }`, [
     [head, "[", "punctuation.bracket.kio"], [head, "]", "punctuation.bracket.kio"],
     [`${head}.`, ".", "punctuation.separator.kio"],
   ]);
-  fixture(`lambda binder domain ${head}`, `module m;\nfn run() -> . { .${head}(x: .) { let item = x; item } }`, [
+  fixture(`lambda binder domain ${head}`, `mod m;\nfn run() -> . { .${head}(x: .) { let item = x; item } }`, [
     [head, "[", "punctuation.bracket.kio"], [head, "]", "punctuation.bracket.kio"], ["let item", "let", keyword],
   ]);
 }
 for (const head of ["[,A]", "[*F,]", "[* F,,G,]"]) {
-  fixture(`rejected forall comma binder recovery ${head}`, `module m;\nfn run() -> . { consume[${head}.](value) }`, [
+  fixture(`rejected forall comma binder recovery ${head}`, `mod m;\nfn run() -> . { consume[${head}.](value) }`, [
     [head, "[", "punctuation.bracket.kio"], [head, "]", "punctuation.bracket.kio"],
     [`${head}.`, ".", "punctuation.separator.kio"],
   ]);
-  fixture(`rejected lambda comma binder recovery ${head}`, `module m;\nfn run() -> . { .${head}(x: .) { let item = x; item } }`, [
+  fixture(`rejected lambda comma binder recovery ${head}`, `mod m;\nfn run() -> . { .${head}(x: .) { let item = x; item } }`, [
     [head, "[", "punctuation.bracket.kio"], [head, "]", "punctuation.bracket.kio"], ["let item", "let", keyword],
   ]);
 }
-const starPrefix = "module m;\nvarop [* *] { foldl join empty; };\nfn f() { consume";
+const starPrefix = "mod m;\nop_var [* *] { foldl join empty; };\nfn f() { consume";
 fixture("star argument later-line forall", `${starPrefix}[[* // shared\n F] F[.]](value) }`, [
   ["consume[[* // shared", "[", "punctuation.bracket.kio"], ["consume[[* // shared", "*", "keyword.operator.user.kio"], [" F] F", "]", "punctuation.bracket.kio"],
 ]);
@@ -749,7 +809,7 @@ for (const [partial, binderTail, valueTail] of [
   [" F, * G // shared", " ] F[.]", " .make() *]"],
   [" F, ** // shared", " G] F[.]", " G.make() *]"],
 ]) {
-  const prefix = `module m;\nvarop [* *] { foldl join empty; };\nop * _ { impl star; };\nop ** _ { impl double_star; };\nfn f() { consume`;
+  const prefix = `mod m;\nop_var [* *] { foldl join empty; };\nop * _ { impl star; };\nop ** _ { impl double_star; };\nfn f() { consume`;
   fixture(`star partial binder ${partial.includes(",") ? "invalid-comma recovery" : "later-line forall"} ${partial}`, `${prefix}[[*${partial}\n${binderTail}](value) }`, [
     [`consume[[*${partial}`, "[", "punctuation.bracket.kio"], [`consume[[*${partial}`, "*", "keyword.operator.user.kio"], [`${binderTail}](value`, "]", "punctuation.bracket.kio"],
   ]);
@@ -757,62 +817,62 @@ for (const [partial, binderTail, valueTail] of [
     [`consume([*${partial}`, "[", "punctuation.bracket.kio"], [`consume([*${partial}`, "*", "keyword.operator.user.kio"], [`${valueTail}, value`, "*", "keyword.operator.user.kio"], [`${valueTail}, value`, "]", "punctuation.bracket.kio"],
   ]);
 }
-fixture("rejected star binder spaced commas retain bracket recovery", "module m;\nfn f() { consume[[* F, , * G, ].](value) }", [
+fixture("rejected star binder spaced commas retain bracket recovery", "mod m;\nfn f() { consume[[* F, , * G, ].](value) }", [
   ["consume[[*", "[", "punctuation.bracket.kio"], ["G, ].", "]", "punctuation.bracket.kio"],
 ]);
-fixture("star literal written callable resolves before later line", "module m;\nvarop [* *] { foldl join empty; };\nfn f() { consume([* F.make() // value\n *], value) }", [
+fixture("star literal written callable resolves before later line", "mod m;\nop_var [* *] { foldl join empty; };\nfn f() { consume([* F.make() // value\n *], value) }", [
   ["consume([*", "[", "punctuation.bracket.kio"], ["consume([*", "*", "keyword.operator.user.kio"], ["*], value", "*", "keyword.operator.user.kio"], ["*], value", "]", "punctuation.bracket.kio"],
 ]);
 for (const name of ["value", "value1", "_value", "_1foo"]) {
   for (const prefix of [name, `F, ${name}`]) {
-    fixture(`star value name fixes literal owner ${prefix}`, `module m;\nvarop [* *] { foldl join empty; };\nfn f(value: .) { consume([* ${prefix} // value\n *], value) }`, [
+    fixture(`star value name fixes literal owner ${prefix}`, `mod m;\nop_var [* *] { foldl join empty; };\nfn f(value: .) { consume([* ${prefix} // value\n *], value) }`, [
       ["consume([*", "[", "punctuation.bracket.kio"], ["consume([*", "*", "keyword.operator.user.kio"], ["*], value", "*", "keyword.operator.user.kio"], ["*], value", "]", "punctuation.bracket.kio"],
       [`${prefix} // value`, name, identifier],
     ]);
   }
 }
 for (const names of ["value", "F, value"]) {
-  fixture(`rejected value shaped star binder ${names}`, `module m;\nfn f() { consume[[* ${names}].](value) }`, [
+  fixture(`rejected value shaped star binder ${names}`, `mod m;\nfn f() { consume[[* ${names}].](value) }`, [
     ["consume[[*", "[", "punctuation.bracket.kio"], ["consume[[*", "*", "keyword.operator.user.kio"], ["].](value", "]", "punctuation.bracket.kio"], ["].](value", ".", "punctuation.separator.kio"],
   ]);
 }
-fixture("star binder lambda keeps its unambiguous owner", "module m;\nfn f() { .[* // kind\n F](x: .) { let item = x; item } }", [
+fixture("star binder lambda keeps its unambiguous owner", "mod m;\nfn f() { .[* // kind\n F](x: .) { let item = x; item } }", [
   [".[*", "[", "punctuation.bracket.kio"], ["let item", "let", keyword],
 ]);
-fixture("pending dot preserves star varop runs", "module m;\nfn run() { . // dot\n [* value *] }\nfn after() { () }", [
+fixture("pending dot preserves star varop runs", "mod m;\nfn run() { . // dot\n [* value *] }\nfn after() { () }", [
   ["[* value", "[", "punctuation.bracket.kio"], ["[* value", "*", "keyword.operator.user.kio"], ["*] }", "*", "keyword.operator.user.kio"], ["*] }", "]", "punctuation.bracket.kio"],
   ["fn after", "fn", keyword],
 ]);
-fixture("pending dot preserves double-star varop runs", "module m;\nfn run() { . // dot\n [** value **] }\nfn after() { () }", [
+fixture("pending dot preserves double-star varop runs", "mod m;\nfn run() { . // dot\n [** value **] }\nfn after() { () }", [
   ["[** value", "[", "punctuation.bracket.kio"], ["[** value", "**", "keyword.operator.user.kio"], ["**] }", "**", "keyword.operator.user.kio"], ["**] }", "]", "punctuation.bracket.kio"],
   ["fn after", "fn", keyword],
 ]);
-fixture("pending dot star continuation later-line varop", "module m;\nfn run() { . // dot\n [* // shared\n F.make() *] }\nfn after() { () }", [
+fixture("pending dot star continuation later-line varop", "mod m;\nfn run() { . // dot\n [* // shared\n F.make() *] }\nfn after() { () }", [
   ["[* // shared", "[", "punctuation.bracket.kio"], ["[* // shared", "*", "keyword.operator.user.kio"], ["*] }", "*", "keyword.operator.user.kio"], ["*] }", "]", "punctuation.bracket.kio"],
   ["fn after", "fn", keyword],
 ]);
-fixture("pending dot star continuation later-line binder", "module m;\nfn run() { . // dot\n [* // shared\n F] -> F[.] -> F[.] { .(x: F[.]) { let item = x; item } } }", [
+fixture("pending dot star continuation later-line binder", "mod m;\nfn run() { . // dot\n [* // shared\n F] -> F[.] -> F[.] { .(x: F[.]) { let item = x; item } } }", [
   ["[* // shared", "[", "punctuation.bracket.kio"], ["[* // shared", "*", "keyword.operator.user.kio"], [" F] ->", "]", "punctuation.bracket.kio"],
   ["let item", "let", keyword],
 ]);
-fixture("pending dot complete higher-kind binder", "module m;\nfn run() { . // dot\n [**F] -> F[.][.] -> F[.][.] { .(x: F[.][.]) { let item = x; item } } }", [
+fixture("pending dot complete higher-kind binder", "mod m;\nfn run() { . // dot\n [**F] -> F[.][.] -> F[.][.] { .(x: F[.][.]) { let item = x; item } } }", [
   ["[**F]", "[", "punctuation.bracket.kio"], ["[**F]", "]", "punctuation.bracket.kio"],
   ["let item", "let", keyword],
 ]);
-fixture("star literal with uppercase callable is not a binder", "module m;\nvarop [* *] { foldl join empty; };\nfn f() { consume([* F.make() *], value) }", [
+fixture("star literal with uppercase callable is not a binder", "mod m;\nop_var [* *] { foldl join empty; };\nfn f() { consume([* F.make() *], value) }", [
   ["consume([* F", "[", "punctuation.bracket.kio"], ["consume([* F", "*", "keyword.operator.user.kio"], ["*], value", "*", "keyword.operator.user.kio"], ["*], value", "]", "punctuation.bracket.kio"],
 ]);
-fixture("signature version tag ownership", "signature app v(2);\nv(1) { with { module app { pub fn v() -> .; } } }\nv(2) { nonbreaking { remove { app.v; } } }", [
+fixture("signature version tag ownership", "sig app v(2);\nv(1) { with { mod app { pub fn v() -> .; } } }\nv(2) { nonbreaking { remove { app.v; } } }", [
   ["app v(2)", "v", keyword], ["v(1)", "v", keyword], ["\nv(2)", "v", keyword],
   ["fn v()", "v", functionName], ["app.v;", "v", identifier],
 ]);
-fixture("signature mixed tail has no new document owner", "signature app v(1);\nv(1) { with { module app { pub fn run() -> .; } } }\ndependency lib;\nsource { path \"lib\"; }\nlock lib;\nresolved { ref \"v\"; }\nv(2)", [
-  ["fn run", "fn", keyword], ["dependency lib", "dependency", identifier], ["source {", "source", identifier],
+fixture("signature mixed tail has no new document owner", "sig app v(1);\nv(1) { with { mod app { pub fn run() -> .; } } }\ndep lib;\nsource { path \"lib\"; }\nlock lib;\nresolved { ref \"v\"; }\nv(2)", [
+  ["fn run", "fn", keyword], ["dep lib", "dep", identifier], ["source {", "source", identifier],
   ["lock lib", "lock", identifier], ["resolved {", "resolved", identifier], ["v(2)", "v", identifier],
 ]);
-fixture("signature name is not the version tag", "signature v(1);", [["v(1)", "v", identifier]]);
-fixture("signature path leaf is not the version tag", "signature app/v(1);", [["/v(1)", "v", identifier]]);
-fixture("signature multiline path and version", "signature // header\n app/ // path\n v // name\n v // version\n (1);\nv(1) {}", [
+fixture("signature name is not the version tag", "sig v(1);", [["v(1)", "v", identifier]]);
+fixture("signature path leaf is not the version tag", "sig app/v(1);", [["/v(1)", "v", identifier]]);
+fixture("signature multiline path and version", "sig // header\n app/ // path\n v // name\n v // version\n (1);\nv(1) {}", [
   ["v // name", "v", identifier], ["v // version", "v", keyword], ["v(1) {}", "v", keyword],
 ]);
 fixture("raw expression does not own later declaration words", "if else match do\nfn newtype rec with", [["fn newtype", "fn", identifier], ["rec with", "rec", identifier]]);
@@ -822,73 +882,73 @@ fixture("raw bracket runs retain lexical operator role", "] [! ][*\n.[!/+ /\n[ ]
   ["][*", "]", "punctuation.bracket.kio"], ["][*", "[", "punctuation.bracket.kio"], ["][*", "*", "keyword.operator.user.kio"], [".[!/+", ".", "punctuation.separator.kio"], [".[!/+", "[", "punctuation.bracket.kio"], [".[!/+", "!/+", "keyword.operator.user.kio"],
   ["[ ]", "[", "punctuation.bracket.kio"], ["[ ]", "]", "punctuation.bracket.kio"],
 ]);
-fixture("module varop head begins on later line", "module m;\nvarop // declaration\n[-\n-]\n{ foldr join empty; finalize finish; };", [
-  ["varop //", "varop", keyword], ["foldr join", "foldr", keyword], ["finalize finish", "finalize", keyword],
+fixture("module varop head begins on later line", "mod m;\nop_var // declaration\n[-\n-]\n{ foldr join empty; finalize finish; };", [
+  ["op_var //", "op_var", keyword], ["foldr join", "foldr", keyword], ["finalize finish", "finalize", keyword],
 ]);
-fixture("multiline varop callable remains an expression", "module m;\nfn run() -> . { varop\n (()) }", [["varop\n", "varop", identifier]]);
+fixture("multiline varop callable remains an expression", "mod m;\nfn run() -> . { varop\n (()) }", [["varop\n", "varop", identifier]]);
 for (const comment of ["", " // trivia"]) {
-  fixture(`headerless varop later-line declaration${comment}`, `varop${comment}\n[* *] { foldl join empty; };\nfn next() -> . { () }`, [
-    [`varop${comment}\n`, "varop", null], ["foldl join", "foldl", keyword], ["fn next", "fn", keyword],
+  fixture(`headerless varop later-line declaration${comment}`, `op_var${comment}\n[* *] { foldl join empty; };\nfn next() -> . { () }`, [
+    [`op_var${comment}\n`, "op_var", null], ["foldl join", "foldl", keyword], ["fn next", "fn", keyword],
   ]);
-  fixture(`headerless varop later-line call${comment}`, `varop${comment}\n(())`, [[`varop${comment}\n`, "varop", null]]);
+  fixture(`headerless varop later-line call${comment}`, `op_var${comment}\n(())`, [[`op_var${comment}\n`, "op_var", null]]);
 }
 fixture("headerless varop same-line call", "varop(())", [["varop(())", "varop", functionName]]);
-fixture("headerless incomplete varop sibling recovery", "varop\ntype Next = .;", [
-  ["varop\n", "varop", null], ["type Next", "type", keyword],
+fixture("headerless incomplete varop sibling recovery", "op_var\ntype Next = .;", [
+  ["op_var\n", "op_var", null], ["type Next", "type", keyword],
 ]);
-fixture("module varop commits before malformed parenthesized head", "module m;\nvarop(())\nfn after() -> . { () }", [
-  ["varop(())", "varop", keyword], ["fn after", "fn", keyword],
+fixture("module varop commits before malformed parenthesized head", "mod m;\nop_var(())\nfn after() -> . { () }", [
+  ["op_var(())", "op_var", keyword], ["fn after", "fn", keyword],
 ]);
-fixture("missing varop head does not own fold body", "module m;\nvarop { foldl join empty; };", [
-  ["varop {", "varop", keyword], ["foldl join", "foldl", null],
+fixture("missing varop head does not own fold body", "mod m;\nop_var { foldl join empty; };", [
+  ["op_var {", "op_var", keyword], ["foldl join", "foldl", null],
 ]);
-for (const prefix of ["", "module m;\n"]) {
+for (const prefix of ["", "mod m;\n"]) {
   fixture(`incomplete import retains sibling declaration ${prefix.length}`, `${prefix}import app\nfn neighbor() -> . { () }`, [["fn neighbor", "fn", keyword]]);
 }
 
 const unorderedFixtures = JSON.parse(fs.readFileSync(new URL("../../../tools/tree-sitter-kio/test/structural.json", import.meta.url), "utf8"));
-fixture("dependency source and mapping keyword owners", 'dependency dep;\nsource { ref "main"; git "repo"; }\nrehost old to fresh;\nretype old.T to fresh.T;', [
+fixture("dep source and mapping keyword owners", 'dep dep;\nsource { ref "main"; git "repo"; }\nrehost old to fresh;\nretype old.T to fresh.T;', [
   ['ref "main"', "ref", keyword], ['git "repo"', "git", keyword],
   ["old to fresh;", "to", keyword], ["old.T to fresh.T;", "to", keyword],
 ]);
-fixture("dependency mapping ordinary names", 'dependency rehost; source { path "lib"; } rehost to to source; retype retype.T to source.T;', [
-  ["dependency rehost", "rehost", identifier], ['path "lib"', "path", keyword],
+fixture("dependency mapping ordinary names", 'dep rehost; source { path "lib"; } rehost to to source; retype retype.T to source.T;', [
+  ["dep rehost", "rehost", identifier], ['path "lib"', "path", keyword],
   ["rehost to", "to", identifier], [" to source;", "to", keyword], ["to source;", "source", identifier],
   ["retype retype", "retype", keyword], ["retype.T", "retype", identifier],
   ["T to source.T", "to", keyword], ["source.T", "source", identifier],
 ]);
-fixture("dependency multiline mapping paths", 'dependency dep; source { path "lib"; }\nrehost // head\n old / // path\n to\n to // separator\n fresh;\nretype old // path\n . // type\n T\n to fresh.T;', [
+fixture("dependency multiline mapping paths", 'dep dep; source { path "lib"; }\nrehost // head\n old / // path\n to\n to // separator\n fresh;\nretype old // path\n . // type\n T\n to fresh.T;', [
   ["rehost //", "rehost", keyword], ["\n to\n", "to", identifier], ["to // separator", "to", keyword],
   ["retype old", "retype", keyword], ["to fresh.T", "to", keyword],
 ]);
-fixture("dependency words in ordinary module body", "module m; fn rehost(retype: ., source: .) { rehost(retype); source }", [
+fixture("dependency words in ordinary module body", "mod m; fn rehost(retype: ., source: .) { rehost(retype); source }", [
   ["fn rehost", "rehost", functionName], ["retype:", "retype", identifier], ["source:", "source", identifier],
   ["rehost(retype)", "rehost", functionName], ["; source", "source", identifier],
 ]);
-fixture("dependency bad mapping value does not own separator", 'dependency dep; source { path "lib"; } rehost Upper to fresh;', [["to fresh", "to", identifier]]);
+fixture("dependency bad mapping value does not own separator", 'dep dep; source { path "lib"; } rehost Upper to fresh;', [["to fresh", "to", identifier]]);
 for (const path of ["__private__", "_1", "old / Upper", "old / __private__", "old.T"]) {
-  fixture(`dependency invalid module path ${path}`, `dependency dep; source { path "lib"; } rehost ${path} to fresh;`, [["to fresh", "to", identifier]]);
+  fixture(`dependency invalid module path ${path}`, `dep dep; source { path "lib"; } rehost ${path} to fresh;`, [["to fresh", "to", identifier]]);
 }
-fixture("dependency bad retype suffix does not own separator", 'dependency dep; source { path "lib"; } retype old.lower to fresh.T;', [["to fresh", "to", identifier]]);
-fixture("dependency field value is not a new field head", 'dependency dep; source { path git; }', [["path git", "path", keyword], ["git;", "git", identifier]]);
+fixture("dependency bad retype suffix does not own separator", 'dep dep; source { path "lib"; } retype old.lower to fresh.T;', [["to fresh", "to", identifier]]);
+fixture("dependency field value is not a new field head", 'dep dep; source { path git; }', [["path git", "path", keyword], ["git;", "git", identifier]]);
 for (const header of ["Upper", "_1", "__private__", "dep extra", "dep()", "dep / extra", "\n Upper", "dep\n extra"]) {
-  fixture(`dependency rejected header ${header}`, `dependency ${header}; source { path "lib"; } rehost old to fresh;`, [
+  fixture(`dependency rejected header ${header}`, `dep ${header}; source { path "lib"; } rehost old to fresh;`, [
     ["source {", "source", identifier], ['path "lib"', "path", identifier],
     ["rehost old", "rehost", identifier], ["to fresh", "to", identifier],
   ]);
 }
-fixture("dependency keyword name and header trivia", 'dependency source // header\n ; source { path "lib"; } rehost old to fresh;', [
-  ["dependency source", "source", identifier], ["; source", "source", keyword],
+fixture("dependency keyword name and header trivia", 'dep source // header\n ; source { path "lib"; } rehost old to fresh;', [
+  ["dep source", "source", identifier], ["; source", "source", keyword],
   ['path "lib"', "path", keyword], ["rehost old", "rehost", keyword], ["to fresh", "to", keyword],
 ]);
-fixture("dependency module-wide retype", 'dependency dep; source { path "lib"; } retype old to fresh;', [["retype old", "retype", keyword], ["to fresh", "to", keyword]]);
+fixture("dependency module-wide retype", 'dep dep; source { path "lib"; } retype old to fresh;', [["retype old", "retype", keyword], ["to fresh", "to", keyword]]);
 fixture("dependency ordinary raw call", "dependency(value)", [["dependency(value)", "dependency", functionName]]);
 for (const trivia of ["", " // shared"]) {
-  const prefix = `dependency${trivia}`;
+  const prefix = `dep${trivia}`;
   fixture(`dependency later-line document${trivia}`, `${prefix}\n dep; source { path "lib"; } rehost old to fresh;`, [
-    [prefix, "dependency", null], ["rehost old", "rehost", keyword],
+    [`${prefix}\n`, "dep", null], ["rehost old", "rehost", keyword],
   ]);
-  fixture(`dependency later-line call${trivia}`, `${prefix}\n (value)`, [[prefix, "dependency", null]]);
+  fixture(`dependency later-line call${trivia}`, `${prefix}\n (value)`, [[prefix, "dep", null]]);
 }
 for (const [owner, count] of [
   ["varop", 8], ["macro", 2], ["package", 2], ["build", 7], ["dependency", 6],

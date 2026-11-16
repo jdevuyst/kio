@@ -1,4 +1,4 @@
-module pkg/provider;
+mod pkg/provider;
 
 import __comptime__;
 

@@ -1,7 +1,7 @@
-module float_weather_index/report;
+mod float_weather_index/report;
 
 import float_weather_index/daily as daily;
-import testapi(F64, String);
+import testapi { type F64; type String }
 import testapi/fmt as fmt;
 import testapi/io as io;
 

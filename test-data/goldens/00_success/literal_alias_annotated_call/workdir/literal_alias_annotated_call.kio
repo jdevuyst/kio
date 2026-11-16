@@ -1,4 +1,4 @@
-module literal_alias_annotated_call;
+mod literal_alias_annotated_call;
 
 host type I32 role(i32);
 

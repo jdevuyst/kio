@@ -1,4 +1,4 @@
-package errsolv;
+pkg errsolv;
 
 build {
   cache "out/.kio-cache/";

@@ -73,17 +73,17 @@ Each case is a directory containing:
 
   ```kio
   // macros.dep.kio
-  dependency macros;
+  dep macros;
   source { path "<rel>/macros.pkg.kio"; }
   ```
 
   and selects macros from the re-rooted modules
-  (`import macros/derive(macro derive);`,
-  `import macros/match(macro match);`). Depending on macros materializes its
+  (`import macros/derive {macro derive}`,
+  `import macros/match {macro match}`). Depending on macros materializes its
   modules under a `macros/` tree at the case package root, and that **re-rooted tree is
   committed** — the case ships its dependency's materialized closure, so a
   fresh checkout runs without a fetch step. The committed modules are
-  re-rooted derivatives (`module derive;` → `module macros/derive;`), not
+  re-rooted derivatives (`mod derive;` → `mod macros/derive;`), not
   copies of the canonical source. Symlinking or byte-copying a *canonical*
   macro-library module into a case is still forbidden (it predates dependencies);
   CI rejects both via

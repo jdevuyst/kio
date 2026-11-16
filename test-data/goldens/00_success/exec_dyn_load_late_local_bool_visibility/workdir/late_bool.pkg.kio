@@ -1,4 +1,4 @@
-package late_bool;
+pkg late_bool;
 
 build {
   cache "out/.kio-cache/";

@@ -1,4 +1,4 @@
-package exec_rec_match_non_tail_shared_continuation;
+pkg exec_rec_match_non_tail_shared_continuation;
 
 build {
   cache "out/.kio-cache/";

@@ -4,23 +4,23 @@ type `:help` for commands, `:quit` to leave
 pub fn choose(left: ., _right: .)
 pub fn choose(left: ., _right: .) { left }
 references to `first`:
-  demo/main:3:17  in module demo/main
-  demo/main:3:27  in module demo/main
-  demo/main:3:34  in module demo/main
-  demo/main:3:44  in module demo/main
-  demo/main:5:16  in fn run
-  demo/main:5:31  in fn run
+  demo/main:4:6  in module demo/main
+  demo/main:4:16  in module demo/main
+  demo/main:5:6  in module demo/main
+  demo/main:5:16  in module demo/main
+  demo/main:10:16  in fn run
+  demo/main:10:31  in fn run
   demo/ops:3:8  in fn choose
   demo/ops:7:21  in op _ + _
-  demo/ops:9:25  in varop [* *]
+  demo/ops:9:26  in op_var [* *]
 pub op _ + _ { impl choose }
 references to `op _ ++ _`:
-  demo/main:3:52  in module demo/main
-  demo/main:5:50  in fn run
+  demo/main:6:3  in module demo/main
+  demo/main:10:50  in fn run
   demo/ops:7:5  in op _ + _
-pub varop [* *] { foldr choose empty }
-references to `varop [% %]`:
-  demo/main:3:72  in module demo/main
-  demo/main:5:57  in fn run
-  demo/ops:9:5  in varop [* *]
+pub op_var [* *] { foldr choose empty }
+references to `op_var [% %]`:
+  demo/main:7:3  in module demo/main
+  demo/main:10:57  in fn run
+  demo/ops:9:5  in op_var [* *]
 bye

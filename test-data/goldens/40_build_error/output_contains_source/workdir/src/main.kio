@@ -1,3 +1,3 @@
-module src/main;
+mod src/main;
 
 pub fn main() { () }

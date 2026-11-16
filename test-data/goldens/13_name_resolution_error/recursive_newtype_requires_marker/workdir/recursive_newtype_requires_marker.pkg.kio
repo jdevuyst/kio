@@ -1,4 +1,4 @@
-package recursive_newtype_requires_marker;
+pkg recursive_newtype_requires_marker;
 
 build {
   target js {

@@ -1,6 +1,6 @@
-module u/main;
+mod u/main;
 
-import u(String);
+import u { type String }
 
 fn staged(prefix: String)[A](value: A) -> String { prefix }
 

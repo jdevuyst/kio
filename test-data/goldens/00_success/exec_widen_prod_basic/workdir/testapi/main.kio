@@ -1,10 +1,10 @@
-module testapi/main;
+mod testapi/main;
 
-import macros/spine_macros(macro one_prod, macro widen_prod);
-import testapi(I32, String);
-import testapi/fmt(int_to_string);
-import testapi/io(print);
-import testapi/text(string_concat);
+import macros/spine_macros { macro one_prod; macro widen_prod }
+import testapi { type I32; type String }
+import testapi/fmt { fn int_to_string }
+import testapi/io { fn print }
+import testapi/text { fn string_concat }
 
 // `widen_prod`: extend the target by adding a `()` slot (R-Identity-
 // Prod-intro). Source `(String & I32)` widens to

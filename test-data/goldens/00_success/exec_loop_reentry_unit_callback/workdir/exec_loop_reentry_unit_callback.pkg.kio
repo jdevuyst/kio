@@ -1,4 +1,4 @@
-package exec_loop_reentry_unit_callback;
+pkg exec_loop_reentry_unit_callback;
 
 build {
   cache "out/.kio-cache/";

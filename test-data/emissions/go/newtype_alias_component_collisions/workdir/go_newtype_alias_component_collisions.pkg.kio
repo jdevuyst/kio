@@ -1,4 +1,4 @@
-package go_newtype_alias_component_collisions;
+pkg go_newtype_alias_component_collisions;
 
 build {
   cache "out/.kio-cache/";

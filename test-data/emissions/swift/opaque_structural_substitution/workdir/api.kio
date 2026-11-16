@@ -1,6 +1,6 @@
-module api;
+mod api;
 
-import macros/spine_macros(macro widen_sum);
+import macros/spine_macros { macro widen_sum }
 
 host type Box[T];
 

@@ -107,9 +107,15 @@ impl<'a> DocEntry<'a> {
             | DocEntry::Newtype(_, _)
             | DocEntry::LabelNominal { .. }
             | DocEntry::Labels(_, _, _) => "type",
-            DocEntry::LiteralAlias(_) => "literal",
-            DocEntry::Op(_, _) => "op",
-            DocEntry::VariadicOperator(_, _) => "varop",
+            DocEntry::LiteralAlias(_) => "lit",
+            DocEntry::Op(op, _) => match &op.body {
+                crate::ast::OpBody::Normal {
+                    kind: crate::ast::FixedOperatorKind::Macro,
+                    ..
+                } => "op_macro",
+                crate::ast::OpBody::Normal { .. } => "op",
+            },
+            DocEntry::VariadicOperator(_, _) => "op_var",
             DocEntry::Macro(_) => "macro",
             DocEntry::HostType(_) => "host type",
             DocEntry::HostFn(_) => "host fn",
@@ -329,25 +335,25 @@ mod tests {
         let declarations = [
             "fn value(x: .) -> . { x }",
             "type Alias = .;",
-            "literal text = \"x\";",
+            "lit text = \"x\";",
             "type { Box: . { mk; get; }; }",
             "type Row = { Field: .; };",
             "type { Field: .; }",
             "type Forward = Field;",
             "op _ + _ { impl add; };",
-            "varop [* *] { foldl push empty; };",
+            "op_var [* *] { foldl push empty; };",
             "macro choose : . -> . { impl choose_impl; };",
         ];
         for declaration in declarations {
             for visibility in ["", "pub(api) ", "pub "] {
                 let module =
-                    crate::pass::parser::parse(&format!("module api; {visibility}{declaration}"))
+                    crate::pass::parser::parse(&format!("mod api; {visibility}{declaration}"))
                         .unwrap();
                 let local = documented_items_module(&module);
                 assert!(!local.is_empty(), "{declaration}");
-                if declaration.starts_with("varop ") {
-                    assert_eq!(local[0].kind(), "varop");
-                    assert_eq!(local[0].name(), "varop [* *]");
+                if declaration.starts_with("op_var ") {
+                    assert_eq!(local[0].kind(), "op_var");
+                    assert_eq!(local[0].name(), "op_var [* *]");
                 }
                 let public = exported_documented_items_module(&module);
                 assert_eq!(
@@ -358,7 +364,7 @@ mod tests {
             }
         }
         let hosts = crate::pass::parser::parse(
-            "module api; host type Text role(str); host fn emit(value: Text) -> .;",
+            "mod api; host type Text role(str); host fn emit(value: Text) -> .;",
         )
         .unwrap();
         assert_eq!(exported_documented_items_module(&hosts).len(), 2);
@@ -378,7 +384,7 @@ mod tests {
         assert_eq!(encode_anchor_identity("pkg/left"), "pkg_2fleft");
         assert_eq!(encode_anchor_identity("é"), "_c3_a9");
         let module = crate::pass::parser::parse(
-            "module pkg/math; op - __ { impl negate; }; op _ - __ { impl subtract; };",
+            "mod pkg/math; op - __ { impl negate; }; op _ - __ { impl subtract; };",
         )
         .unwrap();
         let entries = documented_items_module(&module);
@@ -403,7 +409,7 @@ mod tests {
     #[test]
     fn compact_nominals_keep_the_written_owner_and_ordinary_rhs() {
         let module = crate::pass::parser::parse(
-            "module pkg; type { Field: .; } type Row = Field & { Other: .; };",
+            "mod pkg; type { Field: .; } type Row = Field & { Other: .; };",
         )
         .unwrap();
         let entries = documented_items_module(&module);
@@ -424,7 +430,7 @@ mod tests {
     #[test]
     fn alias_docs_keep_their_written_identity() {
         let module = crate::pass::parser::parse(concat!(
-            "module pkg; fn field() -> . { () }\n",
+            "mod pkg; fn field() -> . { () }\n",
             "/// The alias.\n",
             "pub type Field = Original;\n",
         ))
@@ -452,11 +458,7 @@ mod tests {
     #[test]
     fn rec_group_documents_every_module_member() {
         let module = crate::pass::parser::parse(
-            "module pkg/main; \
-             rec(loop) { \
-               fn local(value: .) -> . { recur exported(value) }; \
-               pub fn exported(value: .) -> . { recur local(value) } \
-             }",
+            "mod pkg/main; rec(loop) { fn local(value: .) -> . { recur exported(value) }; pub fn exported(value: .) -> . { recur local(value) } }",
         )
         .expect("fixture parses");
         let names = documented_items_module(&module)

@@ -3,7 +3,7 @@
 /// A type alias binds no value: [`@type Count`].
 /// A compact type alias binds no value: [`@type Color`].
 /// A nominal type binds no value: [`@type Wrapped`].
-module typelevel/main;
+mod typelevel/main;
 
 /// A type alias.
 pub type Count = .;

@@ -21,7 +21,7 @@ for selection in omitted unit latest concrete; do
     latest) setting='; baseline ((latest))' ;;
     concrete) setting="; baseline (($baseline))" ;;
   esac
-  printf 'package app; build { target %s { out "out/"%s } }\n' \
+  printf 'pkg app; build { target %s { out "out/"%s } }\n' \
     "$KIO_TARGET" "$setting" >"$work/app.pkg.kio"
   (cd "$work" && "$KIO_BIN" build "$KIO_TARGET") >/dev/null
   "$KIO_BIN" fmt "$work/app.pkg.kio" >/dev/null

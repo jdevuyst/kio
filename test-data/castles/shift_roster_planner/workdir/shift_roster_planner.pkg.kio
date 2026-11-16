@@ -1,4 +1,4 @@
-package shift_roster_planner;
+pkg shift_roster_planner;
 
 build {
   cache "out/.kio-cache/";

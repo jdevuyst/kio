@@ -1,3 +1,3 @@
-module probe;
+mod probe;
 
 host type Bool role(bool);

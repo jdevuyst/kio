@@ -1,4 +1,4 @@
-module pure_modifier_on_macro/macros;
+mod pure_modifier_on_macro/macros;
 
 import __intrinsics__;
 

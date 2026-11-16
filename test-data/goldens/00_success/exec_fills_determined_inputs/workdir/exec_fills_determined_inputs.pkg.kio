@@ -1,4 +1,4 @@
-package exec_fills_determined_inputs;
+pkg exec_fills_determined_inputs;
 
 build {
   cache "out/.kio-cache/";

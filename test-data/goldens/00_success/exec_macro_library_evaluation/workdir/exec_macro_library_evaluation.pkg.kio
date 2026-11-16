@@ -1,4 +1,4 @@
-package exec_macro_library_evaluation;
+pkg exec_macro_library_evaluation;
 
 build {
   cache "out/.kio-cache/";

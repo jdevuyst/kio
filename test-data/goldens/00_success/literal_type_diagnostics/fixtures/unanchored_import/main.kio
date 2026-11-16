@@ -1,5 +1,5 @@
-module main;
+mod main;
 
-import numbers(Int);
+import numbers { type Int }
 
 fn value() { let n = 42; () }

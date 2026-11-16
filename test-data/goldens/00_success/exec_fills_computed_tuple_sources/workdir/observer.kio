@@ -1,4 +1,4 @@
-module observer;
+mod observer;
 
 import __comptime__;
 

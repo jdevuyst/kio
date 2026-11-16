@@ -1,4 +1,4 @@
-package param_pattern_outer_type_ann;
+pkg param_pattern_outer_type_ann;
 
 build {
   cache "out/.kio-cache/";

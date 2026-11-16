@@ -1,12 +1,12 @@
-module certificate;
+mod certificate;
 
 import forest as forest;
-import macros/control(macro if);
-import macros/row_macros(macro select);
-import testapi(Array, Bool, I32);
+import macros/control { macro if }
+import macros/row_macros { macro select }
+import testapi { type Array; type Bool; type I32 }
 import testapi/arith as arith;
 import testapi/array as array;
-import testapi/iter(loop);
+import testapi/iter { fn loop }
 
 pub type Counts = { Deleted: I32; Inserted: I32; Renamed: I32; Kept: I32 };
 

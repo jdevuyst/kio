@@ -1,6 +1,6 @@
-module testapi/io;
+mod testapi/io;
 
-import testapi(Str);
+import testapi { type Str }
 
 host fn print(p0: Str);
 

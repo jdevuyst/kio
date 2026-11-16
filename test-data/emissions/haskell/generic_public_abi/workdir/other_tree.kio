@@ -1,4 +1,4 @@
-module other_tree;
+mod other_tree;
 
 import __intrinsics__;
 

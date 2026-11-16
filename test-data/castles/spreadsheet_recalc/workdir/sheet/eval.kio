@@ -3,21 +3,47 @@
 /// reads the value store — which is what the topological order buys: one
 /// pass per cell. Every combinator hands the cycle error on, so a cell
 /// downstream of a cycle gets `#CYCLE` by ordinary evaluation.
-module sheet/eval;
+mod sheet/eval;
 
-import macros/control(macro if);
-import macros/match(macro match);
-import macros/row_macros(macro select);
-import macros/spine_macros(macro widen_sum);
-import sheet/addr(Addr);
-import sheet/cells(Sheet, Value, Values, content_at, cycle_value, fold_content);
-import sheet/cells(fold_value, num_value, value_at, void_value);
-import sheet/formula(Add_l, Add_r, Expr, If_c, If_e, If_t, Lit, Max_hi, Max_lo);
-import sheet/formula(Mul_l, Mul_r, Ref_at, Sub_l, Sub_r, Sum_hi, Sum_lo, range_cells);
-import sheet/list(List);
-import testapi(Bool, I32);
-import testapi/arith(add_i32, eq_i32, lt_i32, mul_i32, sub_i32);
-import testapi/iter(loop);
+import macros/control { macro if }
+import macros/match { macro match }
+import macros/row_macros { macro select }
+import macros/spine_macros { macro widen_sum }
+import sheet/addr { type Addr }
+import sheet/cells {
+  type Sheet;
+  type Value;
+  type Values;
+  fn content_at;
+  fn cycle_value;
+  fn fold_content
+}
+import sheet/cells { fn fold_value; fn num_value; fn value_at; fn void_value }
+import sheet/formula {
+  type Add_l;
+  type Add_r;
+  type Expr;
+  type If_c;
+  type If_e;
+  type If_t;
+  type Lit;
+  type Max_hi;
+  type Max_lo
+}
+import sheet/formula {
+  type Mul_l;
+  type Mul_r;
+  type Ref_at;
+  type Sub_l;
+  type Sub_r;
+  type Sum_hi;
+  type Sum_lo;
+  fn range_cells
+}
+import sheet/list { type List }
+import testapi { type Bool; type I32 }
+import testapi/arith { fn add_i32; fn eq_i32; fn lt_i32; fn mul_i32; fn sub_i32 }
+import testapi/iter { fn loop }
 
 /// What an expression is worth: a number, or the cycle error.
 type Ev = { Ok: I32 } | { Bad: . };

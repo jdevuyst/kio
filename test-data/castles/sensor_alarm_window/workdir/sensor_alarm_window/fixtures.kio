@@ -1,6 +1,6 @@
-module sensor_alarm_window/fixtures;
+mod sensor_alarm_window/fixtures;
 
-import testapi(String);
+import testapi { type String }
 
 pub fn line0800() -> String { "08:00|N1|CLEAR|TMP=021|CO=000" }
 

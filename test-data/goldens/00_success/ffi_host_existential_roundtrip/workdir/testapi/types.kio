@@ -1,4 +1,4 @@
-module testapi/types;
+mod testapi/types;
 
 import testapi as t;
 

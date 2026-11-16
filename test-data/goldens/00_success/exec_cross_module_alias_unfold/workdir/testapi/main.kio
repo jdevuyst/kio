@@ -1,10 +1,10 @@
-module testapi/main;
+mod testapi/main;
 
-import macros/spine_macros(macro fit);
-import noise(touch);
-import testapi(I32, String);
-import testapi/io(print);
-import testapi/opt(Option, none, some);
+import macros/spine_macros { macro fit }
+import noise { fn touch }
+import testapi { type I32; type String }
+import testapi/io { fn print }
+import testapi/opt { type Option; fn none; fn some }
 
 // `widen` widens the imported `Option` (= `Present | .`) into a larger
 // sum with `fit` (the source is itself a sum arm of the target, so the

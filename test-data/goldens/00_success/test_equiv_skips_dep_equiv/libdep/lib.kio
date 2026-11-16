@@ -1,4 +1,4 @@
-module lib;
+mod lib;
 
 pub fn unit() { () }
 

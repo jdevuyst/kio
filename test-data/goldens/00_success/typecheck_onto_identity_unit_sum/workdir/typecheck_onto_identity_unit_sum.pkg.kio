@@ -1,4 +1,4 @@
-package typecheck_onto_identity_unit_sum;
+pkg typecheck_onto_identity_unit_sum;
 
 build {
   cache "out/.kio-cache/";

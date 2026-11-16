@@ -1,4 +1,4 @@
-package efr;
+pkg efr;
 
 build {
   cache "out/.kio-cache/";

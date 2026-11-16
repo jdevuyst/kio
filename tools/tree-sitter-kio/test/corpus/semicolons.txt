@@ -1,7 +1,7 @@
 ================================================================================
 structural semicolons_op_edges
 ================================================================================
-module source; op _ + _ { ; impl add; }
+mod source; op _ + _ { ; impl add; }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -27,7 +27,7 @@ module source; op _ + _ { ; impl add; }
 ================================================================================
 structural semicolons_varop_edges
 ================================================================================
-module source; varop [+ +] { ; finalize done; foldl join empty; };
+mod source; op_var [+ +] { ; finalize done; foldl join empty; };
 --------------------------------------------------------------------------------
 
 (source_file
@@ -62,7 +62,7 @@ module source; varop [+ +] { ; finalize done; foldl join empty; };
 ================================================================================
 structural semicolons_macro_edges
 ================================================================================
-module source; macro make: . { ; captures(helper); impl run; }
+mod source; macro make: . { ; captures(helper); impl run; }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -96,7 +96,7 @@ module source; macro make: . { ; captures(helper); impl run; }
 ================================================================================
 structural semicolons_nominal_runs
 ================================================================================
-module source; type { Box: . { ;; mk;; get;; }; }
+mod source; type { Box: . { ;; mk;; get;; }; }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -132,7 +132,7 @@ module source; type { Box: . { ;; mk;; get;; }; }
 ================================================================================
 structural semicolons_nominal_empty_runs
 ================================================================================
-module source; type { Box: . { ;; }; }
+mod source; type { Box: . { ;; }; }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -162,7 +162,7 @@ module source; type { Box: . { ;; }; }
 ================================================================================
 structural semicolons_bridge_edges
 ================================================================================
-package source; bridge { ; api/**; };
+pkg source; bridge { ; api/**; };
 --------------------------------------------------------------------------------
 
 (source_file
@@ -185,7 +185,7 @@ package source; bridge { ; api/**; };
 ================================================================================
 structural semicolons_bridge_empty
 ================================================================================
-package source; bridge {}
+pkg source; bridge {}
 --------------------------------------------------------------------------------
 
 (source_file
@@ -202,7 +202,7 @@ package source; bridge {}
 ================================================================================
 structural semicolons_build_runs
 ================================================================================
-package source; build { ;; target rust { ;; out "out";; }; docs { ; md "guide.md"; }; cache ();; }
+pkg source; build { ;; target rust { ;; out "out";; }; docs { ; md "guide.md"; }; cache ();; }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -252,7 +252,7 @@ package source; build { ;; target rust { ;; out "out";; }; docs { ; md "guide.md
 ================================================================================
 structural semicolons_build_empty_runs
 ================================================================================
-package source; build { ;; }
+pkg source; build { ;; }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -271,7 +271,7 @@ package source; build { ;; }
 ================================================================================
 structural semicolons_source_runs
 ================================================================================
-dependency helper; source { ;; path "../helper";; };
+dep helper; source { ;; path "../helper";; };
 --------------------------------------------------------------------------------
 
 (source_file
@@ -332,7 +332,7 @@ lock helper; resolved { ;; git "https://example.com/helper";; ref "main"; commit
 ================================================================================
 structural semicolons_rec_callable_edges
 ================================================================================
-module source; rec(loop) { ; fn first() { () }; fn second() { () }; };
+mod source; rec(loop) { ; fn first() { () }; fn second() { () }; };
 --------------------------------------------------------------------------------
 
 (source_file
@@ -386,7 +386,7 @@ module source; rec(loop) { ; fn first() { () }; fn second() { () }; };
 ================================================================================
 structural semicolons_rec_type_edges
 ================================================================================
-module source; rec { ; type A = .; type { B: . { ; mk; }; }; };
+mod source; rec { ; type A = .; type { B: . { ; mk; }; }; };
 --------------------------------------------------------------------------------
 
 (source_file
@@ -429,7 +429,7 @@ module source; rec { ; type A = .; type { B: . { ; mk; }; }; };
 ================================================================================
 structural semicolons_signature_edges
 ================================================================================
-signature app v(1); v(1) { ; with { ; module api { ; host type T; pub fn fetch() -> T; }; }; breaking { ; add { ; module fresh { pub fn added() -> . }; }; modify { ; api.fetch; }; remove { ; api.old; module gone { ; old; older; }; }; }; };
+sig app v(1); v(1) { ; with { ; mod api { ; host type T; pub fn fetch() -> T; }; }; breaking { ; add { ; mod fresh { pub fn added() -> . }; }; modify { ; api.fetch; }; remove { ; api.old; gone.old; gone.older; }; }; };
 --------------------------------------------------------------------------------
 
 (source_file
@@ -533,17 +533,17 @@ signature app v(1); v(1) { ; with { ; module api { ; host type T; pub fn fetch()
             (separator_dot)
             (identifier))
           (separator_semicolon)
-          (signature_remove_module
-            (keyword_module)
+          (signature_item_reference
             (module_path
               (entity_name_module))
-            (bracket_lbrace)
-            (separator_semicolon)
-            (identifier)
-            (separator_semicolon)
-            (identifier)
-            (separator_semicolon)
-            (bracket_rbrace))
+            (separator_dot)
+            (identifier))
+          (separator_semicolon)
+          (signature_item_reference
+            (module_path
+              (entity_name_module))
+            (separator_dot)
+            (identifier))
           (separator_semicolon)
           (bracket_rbrace))
         (separator_semicolon)
@@ -555,7 +555,7 @@ signature app v(1); v(1) { ; with { ; module api { ; host type T; pub fn fetch()
 ================================================================================
 structural semicolons_signature_import_empty
 ================================================================================
-signature app v(1); v(1) { with { module imports { import helper as h }; module empty {} }; breaking { remove { api.old } } }
+sig app v(1); v(1) { with { mod imports { import helper as h }; mod empty {} }; breaking { remove { api.old } } }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -619,7 +619,7 @@ signature app v(1); v(1) { with { module imports { import helper as h }; module 
 ================================================================================
 structural semicolons_signature_nested_last_declarations
 ================================================================================
-signature app v(1); v(1) { breaking { add { module api { host type T; pub type A = .; pub type { Box: . { pub mk; pub get }; } } } } }
+sig app v(1); v(1) { breaking { add { mod api { host type T; pub type A = .; pub type { Box: . { pub mk; pub get }; } } } } }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -693,7 +693,7 @@ signature app v(1); v(1) { breaking { add { module api { host type T; pub type A
 ================================================================================
 structural semicolons_outer_same_line_nominal
 ================================================================================
-module source;
+mod source;
 type { Box: . { mk }; } fn after() { () }
 --------------------------------------------------------------------------------
 
@@ -736,7 +736,7 @@ type { Box: . { mk }; } fn after() { () }
 ================================================================================
 structural semicolons_outer_suffix_comment
 ================================================================================
-module source; fn first() { () } // before suffix
+mod source; fn first() { () } // before suffix
 ; // after suffix
 fn after() { () };
 --------------------------------------------------------------------------------
@@ -783,7 +783,7 @@ fn after() { () };
 ================================================================================
 structural semicolons_nonbraced_owned_terminator
 ================================================================================
-module source; host type Text { owned };
+mod source; host type Text ;
 --------------------------------------------------------------------------------
 
 (source_file
@@ -797,16 +797,12 @@ module source; host type Text { owned };
     (host_type_head
       (keyword_type)
       (entity_name_type)
-      (owned_block
-        (bracket_lbrace)
-        (keyword_declaration)
-        (bracket_rbrace))
       (separator_semicolon))))
 
 ================================================================================
 structural semicolons_compact_nominal_terminator
 ================================================================================
-module source; type L = { Left: .; } | { Right: .; };
+mod source; type L = { Left: .; } | { Right: .; };
 --------------------------------------------------------------------------------
 
 (source_file
@@ -842,7 +838,7 @@ module source; type L = { Left: .; } | { Right: .; };
 ================================================================================
 structural semicolons_unchanged_expression_and_comma
 ================================================================================
-module source; fn run() { ;; let .(left, right) = pair;;; .x. { (x1, left, right); }; }
+mod source; fn run() { ;; let .(left, right) = pair;;; .x. { (x1, left, right); }; }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -905,7 +901,7 @@ module source; fn run() { ;; let .(left, right) = pair;;; .x. { (x1, left, right
 ================================================================================
 structural semicolons_op_repeated
 ================================================================================
-module source; op _ + _ { ;; impl add }
+mod source; op _ + _ { ;; impl add }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -929,11 +925,10 @@ module source; op _ + _ { ;; impl add }
         (entity_name_function))
       (bracket_rbrace))))
 
-
 ================================================================================
 structural semicolons_varop_missing
 ================================================================================
-module source; varop [+ +] { foldl join empty finalize done }
+mod source; op_var [+ +] { foldl join empty finalize done }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -964,7 +959,7 @@ module source; varop [+ +] { foldl join empty finalize done }
 ================================================================================
 structural semicolons_varop_repeated
 ================================================================================
-module source; varop [+ +] { foldl join empty;; finalize done }
+mod source; op_var [+ +] { foldl join empty;; finalize done }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -995,11 +990,10 @@ module source; varop [+ +] { foldl join empty;; finalize done }
         (entity_name_function))
       (bracket_rbrace))))
 
-
 ================================================================================
 structural semicolons_macro_missing
 ================================================================================
-module source; macro make: . { captures(helper) impl run }
+mod source; macro make: . { captures(helper) impl run }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -1024,11 +1018,10 @@ module source; macro make: . { captures(helper) impl run }
     (identifier))
   (bracket_rbrace))
 
-
 ================================================================================
 structural semicolons_macro_repeated
 ================================================================================
-module source; macro make: . { captures(helper);; impl run }
+mod source; macro make: . { captures(helper);; impl run }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -1059,11 +1052,10 @@ module source; macro make: . { captures(helper);; impl run }
           (entity_name_function)))
       (bracket_rbrace))))
 
-
 ================================================================================
 structural semicolons_bridge_semicolon_only
 ================================================================================
-package source; bridge { ; }
+pkg source; bridge { ; }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -1082,7 +1074,7 @@ package source; bridge { ; }
 ================================================================================
 structural semicolons_bridge_repeated
 ================================================================================
-package source; bridge { api/**;; other/** }
+pkg source; bridge { api/**;; other/** }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -1108,7 +1100,7 @@ package source; bridge { api/**;; other/** }
 ================================================================================
 structural semicolons_rec_callable_missing
 ================================================================================
-module source; rec(loop) { fn first() { () } fn second() { () } }
+mod source; rec(loop) { fn first() { () } fn second() { () } }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -1161,7 +1153,7 @@ module source; rec(loop) { fn first() { () } fn second() { () } }
 ================================================================================
 structural semicolons_rec_callable_repeated
 ================================================================================
-module source; rec(loop) { fn first() { () };; fn second() { () } }
+mod source; rec(loop) { fn first() { () };; fn second() { () } }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -1214,7 +1206,7 @@ module source; rec(loop) { fn first() { () };; fn second() { () } }
 ================================================================================
 structural semicolons_rec_type_missing
 ================================================================================
-module source; rec { type { A: . { mk }; } type { B: . { mk }; } }
+mod source; rec { type { A: . { mk }; } type { B: . { mk }; } }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -1261,7 +1253,7 @@ module source; rec { type { A: . { mk }; } type { B: . { mk }; } }
 ================================================================================
 structural semicolons_rec_type_repeated
 ================================================================================
-module source; rec { type A = .;; type B = . }
+mod source; rec { type A = .;; type B = . }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -1288,11 +1280,10 @@ module source; rec { type A = .;; type B = . }
       (separator_dot))
     (bracket_rbrace)))
 
-
 ================================================================================
 structural semicolons_build_missing
 ================================================================================
-package source; build { docs { md "guide.md" } target rust { out "out" } }
+pkg source; build { docs { md "guide.md" } target rust { out "out" } }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -1321,11 +1312,10 @@ package source; build { docs { md "guide.md" } target rust { out "out" } }
   (ERROR
     (bracket_rbrace)))
 
-
 ================================================================================
 structural semicolons_docs_missing
 ================================================================================
-package source; build { docs { md "guide.md" html "guide.html" } }
+pkg source; build { docs { md "guide.md" html "guide.html" } }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -1349,11 +1339,10 @@ package source; build { docs { md "guide.md" html "guide.html" } }
         (bracket_rbrace))
       (bracket_rbrace))))
 
-
 ================================================================================
 structural semicolons_source_missing
 ================================================================================
-dependency helper; source { git "https://example.com/helper" ref "main" }
+dep helper; source { git "https://example.com/helper" ref "main" }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -1372,11 +1361,10 @@ dependency helper; source { git "https://example.com/helper" ref "main" }
         (string_literal))
       (bracket_rbrace))))
 
-
 ================================================================================
 structural semicolons_signature_sections_missing
 ================================================================================
-signature app v(1); v(1) { with { module api { host type T } } breaking { remove { api.old } } }
+sig app v(1); v(1) { with { mod api { host type T } } breaking { remove { api.old } } }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -1429,11 +1417,10 @@ signature app v(1); v(1) { with { module api { host type T } } breaking { remove
       (bracket_rbrace)))
   (bracket_rbrace))
 
-
 ================================================================================
 structural semicolons_signature_sections_repeated
 ================================================================================
-signature app v(1); v(1) { with { module api { host type T } };; breaking { remove { api.old } } }
+sig app v(1); v(1) { with { mod api { host type T } };; breaking { remove { api.old } } }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -1487,11 +1474,10 @@ signature app v(1); v(1) { with { module api { host type T } };; breaking { remo
         (bracket_rbrace))
       (bracket_rbrace))))
 
-
 ================================================================================
 structural semicolons_signature_module_missing
 ================================================================================
-signature app v(1); v(1) { breaking { add { module api { type { A: . { mk }; } type { B: . { mk }; } } } } }
+sig app v(1); v(1) { breaking { add { mod api { type { A: . { mk }; } type { B: . { mk }; } } } } }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -1552,11 +1538,10 @@ signature app v(1); v(1) { breaking { add { module api { type { A: . { mk }; } t
   (bracket_rbrace)
   (bracket_rbrace))
 
-
 ================================================================================
 structural semicolons_signature_import_after_declaration
 ================================================================================
-signature app v(1); v(1) { with { module api { host type T; import helper as h } }; breaking { remove { api.old } } }
+sig app v(1); v(1) { with { mod api { host type T; import helper as h } }; breaking { remove { api.old } } }
 --------------------------------------------------------------------------------
 
 (source_file

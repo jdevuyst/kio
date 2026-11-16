@@ -1,8 +1,8 @@
-module testapi/main;
+mod testapi/main;
 
-import macros/spine_macros(macro one_sum, macro widen_sum);
-import testapi(String);
-import testapi/io(print);
+import macros/spine_macros { macro one_sum; macro widen_sum }
+import testapi { type String }
+import testapi/io { fn print }
 
 // `widen_sum` injects a `String` into a wider sum. We use it
 // directly inside each `if`/`else` arm to construct a value of the

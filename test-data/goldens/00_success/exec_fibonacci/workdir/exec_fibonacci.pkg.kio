@@ -1,4 +1,4 @@
-package exec_fibonacci;
+pkg exec_fibonacci;
 
 build {
   cache "out/.kio-cache/";

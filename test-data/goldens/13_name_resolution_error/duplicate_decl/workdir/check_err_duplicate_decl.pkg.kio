@@ -1,4 +1,4 @@
-package check_err_duplicate_decl;
+pkg check_err_duplicate_decl;
 
 build {
   cache "out/.kio-cache/";

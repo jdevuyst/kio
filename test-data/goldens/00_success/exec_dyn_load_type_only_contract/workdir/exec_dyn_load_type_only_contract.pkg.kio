@@ -1,4 +1,4 @@
-package exec_dyn_load_type_only_contract;
+pkg exec_dyn_load_type_only_contract;
 
 build {
   cache "out/.kio-cache/";

@@ -1,4 +1,4 @@
-module macro_owner_c;
+mod macro_owner_c;
 
 import __intrinsics__;
 

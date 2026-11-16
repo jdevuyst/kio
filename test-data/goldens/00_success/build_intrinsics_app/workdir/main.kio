@@ -1,4 +1,4 @@
-module main;
+mod main;
 
 // Abstract higher-kinded application at the build surface: a
 // function generic over a kind-`*→*` brand binder `[*F]` and a

@@ -6,13 +6,13 @@
 /// the coder interesting: `l`, `m`, and `p` all occur twice, so the very first
 /// merge has to break a tie, and a later merge ties a leaf against an internal
 /// node of the same weight.
-module huffman/message;
+mod huffman/message;
 
-import huffman/list(List, append, fold, of1, of3, of4, of5, of6);
-import huffman/text(cat);
-import macros/control(macro if);
-import testapi(Bool, I32, String);
-import testapi/arith(eq_i32);
+import huffman/list { type List; fn append; fn fold; fn of1; fn of3; fn of4; fn of5; fn of6 }
+import huffman/text { fn cat }
+import macros/control { macro if }
+import testapi { type Bool; type I32; type String }
+import testapi/arith { fn eq_i32 }
 
 /// Symbol codes are the alphabet's indices, assigned in glyph order. The
 /// tie-break rule reads a leaf's ordering key straight off this number, so the

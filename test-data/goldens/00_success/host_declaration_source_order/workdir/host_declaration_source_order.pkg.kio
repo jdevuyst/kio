@@ -1,4 +1,4 @@
-package host_declaration_source_order;
+pkg host_declaration_source_order;
 
 build {
   cache "out/.kio-cache/";

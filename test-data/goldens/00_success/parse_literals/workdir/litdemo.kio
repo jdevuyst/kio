@@ -1,4 +1,4 @@
-module litdemo;
+mod litdemo;
 
 host type S role(str);
 

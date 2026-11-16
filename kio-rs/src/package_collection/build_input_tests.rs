@@ -13,13 +13,13 @@ fn build_inventory_reuses_one_walk_manifest_and_exact_input_set() {
     write(
         &root,
         "app.pkg.kio",
-        "package app; build { target js { out \"out/js\"; } }",
+        "pkg app; build { target js { out \"out/js\"; } }",
     );
-    write(&root, "main.kio", "module main; pub fn main() -> . { () }");
+    write(&root, "main.kio", "mod main; pub fn main() -> . { () }");
     write(
         &root,
         "dep.dep.kio",
-        "dependency dep; source { path \"../dep.pkg.kio\"; }",
+        "dep dep; source { path \"../dep.pkg.kio\"; }",
     );
     write(
         &root,
@@ -31,9 +31,9 @@ fn build_inventory_reuses_one_walk_manifest_and_exact_input_set() {
         "app.sig.kio",
         "signature bytes are read, not parsed by the source walk",
     );
-    write(&root, "out/generated.kio", "module out/generated;");
-    write(&root, ".hidden/private.kio", "module hidden/private;");
-    write(&root, "nested/inner.pkg.kio", "package inner;");
+    write(&root, "out/generated.kio", "mod out/generated;");
+    write(&root, ".hidden/private.kio", "mod hidden/private;");
+    write(&root, "nested/inner.pkg.kio", "pkg inner;");
     write(
         &root,
         "nested/ignored.kio",
@@ -66,7 +66,7 @@ fn build_inventory_storage_does_not_scale_with_module_body_bytes() {
     write(
         &root,
         "app.pkg.kio",
-        "package app; build { target js { out \"out/js\"; } }",
+        "pkg app; build { target js { out \"out/js\"; } }",
     );
     let mut snapshots = Vec::new();
     for size in [32, 2_000_000] {
@@ -92,8 +92,8 @@ fn build_inventory_keeps_file_symlinks_but_does_not_follow_directory_symlinks() 
     use std::os::unix::fs::symlink;
     let dir = tempfile::tempdir().unwrap();
     let root = fs::canonicalize(dir.path()).unwrap().join("app");
-    write(&root, "app.pkg.kio", "package app;");
-    write(dir.path(), "outside/main.kio", "module main;");
+    write(&root, "app.pkg.kio", "pkg app;");
+    write(dir.path(), "outside/main.kio", "mod main;");
     symlink(dir.path().join("outside/main.kio"), root.join("main.kio")).unwrap();
     symlink(dir.path().join("outside"), root.join("linked")).unwrap();
     let inputs = prepare_build_inputs(&root, &root.join("app.pkg.kio"), &mut Vec::new()).unwrap();
@@ -119,8 +119,8 @@ fn file_parses_overlap_and_merge_in_input_order() {
     let overlay = SourceOverlay::complete(
         root.to_path_buf(),
         BTreeMap::from([
-            (files[0].clone(), "module a; fn f() -> . { () }".into()),
-            (files[1].clone(), "module b; fn f() -> . { () }".into()),
+            (files[0].clone(), "mod a; fn f() -> . { () }".into()),
+            (files[1].clone(), "mod b; fn f() -> . { () }".into()),
         ]),
     );
     let completed = Mutex::new(Vec::new());
@@ -174,7 +174,7 @@ fn file_parse_errors_keep_input_order_across_read_and_manifest_errors() {
     let broken = root.join("a.kio");
     let missing = root.join("b.kio");
     let manifest = root.join("c.pkg.kio");
-    let source = "module a; fn";
+    let source = "mod a; fn";
     let overlay = SourceOverlay::complete(
         root.to_path_buf(),
         BTreeMap::from([
@@ -218,11 +218,11 @@ fn file_parse_preserves_local_grammar_ids_and_deferred_bodies() {
         ),
         (
             root.join("broken.kio"),
-            "module broken; fn bad() -> . { let x = ; () }".to_owned(),
+            "mod broken; fn bad() -> . { let x = ; () }".to_owned(),
         ),
         (
             root.join("plain.kio"),
-            "module plain; import fixture(macro pass); fn first(a: .) -> . { a.>forward } fn second(a: .) -> . { pass(a.>forward) }".to_owned(),
+            "mod plain; import fixture {macro pass} fn first(a: .) -> . { a.>forward } fn second(a: .) -> . { pass(a.>forward) }".to_owned(),
         ),
     ]);
     let overlay = SourceOverlay::complete(root.to_path_buf(), sources.clone());

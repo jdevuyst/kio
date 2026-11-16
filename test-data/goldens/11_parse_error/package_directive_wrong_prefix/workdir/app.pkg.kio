@@ -1,4 +1,4 @@
-module app;
+mod app;
 
 build {
   cache "out/.kio-cache/";

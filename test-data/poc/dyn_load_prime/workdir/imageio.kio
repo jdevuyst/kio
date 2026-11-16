@@ -1,14 +1,14 @@
 /// Host-side plumbing for getting an image's text into the loader: read the whole standard input as one string.
-module imageio;
+mod imageio;
 
-import macros/control(macro if);
-import macros/match(macro match);
-import macros/spine_macros(macro widen_sum);
-import testapi(Bool, I32, String);
-import testapi/arith(eq_i32);
-import testapi/io(read_ascii_line);
-import testapi/iter(loop);
-import testapi/text(string_concat);
+import macros/control { macro if }
+import macros/match { macro match }
+import macros/spine_macros { macro widen_sum }
+import testapi { type Bool; type I32; type String }
+import testapi/arith { fn eq_i32 }
+import testapi/io { fn read_ascii_line }
+import testapi/iter { fn loop }
+import testapi/text { fn string_concat }
 
 // `imageio.kio` — the one piece of host plumbing a loading host always
 // needs beyond the loader itself: the image text. A host that ships

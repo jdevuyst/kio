@@ -1,5 +1,5 @@
-module probe;
-import ops(varop [] as [* *]);
+mod probe;
+import ops {op_var [] as [* *]}
 fn probe() { [* (x // first
 ) // second
 *] }

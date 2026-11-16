@@ -1,4 +1,4 @@
-package exec_statement_spine_stack;
+pkg exec_statement_spine_stack;
 
 build {
   cache "out/.kio-cache/";

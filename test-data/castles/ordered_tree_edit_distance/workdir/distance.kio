@@ -1,12 +1,12 @@
-module distance;
+mod distance;
 
 import forest as forest;
-import macros/control(macro if);
-import macros/row_macros(macro select);
-import testapi(Array, Bool, I32);
+import macros/control { macro if }
+import macros/row_macros { macro select }
+import testapi { type Array; type Bool; type I32 }
 import testapi/arith as arith;
 import testapi/array as array;
-import testapi/iter(loop);
+import testapi/iter { fn loop }
 
 type Problem = {
   Source: forest.Tree;

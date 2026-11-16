@@ -1,6 +1,6 @@
-module m;
+mod m;
 
-import macros/control(macro scope);
+import macros/control { macro scope }
 
 equiv simple() {
   ();

@@ -198,9 +198,9 @@ fn raw_generated_sources_conserve_sparse_seeded_comments() {
 
 #[test]
 fn operator_frames_conserve_comments_at_declared_structural_gaps() {
-    let declarations = "module m; fn nil() { () } fn cons(a: A, b: A) -> A { a } \
-        fn wrap(a: A) -> A { a } varop [] { foldr cons nil } \
-        varop [* *] { foldr cons nil } op | _ | { impl wrap }";
+    let declarations = "mod m; fn nil() { () } fn cons(a: A, b: A) -> A { a } \
+        fn wrap(a: A) -> A { a } op_var [] { foldr cons nil } \
+        op_var [* *] { foldr cons nil } op | _ | { impl wrap }";
     // These gaps are explicit grammar boundaries, including bracket edges;
     // unlike an arbitrary character insertion they do not split symbol words.
     for template in [
@@ -258,7 +258,7 @@ fn existential_let_headers_conserve_comments() {
             } else {
                 binding
             };
-            let source = format!("module m; fn f(packed: .) {{ {body} }}");
+            let source = format!("mod m; fn f(packed: .) {{ {body} }}");
             let start = source.find("let").unwrap();
             let end = source.find("= packed").unwrap();
             let gaps: Vec<_> = injectable_gaps(&source)
@@ -279,11 +279,11 @@ fn recursive_type_group_openers_conserve_comments() {
     for (filename, source) in [
         (
             "m.kio",
-            "module m; rec // kio_fmt_raw_1\n{ type A = B; type { B: A { mk; get; }; }; // kio_fmt_raw_2\n}",
+            "mod m; rec // kio_fmt_raw_1\n{ type A = B; type { B: A { mk; get; }; }; // kio_fmt_raw_2\n}",
         ),
         (
             "m.sig.kio",
-            "signature m v(1); v(1) { with { module m { rec // kio_fmt_raw_1\n{ type A = B; type { B: A { mk; get; }; }; // kio_fmt_raw_2\n} } }; nonbreaking { add { m.A; m.B; } } }",
+            "sig m v(1); v(1) { with { mod m { rec // kio_fmt_raw_1\n{ type A = B; type { B: A { mk; get; }; }; // kio_fmt_raw_2\n} } }; nonbreaking { add { m.A; m.B; } } }",
         ),
     ] {
         assert_conserved(filename, source, &[1, 2], true);
@@ -306,7 +306,7 @@ fn rewriting_boundaries_conserve_locally_ordered_comments() {
         "fn f((x: . // kio_fmt_raw_1\n, y: . // kio_fmt_raw_2\n)) { x }",
         "fn f() { .((x: . // kio_fmt_raw_1\n, y: . // kio_fmt_raw_2\n)) { x } }",
     ] {
-        assert_conserved("m.kio", &format!("module m; {body}"), &[1, 2], true);
+        assert_conserved("m.kio", &format!("mod m; {body}"), &[1, 2], true);
     }
 }
 
@@ -336,9 +336,9 @@ fn injection_reaches_delimiters_without_splitting_lexical_units() {
 
 #[test]
 fn marker_oracle_uses_exact_comment_ids_and_allows_import_reordering() {
-    let source = "module m; // kio_fmt_raw_1\nimport z as z; \
+    let source = "mod m; // kio_fmt_raw_1\nimport z as z; \
                   // kio_fmt_raw_2\nimport a as a; \
-                  literal message = \"kio_fmt_raw_3\";";
+                  lit message = \"kio_fmt_raw_3\";";
     assert_conserved("m.kio", source, &[1, 2], false);
     assert_eq!(marker_ids("// kio_fmt_raw_1\n// kio_fmt_raw_1\n"), [1, 1]);
     assert!(marker_ids("// kio_fmt_raw_1suffix\n").is_empty());

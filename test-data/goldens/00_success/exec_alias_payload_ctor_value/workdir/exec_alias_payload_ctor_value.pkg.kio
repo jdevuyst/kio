@@ -1,4 +1,4 @@
-package exec_alias_payload_ctor_value;
+pkg exec_alias_payload_ctor_value;
 
 build {
   cache "out/.kio-cache/";

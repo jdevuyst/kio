@@ -1,4 +1,4 @@
-package ife;
+pkg ife;
 
 build {
   cache "out/.kio-cache/";

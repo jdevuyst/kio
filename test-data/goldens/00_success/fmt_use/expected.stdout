@@ -1,16 +1,16 @@
-module fmt_use/main;
+mod fmt_use/main;
 
 import __intrinsics__;
 
 import a/b as q;
-import a/b(T);
-import fmt_use/main(main);
-import g_pkg(g);
-module fmt_use/main;
+import a/b { type T }
+import fmt_use/main { fn main }
+import g_pkg { fn g }
+mod fmt_use/main;
 
 import __intrinsics__;
 
 import a/b as q;
-import a/b(T);
-import fmt_use/main(main);
-import g_pkg(g);
+import a/b { type T }
+import fmt_use/main { fn main }
+import g_pkg { fn g }

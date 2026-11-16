@@ -1,7 +1,7 @@
-module float_signal_filter/smoothing;
+mod float_signal_filter/smoothing;
 
-import testapi(F64);
-import testapi/arith(add_f64, mul_f64);
+import testapi { type F64 }
+import testapi/arith { fn add_f64; fn mul_f64 }
 
 fn half(value: F64) -> F64 { mul_f64(value, 0.5[F64]) }
 

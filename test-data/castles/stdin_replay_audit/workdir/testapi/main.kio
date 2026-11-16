@@ -1,14 +1,14 @@
-module testapi/main;
+mod testapi/main;
 
-import macros/control(macro if);
-import macros/match(macro match);
-import macros/row_macros(macro record, macro select);
-import testapi(Bool, I32, String);
-import testapi/arith(add_i32, leq_i32, lt_i32, sub_i32);
-import testapi/fmt(i32_to_string);
-import testapi/io(print, read_ascii_line);
-import testapi/iter(loop);
-import testapi/text(string_concat, string_eq);
+import macros/control { macro if }
+import macros/match { macro match }
+import macros/row_macros { macro record; macro select }
+import testapi { type Bool; type I32; type String }
+import testapi/arith { fn add_i32; fn leq_i32; fn lt_i32; fn sub_i32 }
+import testapi/fmt { fn i32_to_string }
+import testapi/io { fn print; fn read_ascii_line }
+import testapi/iter { fn loop }
+import testapi/text { fn string_concat; fn string_eq }
 
 type Audit_fields = {
   Phase: I32;

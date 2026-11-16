@@ -1,52 +1,76 @@
 /// A worked example of dynamic loading: load a guest package from its raw emitted Kio' image, then call its exports through the record surface.
 /// NOT a drop-in library: this entry demonstrates loading and interpreting a
 /// precompiled package through a concrete host adapter.
-module docs_loader/testapi/main;
+mod docs_loader/testapi/main;
 
-import docs_loader/defaults(default_host_adapter, instantiate_checked_default, instantiate_default);
-import docs_loader/host_descriptor(Host_fn);
-import docs_loader/host_descriptor(host_fn_eq);
-import docs_loader/host_descriptor(mk_host_fn, mk_host_id);
-import docs_loader/hostrec(make_lit_default, serve_default, test_bool_default);
-import docs_loader/loader(
-, Apply
-, Bool_in
-, Exports
-, F64_out
-, Hostfn_in
-, I32_in
-, I32_out
-, Lookup
-, Pair_in
-, Pair_out
-);
-import docs_loader/loader(Contract, Diag, Host_adapter, Image, Loaded, Surface, contract_check);
-import docs_loader/loader(Export_info, Export_infos, un_export_infos);
-import docs_loader/loader(Lr_diag, Lr_image);
-import docs_loader/loader(Str_in, Str_out, Sum_is_left, Sum_payload, Unit_in);
-import docs_loader/loader(contract_cons, contract_nil, diag_message, mk_expect, un_load_outcome);
-import docs_loader/loader(export_info_name, export_info_sig);
-import docs_loader/loader(host_adapter_functions, host_adapter_types);
-import docs_loader/loader(host_fn_bindings_cons, mk_host_adapter, mk_host_fn_binding);
-import docs_loader/loader(instantiate);
-import docs_loader/loader/scan(load_package);
-import docs_loader/macros/control(macro if);
-import docs_loader/macros/match(macro match);
-import docs_loader/macros/row_macros(macro select);
-import docs_loader/macros/spine_macros(macro widen_sum);
-import docs_loader/prime(group_slots_cons, group_slots_nil);
-import docs_loader/result(Call_result, call_done, call_stuck);
-import docs_loader/testapi(Bool, F64, I32, Scalar, String);
-import docs_loader/testapi/arith(add_i32);
-import docs_loader/testapi/arith(eq_i32);
-import docs_loader/testapi/fmt(f64_to_string, int_to_string);
-import docs_loader/testapi/io(print);
-import docs_loader/testapi/iter(loop);
-import docs_loader/testapi/loader_allocator_hygiene(loader_allocator_hygiene_report);
-import docs_loader/testapi/scalar(scalar_as_i32, scalar_of_i32);
-import docs_loader/testapi/text(string_concat);
-import docs_loader/testapi/text(string_eq);
-import docs_loader/value(Value, value_to_scalar, vhost);
+import docs_loader/defaults {
+  fn default_host_adapter;
+  fn instantiate_checked_default;
+  fn instantiate_default
+}
+import docs_loader/host_descriptor { fn host_fn_eq }
+import docs_loader/host_descriptor { fn mk_host_fn; fn mk_host_id }
+import docs_loader/host_descriptor { type Host_fn }
+import docs_loader/hostrec { fn make_lit_default; fn serve_default; fn test_bool_default }
+import docs_loader/loader {
+  fn contract_cons;
+  fn contract_nil;
+  fn diag_message;
+  fn mk_expect;
+  fn un_load_outcome
+}
+import docs_loader/loader {
+  type Apply;
+  type Bool_in;
+  type Exports;
+  type F64_out;
+  type Hostfn_in;
+  type I32_in;
+  type I32_out;
+  type Lookup;
+  type Pair_in;
+  type Pair_out
+}
+import docs_loader/loader {
+  type Contract;
+  type Diag;
+  type Host_adapter;
+  type Image;
+  type Loaded;
+  type Surface;
+  fn contract_check
+}
+import docs_loader/loader {
+  type Str_in;
+  type Str_out;
+  type Sum_is_left;
+  type Sum_payload;
+  type Unit_in
+}
+import docs_loader/loader { fn export_info_name; fn export_info_sig }
+import docs_loader/loader { fn host_adapter_functions; fn host_adapter_types }
+import docs_loader/loader { fn host_fn_bindings_cons; fn mk_host_adapter; fn mk_host_fn_binding }
+import docs_loader/loader { fn instantiate }
+import docs_loader/loader { type Export_info; type Export_infos; fn un_export_infos }
+import docs_loader/loader { type Lr_diag; type Lr_image }
+import docs_loader/loader/scan { fn load_package }
+import docs_loader/macros/control { macro if }
+import docs_loader/macros/match { macro match }
+import docs_loader/macros/row_macros { macro select }
+import docs_loader/macros/spine_macros { macro widen_sum }
+import docs_loader/prime { fn group_slots_cons; fn group_slots_nil }
+import docs_loader/result { type Call_result; fn call_done; fn call_stuck }
+import docs_loader/testapi { type Bool; type F64; type I32; type Scalar; type String }
+import docs_loader/testapi/arith { fn add_i32 }
+import docs_loader/testapi/arith { fn eq_i32 }
+import docs_loader/testapi/fmt { fn f64_to_string; fn int_to_string }
+import docs_loader/testapi/io { fn print }
+import docs_loader/testapi/iter { fn loop }
+import docs_loader/testapi/loader_allocator_hygiene { fn loader_allocator_hygiene_report }
+import docs_loader/testapi/scalar { fn scalar_as_i32; fn scalar_of_i32 }
+import docs_loader/testapi/text { fn string_concat }
+import docs_loader/testapi/text { fn string_eq }
+import docs_loader/value { type Value; fn value_to_scalar; fn vhost }
 
 // Dynamic-loading worked example — NOT a drop-in library.
 //
@@ -77,13 +101,13 @@ import docs_loader/value(Value, value_to_scalar, vhost);
 fn guest_image() -> String {
   "/// A worked-example guest package: greeting, cross-fn arithmetic, a "
   "polymorphic id, multi-param sums, branching, floats, products, sums, and "
-  "an exported newtype.\nmodule guest;\n\nimport __intrinsics__;\n\nimport "
-  "hostapi(Bool, F64, I32, String);\nimport hostapi(add_i32, div_i32, "
-  "leq_i32, mod_i32, mul_f64, string_concat);\n\n/// A tagged value: the "
-  "nominal type and both members are `pub` in a\n/// bridge-matched module, "
-  "so the constructor and projector are loadable\n/// entries (a "
-  "member-export demo).\npub type { Tag[A] : A { pub mk; pub get; }; };\n\n/// "
-  "Greets by name.\npub fn greet(name: String) -> String { "
+  "an exported newtype.\nmod guest;\n\nimport __intrinsics__;\n\nimport hostapi "
+  "{type Bool; type F64; type I32; type String}\nimport hostapi {fn add_i32; "
+  "fn div_i32; fn leq_i32; fn mod_i32; fn mul_f64; fn string_concat}\n\n/// A "
+  "tagged value: the nominal type and both members are `pub` in a\n/// "
+  "bridge-matched module, so the constructor and projector are loadable\n/// "
+  "entries (a member-export demo).\npub type { Tag[A] : A { pub mk; pub get; "
+  "}; };\n\n/// Greets by name.\npub fn greet(name: String) -> String { "
   "string_concat(\"Hello, \"[String], name) }\n\n/// Doubles an integer.\npub fn "
   "double(x: I32) -> I32 { add_i32(x, x) }\n\n/// Quadruples via a cross-fn "
   "call.\npub fn quad(x: I32) -> I32 { double(double(x)) }\n\n/// The "
@@ -105,9 +129,9 @@ fn guest_image() -> String {
   "9[I32])\n    , .() { __left__[String][I32](\"small\"[String]) }\n    , .() { "
   "__right__[String][I32](n) }\n    )\n}\n\n/// Applies a host-supplied "
   "function (a higher-order export).\npub fn apply_cb(f: I32 -> I32, x: I32) "
-  "-> I32 { f(x) }\n\npackage guest_pkg;\n\nbuild {\n  cache \"out/.kio-cache/\";\n\n  "
+  "-> I32 { f(x) }\n\npkg guest_pkg;\n\nbuild {\n  cache \"out/.kio-cache/\";\n\n  "
   "target kio-prime {\n    out \"out/kio-prime\";\n  }\n}\n\nbridge {\n  guest;\n  "
-  "hostapi;\n}\n\nmodule hostapi;\n\nhost type Bool role(bool);\n\nhost type F64 "
+  "hostapi;\n}\n\nmod hostapi;\n\nhost type Bool role(bool);\n\nhost type F64 "
   "role(f64);\n\nhost type I32 role(i32);\n\nhost type String role(str);\n\nfn "
   "scope_before(p0: I32) -> I32 { p0 }\n\nhost fn add_i32(p0: I32, p1: I32) "
   "-> I32;\n\nfn scope_after(p0: I32, p1: I32) -> I32 { add_i32(p0, p1) }\n\n"

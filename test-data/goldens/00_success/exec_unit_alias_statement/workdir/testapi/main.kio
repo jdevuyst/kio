@@ -1,8 +1,8 @@
-module testapi/main;
+mod testapi/main;
 
-import testapi(String);
-import testapi/io(print);
-import testapi/types(Unit_alias);
+import testapi { type String }
+import testapi/io { fn print }
+import testapi/types { type Unit_alias }
 
 fn tick(message: String) -> Unit_alias { print(message); () }
 

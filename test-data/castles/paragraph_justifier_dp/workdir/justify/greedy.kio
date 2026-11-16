@@ -4,16 +4,16 @@
 /// never looks past the word in front of it, and that is exactly why it can be
 /// beaten: the line it fills tightly today is the line that strands the next
 /// one tomorrow.
-module justify/greedy;
+mod justify/greedy;
 
 import justify/list as list;
-import justify/list(List);
-import justify/word(Word, Words, word_width);
-import macros/control(macro if);
-import macros/match(macro match);
-import testapi(Bool, I32);
-import testapi/arith(add_i32, leq_i32);
-import testapi/iter(loop);
+import justify/list { type List }
+import justify/word { type Word; type Words; fn word_width }
+import macros/control { macro if }
+import macros/match { macro match }
+import testapi { type Bool; type I32 }
+import testapi/arith { fn add_i32; fn leq_i32 }
+import testapi/iter { fn loop }
 
 rec(loop) fn fit_onto(column: I32, rest: Words, cursor: I32, used: I32, rev_breaks: List[I32]) -> List[I32] {
   match(rest.>List.get) {

@@ -10,16 +10,16 @@
 /// process stay resident, with their reference bits, until the hand reaches
 /// them like any other page — so the final frame table is the raw state the
 /// policy left behind, not a tidied one.
-module os/memory;
+mod os/memory;
 
-import macros/control(macro if);
-import macros/row_macros(macro select);
+import macros/control { macro if }
+import macros/row_macros { macro select }
 import os/config as config;
 import os/num as num;
-import testapi(Array, Bool, I32);
-import testapi/arith(add_i32, leq_i32, mul_i32, sub_i32);
-import testapi/array(array_get, array_make_filled, array_set);
-import testapi/iter(loop);
+import testapi { type Array; type Bool; type I32 }
+import testapi/arith { fn add_i32; fn leq_i32; fn mul_i32; fn sub_i32 }
+import testapi/array { fn array_get; fn array_make_filled; fn array_set }
+import testapi/iter { fn loop }
 
 pub type Mem = { Ptable: Array[I32]; Owner: Array[I32]; Vpage: Array[I32]; Refbit: Array[Bool] };
 

@@ -11,18 +11,27 @@
 /// came from, the successor list it rolled against, the roll, and the word it
 /// landed on. The generation loop threads that trace, and `ballad/report`
 /// replays it so the weighted choices can be audited from the output.
-module ballad/weave;
+mod ballad/weave;
 
-import ballad/list(List, cons, nil, of1, reverse);
-import ballad/model(Count, Model, Tally, Word, is_end, starts_of, succs_of, total_weight);
-import ballad/prng(next, roll, seed_state);
-import macros/control(macro if);
-import macros/match(macro match);
-import macros/row_macros(macro select);
-import macros/spine_macros(macro widen_sum);
-import testapi(Bool, I32, String);
-import testapi/arith(add_i32, leq_i32, lt_i32, sub_i32);
-import testapi/iter(loop);
+import ballad/list { type List; fn cons; fn nil; fn of1; fn reverse }
+import ballad/model {
+  type Count;
+  type Model;
+  type Tally;
+  type Word;
+  fn is_end;
+  fn starts_of;
+  fn succs_of;
+  fn total_weight
+}
+import ballad/prng { fn next; fn roll; fn seed_state }
+import macros/control { macro if }
+import macros/match { macro match }
+import macros/row_macros { macro select }
+import macros/spine_macros { macro widen_sum }
+import testapi { type Bool; type I32; type String }
+import testapi/arith { fn add_i32; fn leq_i32; fn lt_i32; fn sub_i32 }
+import testapi/iter { fn loop }
 
 /// Why a line stopped.
 pub type Stop = { By_end_word: . } | { By_word_cap: . } | { By_no_successor: . };

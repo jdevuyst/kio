@@ -1,4 +1,4 @@
-package jrpg;
+pkg jrpg;
 
 build {
   cache "out/.kio-cache/";

@@ -1,7 +1,7 @@
-module consumer;
+mod consumer;
 
-import hostapi(I32);
-import provider/names(from, op);
+import hostapi { type I32 }
+import provider/names { fn from; fn op }
 
 pub fn first() -> I32 { from() }
 

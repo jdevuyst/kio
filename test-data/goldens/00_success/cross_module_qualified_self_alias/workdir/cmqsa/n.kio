@@ -1,4 +1,4 @@
-module cmqsa/n;
+mod cmqsa/n;
 
 import cmqsa as m;
 

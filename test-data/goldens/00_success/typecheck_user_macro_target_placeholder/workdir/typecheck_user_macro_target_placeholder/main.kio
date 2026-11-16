@@ -1,7 +1,7 @@
-module typecheck_user_macro_target_placeholder/main;
+mod typecheck_user_macro_target_placeholder/main;
 
-import macros(macro id_default, macro id_user, macro left_user);
-import typecheck_user_macro_target_placeholder(String);
+import macros { macro id_default; macro id_user; macro left_user }
+import typecheck_user_macro_target_placeholder { type String }
 
 fn expected_target(s: String) -> String { id_user(s)[_] }
 

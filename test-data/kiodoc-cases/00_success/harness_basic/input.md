@@ -8,7 +8,7 @@ bridge {
   kiodoc;
 }
 
-module kiodoc;
+mod kiodoc;
 
 host type S role(str);
 host fn print(p0: S) -> .;

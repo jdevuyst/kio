@@ -1,4 +1,4 @@
-module core;
+mod core;
 
 pub fn gamma() { () }
 

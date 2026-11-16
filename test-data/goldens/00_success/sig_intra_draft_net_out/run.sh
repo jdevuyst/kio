@@ -24,7 +24,7 @@ cd "$scratch" || exit 1
 "$KIO_BIN" sig commit >/dev/null 2>&1 || exit 1
 
 # Within the open v(2) draft, add a NEW export `temp` and record it.
-printf 'module api;\n\npub fn serve() -> . { () }\n\npub fn temp() -> . { () }\n' > api.kio
+printf 'mod api;\n\npub fn serve() -> . { () }\n\npub fn temp() -> . { () }\n' > api.kio
 "$KIO_BIN" sig stage >/dev/null 2>&1 || {
   # shellcheck disable=SC2016
   printf 'recording the intra-draft add of `temp` should succeed\n' >&2
@@ -39,7 +39,7 @@ grep -q 'temp' app.sig.kio || {
 # Now remove `temp` from source again (still within the open draft) and
 # re-stage: it nets out. `kio sig stage` warns, naming `temp`, and exits
 # 0.
-printf 'module api;\n\npub fn serve() -> . { () }\n' > api.kio
+printf 'mod api;\n\npub fn serve() -> . { () }\n' > api.kio
 "$KIO_BIN" sig stage 2>stage.err 1>/dev/null
 got=$?
 if [ "$got" -ne 0 ]; then

@@ -1,4 +1,4 @@
-package exec_rec_continuation_resume;
+pkg exec_rec_continuation_resume;
 
 build {
   cache "out/.kio-cache/";

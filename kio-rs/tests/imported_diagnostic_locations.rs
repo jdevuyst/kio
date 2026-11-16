@@ -12,13 +12,13 @@ fn check_control(binary: &Path, source: &str) -> String {
     let fixture = TempDir::new().unwrap();
     fs::write(
         fixture.path().join("probe.pkg.kio"),
-        "package probe;\nbridge { main; }\n",
+        "pkg probe;\nbridge { main; }\n",
     )
     .unwrap();
     fs::write(
         fixture.path().join("provider.kio"),
         concat!(
-            "module provider;\n",
+            "mod provider;\n",
             "pub type { W: . { pub mk; pub get; }; };\n",
             "pub fn take(value: W) -> . { () }\n",
             "pub fn poly[A](value: W) -> . { () }\n",
@@ -44,22 +44,22 @@ fn imported_parameter_mismatch_names_the_signature_file_not_the_type_definition(
         for (import, body) in [
             ("import provider as p;", "p.take(())"),
             ("import provider as p;", "let f = p.take; f(())"),
-            ("import provider(take);", "let f = take; f(())"),
+            ("import provider { fn take }", "let f = take; f(())"),
         ] {
             let fixture = TempDir::new().unwrap();
             fs::write(
                 fixture.path().join("probe.pkg.kio"),
-                "package probe;\nbridge { main; }\n",
+                "pkg probe;\nbridge { main; }\n",
             )
             .unwrap();
             fs::write(
                 fixture.path().join("origin.kio"),
-                "module origin;\npub type { W: . { pub mk; pub get; }; };\n",
+                "mod origin;\npub type { W: . { pub mk; pub get; }; };\n",
             )
             .unwrap();
-            let provider = "module provider;\nimport origin as o;\npub type W = o.W;\n\npub fn take(value: W) -> . { () }\n";
+            let provider = "mod provider;\nimport origin as o;\npub type W = o.W;\n\npub fn take(value: W) -> . { () }\n";
             fs::write(fixture.path().join("provider.kio"), provider).unwrap();
-            fs::write(fixture.path().join("main.kio"), format!("module main;\n{import}\n// Caller-only padding makes a foreign annotation offset land on unrelated source text instead of the declaration.\nfn caller() -> . {{ {body} }}\n")).unwrap();
+            fs::write(fixture.path().join("main.kio"), format!("mod main;\n{import}\n// Caller-only padding makes a foreign annotation offset land on unrelated source text instead of the declaration.\nfn caller() -> . {{ {body} }}\n")).unwrap();
             let output = Command::new(&binary)
                 .args(["check", "--no-cache"])
                 .current_dir(fixture.path())
@@ -95,7 +95,7 @@ fn imported_requirement_sites_do_not_replace_local_or_argument_internal_constrai
         ),
     ] {
         let source = format!(
-            "module main;\nimport provider as p;\nfn local(value: . -> .) -> p.W {{ p.W.mk(()) }}\nfn caller() -> . {{ {body} }}\n"
+            "mod main;\nimport provider as p;\nfn local(value: . -> .) -> p.W {{ p.W.mk(()) }}\nfn caller() -> . {{ {body} }}\n"
         );
         let stderr = check_control(&binary, &source);
         assert!(
@@ -114,7 +114,7 @@ fn imported_requirement_site_survives_a_written_residual_function_layer() {
     for binary in [test_binary!("kio"), test_binary!("kio-prime")] {
         let stderr = check_control(
             &binary,
-            "module main;\nimport provider as p;\n// Caller padding makes a foreign source span visibly unrelated to its annotation.\nfn caller() -> . { let f = p.later(()); f(()) }\n",
+            "mod main;\nimport provider as p;\n// Caller padding makes a foreign source span visibly unrelated to its annotation.\nfn caller() -> . { let f = p.later(()); f(()) }\n",
         );
         assert!(stderr.contains("--> provider.kio:"), "{stderr}");
         assert!(
@@ -129,7 +129,7 @@ fn imported_requirement_site_survives_explicit_universal_arguments() {
     for binary in [test_binary!("kio"), test_binary!("kio-prime")] {
         let stderr = check_control(
             &binary,
-            "module main;\nimport provider as p;\n// Caller padding makes a foreign source span visibly unrelated to its annotation.\nfn caller() -> . { let f = p.poly; f[.](()) }\n",
+            "mod main;\nimport provider as p;\n// Caller padding makes a foreign source span visibly unrelated to its annotation.\nfn caller() -> . { let f = p.poly; f[.](()) }\n",
         );
         assert!(
             stderr.contains("--> provider.kio:"),
@@ -144,12 +144,12 @@ fn check_host_control(binary: &Path, provider: &str, source: &str, expected_exit
     let fixture = TempDir::new().unwrap();
     fs::write(
         fixture.path().join("probe.pkg.kio"),
-        "package probe;\nbridge { main; provider; origin; }\n",
+        "pkg probe;\nbridge { main; provider; origin; }\n",
     )
     .unwrap();
     fs::write(
         fixture.path().join("origin.kio"),
-        "module origin;\npub host type W;\n",
+        "mod origin;\npub host type W;\n",
     )
     .unwrap();
     fs::write(fixture.path().join("provider.kio"), provider).unwrap();
@@ -167,15 +167,15 @@ fn check_host_control(binary: &Path, provider: &str, source: &str, expected_exit
 
 #[test]
 fn host_parameter_requirements_name_the_written_signature_through_aliases() {
-    let provider = "module provider;\nimport origin as o;\npub type W = o.W;\n\npub host fn take(value: W) -> .;\n";
+    let provider = "mod provider;\nimport origin as o;\npub type W = o.W;\n\npub host fn take(value: W) -> .;\n";
     for binary in [test_binary!("kio"), test_binary!("kio-prime")] {
         for (import, body) in [
             ("import provider as p;", "p.take(())"),
             ("import provider as p;", "let f = p.take; f(())"),
-            ("import provider(take);", "let f = take; f(())"),
+            ("import provider { fn take }", "let f = take; f(())"),
         ] {
             let source = format!(
-                "module main;\n{import}\n// Caller-only padding places its call beyond the short provider's declaration.\nfn caller() -> . {{ {body} }}\n"
+                "mod main;\n{import}\n// Caller-only padding places its call beyond the short provider's declaration.\nfn caller() -> . {{ {body} }}\n"
             );
             let stderr = check_host_control(&binary, provider, &source, 14);
             assert!(stderr.contains("--> provider.kio:5:25"), "{stderr}");
@@ -188,9 +188,9 @@ fn host_parameter_requirements_name_the_written_signature_through_aliases() {
 
 #[test]
 fn host_nullary_requirement_uses_the_provider_header_not_foreign_call_offsets() {
-    let provider = "module provider;\npub host fn tick() -> .;\n";
+    let provider = "mod provider;\npub host fn tick() -> .;\n";
     for binary in [test_binary!("kio"), test_binary!("kio-prime")] {
-        let source = "module main;\nimport provider as p;\n// Caller-only padding is deliberately much longer than the entire provider file.\nfn caller() -> . { p.tick(p.tick) }\n";
+        let source = "mod main;\nimport provider as p;\n// Caller-only padding is deliberately much longer than the entire provider file.\nfn caller() -> . { p.tick(p.tick) }\n";
         let stderr = check_host_control(&binary, provider, source, 14);
         assert!(stderr.contains("--> provider.kio:2:10"), "{stderr}");
         assert!(stderr.contains("pub host fn tick() -> .;"), "{stderr}");
@@ -206,9 +206,9 @@ fn host_nullary_requirement_uses_the_provider_header_not_foreign_call_offsets() 
 
 #[test]
 fn ordinary_nullary_requirement_uses_the_available_provider_header() {
-    let provider = "module provider;\npub fn tick() -> . { () }\n";
+    let provider = "mod provider;\npub fn tick() -> . { () }\n";
     for binary in [test_binary!("kio"), test_binary!("kio-prime")] {
-        let source = "module main;\nimport provider as p;\n// Caller-only padding is deliberately much longer than the entire provider file.\nfn caller() -> . { p.tick(p.tick) }\n";
+        let source = "mod main;\nimport provider as p;\n// Caller-only padding is deliberately much longer than the entire provider file.\nfn caller() -> . { p.tick(p.tick) }\n";
         let stderr = check_host_control(&binary, provider, source, 14);
         assert!(stderr.contains("--> provider.kio:2:"), "{stderr}");
         assert!(stderr.contains("pub fn tick() -> . { () }"), "{stderr}");
@@ -225,7 +225,7 @@ fn ordinary_nullary_requirement_uses_the_available_provider_header() {
 #[test]
 fn host_requirement_context_survives_generic_and_returned_function_layers() {
     let provider = concat!(
-        "module provider;\nimport origin as o;\npub type W = o.W;\n",
+        "mod provider;\nimport origin as o;\npub type W = o.W;\n",
         "pub host fn poly[A](value: W) -> .;\n",
         "pub host fn later(value: .) -> W -> .;\n",
     );
@@ -235,7 +235,7 @@ fn host_requirement_context_survives_generic_and_returned_function_layers() {
             ("let f = p.later(()); f(())", "pub host fn later"),
         ] {
             let source = format!(
-                "module main;\nimport provider as p;\n// Caller padding keeps call offsets distinct from every provider annotation.\nfn caller() -> . {{ {body} }}\n"
+                "mod main;\nimport provider as p;\n// Caller padding keeps call offsets distinct from every provider annotation.\nfn caller() -> . {{ {body} }}\n"
             );
             let stderr = check_host_control(&binary, provider, &source, 14);
             assert!(stderr.contains("--> provider.kio:"), "{stderr}");
@@ -247,7 +247,7 @@ fn host_requirement_context_survives_generic_and_returned_function_layers() {
 #[test]
 fn host_requirements_do_not_override_local_or_argument_internal_constraints() {
     let provider = concat!(
-        "module provider;\nimport origin as o;\npub type W = o.W;\n",
+        "mod provider;\nimport origin as o;\npub type W = o.W;\n",
         "pub host fn take(value: W) -> .;\n",
         "pub host fn make(value: .) -> W;\n",
         "pub host fn pass[A](value: A) -> A;\n",
@@ -259,14 +259,14 @@ fn host_requirements_do_not_override_local_or_argument_internal_constraints() {
             "let f = wrapper(()); f(())",
         ] {
             let source = format!(
-                "module main;\nimport provider as p;\nfn local(value: . -> .) -> p.W {{ p.make(()) }}\nfn wrapper(value: .) -> p.W -> . {{ p.take }}\nfn caller() -> . {{ {body} }}\n"
+                "mod main;\nimport provider as p;\nfn local(value: . -> .) -> p.W {{ p.make(()) }}\nfn wrapper(value: .) -> p.W -> . {{ p.take }}\nfn caller() -> . {{ {body} }}\n"
             );
             let stderr = check_host_control(&binary, provider, &source, 14);
             assert!(!stderr.contains("--> provider.kio:"), "{stderr}");
             assert!(stderr.contains("because of this"), "{stderr}");
         }
     }
-    let source = "module main;\nimport provider as p;\nfn caller() -> . { let .(f: p.W -> .) = p.take; f(()) }\n";
+    let source = "mod main;\nimport provider as p;\nfn caller() -> . { let .(f: p.W -> .) = p.take; f(()) }\n";
     let stderr = check_host_control(&test_binary!("kio"), provider, source, 14);
     assert!(!stderr.contains("--> provider.kio:"), "{stderr}");
 }
@@ -274,8 +274,8 @@ fn host_requirements_do_not_override_local_or_argument_internal_constraints() {
 #[test]
 fn same_module_host_requirement_retains_its_written_annotation() {
     for binary in [test_binary!("kio"), test_binary!("kio-prime")] {
-        let source = "module main;\nhost type W;\nhost fn take(value: W) -> .;\n\nfn caller() -> . { take(()) }\n";
-        let stderr = check_host_control(&binary, "module provider;\n", source, 14);
+        let source = "mod main;\nhost type W;\nhost fn take(value: W) -> .;\n\nfn caller() -> . { take(()) }\n";
+        let stderr = check_host_control(&binary, "mod provider;\n", source, 14);
         assert!(stderr.contains("host fn take(value: W)"), "{stderr}");
         assert!(!stderr.contains("--> provider.kio:"), "{stderr}");
     }

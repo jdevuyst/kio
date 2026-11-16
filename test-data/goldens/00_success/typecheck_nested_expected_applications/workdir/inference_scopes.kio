@@ -1,4 +1,4 @@
-module inference_scopes;
+mod inference_scopes;
 
 host type I32 role(i32);
 

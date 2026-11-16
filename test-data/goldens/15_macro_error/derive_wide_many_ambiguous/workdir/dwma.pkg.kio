@@ -1,4 +1,4 @@
-package dwma;
+pkg dwma;
 
 build {
   cache "out/.kio-cache/";

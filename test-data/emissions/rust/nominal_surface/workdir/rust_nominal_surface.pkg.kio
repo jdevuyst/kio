@@ -1,4 +1,4 @@
-package rust_nominal_surface;
+pkg rust_nominal_surface;
 
 build {
   cache "out/.kio-cache/";

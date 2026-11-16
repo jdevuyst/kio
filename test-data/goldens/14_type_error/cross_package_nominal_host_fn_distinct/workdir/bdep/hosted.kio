@@ -1,6 +1,6 @@
 /// A host fn the dependency owns, whose SIGNATURE names the
 /// dependency's own `String`.
-module bdep/hosted;
+mod bdep/hosted;
 
 host type String role(str);
 

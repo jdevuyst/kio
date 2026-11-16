@@ -1,6 +1,6 @@
-module main;
+mod main;
 
-import domain(I32, Wrap);
+import domain { type I32; type Wrap }
 
 type Identity[A] = A;
 

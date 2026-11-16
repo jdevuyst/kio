@@ -7,17 +7,17 @@
 /// changed the multiset underneath — a buried building arriving, a building
 /// ending while an equally tall one still stands, a shared edge handed from one
 /// roof to the next.
-module skyline/sweep;
+mod skyline/sweep;
 
-import macros/control(macro if);
-import macros/match(macro match);
-import macros/row_macros(macro select);
+import macros/control { macro if }
+import macros/match { macro match }
+import macros/row_macros { macro select }
 import skyline/events as events;
 import skyline/list as lst;
 import skyline/logic as logic;
 import skyline/multiset as ms;
-import testapi(Bool, I32, String);
-import testapi/iter(loop);
+import testapi { type Bool; type I32; type String }
+import testapi/iter { fn loop }
 
 /// One row of the trace: where the event fired, which edge it was, the active
 /// multiset once it had been applied, the silhouette height that followed, and

@@ -1,4 +1,4 @@
-package exec_macro_alias_boundary;
+pkg exec_macro_alias_boundary;
 
 build {
   cache "out/.kio-cache/";

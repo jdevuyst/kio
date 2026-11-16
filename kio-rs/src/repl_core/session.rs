@@ -582,8 +582,8 @@ pub struct StagedModule {
 
 /// The slash module-path targets of a module's `import` clauses.
 ///
-/// Selective (`import x/y(a);`) and qualified (`import x/y as m;`)
-/// clauses both name a `from` / target module path; intrinsics
+/// Selective (`import x/y {fn a}`) and qualified (`import x/y as m;`)
+/// clauses both name a `from` / target mod path; intrinsics
 /// (`import __intrinsics__;`) name no module. The `:load` planner
 /// resolves each path against the package's actual module set and
 /// only auto-loads modules in the current package.
@@ -688,20 +688,20 @@ mod tests {
         let root = tempfile::tempdir().expect("temporary package root");
         std::fs::write(
             root.path().join("app.pkg.kio"),
-            "package app;\n\nbridge {\n  app/**;\n}\n",
+            "pkg app;\n\nbridge {\n  app/**;\n}\n",
         )
-        .expect("package file");
+        .expect("pkg file");
         let module_dir = root.path().join("app");
-        std::fs::create_dir_all(&module_dir).expect("module directory");
+        std::fs::create_dir_all(&module_dir).expect("mod directory");
         std::fs::write(
             module_dir.join("syntax.kio"),
-            "module app/syntax;\npub fn choose(left: ., right: .) -> . { left }\npub op ? _ : _ { impl choose; };\n",
+            "mod app/syntax;\npub fn choose(left: ., right: .) -> . { left }\npub op ? _ : _ { impl choose; };\n",
         )
         .expect("provider module");
         let main_path = module_dir.join("main.kio");
         std::fs::write(
             &main_path,
-            "module app/main;\nimport app/syntax(op ? _ : _);\npub fn before() -> . { ? () : () }\n",
+            "mod app/main;\nimport app/syntax {op ? _ : _}\npub fn before() -> . { ? () : () }\n",
         )
         .expect("consumer module");
 
@@ -721,7 +721,7 @@ mod tests {
 
         std::fs::write(
             &main_path,
-            "module app/main;\nimport app/syntax(op ? _ : _);\npub fn after() -> . { ? () : () }\n",
+            "mod app/main;\nimport app/syntax {op ? _ : _}\npub fn after() -> . { ? () : () }\n",
         )
         .expect("updated consumer module");
         session.refresh().expect("refreshed analysis");
@@ -743,7 +743,7 @@ mod tests {
     #[test]
     fn commit_load_sets_current_to_explicit() {
         let mut s = Session::new(PathBuf::from("/tmp/pkg"));
-        let m = staged("pkg/a", "module pkg/a;\npub fn f() -> . { () }\n");
+        let m = staged("pkg/a", "mod pkg/a;\npub fn f() -> . { () }\n");
         s.commit_load("pkg/a", &[m]);
         assert_eq!(s.current(), Some("pkg/a"));
         assert!(s.module("pkg/a").unwrap().is_explicit());
@@ -754,9 +754,9 @@ mod tests {
         let mut s = Session::new(PathBuf::from("/tmp/pkg"));
         let main = staged(
             "pkg/main",
-            "module pkg/main;\nimport pkg/dep(f);\npub fn g() -> . { () }\n",
+            "mod pkg/main;\nimport pkg/dep {fn f}\npub fn g() -> . { () }\n",
         );
-        let dep = staged("pkg/dep", "module pkg/dep;\npub fn f() -> . { () }\n");
+        let dep = staged("pkg/dep", "mod pkg/dep;\npub fn f() -> . { () }\n");
         s.commit_load("pkg/main", &[main, dep]);
         let dep_entry = s.module("pkg/dep").unwrap();
         assert_eq!(
@@ -772,19 +772,19 @@ mod tests {
     #[test]
     fn reload_of_explicit_refreshes_seq_and_keeps_current() {
         let mut s = Session::new(PathBuf::from("/tmp/pkg"));
-        s.commit_load("pkg/a", &[staged("pkg/a", "module pkg/a;\n")]);
-        s.commit_load("pkg/b", &[staged("pkg/b", "module pkg/b;\n")]);
+        s.commit_load("pkg/a", &[staged("pkg/a", "mod pkg/a;\n")]);
+        s.commit_load("pkg/b", &[staged("pkg/b", "mod pkg/b;\n")]);
         assert_eq!(s.current(), Some("pkg/b"));
         // Re-load `pkg/a`: it becomes current again.
-        s.commit_load("pkg/a", &[staged("pkg/a", "module pkg/a;\n")]);
+        s.commit_load("pkg/a", &[staged("pkg/a", "mod pkg/a;\n")]);
         assert_eq!(s.current(), Some("pkg/a"));
     }
 
     #[test]
     fn unload_current_falls_back_to_recent_explicit() {
         let mut s = Session::new(PathBuf::from("/tmp/pkg"));
-        s.commit_load("pkg/a", &[staged("pkg/a", "module pkg/a;\n")]);
-        s.commit_load("pkg/b", &[staged("pkg/b", "module pkg/b;\n")]);
+        s.commit_load("pkg/a", &[staged("pkg/a", "mod pkg/a;\n")]);
+        s.commit_load("pkg/b", &[staged("pkg/b", "mod pkg/b;\n")]);
         // Current is pkg/b; unload it -> falls back to pkg/a.
         s.unload("pkg/b");
         assert_eq!(s.current(), Some("pkg/a"));
@@ -794,7 +794,7 @@ mod tests {
     #[test]
     fn unload_last_explicit_clears_current() {
         let mut s = Session::new(PathBuf::from("/tmp/pkg"));
-        s.commit_load("pkg/a", &[staged("pkg/a", "module pkg/a;\n")]);
+        s.commit_load("pkg/a", &[staged("pkg/a", "mod pkg/a;\n")]);
         s.unload("pkg/a");
         assert_eq!(s.current(), None);
         assert!(s.is_empty());
@@ -805,9 +805,9 @@ mod tests {
         let mut s = Session::new(PathBuf::from("/tmp/pkg"));
         let main = staged(
             "pkg/main",
-            "module pkg/main;\nimport pkg/dep(f);\npub fn g() -> . { () }\n",
+            "mod pkg/main;\nimport pkg/dep {fn f}\npub fn g() -> . { () }\n",
         );
-        let dep = staged("pkg/dep", "module pkg/dep;\npub fn f() -> . { () }\n");
+        let dep = staged("pkg/dep", "mod pkg/dep;\npub fn f() -> . { () }\n");
         s.commit_load("pkg/main", &[main, dep]);
         // pkg/dep is an orphan once pkg/main goes.
         s.unload("pkg/main");
@@ -819,13 +819,13 @@ mod tests {
         let mut s = Session::new(PathBuf::from("/tmp/pkg"));
         let a = staged(
             "pkg/a",
-            "module pkg/a;\nimport pkg/dep(f);\npub fn g() -> . { () }\n",
+            "mod pkg/a;\nimport pkg/dep {fn f}\npub fn g() -> . { () }\n",
         );
-        let dep = staged("pkg/dep", "module pkg/dep;\npub fn f() -> . { () }\n");
+        let dep = staged("pkg/dep", "mod pkg/dep;\npub fn f() -> . { () }\n");
         s.commit_load("pkg/a", &[a, dep.clone()]);
         let b = staged(
             "pkg/b",
-            "module pkg/b;\nimport pkg/dep(f);\npub fn h() -> . { () }\n",
+            "mod pkg/b;\nimport pkg/dep {fn f}\npub fn h() -> . { () }\n",
         );
         s.commit_load("pkg/b", &[b, dep]);
         // Unload pkg/a — pkg/dep is still needed by pkg/b, so it stays.
@@ -839,9 +839,9 @@ mod tests {
         let mut s = Session::new(PathBuf::from("/tmp/pkg"));
         let a = staged(
             "pkg/a",
-            "module pkg/a;\nimport pkg/dep(f);\npub fn g() -> . { () }\n",
+            "mod pkg/a;\nimport pkg/dep {fn f}\npub fn g() -> . { () }\n",
         );
-        let dep = staged("pkg/dep", "module pkg/dep;\npub fn f() -> . { () }\n");
+        let dep = staged("pkg/dep", "mod pkg/dep;\npub fn f() -> . { () }\n");
         s.commit_load("pkg/a", &[a, dep.clone()]);
         // Now load pkg/dep explicitly too.
         s.commit_load("pkg/dep", &[dep]);
@@ -852,7 +852,7 @@ mod tests {
     #[test]
     fn reset_clears_everything() {
         let mut s = Session::new(PathBuf::from("/tmp/pkg"));
-        s.commit_load("pkg/a", &[staged("pkg/a", "module pkg/a;\n")]);
+        s.commit_load("pkg/a", &[staged("pkg/a", "mod pkg/a;\n")]);
         s.reset();
         assert!(s.is_empty());
         assert_eq!(s.current(), None);
@@ -861,7 +861,7 @@ mod tests {
     #[test]
     fn import_clause_targets_collects_selective_and_qualified() {
         let m = parse(
-            "module pkg/main;\nimport pkg/a(f);\nimport pkg/b as b;\nimport __intrinsics__;\npub fn g() -> . { () }\n",
+            "mod pkg/main;\nimport pkg/a {fn f}\nimport pkg/b as b;\nimport __intrinsics__;\npub fn g() -> . { () }\n",
         );
         let targets = import_clause_targets(&m);
         assert!(targets.contains(&"pkg/a".to_owned()));
@@ -876,9 +876,9 @@ mod tests {
         // certainly) don't. `DefaultHasher` is per-process but
         // identical within one session, which is all the fingerprint
         // cache needs.
-        let a = hash_bytes(b"module demo/main;\npub fn run() -> . { () }\n");
-        let b = hash_bytes(b"module demo/main;\npub fn run() -> . { () }\n");
-        let c = hash_bytes(b"module demo/main;\npub fn run() -> . { (()) }\n");
+        let a = hash_bytes(b"mod demo/main;\npub fn run() -> . { () }\n");
+        let b = hash_bytes(b"mod demo/main;\npub fn run() -> . { () }\n");
+        let c = hash_bytes(b"mod demo/main;\npub fn run() -> . { (()) }\n");
         assert_eq!(a, b);
         assert_ne!(a, c);
     }
@@ -890,7 +890,7 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("kio-fp-test-{}", std::process::id()));
         let _ = std::fs::create_dir_all(&dir);
         let path = dir.join("a.kio");
-        let content = "module a;\n";
+        let content = "mod a;\n";
         std::fs::write(&path, content).expect("write");
         let fp = fingerprint_for(&path, content).expect("fingerprint exists");
         assert_eq!(fp.content_hash, hash_bytes(content.as_bytes()));

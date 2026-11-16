@@ -1,4 +1,4 @@
-module testapi/fmt;
+mod testapi/fmt;
 
 import testapi as api;
 

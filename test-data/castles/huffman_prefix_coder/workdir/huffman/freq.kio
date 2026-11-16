@@ -3,16 +3,16 @@
 /// The tally is a single walk over the message. Each symbol read bumps its
 /// counter in place, so the table is rebuilt once per message symbol rather
 /// than the alphabet being rescanned once per symbol.
-module huffman/freq;
+mod huffman/freq;
 
-import huffman/list(List, cons, keep, nil, reverse);
-import huffman/message(alphabet_size);
-import macros/control(macro if);
-import macros/match(macro match);
-import macros/row_macros(macro select);
-import testapi(Bool, I32);
-import testapi/arith(add_i32, eq_i32, lt_i32, sub_i32);
-import testapi/iter(loop);
+import huffman/list { type List; fn cons; fn keep; fn nil; fn reverse }
+import huffman/message { fn alphabet_size }
+import macros/control { macro if }
+import macros/match { macro match }
+import macros/row_macros { macro select }
+import testapi { type Bool; type I32 }
+import testapi/arith { fn add_i32; fn eq_i32; fn lt_i32; fn sub_i32 }
+import testapi/iter { fn loop }
 
 pub type Count = { Count_symbol: I32; Count_freq: I32 };
 

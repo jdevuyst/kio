@@ -1,4 +1,4 @@
-package exec_rlib_cache_driver_change;
+pkg exec_rlib_cache_driver_change;
 
 build {
   cache "out/.kio-cache/";

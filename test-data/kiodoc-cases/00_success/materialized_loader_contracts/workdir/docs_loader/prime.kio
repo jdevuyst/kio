@@ -1,11 +1,11 @@
 /// The runtime Kio' term AST that `prime_eval` walks: ordinary Kio types are erased, while exact host descriptors remain where evaluation needs them.
-module docs_loader/prime;
+mod docs_loader/prime;
 
-import docs_loader/host_descriptor(Host_fn, Host_type);
-import docs_loader/list/core(List, cons, nil, uncons);
-import docs_loader/macros/match(macro match);
-import docs_loader/macros/spine_macros(macro widen_sum);
-import docs_loader/testapi(I32, String);
+import docs_loader/host_descriptor { type Host_fn; type Host_type }
+import docs_loader/list/core { type List; fn cons; fn nil; fn uncons }
+import docs_loader/macros/match { macro match }
+import docs_loader/macros/spine_macros { macro widen_sum }
+import docs_loader/testapi { type I32; type String }
 
 // `prime.kio` — the term AST `prime_eval` evaluates.
 //

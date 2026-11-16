@@ -1,9 +1,9 @@
-module testapi/main;
+mod testapi/main;
 
-import macros(macro packet_identity);
-import testapi(String);
-import testapi/io(print);
-import testapi/text(string_concat);
+import macros { macro packet_identity }
+import testapi { type String }
+import testapi/io { fn print }
+import testapi/text { fn string_concat }
 
 fn join(left: String, right: String) -> String { string_concat(left, right) }
 

@@ -1,4 +1,4 @@
-package product;
+pkg product;
 
 build {
   target go {

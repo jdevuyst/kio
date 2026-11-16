@@ -1,15 +1,15 @@
-module testapi/reconcile;
+mod testapi/reconcile;
 
-import dict/dict(Dict);
-import macros/control(macro if);
-import macros/match(macro match);
-import testapi(Bool, I32, String);
-import testapi/arith(add_i32, eq_i32, sub_i32);
-import testapi/dict_ops(get_or_i32, lookup_count, lookup_name);
-import testapi/domain(Line, Report, line, line_delta_of, report, totals);
-import testapi/fixtures(adjustment_dict, catalogue_dict, ledger_dict, physical_dict);
-import testapi/fmt(int_to_string);
-import testapi/text(string_concat);
+import dict/dict { type Dict }
+import macros/control { macro if }
+import macros/match { macro match }
+import testapi { type Bool; type I32; type String }
+import testapi/arith { fn add_i32; fn eq_i32; fn sub_i32 }
+import testapi/dict_ops { fn get_or_i32; fn lookup_count; fn lookup_name }
+import testapi/domain { type Line; type Report; fn line; fn line_delta_of; fn report; fn totals }
+import testapi/fixtures { fn adjustment_dict; fn catalogue_dict; fn ledger_dict; fn physical_dict }
+import testapi/fmt { fn int_to_string }
+import testapi/text { fn string_concat }
 
 fn sku_label(sku: I32) -> String { string_concat("sku ", int_to_string(sku)) }
 

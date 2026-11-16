@@ -1,25 +1,37 @@
-module testapi/main;
+mod testapi/main;
 
-import defaults(default_host_adapter);
-import host_descriptor(Host_type, bool_role, host_id_eq, host_type_id);
-import host_descriptor(host_types_cons, mk_host_id, mk_role_host_type);
-import hostrec(make_lit_default, serve_default, test_bool_default);
-import loader(Apply, I32_out, Lookup, Unit_in, diag_message, un_load_outcome);
-import loader(Diag, Image, Loaded, Lr_diag, Lr_image, Surface);
-import loader(host_adapter_functions, host_adapter_types, instantiate, mk_host_adapter);
-import loader/scan(load_package);
-import macros/control(macro if);
-import macros/match(macro match);
-import macros/row_macros(macro select);
-import macros/spine_macros(macro widen_sum);
-import testapi(Bool, I32, String);
-import testapi/arith(add_i32, eq_i32, lt_i32);
-import testapi/fmt(int_to_string);
-import testapi/io(print);
-import testapi/iter(loop);
-import testapi/scalar(scalar_of_bool);
-import testapi/text(string_code_at, string_eq, string_len);
-import value(Value, vhost);
+import defaults { fn default_host_adapter }
+import host_descriptor { fn host_types_cons; fn mk_host_id; fn mk_role_host_type }
+import host_descriptor { type Host_type; fn bool_role; fn host_id_eq; fn host_type_id }
+import hostrec { fn make_lit_default; fn serve_default; fn test_bool_default }
+import loader {
+  fn host_adapter_functions;
+  fn host_adapter_types;
+  fn instantiate;
+  fn mk_host_adapter
+}
+import loader {
+  type Apply;
+  type I32_out;
+  type Lookup;
+  type Unit_in;
+  fn diag_message;
+  fn un_load_outcome
+}
+import loader { type Diag; type Image; type Loaded; type Lr_diag; type Lr_image; type Surface }
+import loader/scan { fn load_package }
+import macros/control { macro if }
+import macros/match { macro match }
+import macros/row_macros { macro select }
+import macros/spine_macros { macro widen_sum }
+import testapi { type Bool; type I32; type String }
+import testapi/arith { fn add_i32; fn eq_i32; fn lt_i32 }
+import testapi/fmt { fn int_to_string }
+import testapi/io { fn print }
+import testapi/iter { fn loop }
+import testapi/scalar { fn scalar_of_bool }
+import testapi/text { fn string_code_at; fn string_eq; fn string_len }
+import value { type Value; fn vhost }
 
 // Diagnostic fragments are ASCII; compare code units without slicing UTF-8 text.
 fn matches_at(text: String, fragment: String, start: I32) -> Bool {
@@ -157,123 +169,123 @@ fn report_accepted(name: String, source: String) {
 pub fn main() {
   report_value(
   , "local host"[String]
-  , "module hostapi; import __intrinsics__; host type Bool role(bool); host "
-    "type I32 role(i32); pub fn value() -> I32 { "
+  , "mod hostapi; import __intrinsics__; host type Bool role(bool); host type "
+    "I32 role(i32); pub fn value() -> I32 { "
     "__if_then_else__[Bool][I32](.t[Bool], .() { 11[I32] }, .() { 19[I32] }) "
-    "} package guest; bridge { hostapi; }"[String]
+    "} pkg guest; bridge { hostapi; }"[String]
   );
   report_value(
   , "renamed import"[String]
-  , "module hostapi; host type Bool role(bool); host type I32 role(i32); "
-    "module guest; import __intrinsics__; import hostapi(Bool as Truth, I32); "
-    "pub fn value() -> I32 { __if_then_else__[Truth][I32](.t[Truth], .() { "
-    "31[I32] }, .() { 37[I32] }) } package guest; bridge { guest; hostapi; }"[String]
+  , "mod hostapi; host type Bool role(bool); host type I32 role(i32); mod "
+    "guest; import __intrinsics__; import hostapi {type Bool as Truth; type "
+    "I32} pub fn value() -> I32 { __if_then_else__[Truth][I32](.t[Truth], .() "
+    "{ 31[I32] }, .() { 37[I32] }) } pkg guest; bridge { guest; hostapi; }"[String]
   );
   report_value(
   , "applied aliases"[String]
-  , "module hostapi; host type Bool role(bool); host type I32 role(i32); "
-    "module alternate; host type Bool role(bool); module guest; import "
-    "__intrinsics__; import hostapi(Bool, I32); import alternate(Bool as "
-    "Other); type Identity[A] = A; type Truth = Identity[Bool]; type "
+  , "mod hostapi; host type Bool role(bool); host type I32 role(i32); mod "
+    "alternate; host type Bool role(bool); mod guest; import __intrinsics__; "
+    "import hostapi {type Bool; type I32} import alternate {type Bool as "
+    "Other} type Identity[A] = A; type Truth = Identity[Bool]; type "
     "Same_truth = Truth; pub fn value() -> I32 { "
     "__if_then_else__[Same_truth][I32](.f[Truth], .() { 17[I32] }, .() { "
-    "29[I32] }) } package guest; bridge { guest; hostapi; alternate; }"[String]
+    "29[I32] }) } pkg guest; bridge { guest; hostapi; alternate; }"[String]
   );
   report_value(
   , "separate categories"[String]
-  , "module hostapi; host type I32 role(i32); host type F64 role(f64); host "
-    "type String role(str); host type Bool role(bool); pub fn value() -> I32 "
-    "{ 42000[I32] } package guest; bridge { hostapi; }"[String]
+  , "mod hostapi; host type I32 role(i32); host type F64 role(f64); host type "
+    "String role(str); host type Bool role(bool); pub fn value() -> I32 { "
+    "42000[I32] } pkg guest; bridge { hostapi; }"[String]
   );
   report_value(
   , "ordinary import"[String]
-  , "module hostapi; host type Bool role(bool); host type I32 role(i32); "
-    "module guest; import __intrinsics__; import hostapi(Bool, I32); pub fn "
-    "value() -> I32 { __if_then_else__[Bool][I32](.t[Bool], .() { 41[I32] }, "
-    ".() { 43[I32] }) } package guest; bridge { guest; hostapi; }"[String]
+  , "mod hostapi; host type Bool role(bool); host type I32 role(i32); mod "
+    "guest; import __intrinsics__; import hostapi {type Bool; type I32} pub "
+    "fn value() -> I32 { __if_then_else__[Bool][I32](.t[Bool], .() { 41[I32] "
+    "}, .() { 43[I32] }) } pkg guest; bridge { guest; hostapi; }"[String]
   );
   report_accepted(
   , "integer coexistence"[String]
-  , "module numbers; host type Signed role(i32); host type Unsigned "
-    "role(u64); module guest; import numbers(Signed, Unsigned); package "
-    "guest; bridge { guest; numbers; }"[String]
+  , "mod numbers; host type Signed role(i32); host type Unsigned role(u64); "
+    "mod guest; import numbers {type Signed; type Unsigned} pkg guest; bridge "
+    "{ guest; numbers; }"[String]
   );
   report_accepted(
   , "float coexistence"[String]
-  , "module guest; host type Narrow role(f32); host type Wide role(f64); "
-    "package guest; bridge { guest; }"[String]
+  , "mod guest; host type Narrow role(f32); host type Wide role(f64); pkg "
+    "guest; bridge { guest; }"[String]
   );
   report_rejected(
   , "roleless specialization"[String]
-  , "module guest; import __intrinsics__; host type Opaque; pub fn value(b: "
-    "Opaque) { __if_then_else__[Opaque][.](b, .() { () }, .() { () }) } "
-    "package guest; bridge { guest; }"[String]
+  , "mod guest; import __intrinsics__; host type Opaque; pub fn value(b: "
+    "Opaque) { __if_then_else__[Opaque][.](b, .() { () }, .() { () }) } pkg "
+    "guest; bridge { guest; }"[String]
   , "role(bool)"[String]
   );
   report_rejected(
   , "structural alias"[String]
-  , "module guest; import __intrinsics__; host type Bool role(bool); type "
-    "Pair = Bool & Bool; pub fn value(b: Pair) { __if_then_else__[Pair][.](b, "
-    ".() { () }, .() { () }) } package guest; bridge { guest; }"[String]
+  , "mod guest; import __intrinsics__; host type Bool role(bool); type Pair = "
+    "Bool & Bool; pub fn value(b: Pair) { __if_then_else__[Pair][.](b, .() { "
+    "() }, .() { () }) } pkg guest; bridge { guest; }"[String]
   , "type argument does not resolve to one exact host type"[String]
   );
   report_rejected(
   , "unsaturated alias"[String]
-  , "module guest; import __intrinsics__; type Identity[A] = A; pub fn "
-    "value() { __if_then_else__[Identity][.]((), .() { () }, .() { () }) } "
-    "package guest; bridge { guest; }"[String]
+  , "mod guest; import __intrinsics__; type Identity[A] = A; pub fn value() { "
+    "__if_then_else__[Identity][.]((), .() { () }, .() { () }) } pkg guest; "
+    "bridge { guest; }"[String]
   , "type argument"[String]
   );
   report_value(
   , "late alias"[String]
-  , "module hostapi; host type Bool role(bool); host type I32 role(i32); "
-    "module guest; import __intrinsics__; import hostapi(Bool, I32); pub fn "
-    "value() -> I32 { __if_then_else__[Bool][I32](.t[Bool], .() { 53[I32] }, "
-    ".() { 59[I32] }) } type Truth = Bool; package guest; bridge { guest; "
+  , "mod hostapi; host type Bool role(bool); host type I32 role(i32); mod "
+    "guest; import __intrinsics__; import hostapi {type Bool; type I32} pub "
+    "fn value() -> I32 { __if_then_else__[Bool][I32](.t[Bool], .() { 53[I32] "
+    "}, .() { 59[I32] }) } type Truth = Bool; pkg guest; bridge { guest; "
     "hostapi; }"[String]
   );
   report_rejected(
   , "late host"[String]
-  , "module guest; import __intrinsics__; pub fn value() { "
+  , "mod guest; import __intrinsics__; pub fn value() { "
     "__if_then_else__[Truth][.](.t[Truth], .() { () }, .() { () }) } host "
-    "type Truth role(bool); package guest; bridge { guest; }"[String]
+    "type Truth role(bool); pkg guest; bridge { guest; }"[String]
   , "cannot resolve exact type `Truth`: no type binding has that spelling"[String]
   );
   report_rejected(
   , "late alias dependency"[String]
-  , "module guest; import __intrinsics__; type Truth = Later; host type Later "
+  , "mod guest; import __intrinsics__; type Truth = Later; host type Later "
     "role(bool); pub fn value(b: Truth) { __if_then_else__[Truth][.](b, .() { "
-    "() }, .() { () }) } package guest; bridge { guest; }"[String]
+    "() }, .() { () }) } pkg guest; bridge { guest; }"[String]
   , "Later"[String]
   );
   report_rejected(
   , "integer exponent"[String]
-  , "module guest; host type Int role(i32); pub fn value() -> Int { "
-    "42e+3[Int] } package guest; bridge { guest; }"[String]
+  , "mod guest; host type Int role(i32); pub fn value() -> Int { 42e+3[Int] } "
+    "pkg guest; bridge { guest; }"[String]
   , "exponent notation is not supported for integer literals"[String]
   );
   report_rejected(
   , "negative exponent"[String]
-  , "module guest; host type Int role(i32); pub fn value() -> Int { "
-    "42e-0[Int] } package guest; bridge { guest; }"[String]
+  , "mod guest; host type Int role(i32); pub fn value() -> Int { 42e-0[Int] } "
+    "pkg guest; bridge { guest; }"[String]
   , "exponent notation is not supported for integer literals"[String]
   );
   report_rejected(
   , "removed host modifier"[String]
-  , "module guest; default host type Bool role(bool); package guest; bridge { "
-    "guest; }"[String]
+  , "mod guest; default host type Bool role(bool); pkg guest; bridge { guest; "
+    "}"[String]
   , "malformed image"[String]
   );
   report_rejected(
   , "removed import modifier"[String]
-  , "module hostapi; host type Bool role(bool); module guest; import "
-    "hostapi(default Bool); package guest; bridge { guest; hostapi; }"[String]
+  , "mod hostapi; host type Bool role(bool); mod guest; import hostapi {fn "
+    "default Bool} pkg guest; bridge { guest; hostapi; }"[String]
   , "malformed image"[String]
   );
   report_rejected(
   , "removed alias modifier"[String]
-  , "module guest; host type Bool role(bool); default type Truth = Bool; "
-    "package guest; bridge { guest; }"[String]
+  , "mod guest; host type Bool role(bool); default type Truth = Bool; pkg "
+    "guest; bridge { guest; }"[String]
   , "malformed image"[String]
   )
 }

@@ -1,5 +1,5 @@
-module support/lib;
+mod support/lib;
 
-import testapi(String);
+import testapi { type String }
 
 pub fn emit(s: String) -> String { s }

@@ -1,12 +1,13 @@
-module relay;
+mod relay;
 
 // statement
-import store(
-// selection A
-, A
-// selection B
-, B
-// selection C
-, C
-// closing boundary
-);
+import store {
+  // selection A
+  type A;
+  // selection B
+  type B;
+  // selection C
+  type C
+
+  // closing boundary
+}

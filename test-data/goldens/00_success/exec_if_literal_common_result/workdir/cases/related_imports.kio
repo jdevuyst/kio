@@ -1,8 +1,8 @@
-module cases/related_imports;
+mod cases/related_imports;
 
-import common(macro common, macro from_number);
-import macros/testapi(String as Other_string);
-import testapi(I32, String);
+import common { macro common; macro from_number }
+import macros/testapi { type String as Other_string }
+import testapi { type I32; type String }
 
 type Alias[A] = A;
 

@@ -1,7 +1,7 @@
-module demo/main;
+mod demo/main;
 
 import demo/provider as provider;
-import demo/provider(imported_pure);
+import demo/provider { fn imported_pure }
 
 host type Text role(str);
 

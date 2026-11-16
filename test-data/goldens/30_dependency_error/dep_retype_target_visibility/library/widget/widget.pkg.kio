@@ -1,4 +1,4 @@
-package widget;
+pkg widget;
 
 build {
   cache "out/.kio-cache/";

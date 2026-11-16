@@ -1,4 +1,4 @@
-module callable_declaration_targets;
+mod callable_declaration_targets;
 
 op _ %% _ {
   impl
@@ -12,7 +12,7 @@ op _ %% _ {
   ;
 };
 
-varop [] {
+op_var [] {
   foldr
   // step target
   folds

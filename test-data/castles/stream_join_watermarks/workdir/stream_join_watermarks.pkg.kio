@@ -1,4 +1,4 @@
-package stream_join_watermarks;
+pkg stream_join_watermarks;
 
 build {
   cache "out/.kio-cache/";

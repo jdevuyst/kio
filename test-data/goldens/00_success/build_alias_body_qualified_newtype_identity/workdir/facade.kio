@@ -1,4 +1,4 @@
-module facade;
+mod facade;
 
 import list/core as list;
 import model as model;

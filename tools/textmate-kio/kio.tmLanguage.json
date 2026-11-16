@@ -17,7 +17,7 @@
         { "include": "#package-document" },
         { "include": "#signature-document" },
         {
-          "begin": "\\bdependency\\b(?=[ \\t]*(?://[^\\r\\n]*)?$)",
+          "begin": "\\bdep\\b(?=[ \\t]*(?://[^\\r\\n]*)?$)",
           "beginCaptures": { "0": { "name": "meta.ambiguous-declaration-head.kio" } },
           "end": "(?!)",
           "patterns": [
@@ -42,9 +42,21 @@
         },
         { "include": "#lock-document" },
         {
-          "begin": "\\bvarop\\b(?=[ \\t]*(?://[^\\r\\n]*)?$)",
+          "begin": "\\bop_macro\\b(?=[ \\t]*(?://[^\\r\\n]*)?$)",
           "beginCaptures": { "0": { "name": "meta.ambiguous-declaration-head.kio" } },
-          "end": "(?<=\\})[ \\t]*;?|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:(?:fn|type|host|module|package|type|literal|equiv|macro|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{))|(?:varop|op)\\b(?=[ \\t]+[^A-Za-z0-9\\s])|rec\\b(?=[ \\t]*(?:\\(|\\{)|[ \\t]+type\\b)))",
+          "end": "(?<=\\})[ \\t]*;?|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:(?:fn|type|host|mod|pkg|type|lit|equiv|macro|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{))|(?:op_var|op_macro|op)\\b(?=[ \\t]+[^A-Za-z0-9\\s])|rec\\b(?=[ \\t]*(?:\\(|\\{)|[ \\t]+type\\b)))",
+          "patterns": [
+            { "include": "#comment-doc" },
+            { "include": "#comment" },
+            { "include": "#ambiguous-declaration-group" },
+            { "include": "#ambiguous-declaration-body" },
+            { "include": "#ambiguous-declaration-tokens" }
+          ]
+        },
+        {
+          "begin": "\\bop_var\\b(?=[ \\t]*(?://[^\\r\\n]*)?$)",
+          "beginCaptures": { "0": { "name": "meta.ambiguous-declaration-head.kio" } },
+          "end": "(?<=\\})[ \\t]*;?|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:(?:fn|type|host|mod|pkg|type|lit|equiv|macro|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{))|(?:op_var|op_macro|op)\\b(?=[ \\t]+[^A-Za-z0-9\\s])|rec\\b(?=[ \\t]*(?:\\(|\\{)|[ \\t]+type\\b)))",
           "patterns": [
             { "include": "#comment-doc" },
             { "include": "#comment" },
@@ -66,11 +78,11 @@
     },
     "expression-document": {
       "comment": "A raw expression root cannot acquire item ownership when recovery reaches a declaration-shaped line; its remaining tail keeps lexical roles.",
-      "begin": "(?=varop\\b[ \\t]*\\()|(?=rec\\b)(?!rec\\b[ \\t]*(?:type\\b|\\{|(?<root_rec_parens>\\((?:[^()\"/\\r\\n]|\"(?:[^\"\\\\\\r\\n]|\\\\.)*\"|/(?!/)|\\g<root_rec_parens>)*\\))[ \\t]*(?:fn|pub)\\b))|(?!(?:module|import|fn|type|host|type|literal|equiv|macro|pub|pure|rec|op|varop|dependency|lock)\\b)(?=\\S)",
+      "begin": "(?=op_var\\b[ \\t]*(?:\\(|\\.|\\[(?=[ \\t]*(?:\\.|[A-Za-z_]))))|(?=(?:dep|mod|lit)\\b[ \\t]*(?:\\(|\\[|\\.))|(?=rec\\b)(?!rec\\b[ \\t]*(?:type\\b|\\{|(?<root_rec_parens>\\((?:[^()\"/\\r\\n]|\"(?:[^\"\\\\\\r\\n]|\\\\.)*\"|/(?!/)|\\g<root_rec_parens>)*\\))[ \\t]*(?:fn|pub)\\b))|(?!(?:mod|import|fn|type|host|type|lit|equiv|macro|pub|pure|rec|op|op_var|op_macro|dep|lock)\\b)(?=\\S)",
       "end": "(?!)",
       "patterns": [
         {
-          "begin": "(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|type|host|module|package)\\b(?=[ \\t]+[A-Za-z_]))",
+          "begin": "(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|type|host|mod|pkg)\\b(?=[ \\t]+[A-Za-z_]))",
           "end": "(?!)",
           "patterns": [
             { "include": "#lexical-tokens" }
@@ -293,7 +305,7 @@
       }
     },
     "dependency-document": {
-      "begin": "\\bdependency\\b(?=[ \\t]+[A-Za-z_])",
+      "begin": "\\bdep\\b(?=[ \\t]+[A-Za-z_])",
       "beginCaptures": { "0": { "name": "keyword.declaration.kio" } },
       "end": "(?!)",
       "patterns": [
@@ -431,14 +443,14 @@
       "patterns": [{ "include": "#lexical-tokens" }]
     },
     "signature-document": {
-      "begin": "(?=\\bsignature\\b)",
+      "begin": "(?=\\bsig\\b(?![ \\t]*(?:\\(|\\[|\\.)))",
       "end": "(?!)",
       "patterns": [
         { "include": "#comment-doc" },
         { "include": "#comment" },
         {
-          "begin": "\\b(signature)\\b",
-          "beginCaptures": { "1": { "name": "keyword.declaration.kio" } },
+          "begin": "(?:(\\bsig\\b)(?=[ \\t]*(?://[^\\r\\n]*)?$)|(\\bsig\\b))",
+          "beginCaptures": { "1": { "name": "meta.ambiguous-declaration-head.kio" }, "2": { "name": "keyword.declaration.kio" } },
           "end": ";",
           "endCaptures": { "0": { "name": "punctuation.separator.kio" } },
           "patterns": [
@@ -549,14 +561,12 @@
       "patterns": [
         { "include": "#comment-doc" },
         { "include": "#comment" },
-        { "include": "#signature-ambiguous-remove-module" },
-        { "include": "#signature-remove-module" },
         { "include": "#signature-item-reference" },
         { "include": "#punctuation-bracket" }
       ]
     },
     "signature-declaration-module": {
-      "begin": "\\b(module)\\b(?=[ \\t]+[A-Za-z_])",
+      "begin": "\\b(mod)\\b(?=[ \\t]+[A-Za-z_])",
       "beginCaptures": { "1": { "name": "keyword.declaration.kio" } },
       "end": "(?<=\\})",
       "patterns": [
@@ -565,40 +575,20 @@
       ]
     },
     "signature-with-module": {
-      "begin": "\\b(module)\\b",
+      "begin": "\\b(mod)\\b",
       "beginCaptures": { "1": { "name": "keyword.declaration.kio" } },
       "end": "(?<=\\})",
       "patterns": [
         { "include": "#signature-declaration-body" },
-        { "include": "#signature-module-path" }
-      ]
-    },
-    "signature-remove-module": {
-      "begin": "\\b(module)\\b(?=[ \\t]+[A-Za-z_])",
-      "beginCaptures": { "1": { "name": "keyword.declaration.kio" } },
-      "end": "(?<=\\})",
-      "patterns": [
-        { "include": "#signature-removed-names" },
         { "include": "#signature-module-path" }
       ]
     },
     "signature-ambiguous-declaration-module": {
-      "begin": "\\b(module)\\b(?=[ \\t]*(?://[^\\r\\n]*)?$)",
+      "begin": "\\b(mod)\\b(?=[ \\t]*(?://[^\\r\\n]*)?$)",
       "beginCaptures": { "1": { "name": "meta.ambiguous-signature-module.kio" } },
       "end": "(?<=[;}])",
       "patterns": [
         { "include": "#signature-declaration-body" },
-        { "include": "#signature-reference-name" },
-        { "include": "#signature-module-path" },
-        { "include": "#punctuation-separator" }
-      ]
-    },
-    "signature-ambiguous-remove-module": {
-      "begin": "\\b(module)\\b(?=[ \\t]*(?://[^\\r\\n]*)?$)",
-      "beginCaptures": { "1": { "name": "meta.ambiguous-signature-module.kio" } },
-      "end": "(?<=[;}])",
-      "patterns": [
-        { "include": "#signature-removed-names" },
         { "include": "#signature-reference-name" },
         { "include": "#signature-module-path" },
         { "include": "#punctuation-separator" }
@@ -624,18 +614,6 @@
         {
           "include": "#source-tokens"
         }
-      ]
-    },
-    "signature-removed-names": {
-      "begin": "\\{",
-      "beginCaptures": { "0": { "name": "punctuation.bracket.kio" } },
-      "end": "\\}",
-      "endCaptures": { "0": { "name": "punctuation.bracket.kio" } },
-      "patterns": [
-        { "include": "#comment-doc" },
-        { "include": "#comment" },
-        { "include": "#identifier" },
-        { "include": "#punctuation-separator" }
       ]
     },
     "signature-item-reference": {
@@ -667,7 +645,7 @@
     },
     "type-group": {
       "begin": "\\(",
-      "end": "\\)|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|type|host|module|package)\\b(?=[ \\t]+[A-Za-z_]))",
+      "end": "\\)|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|type|host|mod|pkg)\\b(?=[ \\t]+[A-Za-z_]))",
       "patterns": [
         { "include": "#type-tokens" }
       ],
@@ -680,7 +658,7 @@
     },
     "type-binders": {
       "begin": "\\[",
-      "end": "\\]|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|type|host|module|package)\\b(?=[ \\t]+[A-Za-z_]))",
+      "end": "\\]|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|type|host|mod|pkg)\\b(?=[ \\t]+[A-Za-z_]))",
       "patterns": [
         { "include": "#type-tokens" }
       ],
@@ -696,13 +674,13 @@
       "beginCaptures": {
         "0": { "name": "keyword.declaration.kio" }
       },
-      "end": "(?<=\\))|(?=[^ \\t/(])|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|type|host|module|package)\\b(?=[ \\t]+[A-Za-z_]))",
+      "end": "(?<=\\))|(?=[^ \\t/(])|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|type|host|mod|pkg)\\b(?=[ \\t]+[A-Za-z_]))",
       "patterns": [
         { "include": "#comment-doc" },
         { "include": "#comment" },
         {
           "begin": "\\(",
-          "end": "\\)|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|type|host|module|package)\\b(?=[ \\t]+[A-Za-z_]))",
+          "end": "\\)|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|type|host|mod|pkg)\\b(?=[ \\t]+[A-Za-z_]))",
           "patterns": [
             { "include": "#comment-doc" },
             { "include": "#comment" },
@@ -726,7 +704,7 @@
           "name": "entity.name.type.kio"
         }
       },
-      "end": "(?=[;}])|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:(?:fn|type|host|module|package|type|literal|equiv|macro|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{))|(?:varop|op)\\b(?=[ \\t]+[^A-Za-z0-9\\s])|rec\\b(?=[ \\t]*(?:\\(|\\{)|[ \\t]+type\\b)))",
+      "end": "(?=[;}])|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:(?:fn|type|host|mod|pkg|type|lit|equiv|macro|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{))|(?:op_var|op_macro|op)\\b(?=[ \\t]+[^A-Za-z0-9\\s])|rec\\b(?=[ \\t]*(?:\\(|\\{)|[ \\t]+type\\b)))",
       "patterns": [
         {
           "include": "#comment-doc"
@@ -739,7 +717,7 @@
         },
         {
           "begin": "<",
-          "end": ">|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:(?:fn|type|host|module|package|type|literal|equiv|macro|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{))|(?:varop|op)\\b(?=[ \\t]+[^A-Za-z0-9\\s])|rec\\b(?=[ \\t]*(?:\\(|\\{)|[ \\t]+type\\b)))",
+          "end": ">|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:(?:fn|type|host|mod|pkg|type|lit|equiv|macro|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{))|(?:op_var|op_macro|op)\\b(?=[ \\t]+[^A-Za-z0-9\\s])|rec\\b(?=[ \\t]*(?:\\(|\\{)|[ \\t]+type\\b)))",
           "beginCaptures": {
             "0": {
               "name": "keyword.operator.user.kio"
@@ -781,7 +759,7 @@
     },
     "nominal-body": {
       "begin": "\\{",
-      "end": "\\}|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:(?:fn|type|host|module|package|type|literal|equiv|macro|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{))|(?:varop|op)\\b(?=[ \\t]+[^A-Za-z0-9\\s])|rec\\b(?=[ \\t]*(?:\\(|\\{)|[ \\t]+type\\b)))",
+      "end": "\\}|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:(?:fn|type|host|mod|pkg|type|lit|equiv|macro|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{))|(?:op_var|op_macro|op)\\b(?=[ \\t]+[^A-Za-z0-9\\s])|rec\\b(?=[ \\t]*(?:\\(|\\{)|[ \\t]+type\\b)))",
       "patterns": [
         {
           "include": "#comment-doc"
@@ -820,7 +798,7 @@
           "name": "entity.name.function.kio"
         }
       },
-      "end": "(?=[;}])|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:(?:fn|type|host|module|package|type|literal|equiv|macro|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{))|(?:varop|op)\\b(?=[ \\t]+[^A-Za-z0-9\\s])|rec\\b(?=[ \\t]*(?:\\(|\\{)|[ \\t]+type\\b)))",
+      "end": "(?=[;}])|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:(?:fn|type|host|mod|pkg|type|lit|equiv|macro|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{))|(?:op_var|op_macro|op)\\b(?=[ \\t]+[^A-Za-z0-9\\s])|rec\\b(?=[ \\t]*(?:\\(|\\{)|[ \\t]+type\\b)))",
       "patterns": [
         {
           "include": "#comment-doc"
@@ -835,14 +813,14 @@
     },
     "invalid-nominal-member": {
       "begin": "(?=\\S)",
-      "end": "(?=;|\\})|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|type|host|module|package)\\b(?=[ \\t]+[A-Za-z_]))",
+      "end": "(?=;|\\})|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|type|host|mod|pkg)\\b(?=[ \\t]+[A-Za-z_]))",
       "patterns": [
         { "include": "#type-tokens" }
       ]
     },
     "host-type-decl": {
       "begin": "\\b(host)\\b[ \\t]+(?:(pub)[ \\t]+)?(type)\\b",
-      "end": "(?=\\})|(?<=;)|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|type|host|module|package)\\b(?=[ \\t]+[A-Za-z_]))",
+      "end": "(?=\\})|(?<=;)|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|type|host|mod|pkg)\\b(?=[ \\t]+[A-Za-z_]))",
       "patterns": [
         { "include": "#comment-doc" },
         { "include": "#comment" },
@@ -859,16 +837,28 @@
       "beginCaptures": {
         "0": { "name": "entity.name.type.kio" }
       },
-      "end": "(?=\\})|;|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|type|host|module|package)\\b(?=[ \\t]+[A-Za-z_]))",
+      "end": "(?=\\})|;|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|type|host|mod|pkg)\\b(?=[ \\t]+[A-Za-z_]))",
       "patterns": [
         { "include": "#comment-doc" },
         { "include": "#comment" },
         { "include": "#type-binders" },
-        { "include": "#host-owned" },
+        { "include": "#invalid-host-type-braces" },
         { "include": "#host-role" },
         { "include": "#type-group" },
         { "include": "#punctuation-bracket" },
         { "include": "#identifier" }
+      ]
+    },
+    "invalid-host-type-braces": {
+      "begin": "\\{",
+      "beginCaptures": { "0": { "name": "punctuation.bracket.kio" } },
+      "end": "\\}",
+      "endCaptures": { "0": { "name": "punctuation.bracket.kio" } },
+      "patterns": [
+        { "include": "#comment-doc" },
+        { "include": "#comment" },
+        { "include": "#identifier" },
+        { "include": "#punctuation-bracket" }
       ]
     },
     "host-role": {
@@ -876,7 +866,7 @@
       "beginCaptures": {
         "0": { "name": "keyword.declaration.kio" }
       },
-      "end": "(?<=\\))|(?=;)|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|type|host|module|package)\\b(?=[ \\t]+[A-Za-z_]))",
+      "end": "(?<=\\))|(?=;)|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|type|host|mod|pkg)\\b(?=[ \\t]+[A-Za-z_]))",
       "patterns": [
         { "include": "#comment-doc" },
         { "include": "#comment" },
@@ -889,7 +879,7 @@
       "beginCaptures": {
         "0": { "name": "punctuation.bracket.kio" }
       },
-      "end": "\\)|(?=;)|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|type|host|module|package)\\b(?=[ \\t]+[A-Za-z_]))",
+      "end": "\\)|(?=;)|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|type|host|mod|pkg)\\b(?=[ \\t]+[A-Za-z_]))",
       "endCaptures": {
         "0": { "name": "punctuation.bracket.kio" }
       },
@@ -901,10 +891,8 @@
       ]
     },
     "package-document": {
-      "begin": "\\bpackage\\b",
-      "beginCaptures": {
-        "0": { "name": "keyword.declaration.kio" }
-      },
+      "begin": "(?:(\\bpkg\\b)(?=[ \\t]*(?://[^\\r\\n]*)?$)|(\\bpkg\\b))(?![ \\t]*(?:\\(|\\[|\\.))",
+      "beginCaptures": { "1": { "name": "meta.ambiguous-declaration-head.kio" }, "2": { "name": "keyword.declaration.kio" } },
       "end": "(?!)",
       "patterns": [
         { "include": "#comment-doc" },
@@ -1066,7 +1054,7 @@
     },
     "expression-block": {
       "begin": "\\{",
-      "end": "\\}|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|type|host|module|package)\\b(?=[ \\t]+[A-Za-z_]))",
+      "end": "\\}|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|type|host|mod|pkg)\\b(?=[ \\t]+[A-Za-z_]))",
       "patterns": [
         { "include": "#block-tokens" }
       ],
@@ -1079,7 +1067,7 @@
     },
     "expression-group": {
       "begin": "\\(",
-      "end": "\\)|(?=\\})|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|type|host|module|package)\\b(?=[ \\t]+[A-Za-z_]))",
+      "end": "\\)|(?=\\})|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|type|host|mod|pkg)\\b(?=[ \\t]+[A-Za-z_]))",
       "patterns": [
         { "include": "#expression-tokens" }
       ],
@@ -1101,7 +1089,7 @@
       "beginCaptures": {
         "0": { "name": "keyword.declaration.kio" }
       },
-      "end": "([A-Za-z_][A-Za-z0-9_]*)|(?=[;,){}])|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|type|host|module|package)\\b(?=[ \\t]+[A-Za-z_]))",
+      "end": "([A-Za-z_][A-Za-z0-9_]*)|(?=[;,){}])|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|type|host|mod|pkg)\\b(?=[ \\t]+[A-Za-z_]))",
       "endCaptures": {
         "1": { "name": "entity.name.function.kio" }
       },
@@ -1117,7 +1105,7 @@
       "beginCaptures": {
         "0": { "name": "meta.ambiguous-recursive-head.kio" }
       },
-      "end": "([A-Za-z_][A-Za-z0-9_]*)|(?=[^\\sA-Za-z_/]|/(?!/))|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|type|host|module|package)\\b(?=[ \\t]+[A-Za-z_]))",
+      "end": "([A-Za-z_][A-Za-z0-9_]*)|(?=[^\\sA-Za-z_/]|/(?!/))|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|type|host|mod|pkg)\\b(?=[ \\t]+[A-Za-z_]))",
       "applyEndPatternLast": true,
       "endCaptures": {
         "1": { "name": "entity.name.function.kio" }
@@ -1138,7 +1126,7 @@
     },
     "ambiguous-recursive-annotations": {
       "begin": "\\(",
-      "end": "\\)|(?=[;}])|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|type|host|module|package)\\b(?=[ \\t]+[A-Za-z_]))",
+      "end": "\\)|(?=[;}])|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|type|host|mod|pkg)\\b(?=[ \\t]+[A-Za-z_]))",
       "beginCaptures": { "0": { "name": "punctuation.bracket.kio" } },
       "endCaptures": { "0": { "name": "punctuation.bracket.kio" } },
       "patterns": [
@@ -1147,7 +1135,7 @@
         { "include": "#proved-ordinary-recursive-arguments" },
         {
           "begin": "(?=[^, \\t\\r\\n)])",
-          "end": "(?=[,);}]|^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|type|host|module|package)\\b(?=[ \\t]+[A-Za-z_]))",
+          "end": "(?=[,);}]|^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|type|host|mod|pkg)\\b(?=[ \\t]+[A-Za-z_]))",
           "patterns": [
             {
               "match": "\\G(?:poly|cont|escape)\\b(?=(?:[^()\"/\\r\\n]|\"(?:[^\"\\\\\\r\\n]|\\\\.)*\"|/(?!/)|(?<mode_parens>\\((?:[^()\"/\\r\\n]|\"(?:[^\"\\\\\\r\\n]|\\\\.)*\"|/(?!/)|\\g<mode_parens>)*\\)))*\\)[ \\t]*[A-Za-z_])",
@@ -1190,7 +1178,7 @@
             },
             {
               "begin": "\\(",
-              "end": "\\)|(?=[;}])|(?=^[ \\t]*(?:fn|type|host|module|package)\\b(?=[ \\t]+[A-Za-z_]))",
+              "end": "\\)|(?=[;}])|(?=^[ \\t]*(?:fn|type|host|mod|pkg)\\b(?=[ \\t]+[A-Za-z_]))",
               "beginCaptures": { "0": { "name": "punctuation.bracket.kio" } },
               "endCaptures": { "0": { "name": "punctuation.bracket.kio" } },
               "patterns": [
@@ -1199,7 +1187,7 @@
                 { "include": "#proved-ordinary-recursive-arguments" },
                 {
                   "begin": "(?=[^, \\t\\r\\n)])",
-                  "end": "(?=[,);}]|^[ \\t]*(?:fn|type|host|module|package)\\b(?=[ \\t]+[A-Za-z_]))",
+                  "end": "(?=[,);}]|^[ \\t]*(?:fn|type|host|mod|pkg)\\b(?=[ \\t]+[A-Za-z_]))",
                   "patterns": [
                     { "include": "#recursive-annotation-item-tokens" }
                   ]
@@ -1288,18 +1276,18 @@
       ]
     },
     "varop-decl": {
-      "begin": "\\bvarop\\b",
+      "begin": "\\bop_var\\b",
       "beginCaptures": {
         "0": { "name": "keyword.declaration.kio" }
       },
-      "end": "(?<=\\})|;|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:(?:fn|type|host|module|package|type|literal|equiv|macro|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{))|(?:varop|op)\\b(?=[ \\t]+[^A-Za-z0-9\\s])|rec\\b(?=[ \\t]*(?:\\(|\\{)|[ \\t]+type\\b)))",
+      "end": "(?<=\\})|;|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:(?:fn|type|host|mod|pkg|type|lit|equiv|macro|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{))|(?:op_var|op_macro|op)\\b(?=[ \\t]+[^A-Za-z0-9\\s])|rec\\b(?=[ \\t]*(?:\\(|\\{)|[ \\t]+type\\b)))",
       "patterns": [
         { "include": "#varop-head" },
         { "include": "#comment-doc" },
         { "include": "#comment" },
         {
           "begin": "\\S",
-          "end": "(?=[;}])|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:(?:fn|type|host|module|package|type|literal|equiv|macro|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{))|(?:varop|op)\\b(?=[ \\t]+[^A-Za-z0-9\\s])|rec\\b(?=[ \\t]*(?:\\(|\\{)|[ \\t]+type\\b)))",
+          "end": "(?=[;}])|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:(?:fn|type|host|mod|pkg|type|lit|equiv|macro|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{))|(?:op_var|op_macro|op)\\b(?=[ \\t]+[^A-Za-z0-9\\s])|rec\\b(?=[ \\t]*(?:\\(|\\{)|[ \\t]+type\\b)))",
           "name": "meta.invalid-varop-head.kio",
           "patterns": [
             { "include": "#comment-doc" },
@@ -1313,13 +1301,13 @@
       ]
     },
     "import-varop-tag": {
-      "begin": "\\bvarop\\b(?=[ \\t]+\\[)",
+      "begin": "\\bop_var\\b(?=[ \\t]+\\[)",
       "beginCaptures": {
         "0": {
           "name": "keyword.declaration.kio"
         }
       },
-      "end": "(?=[,)])",
+      "end": "(?=[;}])",
       "patterns": [
         {
           "include": "#import-selection-alias"
@@ -1695,7 +1683,7 @@
       "beginCaptures": {
         "0": { "name": "keyword.declaration.kio" }
       },
-      "end": "(?=\\b(?:fn|type)\\b|[;{])|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|type|host|module|package)\\b(?=[ \\t]+[A-Za-z_]))",
+      "end": "(?=\\b(?:fn|type)\\b|[;{])|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|type|host|mod|pkg)\\b(?=[ \\t]+[A-Za-z_]))",
       "patterns": [
         { "include": "#comment-doc" },
         { "include": "#comment" },
@@ -1704,7 +1692,7 @@
     },
     "recursive-capability-group": {
       "begin": "\\(",
-      "end": "\\)|(?=[;}])|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|type|host|module|package)\\b(?=[ \\t]+[A-Za-z_]))",
+      "end": "\\)|(?=[;}])|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|type|host|mod|pkg)\\b(?=[ \\t]+[A-Za-z_]))",
       "beginCaptures": {
         "0": { "name": "punctuation.bracket.kio" }
       },
@@ -1720,10 +1708,8 @@
     },
     "module-decl": {
       "comment": "Match a `module <path>;` declaration so path segments — including keyword-spelled ones like `op` or `let` — paint as entity.name.module instead of inheriting the keyword.declaration scope from the catch-all rule.",
-      "begin": "\\b(module)\\b",
-      "beginCaptures": {
-        "1": { "name": "keyword.declaration.kio" }
-      },
+      "begin": "(?:(\\bmod\\b)(?=[ \\t]*(?://[^\\r\\n]*)?$)|(\\bmod\\b))",
+      "beginCaptures": { "1": { "name": "meta.ambiguous-declaration-head.kio" }, "2": { "name": "keyword.declaration.kio" } },
       "end": ";",
       "endCaptures": {
         "0": { "name": "punctuation.separator.kio" }
@@ -1743,7 +1729,7 @@
     },
     "import-decl": {
       "comment": "Positive head scopes require a same-line provider path and selection/as/builtin tail. Slash-led segments shield contextual names; nested selections and groups protect their delimiters.",
-      "begin": "(?:^|(?<=[;{}]))[ \\t]*(import)\\s+(?=(?:[A-Za-z_][A-Za-z0-9_]*(?:[ \\t]*/[ \\t]*[A-Za-z_][A-Za-z0-9_]*)*)(?:[ \\t]*\\(|[ \\t]+as\\b)|(?:__intrinsics__|__comptime__)[ \\t]*;)([A-Za-z_][A-Za-z0-9_]*)\\b",
+      "begin": "(?:^|(?<=[;{}]))[ \\t]*(import)\\s+(?=(?:[A-Za-z_][A-Za-z0-9_]*(?:[ \\t]*/[ \\t]*[A-Za-z_][A-Za-z0-9_]*)*)(?:[ \\t]*\\{|[ \\t]+as\\b)|(?:__intrinsics__|__comptime__)[ \\t]*;)([A-Za-z_][A-Za-z0-9_]*)\\b",
       "beginCaptures": {
         "1": {
           "name": "keyword.declaration.kio"
@@ -1752,7 +1738,7 @@
           "name": "entity.name.module.kio"
         }
       },
-      "end": "(?=\\})|;",
+      "end": "(?<=\\})|;|$",
       "endCaptures": {
         "0": {
           "name": "punctuation.separator.kio"
@@ -1821,11 +1807,11 @@
       ]
     },
     "import-selection": {
-      "begin": "\\(",
+      "begin": "\\{",
       "beginCaptures": {
         "0": { "name": "punctuation.bracket.kio" }
       },
-      "end": "\\)",
+      "end": "\\}",
       "endCaptures": {
         "0": { "name": "punctuation.bracket.kio" }
       },
@@ -1843,12 +1829,33 @@
         { "include": "#operator-user" },
         { "include": "#punctuation-separator" },
         { "include": "#import-macro-modifier" },
+        { "include": "#import-named-selector" },
+        { "match": "\\b(?:fn|type|lit)\\b", "name": "keyword.declaration.kio" },
         { "include": "#import-identifier" },
         { "include": "#import-ambiguous-tag-name" }
       ]
     },
+    "import-named-selector": {
+      "begin": "\\b(fn|type|lit)\\b",
+      "beginCaptures": { "1": { "name": "keyword.declaration.kio" } },
+      "end": "(?=[;}])",
+      "patterns": [
+        { "include": "#comment-doc" },
+        { "include": "#comment" },
+        {
+          "begin": "\\b[A-Za-z_][A-Za-z0-9_]*\\b",
+          "beginCaptures": { "0": { "name": "variable.other.kio" } },
+          "end": "(?=[;}])",
+          "patterns": [
+            { "include": "#comment-doc" },
+            { "include": "#comment" },
+            { "include": "#import-selection-alias" }
+          ]
+        }
+      ]
+    },
     "import-macro-modifier": {
-      "match": "\\b(macro)\\b\\s+(_*[a-z]+[0-9]*(?:_[a-z]+[0-9]*)*_*)(?:\\s+(as)\\s+(_*[a-z]+[0-9]*(?:_[a-z]+[0-9]*)*_*))?(?=\\s*[,)])",
+      "match": "\\b(macro)\\b\\s+(_*[a-z]+[0-9]*(?:_[a-z]+[0-9]*)*_*)(?:\\s+(as)\\s+(_*[a-z]+[0-9]*(?:_[a-z]+[0-9]*)*_*))?(?=\\s*[;}])",
       "captures": {
         "1": { "name": "keyword.declaration.kio" },
         "2": { "name": "entity.name.macro.kio" },
@@ -1857,9 +1864,9 @@
       }
     },
     "import-identifier": {
-      "begin": "\\b(?:(?:op|varop)(?=(?:\\s|//[^\\r\\n]*(?:\\r?\\n|$))*(?:as\\b|[,)]))|(?!op\\b|varop\\b)[A-Za-z_][A-Za-z0-9_]*)\\b",
+      "begin": "\\b(?:(?:op|op_var)(?=(?:\\s|//[^\\r\\n]*(?:\\r?\\n|$))*(?:as\\b|[;}]))|(?!op\\b|op_var\\b)[A-Za-z_][A-Za-z0-9_]*)\\b",
       "beginCaptures": { "0": { "name": "variable.other.kio" } },
-      "end": "(?=[,)])",
+      "end": "(?=[;}])",
       "patterns": [
         { "include": "#comment-doc" },
         { "include": "#comment" },
@@ -1869,7 +1876,7 @@
     "import-selection-alias": {
       "begin": "\\bas\\b",
       "beginCaptures": { "0": { "name": "keyword.declaration.kio" } },
-      "end": "(?=[,)])",
+      "end": "(?=[;}])",
       "patterns": [
         { "include": "#import-selection-tokens" }
       ]
@@ -1890,9 +1897,9 @@
       ]
     },
     "import-ambiguous-tag-name": {
-      "begin": "\\b(?:op|varop)\\b",
+      "begin": "\\b(?:op|op_var)\\b",
       "beginCaptures": { "0": { "name": "meta.ambiguous-import-tag.kio" } },
-      "end": "(?=[,)])",
+      "end": "(?=[;}])",
       "patterns": [
         { "include": "#import-selection-alias" },
         { "include": "#import-selection-tokens" }
@@ -1921,16 +1928,11 @@
         { "include": "#identifier" }
       ]
     },
-    "operator-macro-modifier": {
-      "match": "\\bmacro\\b",
-      "name": "keyword.declaration.kio"
-    },
     "import-fixed-tag": {
-      "begin": "\\bop\\b(?=\\s*(?:macro\\b\\s*)?(?!//)[_+\\-*/%^~?@#$\\\\'`<>=!&|:.(\"])",
+      "begin": "\\b(?:op|op_macro)\\b(?=\\s*(?!//)[_+\\-*/%^~?@#$\\\\'`<>=!&|:.(\"])",
       "beginCaptures": { "0": { "name": "keyword.declaration.kio" } },
-      "end": "(?=[,)])",
+      "end": "(?=[;}])",
       "patterns": [
-        { "include": "#operator-macro-modifier" },
         { "include": "#import-selection-alias" },
         { "include": "#import-selection-tokens" }
       ]
@@ -1941,7 +1943,7 @@
         "1": { "name": "keyword.declaration.kio" },
         "2": { "name": "keyword.declaration.kio" }
       },
-      "end": "(?=\\})|(?<=[};])|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|type|host|module|package)\\b(?=[ \\t]+[A-Za-z_]))",
+      "end": "(?=\\})|(?<=[};])|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|type|host|mod|pkg)\\b(?=[ \\t]+[A-Za-z_]))",
       "patterns": [
         { "include": "#comment-doc" },
         { "include": "#comment" },
@@ -1955,7 +1957,7 @@
           "name": "punctuation.bracket.kio"
         }
       },
-      "end": "\\}|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|type|host|module|package|type|literal|equiv|macro|varop|op|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{|\\[|[+\\-*])))",
+      "end": "\\}|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|type|host|mod|pkg|type|lit|equiv|macro|op_var|op_macro|op|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{|\\[|[+\\-*])))",
       "endCaptures": {
         "0": {
           "name": "punctuation.bracket.kio"
@@ -1983,7 +1985,7 @@
           "name": "keyword.declaration.kio"
         }
       },
-      "end": ";|(?=\\})|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|type|host|module|package|type|literal|equiv|macro|varop|op|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{|\\[|[+\\-*])))",
+      "end": ";|(?=\\})|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|type|host|mod|pkg|type|lit|equiv|macro|op_var|op_macro|op|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{|\\[|[+\\-*])))",
       "endCaptures": {
         "0": {
           "name": "punctuation.separator.kio"
@@ -2014,7 +2016,7 @@
           "name": "keyword.declaration.kio"
         }
       },
-      "end": ";|(?=\\})|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|type|host|module|package|type|literal|equiv|macro|varop|op|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{|\\[|[+\\-*])))",
+      "end": ";|(?=\\})|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|type|host|mod|pkg|type|lit|equiv|macro|op_var|op_macro|op|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{|\\[|[+\\-*])))",
       "endCaptures": {
         "0": {
           "name": "punctuation.separator.kio"
@@ -2039,17 +2041,16 @@
       ]
     },
     "op-decl-head": {
-      "begin": "(?:^|(?<=[;{}]))[ \\t]*(?:(pub)(?:\\([^\\n)]*\\))?\\s+)?(op)\\b(?![^\\r\\n{]*//)(?=[^\\r\\n{]*(?:[+\\-*/%^~?@#$\\\\'`<>=!&|:.]|\"))(?=[ \\t]*(?:macro\\b[ \\t]+)?(?:\"(?:[^\"\\\\\\r\\n]|\\\\.)*\"|[+\\-*/%^~?@#$\\\\'`<>=!&|:.]+|_{1,3}(?!_)|[() \\t])+\\{)",
+      "begin": "(?:^|(?<=[;{}]))[ \\t]*(?:(pub)(?:\\([^\\n)]*\\))?\\s+)?(op|op_macro)\\b(?![^\\r\\n{]*//)(?=[^\\r\\n{]*(?:[+\\-*/%^~?@#$\\\\'`<>=!&|:.]|\"))(?=[ \\t]*(?:\"(?:[^\"\\\\\\r\\n]|\\\\.)*\"|[+\\-*/%^~?@#$\\\\'`<>=!&|:.]+|_{1,3}(?!_)|[() \\t])+\\{)",
       "beginCaptures": {
         "1": { "name": "keyword.declaration.kio" },
         "2": { "name": "keyword.declaration.kio" }
       },
-      "end": ";|(?<=\\})|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|type|host|module|package|type|literal|equiv|macro|varop|op|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{|\\[|[+\\-*])))",
+      "end": ";|(?<=\\})|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|type|host|mod|pkg|type|lit|equiv|macro|op_var|op_macro|op|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{|\\[|[+\\-*])))",
       "patterns": [
         { "include": "#comment-doc" },
         { "include": "#comment" },
         { "include": "#fixed-op-body" },
-        { "include": "#operator-macro-modifier" },
         { "include": "#string" },
         { "include": "#slot" },
         { "include": "#operator-user" },
@@ -2063,7 +2064,7 @@
       "beginCaptures": {
         "1": { "name": "meta.ambiguous-declaration-head.kio" }
       },
-      "end": ";|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|type|host|module|package)\\b(?=[ \\t]+[A-Za-z_]))",
+      "end": ";|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|type|host|mod|pkg)\\b(?=[ \\t]+[A-Za-z_]))",
       "name": "meta.ambiguous-declaration.kio",
       "patterns": [
         { "include": "#ambiguous-declaration-group" },
@@ -2076,7 +2077,7 @@
       "beginCaptures": {
         "1": { "name": "meta.ambiguous-declaration-head.kio" }
       },
-      "end": ";|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|type|host|module|package)\\b(?=[ \\t]+[A-Za-z_]))",
+      "end": ";|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|type|host|mod|pkg)\\b(?=[ \\t]+[A-Za-z_]))",
       "name": "meta.ambiguous-declaration.kio",
       "patterns": [
         { "include": "#ambiguous-declaration-group" },
@@ -2140,7 +2141,7 @@
     },
     "keyword-declaration": {
       "comment": "Item-leading and binding-leading keywords.",
-      "match": "\\b(?:fn|type|literal|equiv|module|pub|pure|let|package|build|host|bridge|dependency|source|lock|resolved|signature|with|breaking|nonbreaking|add|modify|remove)\\b",
+      "match": "\\b(?:fn|type|lit|equiv|mod|pub|pure|let|pkg|build|host|bridge|dep|source|lock|resolved|sig|with|breaking|nonbreaking|add|modify|remove)\\b",
       "name": "keyword.declaration.kio"
     },
     "slot": {
@@ -2166,7 +2167,7 @@
           "name": "punctuation.separator.kio"
         }
       },
-      "end": "(?<=\\})|(?=[;,)])|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|type|host|module|package)\\b(?=[ \\t]+[A-Za-z_]))",
+      "end": "(?<=\\})|(?=[;,)])|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|type|host|mod|pkg)\\b(?=[ \\t]+[A-Za-z_]))",
       "patterns": [
         {
           "include": "#comment-doc"
@@ -2244,22 +2245,6 @@
       "match": "[A-Za-z_][A-Za-z0-9_]*",
       "name": "variable.other.kio"
     },
-    "host-owned": {
-      "begin": "\\{",
-      "beginCaptures": {
-        "0": { "name": "punctuation.bracket.kio" }
-      },
-      "end": "\\}|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|type|host|module|package)\\b(?=[ \\t]+[A-Za-z_]))",
-      "endCaptures": {
-        "0": { "name": "punctuation.bracket.kio" }
-      },
-      "patterns": [
-        { "include": "#comment-doc" },
-        { "include": "#comment" },
-        { "match": "\\bowned\\b", "name": "keyword.declaration.kio" },
-        { "include": "#identifier" }
-      ]
-    },
     "expression-let": {
       "begin": "\\blet\\b(?=[ \\t]*(?:[A-Za-z_][A-Za-z0-9_]*|\\.[ \\t]*\\(|\\._?[a-z]+(?:[0-9]*_[a-z]+)*\\.(?=[ \\t]*(?:=|<-|//|$))))",
       "beginCaptures": {
@@ -2267,7 +2252,7 @@
           "name": "keyword.declaration.kio"
         }
       },
-      "end": ";|(?=\\})|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|type|host|module|package|type|literal|equiv|macro|varop|op|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{|\\[|[+\\-*])))",
+      "end": ";|(?=\\})|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|type|host|mod|pkg|type|lit|equiv|macro|op_var|op_macro|op|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{|\\[|[+\\-*])))",
       "patterns": [
         {
           "include": "#binding-head"
@@ -2282,7 +2267,7 @@
       "beginCaptures": {
         "0": { "name": "entity.name.function.kio" }
       },
-      "end": "(?=\\})|(?<=\\})|;|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|type|host|module|package)\\b(?=[ \\t]+[A-Za-z_]))",
+      "end": "(?=\\})|(?<=\\})|;|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|type|host|mod|pkg)\\b(?=[ \\t]+[A-Za-z_]))",
       "patterns": [
         { "include": "#comment-doc" },
         { "include": "#comment" },
@@ -2297,7 +2282,7 @@
           "name": "meta.ambiguous-host-head.kio"
         }
       },
-      "end": "(?<=;)|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|host|module|package)\\b(?=[ \\t]+[A-Za-z_]))",
+      "end": "(?<=;)|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|host|mod|pkg)\\b(?=[ \\t]+[A-Za-z_]))",
       "patterns": [
         {
           "include": "#comment-doc"
@@ -2312,7 +2297,7 @@
               "name": "keyword.declaration.kio"
             }
           },
-          "end": "(?<=;)|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|type|host|module|package)\\b(?=[ \\t]+[A-Za-z_]))",
+          "end": "(?<=;)|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|type|host|mod|pkg)\\b(?=[ \\t]+[A-Za-z_]))",
           "patterns": [
             {
               "include": "#comment-doc"
@@ -2338,7 +2323,7 @@
       "beginCaptures": {
         "0": { "name": "punctuation.separator.kio" }
       },
-      "end": "(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|type|host|module|package)\\b(?=[ \\t]+[A-Za-z_]))|[A-Za-z_][A-Za-z0-9_]*|(?<=\\})|(?<=\\*\\])|(?=[^ \\t\\r\\n])(?!(?:[A-Za-z_]|//|(?:\\(|\\[(?=[ \\t]*(?:[,A-Za-z_]|//|$)|[ \\t]+\\*|\\*+[ \\t]*_?[A-Z][a-z]*[0-9]*(?:_[a-z]+[0-9]*)*_*(?:[ \\t]*(?:,[ \\t]*)+\\**[ \\t]*_?[A-Z][a-z]*[0-9]*(?:_[a-z]+[0-9]*)*_*)*[ \\t,]*\\])|\\[\\*+(?=[ \\t]*(?:_?[A-Z][a-z]*[0-9]*(?:_[a-z]+[0-9]*)*_*[ \\t]*(?:(?:,[ \\t]*)+\\**[ \\t]*_?[A-Z][a-z]*[0-9]*(?:_[a-z]+[0-9]*)*_*[ \\t]*)*(?:(?:,[ \\t]*)+\\**[ \\t]*)?)?(?://[^\\r\\n]*)?$))))",
+      "end": "(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|type|host|mod|pkg)\\b(?=[ \\t]+[A-Za-z_]))|[A-Za-z_][A-Za-z0-9_]*|(?<=\\})|(?<=\\*\\])|(?=[^ \\t\\r\\n])(?!(?:[A-Za-z_]|//|(?:\\(|\\[(?=[ \\t]*(?:[,A-Za-z_]|//|$)|[ \\t]+\\*|\\*+[ \\t]*_?[A-Z][a-z]*[0-9]*(?:_[a-z]+[0-9]*)*_*(?:[ \\t]*(?:,[ \\t]*)+\\**[ \\t]*_?[A-Z][a-z]*[0-9]*(?:_[a-z]+[0-9]*)*_*)*[ \\t,]*\\])|\\[\\*+(?=[ \\t]*(?:_?[A-Z][a-z]*[0-9]*(?:_[a-z]+[0-9]*)*_*[ \\t]*(?:(?:,[ \\t]*)+\\**[ \\t]*_?[A-Z][a-z]*[0-9]*(?:_[a-z]+[0-9]*)*_*[ \\t]*)*(?:(?:,[ \\t]*)+\\**[ \\t]*)?)?(?://[^\\r\\n]*)?$))))",
       "endCaptures": {
         "0": { "name": "variable.other.kio" }
       },
@@ -2371,7 +2356,7 @@
         "1": { "name": "punctuation.bracket.kio" },
         "2": { "name": "keyword.operator.user.kio" }
       },
-      "end": "\\]|(?=[)};])|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|type|host|module|package)\\b(?=[ \\t]+[A-Za-z_]))",
+      "end": "\\]|(?=[)};])|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|type|host|mod|pkg)\\b(?=[ \\t]+[A-Za-z_]))",
       "endCaptures": {
         "0": { "name": "punctuation.bracket.kio" }
       },
@@ -2386,7 +2371,7 @@
           "name": "keyword.operator.kio"
         }
       },
-      "end": "(?=[;}])|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:(?:fn|type|host|module|package|type|literal|equiv|macro|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{))|(?:varop|op)\\b(?=[ \\t]+[^A-Za-z0-9\\s])|rec\\b(?=[ \\t]*(?:\\(|\\{)|[ \\t]+type\\b)))",
+      "end": "(?=[;}])|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:(?:fn|type|host|mod|pkg|type|lit|equiv|macro|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{))|(?:op_var|op_macro|op)\\b(?=[ \\t]+[^A-Za-z0-9\\s])|rec\\b(?=[ \\t]*(?:\\(|\\{)|[ \\t]+type\\b)))",
       "patterns": [
         {
           "include": "#nominal-type-operand"
@@ -2407,7 +2392,7 @@
               "name": "keyword.operator.kio"
             }
           },
-          "end": "(?<=[A-Za-z0-9_.)}])|(?=;)|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:(?:fn|type|host|module|package|type|literal|equiv|macro|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{))|(?:varop|op)\\b(?=[ \\t]+[^A-Za-z0-9\\s])|rec\\b(?=[ \\t]*(?:\\(|\\{)|[ \\t]+type\\b)))",
+          "end": "(?<=[A-Za-z0-9_.)}])|(?=;)|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:(?:fn|type|host|mod|pkg|type|lit|equiv|macro|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{))|(?:op_var|op_macro|op)\\b(?=[ \\t]+[^A-Za-z0-9\\s])|rec\\b(?=[ \\t]*(?:\\(|\\{)|[ \\t]+type\\b)))",
           "patterns": [
             {
               "include": "#nominal-type-operand"
@@ -2435,7 +2420,7 @@
           "name": "entity.name.function.kio"
         }
       },
-      "end": "(?=[;,)\\}])|(?=\\S)(?![A-Za-z_]|//|\\{)|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|type|host|module|package|type|literal|equiv|macro|varop|op|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{|\\[|[+\\-*])))",
+      "end": "(?=[;,)\\}])|(?=\\S)(?![A-Za-z_]|//|\\{)|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|type|host|mod|pkg|type|lit|equiv|macro|op_var|op_macro|op|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{|\\[|[+\\-*])))",
       "applyEndPatternLast": true,
       "patterns": [
         {
@@ -2457,7 +2442,7 @@
     },
     "block-call-prefix": {
       "begin": "\\G",
-      "end": "\\{|(?=[;,)\\}])|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|type|host|module|package|type|literal|equiv|macro|varop|op|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{|\\[|[+\\-*])))",
+      "end": "\\{|(?=[;,)\\}])|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|type|host|mod|pkg|type|lit|equiv|macro|op_var|op_macro|op|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{|\\[|[+\\-*])))",
       "endCaptures": {
         "0": {
           "name": "punctuation.bracket.kio"
@@ -2471,7 +2456,7 @@
     },
     "block-call-body": {
       "begin": "(?<=\\{)",
-      "end": "\\}|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|type|host|module|package|type|literal|equiv|macro|varop|op|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{|\\[|[+\\-*])))",
+      "end": "\\}|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|type|host|mod|pkg|type|lit|equiv|macro|op_var|op_macro|op|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{|\\[|[+\\-*])))",
       "endCaptures": {
         "0": {
           "name": "punctuation.bracket.kio"
@@ -2490,7 +2475,7 @@
           "name": "keyword.control.kio"
         }
       },
-      "end": "(?<=\\})|(?=[;,)\\}])|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|type|host|module|package|type|literal|equiv|macro|varop|op|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{|\\[|[+\\-*])))",
+      "end": "(?<=\\})|(?=[;,)\\}])|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|type|host|mod|pkg|type|lit|equiv|macro|op_var|op_macro|op|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{|\\[|[+\\-*])))",
       "patterns": [
         {
           "include": "#comment-doc"
@@ -2513,7 +2498,7 @@
           "name": "punctuation.bracket.kio"
         }
       },
-      "end": "\\]|(?=[)};])|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|type|host|module|package)\\b(?=[ \\t]+[A-Za-z_]))",
+      "end": "\\]|(?=[)};])|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|type|host|mod|pkg)\\b(?=[ \\t]+[A-Za-z_]))",
       "endCaptures": {
         "0": {
           "name": "punctuation.bracket.kio"
@@ -2534,14 +2519,14 @@
       "beginCaptures": {
         "0": { "name": "punctuation.separator.kio" }
       },
-      "end": "(?<=\\})|(?=[;,)])|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|type|host|module|package)\\b(?=[ \\t]+[A-Za-z_]))",
+      "end": "(?<=\\})|(?=[;,)])|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|type|host|mod|pkg)\\b(?=[ \\t]+[A-Za-z_]))",
       "patterns": [
         { "include": "#lambda-signature-and-body" }
       ]
     },
     "dot-lambda-continuation": {
       "begin": "(?=(?:\\(|\\[(?=[ \\t]*(?:[,A-Za-z_]|//|$)|[ \\t]+\\*|\\*+[ \\t]*_?[A-Z][a-z]*[0-9]*(?:_[a-z]+[0-9]*)*_*(?:[ \\t]*(?:,[ \\t]*)+\\**[ \\t]*_?[A-Z][a-z]*[0-9]*(?:_[a-z]+[0-9]*)*_*)*[ \\t,]*\\])|\\[\\*+(?=[ \\t]*(?:_?[A-Z][a-z]*[0-9]*(?:_[a-z]+[0-9]*)*_*[ \\t]*(?:(?:,[ \\t]*)+\\**[ \\t]*_?[A-Z][a-z]*[0-9]*(?:_[a-z]+[0-9]*)*_*[ \\t]*)*(?:(?:,[ \\t]*)+\\**[ \\t]*)?)?(?://[^\\r\\n]*)?$)))",
-      "end": "(?<=\\*\\])|(?<=\\})|(?=[;,)])|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|type|host|module|package)\\b(?=[ \\t]+[A-Za-z_]))",
+      "end": "(?<=\\*\\])|(?<=\\})|(?=[;,)])|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|type|host|mod|pkg)\\b(?=[ \\t]+[A-Za-z_]))",
       "patterns": [
         { "include": "#ambiguous-star-argument" },
         { "include": "#lambda-signature-and-body" }
@@ -2629,7 +2614,7 @@
           "name": "meta.ambiguous-binding-head.kio"
         }
       },
-      "end": ";|(?=\\})|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|type|host|module|package|type|literal|equiv|macro|varop|op|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{|\\[|[+\\-*])))",
+      "end": ";|(?=\\})|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|type|host|mod|pkg|type|lit|equiv|macro|op_var|op_macro|op|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{|\\[|[+\\-*])))",
       "patterns": [
         {
           "include": "#binding-head"
@@ -2641,7 +2626,7 @@
     },
     "binding-head": {
       "begin": "\\G",
-      "end": "(?:(=)|(<-))(?![+\\-*/%^~?@#$\\\\'\\x60<>=!&|:.])|(?=[;}])|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|type|host|module|package|type|literal|equiv|macro|varop|op|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{|\\[|[+\\-*])))",
+      "end": "(?:(=)|(<-))(?![+\\-*/%^~?@#$\\\\'\\x60<>=!&|:.])|(?=[;}])|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|type|host|mod|pkg|type|lit|equiv|macro|op_var|op_macro|op|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{|\\[|[+\\-*])))",
       "endCaptures": {
         "1": {
           "name": "keyword.operator.kio"
@@ -2674,7 +2659,7 @@
           "name": "punctuation.bracket.kio"
         }
       },
-      "end": "\\)|(?=[;}])|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|type|host|module|package)\\b(?=[ \\t]+[A-Za-z_]))",
+      "end": "\\)|(?=[;}])|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|type|host|mod|pkg)\\b(?=[ \\t]+[A-Za-z_]))",
       "endCaptures": {
         "0": {
           "name": "punctuation.bracket.kio"
@@ -2706,7 +2691,7 @@
         },
         {
           "begin": "(?=\\S)",
-          "end": ";|(?=\\})|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|type|host|module|package|type|literal|equiv|macro|varop|op|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{|\\[|[+\\-*])))",
+          "end": ";|(?=\\})|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|type|host|mod|pkg|type|lit|equiv|macro|op_var|op_macro|op|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{|\\[|[+\\-*])))",
           "patterns": [
             {
               "include": "#expression-tokens"
@@ -2716,11 +2701,9 @@
       ]
     },
     "literal-decl": {
-      "begin": "\\bliteral\\b",
-      "beginCaptures": {
-        "0": { "name": "keyword.declaration.kio" }
-      },
-      "end": ";|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|type|host|module|package|type|literal|equiv|macro|varop|op|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{|\\[|[+\\-*])))",
+      "begin": "(?:(\\blit\\b)(?=[ \\t]*(?://[^\\r\\n]*)?$)|(\\blit\\b))",
+      "beginCaptures": { "1": { "name": "meta.ambiguous-declaration-head.kio" }, "2": { "name": "keyword.declaration.kio" } },
+      "end": ";|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|type|host|mod|pkg|type|lit|equiv|macro|op_var|op_macro|op|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{|\\[|[+\\-*])))",
       "patterns": [
         { "include": "#type-tokens" }
       ]
@@ -2743,7 +2726,7 @@
     },
     "nominal-rhs-group": {
       "begin": "\\(",
-      "end": "\\)|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:(?:fn|type|host|module|package|type|literal|equiv|macro|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{))|(?:varop|op)\\b(?=[ \\t]+[^A-Za-z0-9\\s])|rec\\b(?=[ \\t]*(?:\\(|\\{)|[ \\t]+type\\b)))",
+      "end": "\\)|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:(?:fn|type|host|mod|pkg|type|lit|equiv|macro|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{))|(?:op_var|op_macro|op)\\b(?=[ \\t]+[^A-Za-z0-9\\s])|rec\\b(?=[ \\t]*(?:\\(|\\{)|[ \\t]+type\\b)))",
       "beginCaptures": {
         "0": {
           "name": "punctuation.bracket.kio"
@@ -2762,7 +2745,7 @@
     },
     "nominal-group": {
       "begin": "\\{",
-      "end": "\\}|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:(?:fn|type|host|module|package|type|literal|equiv|macro|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{))|(?:varop|op)\\b(?=[ \\t]+[^A-Za-z0-9\\s])|rec\\b(?=[ \\t]*(?:\\(|\\{)|[ \\t]+type\\b)))",
+      "end": "\\}|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:(?:fn|type|host|mod|pkg|type|lit|equiv|macro|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{))|(?:op_var|op_macro|op)\\b(?=[ \\t]+[^A-Za-z0-9\\s])|rec\\b(?=[ \\t]*(?:\\(|\\{)|[ \\t]+type\\b)))",
       "beginCaptures": {
         "0": {
           "name": "punctuation.bracket.kio"
@@ -2801,7 +2784,7 @@
           "name": "entity.name.type.kio"
         }
       },
-      "end": "(?<=\\})(?=[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|type|host|module|package|literal|equiv|macro|import|rec|varop|op)\\b)|(?=\\})|;|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:(?:fn|type|host|module|package|type|literal|equiv|macro|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{))|(?:varop|op)\\b(?=[ \\t]+[^A-Za-z0-9\\s])|rec\\b(?=[ \\t]*(?:\\(|\\{)|[ \\t]+type\\b)))",
+      "end": "(?<=\\})(?=[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|type|host|mod|pkg|lit|equiv|macro|import|rec|op_var|op_macro|op)\\b)|(?=\\})|;|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:(?:fn|type|host|mod|pkg|type|lit|equiv|macro|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{))|(?:op_var|op_macro|op)\\b(?=[ \\t]+[^A-Za-z0-9\\s])|rec\\b(?=[ \\t]*(?:\\(|\\{)|[ \\t]+type\\b)))",
       "patterns": [
         {
           "include": "#nominal-rhs-tokens"
@@ -2813,7 +2796,7 @@
       "beginCaptures": {
         "0": { "name": "keyword.declaration.kio" }
       },
-      "end": "(?<=[};])|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|type|host|module|package)\\b(?=[ \\t]+[A-Za-z_]))",
+      "end": "(?<=[};])|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|type|host|mod|pkg)\\b(?=[ \\t]+[A-Za-z_]))",
       "patterns": [
         { "include": "#comment-doc" },
         { "include": "#comment" },
@@ -2826,7 +2809,7 @@
         "1": { "name": "keyword.declaration.kio" },
         "2": { "name": "entity.name.macro.kio" }
       },
-      "end": ";|(?<=\\})|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|type|host|module|package|type|literal|equiv|macro|varop|op|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{|\\[|[+\\-*])))",
+      "end": ";|(?<=\\})|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|type|host|mod|pkg|type|lit|equiv|macro|op_var|op_macro|op|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{|\\[|[+\\-*])))",
       "patterns": [
         { "include": "#macro-body" },
         { "include": "#type-tokens" }
@@ -2834,7 +2817,7 @@
     },
     "macro-body": {
       "begin": "\\{",
-      "end": "\\}|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|type|host|module|package|type|literal|equiv|macro|varop|op|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{|\\[|[+\\-*])))",
+      "end": "\\}|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|type|host|mod|pkg|type|lit|equiv|macro|op_var|op_macro|op|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{|\\[|[+\\-*])))",
       "beginCaptures": {
         "0": {
           "name": "punctuation.bracket.kio"
@@ -2876,7 +2859,7 @@
           "name": "keyword.declaration.kio"
         }
       },
-      "end": ";|(?=\\})|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|type|host|module|package|type|literal|equiv|macro|varop|op|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{|\\[|[+\\-*])))",
+      "end": ";|(?=\\})|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|type|host|mod|pkg|type|lit|equiv|macro|op_var|op_macro|op|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{|\\[|[+\\-*])))",
       "patterns": [
         {
           "include": "#comment-doc"
@@ -2915,7 +2898,7 @@
       "beginCaptures": {
         "0": { "name": "keyword.declaration.kio" }
       },
-      "end": ";|(?=\\})|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|type|host|module|package|type|literal|equiv|macro|varop|op|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{|\\[|[+\\-*])))",
+      "end": ";|(?=\\})|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|type|host|mod|pkg|type|lit|equiv|macro|op_var|op_macro|op|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{|\\[|[+\\-*])))",
       "patterns": [
         { "include": "#type-tokens" }
       ]
@@ -2925,7 +2908,7 @@
       "beginCaptures": {
         "0": { "name": "keyword.declaration.kio" }
       },
-      "end": ";|(?=\\})|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|type|host|module|package|type|literal|equiv|macro|varop|op|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{|\\[|[+\\-*])))",
+      "end": ";|(?=\\})|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|type|host|mod|pkg|type|lit|equiv|macro|op_var|op_macro|op|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{|\\[|[+\\-*])))",
       "patterns": [
         { "include": "#comment-doc" },
         { "include": "#comment" },
@@ -2965,7 +2948,7 @@
     },
     "fixed-op-body": {
       "begin": "\\{",
-      "end": "\\}|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|type|host|module|package|type|literal|equiv|macro|varop|op|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{|\\[|[+\\-*])))",
+      "end": "\\}|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|type|host|mod|pkg|type|lit|equiv|macro|op_var|op_macro|op|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{|\\[|[+\\-*])))",
       "beginCaptures": {
         "0": { "name": "punctuation.bracket.kio" }
       },
@@ -2980,7 +2963,7 @@
           "beginCaptures": {
             "0": { "name": "keyword.declaration.kio" }
           },
-          "end": ";|(?=\\})|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|type|host|module|package|type|literal|equiv|macro|varop|op|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{|\\[|[+\\-*])))",
+          "end": ";|(?=\\})|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|type|host|mod|pkg|type|lit|equiv|macro|op_var|op_macro|op|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{|\\[|[+\\-*])))",
           "patterns": [
             { "include": "#type-tokens" }
           ]
@@ -2991,7 +2974,7 @@
     },
     "varop-mirror-bracket": {
       "begin": "\\G\\[",
-      "end": "(?!\\G)\\]|(?=[;}])|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:(?:fn|type|host|module|package|type|literal|equiv|macro|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{))|(?:varop|op)\\b(?=[ \\t]+[^A-Za-z0-9\\s])|rec\\b(?=[ \\t]*(?:\\(|\\{)|[ \\t]+type\\b)))",
+      "end": "(?!\\G)\\]|(?=[;}])|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:(?:fn|type|host|mod|pkg|type|lit|equiv|macro|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{))|(?:op_var|op_macro|op)\\b(?=[ \\t]+[^A-Za-z0-9\\s])|rec\\b(?=[ \\t]*(?:\\(|\\{)|[ \\t]+type\\b)))",
       "beginCaptures": {
         "0": {
           "name": "punctuation.bracket.kio"
@@ -3020,7 +3003,7 @@
         },
         {
           "begin": "(?!\\G)(?=\\S)",
-          "end": "(?=[;}])|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:(?:fn|type|host|module|package|type|literal|equiv|macro|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{))|(?:varop|op)\\b(?=[ \\t]+[^A-Za-z0-9\\s])|rec\\b(?=[ \\t]*(?:\\(|\\{)|[ \\t]+type\\b)))",
+          "end": "(?=[;}])|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:(?:fn|type|host|mod|pkg|type|lit|equiv|macro|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{))|(?:op_var|op_macro|op)\\b(?=[ \\t]+[^A-Za-z0-9\\s])|rec\\b(?=[ \\t]*(?:\\(|\\{)|[ \\t]+type\\b)))",
           "name": "meta.invalid-varop-head.kio",
           "patterns": [
             {
@@ -3055,7 +3038,7 @@
     },
     "varop-mirror-symbol": {
       "begin": "\\G([+\\-*/%^~?@#$\\\\'\\x60<>=!&|:])",
-      "end": "(?!\\G)\\1|(?=[;}])|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:(?:fn|type|host|module|package|type|literal|equiv|macro|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{))|(?:varop|op)\\b(?=[ \\t]+[^A-Za-z0-9\\s])|rec\\b(?=[ \\t]*(?:\\(|\\{)|[ \\t]+type\\b)))",
+      "end": "(?!\\G)\\1|(?=[;}])|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:(?:fn|type|host|mod|pkg|type|lit|equiv|macro|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{))|(?:op_var|op_macro|op)\\b(?=[ \\t]+[^A-Za-z0-9\\s])|rec\\b(?=[ \\t]*(?:\\(|\\{)|[ \\t]+type\\b)))",
       "beginCaptures": {
         "0": {
           "name": "keyword.operator.user.kio"
@@ -3075,7 +3058,7 @@
         },
         {
           "begin": "(?!\\G)(?=\\S)",
-          "end": "(?=[;}])|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:(?:fn|type|host|module|package|type|literal|equiv|macro|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{))|(?:varop|op)\\b(?=[ \\t]+[^A-Za-z0-9\\s])|rec\\b(?=[ \\t]*(?:\\(|\\{)|[ \\t]+type\\b)))",
+          "end": "(?=[;}])|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:(?:fn|type|host|mod|pkg|type|lit|equiv|macro|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{))|(?:op_var|op_macro|op)\\b(?=[ \\t]+[^A-Za-z0-9\\s])|rec\\b(?=[ \\t]*(?:\\(|\\{)|[ \\t]+type\\b)))",
           "name": "meta.invalid-varop-head.kio",
           "patterns": [
             {
@@ -3109,7 +3092,7 @@
     },
     "varop-head": {
       "begin": "[ \\t]*(?=\\[)",
-      "end": "(?<=\\})|(?=[;}])|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:(?:fn|type|host|module|package|type|literal|equiv|macro|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{))|(?:varop|op)\\b(?=[ \\t]+[^A-Za-z0-9\\s])|rec\\b(?=[ \\t]*(?:\\(|\\{)|[ \\t]+type\\b)))",
+      "end": "(?<=\\})|(?=[;}])|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:(?:fn|type|host|mod|pkg|type|lit|equiv|macro|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{))|(?:op_var|op_macro|op)\\b(?=[ \\t]+[^A-Za-z0-9\\s])|rec\\b(?=[ \\t]*(?:\\(|\\{)|[ \\t]+type\\b)))",
       "patterns": [
         {
           "begin": "(?=\\[[ \\t]*(?:(?<head_mirror>(?<head_char>[+\\-*/%^~?@#$\\\\'\\x60<>=!&|:])(?:\\g<head_mirror>|[ \\t]*)\\k<head_char+0>))?[ \\t]*\\])\\[",
@@ -3147,7 +3130,7 @@
         },
         {
           "begin": "(?=\\S)",
-          "end": "(?=[;}])|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:(?:fn|type|host|module|package|type|literal|equiv|macro|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{))|(?:varop|op)\\b(?=[ \\t]+[^A-Za-z0-9\\s])|rec\\b(?=[ \\t]*(?:\\(|\\{)|[ \\t]+type\\b)))",
+          "end": "(?=[;}])|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:(?:fn|type|host|mod|pkg|type|lit|equiv|macro|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{))|(?:op_var|op_macro|op)\\b(?=[ \\t]+[^A-Za-z0-9\\s])|rec\\b(?=[ \\t]*(?:\\(|\\{)|[ \\t]+type\\b)))",
           "name": "meta.invalid-varop-head.kio",
           "patterns": [
             {
@@ -3190,7 +3173,7 @@
     },
     "invalid-nominal-payload": {
       "begin": "\\{",
-      "end": "(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:(?:fn|type|host|module|package|type|literal|equiv|macro|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{))|(?:varop|op)\\b(?=[ \\t]+[^A-Za-z0-9\\s])|rec\\b(?=[ \\t]*(?:\\(|\\{)|[ \\t]+type\\b)))",
+      "end": "(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:(?:fn|type|host|mod|pkg|type|lit|equiv|macro|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{))|(?:op_var|op_macro|op)\\b(?=[ \\t]+[^A-Za-z0-9\\s])|rec\\b(?=[ \\t]*(?:\\(|\\{)|[ \\t]+type\\b)))",
       "beginCaptures": {
         "0": { "name": "punctuation.bracket.kio" }
       },
@@ -3209,7 +3192,7 @@
     },
     "nominal-type-group": {
       "begin": "\\(",
-      "end": "\\)|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:(?:fn|type|host|module|package|type|literal|equiv|macro|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{))|(?:varop|op)\\b(?=[ \\t]+[^A-Za-z0-9\\s])|rec\\b(?=[ \\t]*(?:\\(|\\{)|[ \\t]+type\\b)))",
+      "end": "\\)|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:(?:fn|type|host|mod|pkg|type|lit|equiv|macro|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{))|(?:op_var|op_macro|op)\\b(?=[ \\t]+[^A-Za-z0-9\\s])|rec\\b(?=[ \\t]*(?:\\(|\\{)|[ \\t]+type\\b)))",
       "beginCaptures": {
         "0": { "name": "punctuation.bracket.kio" }
       },
@@ -3225,7 +3208,7 @@
     },
     "nominal-type-arguments": {
       "begin": "\\[",
-      "end": "\\]|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:(?:fn|type|host|module|package|type|literal|equiv|macro|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{))|(?:varop|op)\\b(?=[ \\t]+[^A-Za-z0-9\\s])|rec\\b(?=[ \\t]*(?:\\(|\\{)|[ \\t]+type\\b)))",
+      "end": "\\]|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:(?:fn|type|host|mod|pkg|type|lit|equiv|macro|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{))|(?:op_var|op_macro|op)\\b(?=[ \\t]+[^A-Za-z0-9\\s])|rec\\b(?=[ \\t]*(?:\\(|\\{)|[ \\t]+type\\b)))",
       "beginCaptures": { "0": { "name": "punctuation.bracket.kio" } },
       "endCaptures": { "0": { "name": "punctuation.bracket.kio" } },
       "patterns": [
@@ -3237,7 +3220,7 @@
     },
     "nominal-type-operand": {
       "begin": "\\G",
-      "end": "(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:(?:fn|type|host|module|package|type|literal|equiv|macro|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{))|(?:varop|op)\\b(?=[ \\t]+[^A-Za-z0-9\\s])|rec\\b(?=[ \\t]*(?:\\(|\\{)|[ \\t]+type\\b)))|(_)(?![A-Za-z0-9_])|([A-Za-z_][A-Za-z0-9_]*)|(\\.)|(!)|(?<=\\))|(?=;)",
+      "end": "(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:(?:fn|type|host|mod|pkg|type|lit|equiv|macro|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{))|(?:op_var|op_macro|op)\\b(?=[ \\t]+[^A-Za-z0-9\\s])|rec\\b(?=[ \\t]*(?:\\(|\\{)|[ \\t]+type\\b)))|(_)(?![A-Za-z0-9_])|([A-Za-z_][A-Za-z0-9_]*)|(\\.)|(!)|(?<=\\))|(?=;)",
       "endCaptures": {
         "1": {
           "name": "variable.parameter.slot.kio"
@@ -3278,7 +3261,7 @@
     },
     "recursive-call-annotations": {
       "begin": "\\(",
-      "end": "\\)|(?=[;}])|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|type|host|module|package)\\b(?=[ \\t]+[A-Za-z_]))",
+      "end": "\\)|(?=[;}])|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|type|host|mod|pkg)\\b(?=[ \\t]+[A-Za-z_]))",
       "beginCaptures": {
         "0": { "name": "punctuation.bracket.kio" }
       },
@@ -3290,7 +3273,7 @@
         { "include": "#comment" },
         {
           "begin": "(?=[^, \\t\\r\\n)])",
-          "end": "(?=[,);}]|^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|type|host|module|package)\\b(?=[ \\t]+[A-Za-z_]))",
+          "end": "(?=[,);}]|^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|type|host|mod|pkg)\\b(?=[ \\t]+[A-Za-z_]))",
           "patterns": [
             { "match": "\\G(?:poly|cont|escape)\\b", "name": "keyword.control.kio" },
             { "include": "#recursive-annotation-item-tokens" }

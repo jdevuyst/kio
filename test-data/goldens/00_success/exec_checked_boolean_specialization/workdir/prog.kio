@@ -1,10 +1,10 @@
-module prog;
+mod prog;
 
 import __intrinsics__;
 
-import macros/testapi(Bool as Other);
-import testapi(Bool, I32);
-import testapi/fmt(print_i32);
+import macros/testapi { type Bool as Other }
+import testapi { type Bool; type I32 }
+import testapi/fmt { fn print_i32 }
 
 fn direct(flag: Bool) -> I32 {
   __if_then_else__(flag, .() { 11 }, .() { 12 })

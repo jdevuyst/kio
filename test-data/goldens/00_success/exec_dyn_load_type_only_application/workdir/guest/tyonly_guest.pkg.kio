@@ -1,4 +1,4 @@
-package tyonly_guest;
+pkg tyonly_guest;
 
 build {
   cache "out/.kio-cache/";

@@ -1,4 +1,4 @@
-package libdep;
+pkg libdep;
 
 bridge {
   lib

@@ -1,4 +1,4 @@
-package recursive_labels_require_marker;
+pkg recursive_labels_require_marker;
 
 build {
   target js {

@@ -1,4 +1,4 @@
-module greet;
+mod greet;
 
 // A host-free generic combinator: pick the first of two like-typed
 // values. The consumer threads its host `String` through this, so the

@@ -1,12 +1,12 @@
-module testapi/main;
+mod testapi/main;
 
-import macros/control(macro if);
-import macros/match(macro match);
-import macros/spine_macros(macro widen_sum);
-import testapi(Bool, I32);
+import macros/control { macro if }
+import macros/match { macro match }
+import macros/spine_macros { macro widen_sum }
+import testapi { type Bool; type I32 }
 import testapi/fmt as fmt;
 import testapi/io as io;
-import testapi/iter(loop);
+import testapi/iter { fn loop }
 
 rec(loop) fn search(outer: Bool, inner: Bool) -> I32 | . {
   if(outer) {

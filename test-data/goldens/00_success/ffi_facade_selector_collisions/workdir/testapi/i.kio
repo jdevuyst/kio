@@ -1,4 +1,4 @@
-module testapi/i;
+mod testapi/i;
 
 host type I32 role(i32);
 

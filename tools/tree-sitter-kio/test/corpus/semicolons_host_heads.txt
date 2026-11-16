@@ -1,7 +1,7 @@
 ================================================================================
 structural semicolons_signature_host_head_children
 ================================================================================
-signature app v(1); v(1) { breaking { add { module api { host type T; host fn fetch() -> T } } } }
+sig app v(1); v(1) { breaking { add { mod api { host type T; host fn fetch() -> T } } } }
 --------------------------------------------------------------------------------
 
 (source_file

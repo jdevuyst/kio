@@ -1,4 +1,4 @@
-package type_mismatch;
+pkg type_mismatch;
 
 build {
   cache "out/.kio-cache/";

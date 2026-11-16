@@ -1,8 +1,8 @@
-module testapi/main;
+mod testapi/main;
 
 import core/store as target;
-import testapi(String);
-import testapi/io(print);
+import testapi { type String }
+import testapi/io { fn print }
 import widget/store as source;
 
 fn read_item[A](value: target.Item[A]) -> A { value.>target.Item.get }

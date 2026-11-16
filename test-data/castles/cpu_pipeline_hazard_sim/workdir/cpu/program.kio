@@ -17,11 +17,22 @@
 /// escaped the flush, and i16 would clobber r7, so a mis-timed pipeline
 /// shows up in the architectural dump rather than only in the cycle
 /// count.
-module cpu/program;
+mod cpu/program;
 
-import cpu/isa(Instr, i_add, i_beq, i_halt, i_load, i_loadi, i_mul, i_nop, i_store, i_sub);
-import testapi(Array, I32);
-import testapi/array(array_make_empty, array_push);
+import cpu/isa {
+  type Instr;
+  fn i_add;
+  fn i_beq;
+  fn i_halt;
+  fn i_load;
+  fn i_loadi;
+  fn i_mul;
+  fn i_nop;
+  fn i_store;
+  fn i_sub
+}
+import testapi { type Array; type I32 }
+import testapi/array { fn array_make_empty; fn array_push }
 
 pub fn build() -> Array[Instr] {
   let code = array_make_empty[Instr](());

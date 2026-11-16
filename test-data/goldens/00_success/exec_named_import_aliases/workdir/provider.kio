@@ -1,6 +1,6 @@
-module provider;
+mod provider;
 
-import testapi(String);
+import testapi { type String }
 
 pub type Plain = String;
 

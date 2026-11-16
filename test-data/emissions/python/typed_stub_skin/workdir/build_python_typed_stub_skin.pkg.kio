@@ -1,4 +1,4 @@
-package build_python_typed_stub_skin;
+pkg build_python_typed_stub_skin;
 
 build {
   cache "out/.kio-cache/";

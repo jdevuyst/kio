@@ -1,4 +1,4 @@
-package macro_type_forall_prefix_fold;
+pkg macro_type_forall_prefix_fold;
 
 build {
   cache "out/.kio-cache/";

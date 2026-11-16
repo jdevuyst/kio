@@ -4,18 +4,18 @@
 /// The two are separate questions. A tick that reads a page can end with the
 /// process still on the CPU, back on the ready queue, blocked in the pager, or
 /// finished, and only the second sum knows which.
-module os/trace;
+mod os/trace;
 
-import macros/control(macro if);
-import macros/match(macro match);
-import macros/row_macros(macro select);
-import macros/spine_macros(macro widen_sum);
+import macros/control { macro if }
+import macros/match { macro match }
+import macros/row_macros { macro select }
+import macros/spine_macros { macro widen_sum }
 import os/config as config;
 import os/num as num;
 import os/proc as proc;
 import os/text as text;
-import testapi(Bool, I32, String);
-import testapi/io(print);
+import testapi { type Bool; type I32; type String }
+import testapi/io { fn print }
 
 /// What the CPU did.
 ///

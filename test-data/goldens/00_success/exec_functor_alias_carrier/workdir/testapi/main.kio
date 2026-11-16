@@ -1,10 +1,10 @@
-module testapi/main;
+mod testapi/main;
 
-import macros/match(macro match);
-import macros/spine_macros(macro widen_sum);
-import testapi(String);
-import testapi/io(print);
-import testapi/text(string_concat);
+import macros/match { macro match }
+import macros/spine_macros { macro widen_sum }
+import testapi { type String }
+import testapi/io { fn print }
+import testapi/text { fn string_concat }
 
 // An optional payload, expressed as a *type alias* over the nominal type `Present`
 // and the empty product: `Option(A) = Present(A) | .`. The

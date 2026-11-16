@@ -1,12 +1,12 @@
 /// Exercises delimiter ownership through the public source-text loader.
-module testapi/main;
+mod testapi/main;
 
-import loader(Lr_diag, Lr_image, un_load_outcome);
-import loader/scan(load_package);
-import macros/match(macro match);
-import testapi(String);
-import testapi/io(print);
-import testapi/text(string_concat);
+import loader { type Lr_diag; type Lr_image; fn un_load_outcome }
+import loader/scan { fn load_package }
+import macros/match { macro match }
+import testapi { type String }
+import testapi/io { fn print }
+import testapi/text { fn string_concat }
 
 fn show(label: String, source: String) {
   let result =
@@ -17,72 +17,64 @@ fn show(label: String, source: String) {
 }
 
 pub fn main() {
-  show("canonical newtype: "[String], "module a; pub type { Box: . { pub mk; pub get }; }"[String]);
-  show("newtype edge runs: "[String], "module a; type { Box: . { ;; mk;;; get;; }; }"[String]);
-  show("newtype reordered members: "[String], "module a; type { Box: . { get; mk }; }"[String]);
+  show("canonical newtype: "[String], "mod a; pub type { Box: . { pub mk; pub get }; }"[String]);
+  show("newtype edge runs: "[String], "mod a; type { Box: . { ;; mk;;; get;; }; }"[String]);
+  show("newtype reordered members: "[String], "mod a; type { Box: . { get; mk }; }"[String]);
   show(
   , "newtype redundant suffix: "[String]
-  , "module a; type { Box: . { mk; get; }; }; type Unit = .;"[String]
+  , "mod a; type { Box: . { mk; get; }; }; type Unit = .;"[String]
   );
-  show("recursive singleton: "[String], "module a; rec type { Box: . | Box { mk; get }; };"[String]);
+  show("recursive singleton: "[String], "mod a; rec type { Box: . | Box { mk; get }; };"[String]);
   show(
   , "function redundant suffix: "[String]
-  , "module a; pub fn first() { () }; pub fn second() { first() };"[String]
+  , "mod a; pub fn first() { () }; pub fn second() { first() };"[String]
   );
   show(
   , "recursive final alias: "[String]
-  , "module a; rec { type { Box: Link { mk; get }; }; type Link = . | Box }"[String]
+  , "mod a; rec { type { Box: Link { mk; get }; }; type Link = . | Box }"[String]
   );
   show(
   , "recursive edge separators: "[String]
-  , "module a; rec { ; type Link = . | Box; type { Box: Link { mk; get }; }; "
-    "};"[String]
+  , "mod a; rec { ; type Link = . | Box; type { Box: Link { mk; get }; }; };"[String]
   );
   show(
   , "bridge leading separator: "[String]
-  , "module a; pub fn run() { () } package p; bridge { ; a; }"[String]
+  , "mod a; pub fn run() { () } pkg p; bridge { ; a; }"[String]
   );
-  show("bridge empty: "[String], "module a; fn run() { () } package p; bridge {}"[String]);
+  show("bridge empty: "[String], "mod a; fn run() { () } pkg p; bridge {}"[String]);
   show(
   , "bridge peer separator: "[String]
-  , "module a; pub fn run() { () } module b; pub fn run() { () } package p; "
-    "bridge { a; b }"[String]
+  , "mod a; pub fn run() { () } mod b; pub fn run() { () } pkg p; bridge { a; "
+    "b }"[String]
   );
   show(
   , "bridge missing peer separator: "[String]
-  , "module a; pub fn run() { () } module b; pub fn run() { () } package p; "
-    "bridge { a b }"[String]
+  , "mod a; pub fn run() { () } mod b; pub fn run() { () } pkg p; bridge { a "
+    "b }"[String]
   );
-  show("newtype missing peer separator: "[String], "module a; type { Box: . { mk get }; }"[String]);
-  show("newtype empty: "[String], "module a; type { Box: . {  }; }"[String]);
-  show("newtype duplicate member: "[String], "module a; type { Box: . { mk; mk }; }"[String]);
-  show(
-  , "newtype repeated outer suffix: "[String]
-  , "module a; type { Box: . { mk; get }; };;"[String]
-  );
-  show("function repeated outer suffix: "[String], "module a; fn run() { () };;"[String]);
+  show("newtype missing peer separator: "[String], "mod a; type { Box: . { mk get }; }"[String]);
+  show("newtype empty: "[String], "mod a; type { Box: . {  }; }"[String]);
+  show("newtype duplicate member: "[String], "mod a; type { Box: . { mk; mk }; }"[String]);
+  show("newtype repeated outer suffix: "[String], "mod a; type { Box: . { mk; get }; };;"[String]);
+  show("function repeated outer suffix: "[String], "mod a; fn run() { () };;"[String]);
   show(
   , "recursive missing peer separator: "[String]
-  , "module a; rec { type { Box: Link { mk; get }; } type Link = . | Box }"[String]
+  , "mod a; rec { type { Box: Link { mk; get }; } type Link = . | Box }"[String]
   );
   show(
   , "recursive repeated peer separator: "[String]
-  , "module a; rec { type { Box: Link { mk; get }; };; type Link = . | Box }"[String]
+  , "mod a; rec { type { Box: Link { mk; get }; };; type Link = . | Box }"[String]
   );
   show(
   , "recursive repeated leading separator: "[String]
-  , "module a; rec { ;; type Link = . | Box; type { Box: Link { mk; get }; } "
-    "}"[String]
+  , "mod a; rec { ;; type Link = . | Box; type { Box: Link { mk; get }; } }"[String]
   );
-  show("recursive empty: "[String], "module a; rec {}"[String]);
-  show("recursive singleton group: "[String], "module a; rec { type Unit = . }"[String]);
-  show(
-  , "bridge semicolon only: "[String]
-  , "module a; pub fn run() { () } package p; bridge { ; }"[String]
-  );
+  show("recursive empty: "[String], "mod a; rec {}"[String]);
+  show("recursive singleton group: "[String], "mod a; rec { type Unit = . }"[String]);
+  show("bridge semicolon only: "[String], "mod a; pub fn run() { () } pkg p; bridge { ; }"[String]);
   show(
   , "bridge repeated leading separator: "[String]
-  , "module a; pub fn run() { () } package p; bridge { ;; a }"[String]
+  , "mod a; pub fn run() { () } pkg p; bridge { ;; a }"[String]
   );
-  show("outer alias requires terminator: "[String], "module a; type Unit = ."[String])
+  show("outer alias requires terminator: "[String], "mod a; type Unit = ."[String])
 }

@@ -1,7 +1,7 @@
-module testapi/main;
+mod testapi/main;
 
-import testapi(String);
-import testapi/io(print);
+import testapi { type String }
+import testapi/io { fn print }
 
 // `Box`'s parameter `[A]` occurs in a covariant (positive) position
 // in its payload, so `Box(Rec)` places the recursive `Rec` in a

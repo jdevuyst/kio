@@ -5,18 +5,18 @@
 /// its root path. No distinct leaf path can be a prefix of another: the
 /// prefix-free property follows directly from the leaves being leaves. The
 /// separate Kraft check verifies the recorded length accounting and completeness.
-module huffman/code;
+mod huffman/code;
 
-import huffman/list(List, cons, len, nil, of1, reverse);
-import huffman/tree(Fork_key, Fork_left, Fork_right, Fork_weight);
-import huffman/tree(Leaf_symbol, Leaf_weight);
-import huffman/tree(Node);
-import macros/control(macro if);
-import macros/match(macro match);
-import macros/row_macros(macro select);
-import testapi(Bool, I32);
-import testapi/arith(lt_i32);
-import testapi/iter(loop);
+import huffman/list { type List; fn cons; fn len; fn nil; fn of1; fn reverse }
+import huffman/tree { type Fork_key; type Fork_left; type Fork_right; type Fork_weight }
+import huffman/tree { type Leaf_symbol; type Leaf_weight }
+import huffman/tree { type Node }
+import macros/control { macro if }
+import macros/match { macro match }
+import macros/row_macros { macro select }
+import testapi { type Bool; type I32 }
+import testapi/arith { fn lt_i32 }
+import testapi/iter { fn loop }
 
 /// A codeword, and the encoded message, are both just bits: 0 or 1 per element.
 pub type Bits = List[I32];

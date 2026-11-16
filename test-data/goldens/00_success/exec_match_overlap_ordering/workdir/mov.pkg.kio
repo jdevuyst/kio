@@ -1,4 +1,4 @@
-package mov;
+pkg mov;
 
 build {
   cache "out/.kio-cache/";

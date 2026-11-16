@@ -2123,7 +2123,7 @@ mod tests {
     ) -> Module<Enriched> {
         let parsed = parse(src).expect("parse");
         let package_file = package_file_src.map(|s| {
-            parse_package_file(&format!("package pkg;\n{s}"), None).expect("parse package file")
+            parse_package_file(&format!("pkg pkg;\n{s}"), None).expect("parse package file")
         });
         let mut parsed_modules = vec![(module_file_path(module_path), parsed)];
         parsed_modules.extend(macro_support_entries());
@@ -2499,13 +2499,7 @@ mod tests {
     fn effectful_outer_prefix_retains_the_tuple_tail_let() {
         let m = recover_one(
             "main",
-            "module main; \
-             host type Int role(i32); \
-             host fn mark(value: Int) -> Int; \
-             fn keep(x: Int, y: Int, z: Int) -> (Int & Int & Int) { \
-               let tail = (mark(y), mark(z)); \
-               (mark(x), tail) \
-             }",
+            "mod main; host type Int role(i32); host fn mark(value: Int) -> Int; fn keep(x: Int, y: Int, z: Int) -> (Int & Int & Int) { let tail = (mark(y), mark(z)); (mark(x), tail) }",
             None,
         );
         let body = fn_body(&m, "keep");
@@ -2533,7 +2527,7 @@ mod tests {
     fn tuple_literal_recovers_to_nary_enriched_tuple() {
         let m = recover_one(
             "x/main",
-            "module x/main; fn t() -> (. & (. & .)) { ((), (), ()) }",
+            "mod x/main; fn t() -> (. & (. & .)) { ((), (), ()) }",
             None,
         );
         let body = fn_body(&m, "t");
@@ -2570,14 +2564,7 @@ mod tests {
     fn match_recovers_to_single_n_arm_enriched_match() {
         let m = recover_one(
             "x/main",
-            "module x/main; import __intrinsics__; \
-             fn pick[A][B][C](s: (A | (B | C))) -> . { \
-               __either__[A][ B | C][ .]( s, \
-                 .(_x: A) { () }, \
-                 .(rest: B | C) { \
-                   __either__[B][ C][ .]( rest, .(_y: B) { () }, .(_z: C) { () }) \
-                 }) \
-             }",
+            "mod x/main; import __intrinsics__; fn pick[A][B][C](s: (A | (B | C))) -> . { __either__[A][ B | C][ .]( s, .(_x: A) { () }, .(rest: B | C) { __either__[B][ C][ .]( rest, .(_y: B) { () }, .(_z: C) { () }) }) }",
             None,
         );
         let body = fn_body(&m, "pick");
@@ -2612,11 +2599,7 @@ mod tests {
             let module = recover_one(
                 "x/main",
                 &format!(
-                    "module x/main; import __intrinsics__; \
-                     pub fn pick[{name}](value: {name} | {name}) -> {name} {{ \
-                       __either__[{name}][{name}][{name}](value, \
-                         .(left: {name}) {{ left }}, .(right: {name}) {{ right }}) \
-                     }}"
+                    "mod x/main; import __intrinsics__; pub fn pick[{name}](value: {name} | {name}) -> {name} {{ __either__[{name}][{name}][{name}](value, .(left: {name}) {{ left }}, .(right: {name}) {{ right }}) }}"
                 ),
                 None,
             );
@@ -2654,7 +2637,7 @@ mod tests {
         ];
         let recovered = spellings.map(|(source, canonical)| {
             let parsed = parse(&format!(
-                "module x; host type Number role(f64); fn f() -> Number {{ {source}[Number] }}"
+                "mod x; host type Number role(f64); fn f() -> Number {{ {source}[Number] }}"
             ))
             .expect("parse Prime source");
             let module = crate::prime::lower::lower_module(parsed).expect("Prime syntax");
@@ -2696,7 +2679,7 @@ mod tests {
         .map(|prefix| {
             let module = recover_one(
                 "x/main",
-                &format!("module x/main; import __intrinsics__; host fn factory() -> . -> .; {prefix} {subject}"),
+                &format!("mod x/main; import __intrinsics__; host fn factory() -> . -> .; {prefix} {subject}"),
                 None,
             );
             let (bindings, terminal) = leading_let_spine(fn_body(&module, "target"));
@@ -2721,15 +2704,7 @@ mod tests {
     fn pure_handler_factories_delay_into_both_dispatch_kinds() {
         let m = recover_one(
             "x/main",
-            "module x/main; import __intrinsics__; \
-             host type Bool role(bool); \
-             pure fn factory() -> . -> . { .() { () } } \
-             fn conditional(c: Bool) -> . { \
-               __if_then_else__[Bool][ .]( c, factory(), factory()) \
-             } \
-             fn either(s: . | .) -> . { \
-               __either__[.][ .][ .]( s, factory(), factory()) \
-             }",
+            "mod x/main; import __intrinsics__; host type Bool role(bool); pure fn factory() -> . -> . { .() { () } } fn conditional(c: Bool) -> . { __if_then_else__[Bool][ .]( c, factory(), factory()) } fn either(s: . | .) -> . { __either__[.][ .][ .]( s, factory(), factory()) }",
             None,
         );
         for name in ["conditional", "either"] {
@@ -2750,16 +2725,7 @@ mod tests {
     fn pure_declaration_cannot_hide_an_unknown_callback_effect() {
         let m = recover_one(
             "x/main",
-            "module x/main; import __intrinsics__; \
-             host type Bool role(bool); \
-             host fn callback() -> .; \
-             pure fn factory(f: . -> .) -> . -> . { f(); .() { () } } \
-             fn conditional(c: Bool) -> . { \
-               __if_then_else__[Bool][ .]( c, factory(callback), factory(callback)) \
-             } \
-             fn either(s: . | .) -> . { \
-               __either__[.][ .][ .]( s, factory(callback), factory(callback)) \
-             }",
+            "mod x/main; import __intrinsics__; host type Bool role(bool); host fn callback() -> .; pure fn factory(f: . -> .) -> . -> . { f(); .() { () } } fn conditional(c: Bool) -> . { __if_then_else__[Bool][ .]( c, factory(callback), factory(callback)) } fn either(s: . | .) -> . { __either__[.][ .][ .]( s, factory(callback), factory(callback)) }",
             None,
         );
         for name in ["conditional", "either"] {
@@ -2776,15 +2742,7 @@ mod tests {
     fn local_factory_shadow_keeps_both_dispatch_kinds_eager() {
         let m = recover_one(
             "x/main",
-            "module x/main; import __intrinsics__; \
-             host type Bool role(bool); \
-             pure fn factory() -> . -> . { .() { () } } \
-             fn conditional(c: Bool, factory: . -> (. -> .)) -> . { \
-               __if_then_else__[Bool][ .]( c, factory(), factory()) \
-             } \
-             fn either(s: . | ., factory: . -> (. -> .)) -> . { \
-               __either__[.][ .][ .]( s, factory(), factory()) \
-             }",
+            "mod x/main; import __intrinsics__; host type Bool role(bool); pure fn factory() -> . -> . { .() { () } } fn conditional(c: Bool, factory: . -> (. -> .)) -> . { __if_then_else__[Bool][ .]( c, factory(), factory()) } fn either(s: . | ., factory: . -> (. -> .)) -> . { __either__[.][ .][ .]( s, factory(), factory()) }",
             None,
         );
         for name in ["conditional", "either"] {
@@ -2801,14 +2759,7 @@ mod tests {
     fn either_computed_handlers_stage_before_dispatch_in_call_order() {
         let m = recover_one(
             "x/main",
-            "module x/main; import __intrinsics__; \
-             host type A; host type B; \
-             host fn scrutinee() -> A | B; \
-             host fn left_factory() -> A -> .; \
-             host fn right_factory() -> B -> .; \
-             fn pick() -> . { \
-               __either__[A][ B][ .]( scrutinee(), left_factory(), right_factory()) \
-             }",
+            "mod x/main; import __intrinsics__; host type A; host type B; host fn scrutinee() -> A | B; host fn left_factory() -> A -> .; host fn right_factory() -> B -> .; fn pick() -> . { __either__[A][ B][ .]( scrutinee(), left_factory(), right_factory()) }",
             None,
         );
         let body = fn_body(&m, "pick");
@@ -2841,11 +2792,7 @@ mod tests {
     fn either_path_handlers_remain_direct_without_staging() {
         let m = recover_one(
             "x/main",
-            "module x/main; import __intrinsics__; \
-             host type A; host type B; \
-             fn pick(s: A | B, left: A -> ., right: B -> .) -> . { \
-               __either__[A][ B][ .]( s, left, right) \
-             }",
+            "mod x/main; import __intrinsics__; host type A; host type B; fn pick(s: A | B, left: A -> ., right: B -> .) -> . { __either__[A][ B][ .]( s, left, right) }",
             None,
         );
         let body = fn_body(&m, "pick");
@@ -2867,13 +2814,7 @@ mod tests {
     fn either_stages_one_computed_handler_beside_one_path_handler() {
         let m = recover_one(
             "x/main",
-            "module x/main; import __intrinsics__; \
-             host type A; host type B; \
-             host fn scrutinee() -> A | B; \
-             host fn left_factory() -> A -> .; \
-             fn pick(right: B -> .) -> . { \
-               __either__[A][ B][ .]( scrutinee(), left_factory(), right) \
-             }",
+            "mod x/main; import __intrinsics__; host type A; host type B; host fn scrutinee() -> A | B; host fn left_factory() -> A -> .; fn pick(right: B -> .) -> . { __either__[A][ B][ .]( scrutinee(), left_factory(), right) }",
             None,
         );
         let body = fn_body(&m, "pick");
@@ -2896,16 +2837,7 @@ mod tests {
     fn computed_inner_either_handlers_stay_inside_outer_right_arm() {
         let m = recover_one(
             "x/main",
-            "module x/main; import __intrinsics__; \
-             host type A; host type B; host type C; \
-             host fn b_factory() -> B -> .; \
-             host fn c_factory() -> C -> .; \
-             fn pick(s: A | (B | C)) -> . { \
-               __either__[A][ B | C][ .]( s, .(_a: A) { () }, \
-                 .(rest: B | C) { \
-                   __either__[B][ C][ .]( rest, b_factory(), c_factory()) \
-                 }) \
-             }",
+            "mod x/main; import __intrinsics__; host type A; host type B; host type C; host fn b_factory() -> B -> .; host fn c_factory() -> C -> .; fn pick(s: A | (B | C)) -> . { __either__[A][ B | C][ .]( s, .(_a: A) { () }, .(rest: B | C) { __either__[B][ C][ .]( rest, b_factory(), c_factory()) }) }",
             None,
         );
         let body = fn_body(&m, "pick");
@@ -2966,8 +2898,7 @@ mod tests {
     fn intrinsic_left_recovers_to_enriched_inject() {
         let m = recover_one(
             "x/main",
-            "module x/main; import __intrinsics__; \
-             fn w[A][B](x: A) -> (A | B) { __left__[A][ B]( x) }",
+            "mod x/main; import __intrinsics__; fn w[A][B](x: A) -> (A | B) { __left__[A][ B]( x) }",
             None,
         );
         let body = fn_body(&m, "w");
@@ -2988,8 +2919,7 @@ mod tests {
     fn if_else_recovers_to_enriched_conditional() {
         let m = recover_one(
             "main",
-            "module main; import control(Bool, macro if); \
-             fn choose(c: Bool) -> . { if (c) { () } else { () } }",
+            "mod main; import control {type Bool; macro if} fn choose(c: Bool) -> . { if (c) { () } else { () } }",
             None,
         );
         let body = fn_body(&m, "choose");
@@ -3012,14 +2942,7 @@ mod tests {
     fn conditional_computed_thunks_stage_before_dispatch_in_call_order() {
         let m = recover_one(
             "main",
-            "module main; import __intrinsics__; \
-             host type Bool role(bool); \
-             host fn condition() -> Bool; \
-             host fn then_factory() -> . -> .; \
-             host fn else_factory() -> . -> .; \
-             fn choose() -> . { \
-               __if_then_else__[Bool][ .]( condition(), then_factory(), else_factory()) \
-             }",
+            "mod main; import __intrinsics__; host type Bool role(bool); host fn condition() -> Bool; host fn then_factory() -> . -> .; host fn else_factory() -> . -> .; fn choose() -> . { __if_then_else__[Bool][ .]( condition(), then_factory(), else_factory()) }",
             None,
         );
         let body = fn_body(&m, "choose");
@@ -3057,11 +2980,7 @@ mod tests {
             let module = recover_one(
                 "main",
                 &format!(
-                    "module main; import __intrinsics__; \
-                     host type Bool role(bool); \
-                     host fn left() -> Bool; \
-                     host fn right_factory() -> . -> Bool; \
-                     fn choose() -> Bool {{ {intrinsic}[Bool](left(), right_factory()) }}"
+                    "mod main; import __intrinsics__; host type Bool role(bool); host fn left() -> Bool; host fn right_factory() -> . -> Bool; fn choose() -> Bool {{ {intrinsic}[Bool](left(), right_factory()) }}"
                 ),
                 None,
             );
@@ -3098,11 +3017,7 @@ mod tests {
             let module = recover_one(
                 "main",
                 &format!(
-                    "module main; import __intrinsics__; \
-                     host type Bool role(bool); host fn right() -> Bool; \
-                     fn inline(left: Bool) -> Bool {{ {intrinsic}[Bool](left, .() {{ right() }}) }} \
-                     fn opaque(left: Bool, rhs: . -> Bool) -> Bool {{ {intrinsic}[Bool](left, rhs) }} \
-                     fn packet(input: Bool & (. -> Bool)) -> Bool {{ {intrinsic}[Bool](input) }}"
+                    "mod main; import __intrinsics__; host type Bool role(bool); host fn right() -> Bool; fn inline(left: Bool) -> Bool {{ {intrinsic}[Bool](left, .() {{ right() }}) }} fn opaque(left: Bool, rhs: . -> Bool) -> Bool {{ {intrinsic}[Bool](left, rhs) }} fn packet(input: Bool & (. -> Bool)) -> Bool {{ {intrinsic}[Bool](input) }}"
                 ),
                 None,
             );
@@ -3128,13 +3043,7 @@ mod tests {
     fn conditional_stages_one_computed_thunk_beside_one_path_thunk() {
         let m = recover_one(
             "main",
-            "module main; import __intrinsics__; \
-             host type Bool role(bool); \
-             host fn condition() -> Bool; \
-             host fn then_factory() -> . -> .; \
-             fn choose(otherwise: . -> .) -> . { \
-               __if_then_else__[Bool][ .]( condition(), then_factory(), otherwise) \
-             }",
+            "mod main; import __intrinsics__; host type Bool role(bool); host fn condition() -> Bool; host fn then_factory() -> . -> .; fn choose(otherwise: . -> .) -> . { __if_then_else__[Bool][ .]( condition(), then_factory(), otherwise) }",
             None,
         );
         let body = fn_body(&m, "choose");
@@ -3164,10 +3073,7 @@ mod tests {
     fn product_match_recovers_projections() {
         let m = recover_one(
             "x/main",
-            "module x/main; import __intrinsics__; \
-             fn first[A][B](p: (A & B)) -> (A | B) { \
-               __left__[A][ B]( __fst__[A][ B]( p)) \
-             }",
+            "mod x/main; import __intrinsics__; fn first[A][B](p: (A & B)) -> (A | B) { __left__[A][ B]( __fst__[A][ B]( p)) }",
             None,
         );
         let body = fn_body(&m, "first");
@@ -3193,9 +3099,7 @@ mod tests {
     fn snd_with_parametric_type_argument_recovers() {
         let m = recover_one(
             "x/main",
-            "module x/main; import __intrinsics__; \
-             type { Box[A]: A { pub mk; pub get; }; } \
-             fn snd_of[A](p: (A & Box[A])) -> Box[A] { __snd__[A][ Box[A]]( p) }",
+            "mod x/main; import __intrinsics__; type { Box[A]: A { pub mk; pub get; }; } fn snd_of[A](p: (A & Box[A])) -> Box[A] { __snd__[A][ Box[A]]( p) }",
             None,
         );
         let body = fn_body(&m, "snd_of");
@@ -3243,7 +3147,7 @@ mod tests {
             let module = recover_one(
                 "x/main",
                 &format!(
-                    "module x/main; import __intrinsics__; type Alias[B][C] = B & C; type {{ Opaque[A]: A {{ mk; get; }}; }} fn rest[A][B][C](p: ({head}) & ({tail})) -> ({tail}) {{ __snd__[{head}][{tail}](p) }}"
+                    "mod x/main; import __intrinsics__; type Alias[B][C] = B & C; type {{ Opaque[A]: A {{ mk; get; }}; }} fn rest[A][B][C](p: ({head}) & ({tail})) -> ({tail}) {{ __snd__[{head}][{tail}](p) }}"
                 ),
                 None,
             );
@@ -3284,7 +3188,7 @@ mod tests {
     fn snd_recovers_an_effectful_receiver_once_without_suffix_reconstruction() {
         let module = recover_one(
             "x/main",
-            "module x/main; import __intrinsics__; host fn packet() -> . & (. & .); fn rest() -> . & . { __snd__[.][. & .](packet()) }",
+            "mod x/main; import __intrinsics__; host fn packet() -> . & (. & .); fn rest() -> . & . { __snd__[.][. & .](packet()) }",
             None,
         );
         let body = fn_body(&module, "rest");
@@ -3321,9 +3225,7 @@ mod tests {
             "x/main",
             // The payload `x : (B | C)` is a variable, not an
             // injection chain — recovery must re-tag.
-            "module x/main; import __intrinsics__; \
-             fn widen[A][B][C](x: (B | C)) -> (A | (B | C)) { \
-               __right__[A][ (B | C)]( x) }",
+            "mod x/main; import __intrinsics__; fn widen[A][B][C](x: (B | C)) -> (A | (B | C)) { __right__[A][ (B | C)]( x) }",
             None,
         );
         let body = fn_body(&m, "widen");
@@ -3366,12 +3268,7 @@ mod tests {
     fn if_then_else_with_path_branch_thunks_recovers_via_call() {
         let m = recover_one(
             "main",
-            "module main; \
-             import __intrinsics__; \
-             host type Bool role(bool); \
-             fn pick(c: Bool, t: . -> ., e: . -> .) -> . { \
-               __if_then_else__[Bool][ .]( c, t, e) \
-             }",
+            "mod main; import __intrinsics__; host type Bool role(bool); fn pick(c: Bool, t: . -> ., e: . -> .) -> . { __if_then_else__[Bool][ .]( c, t, e) }",
             None,
         );
         let body = fn_body(&m, "pick");
@@ -3417,11 +3314,7 @@ mod tests {
     fn nominal_constructor_tuple_recovers_to_enriched_tuple() {
         let m = recover_one(
             "x/main",
-            "module x/main; \
-             type { Hed: .; Mid: .; Tal: .; }; \
-             fn rec() -> (Hed & Mid & Tal) { \
-               (Hed.mk(()), Mid.mk(()), Tal.mk(())) \
-             }",
+            "mod x/main; type { Hed: .; Mid: .; Tal: .; }; fn rec() -> (Hed & Mid & Tal) { (Hed.mk(()), Mid.mk(()), Tal.mk(())) }",
             None,
         );
         let body = fn_body(&m, "rec");
@@ -3477,28 +3370,19 @@ mod tests {
         let sources = [
             (
                 "provider.kio",
-                "module provider; \
-                 pub type { Hed: . { pub mk; pub get; }; }; \
-                 pub type { Tal: . { pub mk; pub get; }; };",
+                "mod provider; pub type { Hed: . { pub mk; pub get; }; }; pub type { Tal: . { pub mk; pub get; }; };",
             ),
             (
                 "decoy.kio",
-                "module decoy; \
-                 pub type { Hed: . { pub mk; pub get; }; }; \
-                 pub type { Tal: . { pub mk; pub get; }; };",
+                "mod decoy; pub type { Hed: . { pub mk; pub get; }; }; pub type { Tal: . { pub mk; pub get; }; };",
             ),
             (
                 "qualified.kio",
-                "module qualified; import __intrinsics__; \
-                 import provider as p; import decoy as d; \
-                 fn read(r: (p.Hed & p.Tal)) -> . { p.Hed.get(__fst__(r)) } \
-                 fn read_decoy(r: (d.Hed & d.Tal)) -> . { d.Hed.get(__fst__(r)) }",
+                "mod qualified; import __intrinsics__; import provider as p; import decoy as d; fn read(r: (p.Hed & p.Tal)) -> . { p.Hed.get(__fst__(r)) } fn read_decoy(r: (d.Hed & d.Tal)) -> . { d.Hed.get(__fst__(r)) }",
             ),
             (
                 "selective.kio",
-                "module selective; import __intrinsics__; \
-                 import provider(Hed, Tal); \
-                 fn read(r: (Hed & Tal)) -> . { Hed.get(__fst__(r)) }",
+                "mod selective; import __intrinsics__; import provider {type Hed; type Tal} fn read(r: (Hed & Tal)) -> . { Hed.get(__fst__(r)) }",
             ),
         ];
         let parsed = sources
@@ -3547,28 +3431,19 @@ mod tests {
         let sources = [
             (
                 "provider.kio",
-                "module provider; \
-                 pub type { Provider_hed: . { pub mk; pub get; }; }; pub type Hed = Provider_hed; \
-                 pub type { Tal: . { pub mk; pub get; }; };",
+                "mod provider; pub type { Provider_hed: . { pub mk; pub get; }; }; pub type Hed = Provider_hed; pub type { Tal: . { pub mk; pub get; }; };",
             ),
             (
                 "decoy.kio",
-                "module decoy; \
-                 pub type { Decoy_hed: . { pub mk; pub get; }; }; pub type Hed = Decoy_hed; \
-                 pub type { Tal: . { pub mk; pub get; }; };",
+                "mod decoy; pub type { Decoy_hed: . { pub mk; pub get; }; }; pub type Hed = Decoy_hed; pub type { Tal: . { pub mk; pub get; }; };",
             ),
             (
                 "qualified.kio",
-                "module qualified; import __intrinsics__; \
-                 import provider as p; import decoy as d; \
-                 fn read(r: (p.Hed & p.Tal)) -> . { p.Hed.get(__fst__(r)) } \
-                 fn read_decoy(r: (d.Hed & d.Tal)) -> . { d.Hed.get(__fst__(r)) }",
+                "mod qualified; import __intrinsics__; import provider as p; import decoy as d; fn read(r: (p.Hed & p.Tal)) -> . { p.Hed.get(__fst__(r)) } fn read_decoy(r: (d.Hed & d.Tal)) -> . { d.Hed.get(__fst__(r)) }",
             ),
             (
                 "selective.kio",
-                "module selective; import __intrinsics__; \
-                 import provider(Hed, Tal); \
-                 fn read(r: (Hed & Tal)) -> . { Hed.get(__fst__(r)) }",
+                "mod selective; import __intrinsics__; import provider {type Hed; type Tal} fn read(r: (Hed & Tal)) -> . { Hed.get(__fst__(r)) }",
             ),
         ];
         let parsed = sources
@@ -3665,9 +3540,7 @@ mod tests {
     fn projector_on_positional_recovers_to_field_get_one_segment() {
         let m = recover_one(
             "x/main",
-            "module x/main; import __intrinsics__; \
-             type { Hed: .; Tal: .; }; \
-             fn read(r: (Hed & Tal)) -> . { Hed.get(__fst__(r)) }",
+            "mod x/main; import __intrinsics__; type { Hed: .; Tal: .; }; fn read(r: (Hed & Tal)) -> . { Hed.get(__fst__(r)) }",
             None,
         );
         let body = fn_body(&m, "read");
@@ -3716,9 +3589,7 @@ mod tests {
     fn projector_on_positional_recovers_to_field_get_two_segment() {
         let m = recover_one(
             "x/main",
-            "module x/main; import __intrinsics__; \
-             type { Hed: .; Tal: .; }; \
-             fn read(r: (Hed & Tal)) -> . { Tal.get(__snd__(r)) }",
+            "mod x/main; import __intrinsics__; type { Hed: .; Tal: .; }; fn read(r: (Hed & Tal)) -> . { Tal.get(__snd__(r)) }",
             None,
         );
         let body = fn_body(&m, "read");
@@ -3756,9 +3627,7 @@ mod tests {
     fn projector_on_non_positional_stays_a_call() {
         let m = recover_one(
             "x/main",
-            "module x/main; \
-             type { Hed: .; }; \
-             fn read(h: Hed) -> . { Hed.get(h) }",
+            "mod x/main; type { Hed: .; }; fn read(h: Hed) -> . { Hed.get(h) }",
             None,
         );
         let body = fn_body(&m, "read");
@@ -3780,9 +3649,7 @@ mod tests {
     fn mixed_named_tuple_stays_enriched_tuple() {
         let m = recover_one(
             "x/main",
-            "module x/main; \
-             type { Hed: .; }; \
-             fn mixed() -> (Hed & .) { (Hed.mk(()), ()) }",
+            "mod x/main; type { Hed: .; }; fn mixed() -> (Hed & .) { (Hed.mk(()), ()) }",
             None,
         );
         let body = fn_body(&m, "mixed");
@@ -3818,8 +3685,7 @@ mod tests {
     fn five_component_tuple_recovers_as_nary_flat() {
         let m = recover_one(
             "x/main",
-            "module x/main; \
-             fn quint() -> (. & . & . & . & .) { ((), (), (), (), ()) }",
+            "mod x/main; fn quint() -> (. & . & . & . & .) { ((), (), (), (), ()) }",
             None,
         );
         let body = fn_body(&m, "quint");
@@ -3854,14 +3720,7 @@ mod tests {
     fn four_field_record_keeps_wraps() {
         let m = recover_one(
             "main",
-            "module main; \
-             host type Int role(i32); \
-             host fn mark(value: Int) -> Int; \
-             type { A: Int; B: Int; C: Int; D: Int; }; \
-             fn quad(_kp0: Int) -> (A & B & C & D) { \
-               (A.mk(mark(10[Int])), B.mk(mark(20[Int])), \
-                C.mk(mark(30[Int])), D.mk(mark(40[Int]))) \
-             }",
+            "mod main; host type Int role(i32); host fn mark(value: Int) -> Int; type { A: Int; B: Int; C: Int; D: Int; }; fn quad(_kp0: Int) -> (A & B & C & D) { (A.mk(mark(10[Int])), B.mk(mark(20[Int])), C.mk(mark(30[Int])), D.mk(mark(40[Int]))) }",
             None,
         );
         let body = fn_body(&m, "quad");
@@ -3964,9 +3823,7 @@ mod tests {
     fn module_without_chains_passes_through() {
         let m = recover_one(
             "x/main",
-            "module x/main; \
-             fn id[A](x: A) -> A { x } \
-             fn use_id(y: .) -> . { id[.](y) }",
+            "mod x/main; fn id[A](x: A) -> A { x } fn use_id(y: .) -> . { id[.](y) }",
             None,
         );
         assert_eq!(m.path.segments, vec!["x", "main"]);
@@ -3994,7 +3851,7 @@ mod tests {
             let module = recover_one(
                 "x/main",
                 &format!(
-                    "module x/main; import __intrinsics__; {types} host fn make_packet() -> {packet_ty}; fn run() -> {result} {{ {intrinsic}(make_packet()) }}"
+                    "mod x/main; import __intrinsics__; {types} host fn make_packet() -> {packet_ty}; fn run() -> {result} {{ {intrinsic}(make_packet()) }}"
                 ),
                 None,
             );
@@ -4031,7 +3888,7 @@ mod tests {
     fn partially_opaque_dispatch_packet_preserves_both_eager_operands() {
         let module = recover_one(
             "x/main",
-            "module x/main; import __intrinsics__; host type Bool role(bool); host type N; host fn condition() -> Bool; host fn handlers() -> (. -> N) & (. -> N); fn run() -> N { __if_then_else__[Bool][N](condition(), handlers()) }",
+            "mod x/main; import __intrinsics__; host type Bool role(bool); host type N; host fn condition() -> Bool; host fn handlers() -> (. -> N) & (. -> N); fn run() -> N { __if_then_else__[Bool][N](condition(), handlers()) }",
             None,
         );
         let body = fn_body(&module, "run");
@@ -4060,7 +3917,7 @@ mod tests {
     fn opaque_pair_packet_keeps_nested_product_payload_once() {
         let module = recover_one(
             "x/main",
-            "module x/main; import __intrinsics__; host type N; host fn make_packet() -> (N & N) & (N & N); fn run() -> (N & N) & (N & N) { __pair__[N & N][N & N](make_packet()) }",
+            "mod x/main; import __intrinsics__; host type N; host fn make_packet() -> (N & N) & (N & N); fn run() -> (N & N) & (N & N) { __pair__[N & N][N & N](make_packet()) }",
             None,
         );
         let body = fn_body(&module, "run");

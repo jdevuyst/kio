@@ -1,15 +1,15 @@
-module petri/report;
+mod petri/report;
 
-import macros/control(macro if);
-import macros/match(macro match);
-import macros/row_macros(macro select);
+import macros/control { macro if }
+import macros/match { macro match }
+import macros/row_macros { macro select }
 import petri/fixture as fixture;
 import petri/model as model;
 import petri/search as search;
 import petri/witness as witness;
 import queue/list/core as lists;
 import queue/list/list as traversal;
-import testapi(Bool, I32, String);
+import testapi { type Bool; type I32; type String }
 import testapi/fmt as fmt;
 import testapi/io as io;
 import testapi/text as text;

@@ -1,4 +1,4 @@
-package greetlib;
+pkg greetlib;
 
 bridge {
   greet

@@ -1,4 +1,4 @@
-package optics_config_editor;
+pkg optics_config_editor;
 
 build {
   cache "out/.kio-cache/";

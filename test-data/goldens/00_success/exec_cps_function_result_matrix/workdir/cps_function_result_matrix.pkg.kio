@@ -1,4 +1,4 @@
-package cps_function_result_matrix;
+pkg cps_function_result_matrix;
 
 build {
   cache "out/.kio-cache/";

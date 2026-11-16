@@ -47,8 +47,8 @@ cat >"$fixture/ci/infra/kio-gen-rs/target/debug/kio-gen" <<'SH'
 set -eu
 test "$1" = --output
 test "$3 $4 $5 $6 $7 $8" = '--count 2 --seed 1 --valid-fraction 1.0'
-printf 'module healthy;\nfn unit() { () }\n' >"$2/healthy.kio"
-printf 'module broken;\n// BAD\n' >"$2/broken.kio"
+printf 'mod healthy;\nfn unit() { () }\n' >"$2/healthy.kio"
+printf 'mod broken;\n// BAD\n' >"$2/broken.kio"
 SH
 FMT_TEST_KIO=$scratch/kio
 FMT_TEST_RAW_CALLS=$scratch/raw-calls

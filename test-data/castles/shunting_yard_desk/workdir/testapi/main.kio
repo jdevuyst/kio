@@ -12,25 +12,32 @@
 /// For each expression the transcript prints the tokens read back, the RPN
 /// queue when one was built, and the value or the fault. A closing summary
 /// counts the expressions by outcome.
-module testapi/main;
+mod testapi/main;
 
-import desk/eval(evaluate);
-import desk/lex(classify);
-import desk/list(List, cons, for_each, is_empty, len, nil, reverse);
-import desk/outcome(Answer, Failed, Fault_kind, Value, all_kinds, count_kind);
-import desk/outcome(fault_of, kind_name);
-import desk/render(cat, show_fault, show_infix, show_int, show_rpn);
-import desk/token(Placed, place);
-import desk/yard(Rpn, Rpn_failed, to_rpn);
-import macros/control(macro if);
-import macros/match(macro match);
-import macros/row_macros(macro select);
-import macros/spine_macros(macro widen_sum);
-import testapi(Bool, I32, String);
-import testapi/arith(add_i32, sub_i32);
-import testapi/io(print, read_ascii_line);
-import testapi/iter(loop);
-import testapi/text(string_eq);
+import desk/eval { fn evaluate }
+import desk/lex { fn classify }
+import desk/list { type List; fn cons; fn for_each; fn is_empty; fn len; fn nil; fn reverse }
+import desk/outcome {
+  type Answer;
+  type Failed;
+  type Fault_kind;
+  type Value;
+  fn all_kinds;
+  fn count_kind
+}
+import desk/outcome { fn fault_of; fn kind_name }
+import desk/render { fn cat; fn show_fault; fn show_infix; fn show_int; fn show_rpn }
+import desk/token { type Placed; fn place }
+import desk/yard { type Rpn; type Rpn_failed; fn to_rpn }
+import macros/control { macro if }
+import macros/match { macro match }
+import macros/row_macros { macro select }
+import macros/spine_macros { macro widen_sum }
+import testapi { type Bool; type I32; type String }
+import testapi/arith { fn add_i32; fn sub_i32 }
+import testapi/io { fn print; fn read_ascii_line }
+import testapi/iter { fn loop }
+import testapi/text { fn string_eq }
 
 /// Expressions seen, expressions that produced a value, and the kind of every
 /// fault raised — the summary counts kinds off that log rather than carrying

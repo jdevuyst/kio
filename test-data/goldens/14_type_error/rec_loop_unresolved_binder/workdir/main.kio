@@ -1,4 +1,4 @@
-module main;
+mod main;
 
 host fn selected[S][R][T](step: S -> (S | R), state: S) -> R;
 

@@ -1,4 +1,4 @@
-package typecheck_existentials;
+pkg typecheck_existentials;
 
 build {
   cache "out/.kio-cache/";

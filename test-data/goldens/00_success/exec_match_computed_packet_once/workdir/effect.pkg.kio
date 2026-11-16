@@ -1,4 +1,4 @@
-package effect;
+pkg effect;
 
 build {
   cache "out/.kio-cache/";

@@ -1,8 +1,8 @@
-module rules;
+mod rules;
 
-import macros/control(macro if);
+import macros/control { macro if }
 import scanner as scan;
-import testapi(Bool, String);
+import testapi { type Bool; type String }
 import testapi/text as text;
 
 fn not(value: Bool) -> Bool {

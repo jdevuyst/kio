@@ -1,4 +1,4 @@
-module feature/qualified;
+mod feature/qualified;
 
 import feature/store as source;
 

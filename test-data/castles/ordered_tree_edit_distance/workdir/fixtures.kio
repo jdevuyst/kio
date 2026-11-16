@@ -1,7 +1,7 @@
-module fixtures;
+mod fixtures;
 
 import forest as forest;
-import testapi(I32);
+import testapi { type I32 }
 
 pub fn branching(root_symbol: I32, internal_symbol: I32) -> forest.Tree {
   let tree = forest.empty();

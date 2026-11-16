@@ -1,4 +1,4 @@
-package exec_rec_macro_rebuilt_public_callback;
+pkg exec_rec_macro_rebuilt_public_callback;
 
 build {
   cache "out/.kio-cache/";

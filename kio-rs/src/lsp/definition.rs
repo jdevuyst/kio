@@ -166,7 +166,7 @@ mod tests {
     fn definition_returns_none_for_intrinsic() {
         let (analysis, _) = make_analysis_with_binder(
             "pkg/main",
-            "module pkg/main;\n",
+            "mod pkg/main;\n",
             Span::new(7, 15),
             ResolvedBinder::Intrinsic {
                 name: "__pair__".to_owned(),
@@ -187,7 +187,7 @@ mod tests {
     fn definition_returns_none_outside_any_binder() {
         let (analysis, _) = make_analysis_with_binder(
             "pkg/main",
-            "module pkg/main;\n",
+            "mod pkg/main;\n",
             Span::new(20, 30),
             ResolvedBinder::Intrinsic {
                 name: "__absurd__".to_owned(),
@@ -248,14 +248,9 @@ mod tests {
 
     #[test]
     fn definition_resolves_local_use_to_let_declaration() {
-        // line 0: "module pkg/main;\n"            (offsets 0..=16)
-        // line 1: "pub fn run() -> . {\n"        (starts at 17)
-        // line 2: "  let x = (); x\n"             (starts at 37)
-        // The `let x` binder name `x` is at offset 43; the use of `x`
-        // in the tail is at offset 51.
-        let source = "module pkg/main;\npub fn run() -> . {\n  let x = (); x\n}\n";
-        let decl_span = Span::new(37, 50); // the `let x = ();` statement span
-        let use_span = Span::new(51, 52); // the trailing `x` use
+        let source = "mod pkg/main;\npub fn run() -> . {\n  let x = (); x\n}\n";
+        let decl_span = Span::new(34, 47); // the `let x = ();` statement span
+        let use_span = Span::new(48, 49); // the trailing `x` use
         let analysis = make_analysis_multi(
             &[("pkg/main", source)],
             vec![(
@@ -285,13 +280,9 @@ mod tests {
 
     #[test]
     fn definition_resolves_type_param_use_to_binder() {
-        // line 0: "module pkg/main;\n"                  (0..=16)
-        // line 1: "pub fn id[A](x: A) -> A { x }\n"     (starts at 17)
-        // The `[A]` binder run starts at offset 26 (`[`); a use of `A`
-        // (e.g. in the return type) is at offset 39.
-        let source = "module pkg/main;\npub fn id[A](x: A) -> A { x }\n";
-        let decl_span = Span::new(26, 28); // the `[A` binder run
-        let use_span = Span::new(39, 40); // a `A` use in the signature
+        let source = "mod pkg/main;\npub fn id[A](x: A) -> A { x }\n";
+        let decl_span = Span::new(23, 25); // the `[A` binder run
+        let use_span = Span::new(36, 37); // a `A` use in the signature
         let analysis = make_analysis_multi(
             &[("pkg/main", source)],
             vec![(
@@ -324,13 +315,13 @@ mod tests {
         // Two modules each declare a local `x`. A use of `x` in
         // `pkg/main` must resolve to `pkg/main`'s declaration, never
         // `pkg/other`'s — locals are keyed by declaring module path.
-        let main_src = "module pkg/main;\npub fn run() -> . {\n  let x = (); x\n}\n";
-        let other_src = "module pkg/other;\npub fn go() -> . {\n  let x = (); x\n}\n";
-        let main_use = Span::new(51, 52);
-        let main_decl = Span::new(37, 50);
+        let main_src = "mod pkg/main;\npub fn run() -> . {\n  let x = (); x\n}\n";
+        let other_src = "mod pkg/other;\npub fn go() -> . {\n  let x = (); x\n}\n";
+        let main_use = Span::new(48, 49);
+        let main_decl = Span::new(34, 47);
         // `pkg/other` records a declaration for its own `x` at a span
         // that, if wrongly consulted, would land on a different line.
-        let other_decl = Span::new(38, 51);
+        let other_decl = Span::new(35, 48);
         let analysis = make_analysis_multi(
             &[("pkg/main", main_src), ("pkg/other", other_src)],
             vec![(

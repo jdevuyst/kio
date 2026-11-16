@@ -2175,15 +2175,12 @@ mod tests {
         let modules = vec![(
             PathBuf::from("x/main.kio"),
             parse(
-                "module x/main; host type N; \
-             pub type { Box[A]: A { pub mk; pub get; }; }; \
-             pub fn keep[A](value: Box[A]) -> Box[A] { value } \
-             pub fn apply(callback: [A] A -> A, value: N) -> N { callback[N]( value) }",
+                "mod x/main; host type N; pub type { Box[A]: A { pub mk; pub get; }; }; pub fn keep[A](value: Box[A]) -> Box[A] { value } pub fn apply(callback: [A] A -> A, value: N) -> N { callback[N]( value) }",
             )
             .unwrap(),
         )];
         let package_file =
-            crate::pass::parser::parse_package_file("package fixture; bridge { x/main; }", None)
+            crate::pass::parser::parse_package_file("pkg fixture; bridge { x/main; }", None)
                 .unwrap();
         let (modules, package_file) =
             FullPipeline::lower_package(modules, Some(package_file)).unwrap();
@@ -2230,16 +2227,11 @@ mod tests {
         let package = routed(&full_prime_modules(&[
             (
                 "x/left.kio",
-                "module x/left; host type H; type Alias = .; \
-             type { Mark: . { mk; get; }; }; \
-             rec { type { Tree: . | Forest { mk; get; }; }; \
-             type { Forest: . | Tree { mk; get; }; }; } \
-             fn unit() -> . { () }",
+                "mod x/left; host type H; type Alias = .; type { Mark: . { mk; get; }; }; rec { type { Tree: . | Forest { mk; get; }; }; type { Forest: . | Tree { mk; get; }; }; } fn unit() -> . { () }",
             ),
             (
                 "x/right.kio",
-                "module x/right; \
-             type { Mark: . { mk; get; }; };",
+                "mod x/right; type { Mark: . { mk; get; }; };",
             ),
         ]));
         let inventory: serde_json::Value =
@@ -2281,8 +2273,7 @@ mod tests {
     #[test]
     fn body_plan_interning_retains_exact_structure_and_checks_hash_collisions() {
         let package = routed(&full_prime(
-            "module x/main; fn keep[A](value: A) -> A { value } \
-             fn same[A](value: A) -> A { value } fn unit() -> . { () }",
+            "mod x/main; fn keep[A](value: A) -> A { value } fn same[A](value: A) -> A { value } fn unit() -> . { () }",
         ));
         let module = &package.module("x/main").unwrap().module;
         let collected = Rc::default();
@@ -2317,8 +2308,7 @@ mod tests {
     #[test]
     fn typed_stage_serialization_retains_node_indices_and_execution_edges() {
         let package = routed(&full_prime(
-            "module x/main; host type N role(i32); \
-             fn keep[*F][A](value: (A & F[N]) | .) -> (A & F[N]) | . { value }",
+            "mod x/main; host type N role(i32); fn keep[*F][A](value: (A & F[N]) | .) -> (A & F[N]) | . { value }",
         ));
         let module = &package.module("x/main").unwrap().module;
         let collected = Rc::default();
@@ -2369,7 +2359,7 @@ mod tests {
         let mut previous = None;
         for count in [8, 32, 128] {
             let mut source = String::from(
-                "module x/main; host type N role(i32); fn id[T](value: T) -> T { value }\n",
+                "mod x/main; host type N role(i32); fn id[T](value: T) -> T { value }\n",
             );
             for index in 0..count {
                 source.push_str(&format!(
@@ -2475,17 +2465,17 @@ mod tests {
         let package = routed(&full_prime_modules(&[
             (
                 "lib/core.kio",
-                "module lib/core; pub type { Token: . { pub mk; pub get ; }; }",
+                "mod lib/core; pub type { Token: . { pub mk; pub get ; }; }",
             ),
             (
                 "lib.kio",
-                "module lib; pub type { Token: . { pub mk; pub get ; }; }",
+                "mod lib; pub type { Token: . { pub mk; pub get ; }; }",
             ),
             (
                 "api.kio",
-                "module api;
+                "mod api;
                  import lib/core as lib;
-                 import lib(Token);
+                 import lib {type Token}
                  pub type { Wrapped[Param] <Hidden>: lib.Token & Token & Param & Hidden {
                    pub mk; pub get
                  ; }; }
@@ -2849,15 +2839,7 @@ mod tests {
     #[test]
     fn serialized_calls_retain_every_type_application_boundary() {
         let package = routed(&full_prime(
-            "module x/main; \
-             host type N; \
-             host fn first(_unit: .) -> N; \
-             host fn second(_unit: .) -> N; \
-             host fn produce(_unit: .) -> [A] A; \
-             fn interleaved[A](x: A)[B](y: B) -> B { y } \
-             fn closure(value: N, function: [A] A -> A) -> N { function[N]( value) } \
-             fn indirect() -> N { interleaved[N]( first())[ N]( second()) } \
-             fn returned() -> N { produce() }",
+            "mod x/main; host type N; host fn first(_unit: .) -> N; host fn second(_unit: .) -> N; host fn produce(_unit: .) -> [A] A; fn interleaved[A](x: A)[B](y: B) -> B { y } fn closure(value: N, function: [A] A -> A) -> N { function[N]( value) } fn indirect() -> N { interleaved[N]( first())[ N]( second()) } fn returned() -> N { produce() }",
         ));
 
         let closure = canonical_body(&package, "closure");
@@ -2891,10 +2873,7 @@ mod tests {
     #[test]
     fn monomorphic_calls_need_no_typed_stage_plan() {
         let package = routed(&full_prime(
-            "module x/main; \
-             type { N: . { mk; get; }; }; \
-             fn local(f: N -> N, value: N) -> N { f(value) } \
-             fn computed(f: . -> (N -> N), value: N) -> N { f()(value) }",
+            "mod x/main; type { N: . { mk; get; }; }; fn local(f: N -> N, value: N) -> N { f(value) } fn computed(f: . -> (N -> N), value: N) -> N { f()(value) }",
         ));
         let module = &package.module("x/main").unwrap().module;
         for stages in [
@@ -2936,13 +2915,7 @@ mod tests {
     #[test]
     fn specialization_plans_retain_concrete_escaping_callable_contracts() {
         let prime = full_prime(
-            "module x/main; \
-             type { N: . { mk; get; }; }; \
-             fn id[A](value: A) -> A { value } \
-             fn generic() -> [A] A -> A { id } \
-             fn direct() -> N -> N { id[N] } \
-             fn local(function: [A] A -> A) -> N -> N { function[N] } \
-             fn computed() -> N -> N { generic()[N] }",
+            "mod x/main; type { N: . { mk; get; }; }; fn id[A](value: A) -> A { value } fn generic() -> [A] A -> A { id } fn direct() -> N -> N { id[N] } fn local(function: [A] A -> A) -> N -> N { function[N] } fn computed() -> N -> N { generic()[N] }",
         );
         let (_, reparsed) = emitted_prime(&prime);
         for package in [routed(&prime), routed(&reparsed)] {
@@ -3052,8 +3025,7 @@ mod tests {
     #[test]
     fn typed_stage_plans_preserve_abstract_slots_and_callable_stages() {
         let package = routed(&full_prime(
-            "module x/main; \
-             fn keep[*F][A](value: A & F[A]) -> A & F[A] { value }",
+            "mod x/main; fn keep[*F][A](value: A & F[A]) -> A & F[A] { value }",
         ));
         let module = &package.module("x/main").unwrap().module;
         let plans = Rc::default();
@@ -3078,10 +3050,7 @@ mod tests {
     #[test]
     fn private_value_plans_cover_closures_type_stages_and_nominal_payloads() {
         let prime = full_prime(
-            "module x/main; \
-             type { Box[T]: T { mk; get; }; }; \
-             fn hold[A](value: A) -> . -> A { .(_unit) { value } } \
-             fn apply[A](function: [B] B -> B, value: A) -> A { function[A]( value) }",
+            "mod x/main; type { Box[T]: T { mk; get; }; }; fn hold[A](value: A) -> . -> A { .(_unit) { value } } fn apply[A](function: [B] B -> B, value: A) -> A { function[A]( value) }",
         );
         let (_, reparsed) = emitted_prime(&prime);
         for package in [routed(&prime), routed(&reparsed)] {
@@ -3146,13 +3115,7 @@ mod tests {
     #[test]
     fn serialized_cps_projector_carries_exact_continuation_runtime_shape() {
         let package = routed(&full_prime(
-            "module x/main; \
-             type { Pair <Left> <Right>: Left & Right { \
-               mk; get; \
-             ; }; }; \
-             fn consume(pair: Pair) -> . { \
-               Pair.get(pair)(.[Left][Right](_payload: Left & Right) { () }) \
-             }",
+            "mod x/main; type { Pair <Left> <Right>: Left & Right { mk; get; ; }; }; fn consume(pair: Pair) -> . { Pair.get(pair)(.[Left][Right](_payload: Left & Right) { () }) }",
         ));
 
         let body = canonical_body(&package, "consume");
@@ -3166,13 +3129,7 @@ mod tests {
     #[test]
     fn field_update_generated_binder_does_not_capture_later_rhs() {
         let full = full_prime_row(
-            "module x/main; import row_macros(macro with_); \
-             host type I32 role(i32); host fn effect_i32(x: I32) -> I32; \
-             type { First: I32 { mk; get }; Second: I32 { mk; get }; } \
-             type Pair = First & Second; \
-             fn t(_kg0: I32, row: Pair) -> Pair { \
-               row.>with_ { First.mk(effect_i32(_kg0)); Second.mk(_kg0) } \
-             }",
+            "mod x/main; import row_macros {macro with_} host type I32 role(i32); host fn effect_i32(x: I32) -> I32; type { First: I32 { mk; get }; Second: I32 { mk; get }; } type Pair = First & Second; fn t(_kg0: I32, row: Pair) -> Pair { row.>with_ { First.mk(effect_i32(_kg0)); Second.mk(_kg0) } }",
         );
         let module = full.module("x/main").expect("module").module();
         let def = module
@@ -3241,18 +3198,7 @@ mod tests {
     #[test]
     fn scoped_type_binders_are_distinct_from_same_leaf_newtypes() {
         let full = full_prime(
-            "module x/main; \
-             host type Str role(str); \
-             host fn id[A](value: A) -> A; \
-             type { A: Str { mk; get; }; }; \
-             type { Named: A { mk; get; }; }; \
-             type { Box[T]: T { mk; get; }; }; \
-             type { Applied[*F][T]: F[T] { mk; get; }; }; \
-             type { Ranked: [A] A -> A { mk; get; }; }; \
-             type { Shadow[T]: [A] T -> A { mk; get; }; }; \
-             type { Same[T]: T & ([T] T -> T) { mk; get; }; }; \
-             type { Capture[T]: [A] A -> T { mk; get; }; }; \
-             fn t(value: Str) -> Str { id(value) }",
+            "mod x/main; host type Str role(str); host fn id[A](value: A) -> A; type { A: Str { mk; get; }; }; type { Named: A { mk; get; }; }; type { Box[T]: T { mk; get; }; }; type { Applied[*F][T]: F[T] { mk; get; }; }; type { Ranked: [A] A -> A { mk; get; }; }; type { Shadow[T]: [A] T -> A { mk; get; }; }; type { Same[T]: T & ([T] T -> T) { mk; get; }; }; type { Capture[T]: [A] A -> T { mk; get; }; }; fn t(value: Str) -> Str { id(value) }",
         );
         let (_emitted, prime) = emitted_prime(&full);
         let direct = routed(&full);
@@ -3339,10 +3285,7 @@ mod tests {
     #[test]
     fn newtype_member_visibility_is_serialized() {
         let package = routed(&full_prime(
-            "module x/main; \
-             pub type { Opaque: . { mk; get; }; }; \
-             pub type { Split: . { pub mk; get; }; }; \
-             pub type { Readable: . { mk; pub get; }; };",
+            "mod x/main; pub type { Opaque: . { mk; get; }; }; pub type { Split: . { pub mk; get; }; }; pub type { Readable: . { mk; pub get; }; };",
         ));
 
         let opaque = canonical_newtype(&package, "Opaque");
@@ -3363,17 +3306,11 @@ mod tests {
         let package = routed(&full_prime_modules(&[
             (
                 "left.kio",
-                "module left; \
-                 pub type { Token: . { mk; get; }; }; \
-                 host fn round(value: Token) -> Token; \
-                 pub fn via(value: Token) -> Token { round(value) }",
+                "mod left; pub type { Token: . { mk; get; }; }; host fn round(value: Token) -> Token; pub fn via(value: Token) -> Token { round(value) }",
             ),
             (
                 "right.kio",
-                "module right; \
-                 pub type { Token: . { mk; get; }; }; \
-                 host fn round(value: Token) -> Token; \
-                 pub fn via(value: Token) -> Token { round(value) }",
+                "mod right; pub type { Token: . { mk; get; }; }; host fn round(value: Token) -> Token; pub fn via(value: Token) -> Token { round(value) }",
             ),
         ]));
         let assert_path = |ty: &serde_json::Value, module: &str| {
@@ -3412,15 +3349,7 @@ mod tests {
     #[test]
     fn full_and_prime_routes_canonicalize_nested_later_argument_call() {
         let full = full_prime_row(
-            "module x/main; import row_macros(macro select); \
-             host type I32 role(i32); \
-             host fn sub_i32(a: I32, b: I32) -> I32; \
-             type { First: I32 { mk; get }; Second: I32 { mk; get }; } \
-             type Pair = First & Second; \
-             fn pick_second(a: I32, b: I32) -> I32 { b } \
-             fn t(row: Pair) -> I32 { \
-               pick_second(row.>select { First.get }, sub_i32(row.>select { Second.get }, 1[I32])) \
-             }",
+            "mod x/main; import row_macros {macro select} host type I32 role(i32); host fn sub_i32(a: I32, b: I32) -> I32; type { First: I32 { mk; get }; Second: I32 { mk; get }; } type Pair = First & Second; fn pick_second(a: I32, b: I32) -> I32 { b } fn t(row: Pair) -> I32 { pick_second(row.>select { First.get }, sub_i32(row.>select { Second.get }, 1[I32])) }",
         );
         let (_, prime) = emitted_prime(&full);
         let emitted = emit_module(full.module("x/main").expect("module"));
@@ -3448,11 +3377,7 @@ mod tests {
     #[test]
     fn full_and_prime_routes_canonicalize_callable_nominal_spelling() {
         let full = full_prime(
-            "module x/main; import __intrinsics__; \
-             host type I32 role(i32); \
-             host fn loop[S][R](step: S -> (S | R), state: S) -> R; \
-             fn step(_n: I32) -> I32 | . { __right__[I32][ .]( ()) } \
-             fn t(start: I32) -> . { loop(.(n: I32) { step(n) }, start) }",
+            "mod x/main; import __intrinsics__; host type I32 role(i32); host fn loop[S][R](step: S -> (S | R), state: S) -> R; fn step(_n: I32) -> I32 | . { __right__[I32][ .]( ()) } fn t(start: I32) -> . { loop(.(n: I32) { step(n) }, start) }",
         );
         let (_emitted, prime) = emitted_prime(&full);
         let direct = canonical_body(&routed(&full), "t");
@@ -3470,69 +3395,22 @@ mod tests {
         let sources = [
             (
                 "x/types.kio",
-                "module x/types; \
-                 pub host type Actual role(bool); \
-                 pub host type Other role(i32);",
+                "mod x/types; pub host type Actual role(bool); pub host type Other role(i32);",
             ),
             (
                 "x/dep.kio",
-                "module x/dep; \
-                 import x/types as types; \
-                 pub type Flag = types.Actual; \
-                 pub host fn host_id(value: Flag) -> Flag; \
-                 pub host fn true_flag() -> Flag; \
-                 pub fn id(value: Flag) -> Flag { value } \
-                 pub fn apply[A](f: (A & A) -> Flag, left: A, right: A) -> Flag { \
-                   f(left, right) \
-                 }",
+                "mod x/dep; import x/types as types; pub type Flag = types.Actual; pub host fn host_id(value: Flag) -> Flag; pub host fn true_flag() -> Flag; pub fn id(value: Flag) -> Flag { value } pub fn apply[A](f: (A & A) -> Flag, left: A, right: A) -> Flag { f(left, right) }",
             ),
             (
                 "x/main.kio",
-                "module x/main; \
-                 import x/dep(apply, host_id, id); \
-                 import x/dep as d; \
-                 import x/types as types; \
-                 type Actual = types.Other; \
-                 type { Token: . { mk; get; }; }; \
-                 fn first(_left: Token, _right: Token) -> d.Flag { d.true_flag() } \
-                 fn invoke(f: d.Flag -> d.Flag, value: d.Flag) -> d.Flag { f(value) } \
-                 fn local_id(value: d.Flag) -> d.Flag { value } \
-                 fn selective_call(value: Token) -> d.Flag { \
-                   apply(first, value, value) \
-                 } \
-                 fn qualified_call(value: Token) -> d.Flag { \
-                   d.apply(first, value, value) \
-                 } \
-                 fn selective_value(value: d.Flag) -> d.Flag { \
-                   invoke(id, value) \
-                 } \
-                 fn qualified_value(value: d.Flag) -> d.Flag { \
-                   invoke(d.id, value) \
-                 } \
-                 fn selective_host_call(value: d.Flag) -> d.Flag { \
-                   host_id(value) \
-                 } \
-                 fn qualified_host_call(value: d.Flag) -> d.Flag { \
-                   d.host_id(value) \
-                 } \
-                 fn selective_host_value(value: d.Flag) -> d.Flag { \
-                   invoke(host_id, value) \
-                 } \
-                 fn qualified_host_value(value: d.Flag) -> d.Flag { \
-                   invoke(d.host_id, value) \
-                 } \
-                 fn local_value(value: d.Flag) -> d.Flag { \
-                   invoke(local_id, value) \
-                 }",
+                "mod x/main; import x/dep {fn apply; fn host_id; fn id} import x/dep as d; import x/types as types; type Actual = types.Other; type { Token: . { mk; get; }; }; fn first(_left: Token, _right: Token) -> d.Flag { d.true_flag() } fn invoke(f: d.Flag -> d.Flag, value: d.Flag) -> d.Flag { f(value) } fn local_id(value: d.Flag) -> d.Flag { value } fn selective_call(value: Token) -> d.Flag { apply(first, value, value) } fn qualified_call(value: Token) -> d.Flag { d.apply(first, value, value) } fn selective_value(value: d.Flag) -> d.Flag { invoke(id, value) } fn qualified_value(value: d.Flag) -> d.Flag { invoke(d.id, value) } fn selective_host_call(value: d.Flag) -> d.Flag { host_id(value) } fn qualified_host_call(value: d.Flag) -> d.Flag { d.host_id(value) } fn selective_host_value(value: d.Flag) -> d.Flag { invoke(host_id, value) } fn qualified_host_value(value: d.Flag) -> d.Flag { invoke(d.host_id, value) } fn local_value(value: d.Flag) -> d.Flag { invoke(local_id, value) }",
             ),
         ];
         let without_shadow = full_prime_modules(&sources);
         let full = full_prime_modules(&[
             (
                 "a/shadow.kio",
-                "module a/shadow; \
-                 import x/types(Other); \
-                 pub fn id(left: Other, right: Other) -> Other { left }",
+                "mod a/shadow; import x/types {type Other} pub fn id(left: Other, right: Other) -> Other { left }",
             ),
             sources[0],
             sources[1],
@@ -3581,23 +3459,7 @@ mod tests {
     #[test]
     fn full_and_prime_routes_associate_bound_record_value_chain() {
         let full = full_prime_row(
-            "module x/main; import row_macros(macro record_, macro select); \
-             host type I32 role(i32); \
-             host fn effect_first(value: I32) -> I32; \
-             host fn effect_second(value: I32) -> I32; \
-             host fn effect_total(value: I32) -> I32; \
-             type { First: I32 { mk; get }; Second: I32 { mk; get }; } \
-             type Pair = First & Second; \
-             type { Stored: Pair { mk; get }; Repeated: Pair { mk; get }; Total: I32 { mk; get }; } \
-             type Result = Stored & Repeated & Total; \
-             fn pick_second(first: I32, second: I32) -> I32 { second } \
-             fn collision(_kp0: I32, row: Pair) -> I32 { \
-               pick_second(row.>select { First.get }, _kp0) \
-             } \
-             fn t(x: I32) -> Result { \
-               let row = record_ { First.mk(effect_first(x)); Second.mk(effect_second(x)) }; \
-               record_ { Stored.mk(row); Repeated.mk(row); Total.mk(collision(effect_total(x), row)) } \
-             }",
+            "mod x/main; import row_macros {macro record_; macro select} host type I32 role(i32); host fn effect_first(value: I32) -> I32; host fn effect_second(value: I32) -> I32; host fn effect_total(value: I32) -> I32; type { First: I32 { mk; get }; Second: I32 { mk; get }; } type Pair = First & Second; type { Stored: Pair { mk; get }; Repeated: Pair { mk; get }; Total: I32 { mk; get }; } type Result = Stored & Repeated & Total; fn pick_second(first: I32, second: I32) -> I32 { second } fn collision(_kp0: I32, row: Pair) -> I32 { pick_second(row.>select { First.get }, _kp0) } fn t(x: I32) -> Result { let row = record_ { First.mk(effect_first(x)); Second.mk(effect_second(x)) }; record_ { Stored.mk(row); Repeated.mk(row); Total.mk(collision(effect_total(x), row)) } }",
         );
         let (_, prime) = emitted_prime(&full);
         let emitted = emit_module(full.module("x/main").expect("module"));

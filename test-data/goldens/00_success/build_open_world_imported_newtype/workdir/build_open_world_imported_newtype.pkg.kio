@@ -1,4 +1,4 @@
-package build_open_world_imported_newtype;
+pkg build_open_world_imported_newtype;
 
 build {
   cache "out/.kio-cache/";

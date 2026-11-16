@@ -1,4 +1,4 @@
-package exec_literal_beta_stage_order;
+pkg exec_literal_beta_stage_order;
 
 build {
   cache "out/.kio-cache/";

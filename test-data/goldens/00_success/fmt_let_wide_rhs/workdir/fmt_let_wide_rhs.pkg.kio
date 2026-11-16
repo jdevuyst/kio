@@ -1,4 +1,4 @@
-package fmt_let_wide_rhs;
+pkg fmt_let_wide_rhs;
 
 build {
   cache "out/.kio-cache/";

@@ -1,4 +1,4 @@
-package pure_calls_macro;
+pkg pure_calls_macro;
 
 build {
   cache "out/.kio-cache/";

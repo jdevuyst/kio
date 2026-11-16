@@ -1,4 +1,4 @@
-module unterminated_string/main;
+mod unterminated_string/main;
 
 
 // String literal opens but never closes before the end of the line.

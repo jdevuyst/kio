@@ -108,10 +108,10 @@ fn embed_module(m: &Module<Prime>) -> Module<Surface> {
 /// `m1/…/mn`. The rewrite maps it to the module's binding for that
 /// `(module, Leaf)` pair:
 ///
-///   * `import m1/…/mn(Leaf);` already binds bare `Leaf` to that module —
+///   * `import m1/…/mn { type Leaf }` already binds bare `Leaf` to that module —
 ///     render bare `Leaf`.
 ///   * `import m1/…/mn as A;` binds the alias — render `A.Leaf`.
-///   * otherwise the pair is unbound: inject `import m1/…/mn(Leaf);` and
+///   * otherwise the pair is unbound: inject `import m1/…/mn { type Leaf }` and
 ///     render bare `Leaf`. The injected selective import names a module the
 ///     qualified path already pointed at, so it is a parallel
 ///     same-direction edge and is open-world-monotonic. When bare `Leaf`
@@ -157,7 +157,7 @@ struct Requalifier {
     /// whose module prefix equals this is a same-module reflection leak
     /// (a locally declared head the reduction-side qualifier rooted at
     /// its own module); it de-qualifies to the bare leaf with no `import` —
-    /// a same-module `import <self>(Leaf);` would be a self-import that
+    /// a same-module `import <self> { type Leaf }` would be a self-import that
     /// fails to re-build (`value-level import cycle`).
     current_module: String,
     span: Span,
@@ -470,7 +470,7 @@ impl Requalifier {
         // same-module reflection leak (`testapi/main.Box` inside
         // `testapi/main`). The leaf is already in scope as a local
         // declaration → render bare and inject nothing. Injecting a
-        // `import <self>(Leaf);` here would be a self-import that fails
+        // `import <self> { type Leaf }` here would be a self-import that fails
         // to re-build (`value-level import cycle`, and `Leaf is not pub`
         // when the local declaration is private).
         if module_key == self.current_module {
@@ -505,7 +505,8 @@ impl Requalifier {
                     trailing_trivia: Vec::new(),
                     kind: ImportKind::Selective {
                         items: vec![ImportItem::Name {
-                            macro_span: None,
+                            kind: crate::ast::ImportNameKind::Type,
+                            kind_span: None,
                             leading_trivia: Vec::new(),
                             name: leaf.to_owned(),
                             span: self.span,
@@ -751,8 +752,7 @@ mod tests {
     /// invariant on a representative input as a tighter unit guard.
     #[test]
     fn emit_module_round_trips_through_kio_surface_parser() {
-        let src = "module x/main; \
-                   fn id[A](x: A) -> A { x }";
+        let src = "mod x/main; fn id[A](x: A) -> A { x }";
         let out = emit_one(src);
         // Parsing the emitted text must succeed.
         parse(&out).unwrap_or_else(|e| panic!("emitted text failed to re-parse: {e:?}\n{out}"));
@@ -767,12 +767,7 @@ mod tests {
         use crate::prime::pipeline::PrimePipeline;
 
         let out = emit_one(
-            "module x/main; \
-             rec { \
-               type Loop = Box; \
-               type { Box: . | Loop { mk; get; }; }; \
-             } \
-             fn alias_is_transparent(value: Loop) -> Box { value }",
+            "mod x/main; rec { type Loop = Box; type { Box: . | Loop { mk; get; }; }; } fn alias_is_transparent(value: Loop) -> Box { value }",
         );
         assert!(
             out.contains("rec {"),
@@ -804,13 +799,8 @@ mod tests {
     #[test]
     fn cross_module_recursive_alias_expands_through_its_nominal_anchor() {
         let prime = compile_sources(&[
-            "module x/provider; \
-             rec { \
-               pub type Loop = Box; \
-               pub type { Box: . | Loop { pub mk; pub get; }; }; \
-             }",
-            "module x/main; import x/provider(Loop, Box); \
-             fn alias_is_transparent(value: Loop) -> Box { value }",
+            "mod x/provider; rec { pub type Loop = Box; pub type { Box: . | Loop { pub mk; pub get; }; }; }",
+            "mod x/main; import x/provider {type Loop; type Box} fn alias_is_transparent(value: Loop) -> Box { value }",
         ]);
         assert!(prime.module("x/provider").is_some());
         assert!(prime.module("x/main").is_some());
@@ -822,7 +812,7 @@ mod tests {
         use crate::prime::pipeline::PrimePipeline;
 
         let out = emit_one(
-            "module x/main;
+            "mod x/main;
              type { Box[A]: A { mk; get; }; };
              rec type { Recursive: . | (([*F] F[.] -> F[.]) & Recursive) {
                mk; get;
@@ -864,19 +854,7 @@ mod tests {
         use crate::prime::pipeline::PrimePipeline;
 
         let out = emit_one(
-            "module x/main; \
-             host type T; \
-             host fn nil[A]() -> A; \
-             fn id[A](value: A) -> A { value } \
-             fn later[A](value: A)[B]() -> A { value } \
-             fn selected() -> . -> T { nil[T] } \
-             fn explicit() -> T { nil[T]( ()) } \
-             fn selected_via_let() -> . -> T { let f = nil; f[T] } \
-             fn selected_later(value: T) -> . -> T { later[T]( value)[T] } \
-             fn explicit_later(value: T) -> T { later[T]( value)[T]( ()) } \
-             fn residual() -> T -> T { id[T] } \
-             fn selected_unit() -> . -> . { id[.] } \
-             fn empty() -> . { id() }",
+            "mod x/main; host type T; host fn nil[A]() -> A; fn id[A](value: A) -> A { value } fn later[A](value: A)[B]() -> A { value } fn selected() -> . -> T { nil[T] } fn explicit() -> T { nil[T]( ()) } fn selected_via_let() -> . -> T { let f = nil; f[T] } fn selected_later(value: T) -> . -> T { later[T]( value)[T] } fn explicit_later(value: T) -> T { later[T]( value)[T]( ()) } fn residual() -> T -> T { id[T] } fn selected_unit() -> . -> . { id[.] } fn empty() -> . { id() }",
         );
         assert_eq!(
             out.matches("nil[T]").count() - out.matches("nil[T](").count(),
@@ -932,9 +910,7 @@ mod tests {
     /// never produce an `equiv` line in its output.
     #[test]
     fn emit_module_does_not_contain_equiv_after_substitute() {
-        let src = "module x/main; \
-                   fn id_unit() -> . { () } \
-                   equiv id_unit_eq { id_unit(); () }";
+        let src = "mod x/main; fn id_unit() -> . { () } equiv id_unit_eq { id_unit(); () }";
         let out = emit_one(src);
         assert!(
             !out.contains("equiv"),
@@ -948,8 +924,7 @@ mod tests {
     /// the body. The output contains no `if` surface call.
     #[test]
     fn if_else_replaced_by_intrinsic_call_in_emitted_output() {
-        let src = "module main; import control(Bool, macro if); \
-                         fn pick(c: Bool) -> . { if (c) { () } else { () } }";
+        let src = "mod main; import control {type Bool; macro if} fn pick(c: Bool) -> . { if (c) { () } else { () } }";
         let parsed = parse(src).expect("parse");
         let file_path = module_file_path(&parsed);
         let control = parse(include_str!(
@@ -992,10 +967,7 @@ mod tests {
     /// survive, and the emitted text re-parses as Kio'.
     #[test]
     fn literal_value_arg_carries_annotation_alongside_explicit_type_arg() {
-        let src = "module main; \
-                   host type String role(str); \
-                   fn id[A](x: A) -> A { x } \
-                   fn use_id() -> String { id[String](\"hi\") }";
+        let src = "mod main; host type String role(str); fn id[A](x: A) -> A { x } fn use_id() -> String { id[String](\"hi\") }";
         let parsed = parse(src).expect("parse");
         let file_path = module_file_path(&parsed);
         let (lowered_modules, _) =
@@ -1028,9 +1000,7 @@ mod tests {
     /// requires it on every literal.
     #[test]
     fn literal_without_sibling_type_arg_keeps_baked_annotation() {
-        let src = "module main; \
-                   host type String role(str); host fn print(s: String) -> .; \
-                   fn use_print() -> . { print(\"hello\") }";
+        let src = "mod main; host type String role(str); host fn print(s: String) -> .; fn use_print() -> . { print(\"hello\") }";
         let parsed = parse(src).expect("parse");
         let file_path = module_file_path(&parsed);
         let (lowered_modules, _) =
@@ -1054,10 +1024,7 @@ mod tests {
 
     #[test]
     fn checked_lambda_param_type_is_emitted() {
-        let src = "module x/main; \
-                   type { Greet: .; }; \
-                   fn id[A](x: A) -> A { x } \
-                   fn main() -> . { let f = id[Greet -> .]( .(_g) { () }); () }";
+        let src = "mod x/main; type { Greet: .; }; fn id[A](x: A) -> A { x } fn main() -> . { let f = id[Greet -> .]( .(_g) { () }); () }";
         let out = emit_one(src);
         assert!(
             out.contains(".(_g: Greet)"),
@@ -1074,7 +1041,7 @@ mod tests {
         uses_src: &str,
         ret_ty: Type<Surface>,
     ) -> crate::ast::Module<Surface> {
-        let src = format!("module testapi/main; {uses_src} fn r() -> . {{ () }}");
+        let src = format!("mod testapi/main; {uses_src} fn r() -> . {{ () }}");
         let mut module = parse(&src).expect("parse");
         set_return_type(&mut module, ret_ty);
         module
@@ -1126,7 +1093,7 @@ mod tests {
     #[test]
     fn qualified_path_to_imported_leaf_dequalifies_to_bare() {
         let mut module = module_with_imports_and_return(
-            "import testapi(String);",
+            "import testapi {type String}",
             qualified_path(&["testapi", "String"]),
         );
         let before = module.imports.len();
@@ -1162,7 +1129,7 @@ mod tests {
     /// A path the user already wrote through an alias (`t.Box`, stored with
     /// the alias as its head segment) is valid Kio' as-is and must be left
     /// untouched — the rewrite must not mistake the alias head for a raw
-    /// module-path segment and inject a bogus `import t(Box);`. This is the
+    /// module-path segment and inject a bogus `import t { type Box }`. This is the
     /// `exec_qualified_*` golden shape.
     #[test]
     fn alias_headed_path_is_left_untouched() {
@@ -1185,7 +1152,7 @@ mod tests {
     }
 
     /// A qualified path whose `(module, leaf)` pair has no binding yet, and
-    /// whose bare leaf name is free, injects an `import M(Leaf);` and
+    /// whose bare leaf name is free, injects an `import M { type Leaf }` and
     /// renders bare.
     #[test]
     fn qualified_path_unbound_injects_selective_import_and_dequalifies() {
@@ -1201,7 +1168,10 @@ mod tests {
                 if module_path_key(from) == "testapi/fmt"
                     && items.iter().filter_map(ImportItem::as_name).any(|n| n == "Doc"))
         });
-        assert!(injected, "expected an injected `import testapi/fmt(Doc);`");
+        assert!(
+            injected,
+            "expected an injected `import testapi/fmt {{type Doc}}`"
+        );
         // The emitted module re-renders to source that re-parses.
         let out = pretty::pretty_module(&module);
         parse(&out).unwrap_or_else(|e| panic!("emitted text failed to re-parse: {e:?}\n{out}"));
@@ -1217,7 +1187,7 @@ mod tests {
         // Bare `String` is bound to `testapi`; a path to `dep/testapi`'s
         // own `String` cannot reuse the bare name.
         let mut module = module_with_imports_and_return(
-            "import testapi(String);",
+            "import testapi {type String}",
             qualified_path(&["dep", "testapi", "String"]),
         );
         rewrite_module_qualified_type_paths(&mut module);
@@ -1245,7 +1215,7 @@ mod tests {
     #[cfg(feature = "prime")]
     #[test]
     fn qualified_path_colliding_with_local_type_binds_fresh_alias() {
-        let mut module = parse("module testapi/main; type Doc = .; fn r() -> . { () }")
+        let mut module = parse("mod testapi/main; type Doc = .; fn r() -> . { () }")
             .expect("parse module with local type");
         set_return_type(&mut module, qualified_path(&["testapi", "foreign", "Doc"]));
 
@@ -1267,7 +1237,7 @@ mod tests {
         let emitted = pretty::pretty_module(&module);
         let reparsed = [
             parse(&emitted).expect("reparse rewritten main module"),
-            parse("module testapi/foreign; pub type Doc = .;").expect("parse referenced module"),
+            parse("mod testapi/foreign; pub type Doc = .;").expect("parse referenced module"),
         ]
         .into_iter()
         .map(|module| (module_file_path(&module), module))
@@ -1298,14 +1268,11 @@ mod tests {
         use crate::prime::pipeline::PrimePipeline;
 
         let parsed = [
-            ("left.kio", "module left; pub host type Shared;"),
-            ("right.kio", "module right; pub host type Shared;"),
+            ("left.kio", "mod left; pub host type Shared;"),
+            ("right.kio", "mod right; pub host type Shared;"),
             (
                 "main.kio",
-                "module main; \
-                 import left(Shared); \
-                 fn _q0() -> . { () } \
-                 fn keep(value: right.Shared) -> right.Shared { value }",
+                "mod main; import left {type Shared} fn _q0() -> . { () } fn keep(value: right.Shared) -> right.Shared { value }",
             ),
         ]
         .into_iter()
@@ -1378,21 +1345,10 @@ mod tests {
     fn alias_owner_is_stable_when_an_imported_provider_gains_the_same_leaf() {
         use crate::prime::pipeline::PrimePipeline;
 
-        const OWNER: &str = "module owner; \
-             pub type { Shared: . { \
-               pub mk; \
-               pub get; \
-             }; }; \
-             pub type Alias = Shared;";
-        const CONSUMER: &str = "module main; \
-             import owner(Alias); \
-             import noise(touch); \
-             import __intrinsics__; \
-             fn widen(value: Alias) -> Alias | . { \
-               touch(); \
-               __left__[_][ .]( value) \
-             }";
-        const NOISE_BASELINE: &str = "module noise; pub fn touch() -> . { () }";
+        const OWNER: &str =
+            "mod owner; pub type { Shared: . { pub mk; pub get; }; }; pub type Alias = Shared;";
+        const CONSUMER: &str = "mod main; import owner {type Alias} import noise {fn touch} import __intrinsics__; fn widen(value: Alias) -> Alias | . { touch(); __left__[_][ .]( value) }";
+        const NOISE_BASELINE: &str = "mod noise; pub fn touch() -> . { () }";
         const UNRELATED_DECLARATION: &str = "pub type { Shared: . { \
                pub mk; \
                pub get; \
@@ -1510,7 +1466,7 @@ mod tests {
     /// emitted (`testapi/main.Box` inside `testapi/main`) is a
     /// same-module reflection leak: the reduction-side qualifier roots a
     /// locally declared head at its own module. It must de-qualify to the
-    /// bare leaf with no injected `import`. An `import testapi/main(Box);`
+    /// bare leaf with no injected `import`. An `import testapi/main { type Box }`
     /// here would be a self-import that fails to re-build with
     /// `value-level import cycle: module testapi/main already on the path to
     /// testapi/main` (and `Box is not pub` for a private local head) —
@@ -1536,7 +1492,7 @@ mod tests {
         });
         assert!(
             !self_import,
-            "a same-module path must not inject an `import testapi/main(...);` self-import"
+            "a same-module path must not inject an `import testapi/main {{...}}` self-import"
         );
     }
 
@@ -1549,8 +1505,10 @@ mod tests {
     /// failure the `exec_prime_eval_*` goldens hit at corpus level.
     #[test]
     fn qualified_literal_annotation_dequalifies_to_bound_role() {
-        let mut module =
-            module_with_imports_and_return("import testapi(String);", qualified_path(&["String"]));
+        let mut module = module_with_imports_and_return(
+            "import testapi {type String}",
+            qualified_path(&["String"]),
+        );
         let crate::ast::Item::FnDef(def) = &mut module.items[0] else {
             panic!("expected a function item")
         };

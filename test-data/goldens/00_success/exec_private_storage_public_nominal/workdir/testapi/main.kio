@@ -1,7 +1,7 @@
-module testapi/main;
+mod testapi/main;
 
-import macros/control(macro if);
-import testapi(Bool);
+import macros/control { macro if }
+import testapi { type Bool }
 import testapi/io as io;
 
 pub type { Cell[A]: A { mk; get } }

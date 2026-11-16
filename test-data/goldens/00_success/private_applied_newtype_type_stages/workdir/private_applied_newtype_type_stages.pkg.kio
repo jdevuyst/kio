@@ -1,4 +1,4 @@
-package private_applied_newtype_type_stages;
+pkg private_applied_newtype_type_stages;
 
 build {
   cache "out/.kio-cache/";

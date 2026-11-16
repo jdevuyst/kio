@@ -1,4 +1,4 @@
-package specialization_shadowed_caller;
+pkg specialization_shadowed_caller;
 
 build {
   cache "out/.kio-cache/";

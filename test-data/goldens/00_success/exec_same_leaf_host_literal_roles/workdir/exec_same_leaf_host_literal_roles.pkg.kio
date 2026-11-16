@@ -1,4 +1,4 @@
-package exec_same_leaf_host_literal_roles;
+pkg exec_same_leaf_host_literal_roles;
 
 build {
   cache "out/.kio-cache/";

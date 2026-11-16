@@ -1,4 +1,4 @@
-package exec_grouped_signature_layers;
+pkg exec_grouped_signature_layers;
 
 build {
   cache "out/.kio-cache/";

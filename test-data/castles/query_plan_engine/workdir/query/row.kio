@@ -5,17 +5,17 @@
 /// with the column list that names its shape. Every operator in the
 /// engine consumes relations and produces one, so the shape of an
 /// intermediate result travels with its rows.
-module query/row;
+mod query/row;
 
-import macros/control(macro if);
-import macros/match(macro match);
-import macros/row_macros(macro select);
-import macros/spine_macros(macro widen_sum);
+import macros/control { macro if }
+import macros/match { macro match }
+import macros/row_macros { macro select }
+import macros/spine_macros { macro widen_sum }
 import query/list as list;
 import query/schema as schema;
 import query/value as value;
-import testapi(Bool, I32, String);
-import testapi/iter(loop);
+import testapi { type Bool; type I32; type String }
+import testapi/iter { fn loop }
 
 pub type Cell = { Cell_col: schema.Col; Cell_val: value.Value };
 

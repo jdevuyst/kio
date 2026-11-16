@@ -1,3 +1,3 @@
-module warm_recheck_user_macro_diagnostic;
+mod warm_recheck_user_macro_diagnostic;
 
 host type String role(str);

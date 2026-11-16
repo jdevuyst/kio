@@ -1,7 +1,7 @@
-module api;
+mod api;
 
-import macros/control(Bool, macro if);
-import macros/match(macro match);
+import macros/control { type Bool; macro if }
+import macros/match { macro match }
 
 host fn sink(value: Bool);
 

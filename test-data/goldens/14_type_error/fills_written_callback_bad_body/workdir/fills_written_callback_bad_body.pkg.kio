@@ -1,4 +1,4 @@
-package fills_written_callback_bad_body;
+pkg fills_written_callback_bad_body;
 
 build {
   cache "out/.kio-cache/";

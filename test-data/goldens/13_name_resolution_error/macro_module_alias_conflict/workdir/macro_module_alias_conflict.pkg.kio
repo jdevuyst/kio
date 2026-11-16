@@ -1,4 +1,4 @@
-package macro_module_alias_conflict;
+pkg macro_module_alias_conflict;
 
 build {
   target js {

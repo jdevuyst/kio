@@ -1,11 +1,11 @@
-module testapi/main;
+mod testapi/main;
 
-import macros/algebraic_macros(macro align);
-import macros/control(macro if);
-import macros/match(macro match);
-import macros/spine_macros(macro widen_sum);
-import testapi(Bool, I32, String);
-import testapi/io(print);
+import macros/algebraic_macros { macro align }
+import macros/control { macro if }
+import macros/match { macro match }
+import macros/spine_macros { macro widen_sum }
+import testapi { type Bool; type I32; type String }
+import testapi/io { fn print }
 
 // Source `String | String` (constructed explicitly in each branch).
 // align to `String | I32`: collapses the two `String` arms into

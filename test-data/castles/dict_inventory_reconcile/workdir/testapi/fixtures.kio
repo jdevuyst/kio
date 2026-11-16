@@ -1,10 +1,10 @@
-module testapi/fixtures;
+mod testapi/fixtures;
 
-import dict/dict(Dict, empty);
-import list/core(List, cons, nil);
-import testapi(I32, String);
-import testapi/dict_ops(put_sorted_count, put_sorted_name);
-import testapi/domain(Adjustment, Count, Item, adjustment, count, item);
+import dict/dict { type Dict; fn empty }
+import list/core { type List; fn cons; fn nil }
+import testapi { type I32; type String }
+import testapi/dict_ops { fn put_sorted_count; fn put_sorted_name }
+import testapi/domain { type Adjustment; type Count; type Item; fn adjustment; fn count; fn item }
 
 pub fn catalogue() -> List[Item] {
   cons(

@@ -1,10 +1,10 @@
-module earley/model;
+mod earley/model;
 
 import earley/arrays as numbers;
-import macros/control(macro if);
-import macros/row_macros(macro select);
-import macros/spine_macros(macro widen_sum);
-import testapi(Array, Bool, I32);
+import macros/control { macro if }
+import macros/row_macros { macro select }
+import macros/spine_macros { macro widen_sum }
+import testapi { type Array; type Bool; type I32 }
 import testapi/arith as arith;
 import testapi/array as arrays;
 

@@ -1,4 +1,4 @@
-dependency zcore;
+dep zcore;
 
 source {
   path "../library/target/target.pkg.kio";

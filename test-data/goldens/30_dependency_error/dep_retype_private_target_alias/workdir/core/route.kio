@@ -1,6 +1,6 @@
-module core/route;
+mod core/route;
 
 import core/store as origin;
-import core/store(Token);
+import core/store { type Token }
 
 type Token = origin.Token;

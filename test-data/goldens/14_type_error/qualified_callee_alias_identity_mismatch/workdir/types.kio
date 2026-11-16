@@ -1,3 +1,3 @@
-module types;
+mod types;
 
 host type Value role(bool);

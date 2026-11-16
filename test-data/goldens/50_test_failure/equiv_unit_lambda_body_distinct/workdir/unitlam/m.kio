@@ -1,4 +1,4 @@
-module unitlam/m;
+mod unitlam/m;
 
 equiv unit_lam_body() {
   .(y: .) { y };

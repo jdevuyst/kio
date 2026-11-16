@@ -1,7 +1,7 @@
-module testapi/main;
+mod testapi/main;
 
-import testapi(String);
-import testapi/io(print);
+import testapi { type String }
+import testapi/io { fn print }
 
 // Apply a caller-supplied transform `g` to `x`. The parameter `g` is a
 // function typed by the type-parameters `K` / `R`, so a target that keeps

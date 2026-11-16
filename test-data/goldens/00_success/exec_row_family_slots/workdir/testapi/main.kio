@@ -1,11 +1,11 @@
-module testapi/main;
+mod testapi/main;
 
-import macros/row_macros(macro record_ as assemble, macro select as query, macro with_ as update);
-import testapi(I32, String);
-import testapi/fields(create, selector);
-import testapi/fmt(i32_to_string);
-import testapi/io(print);
-import testapi/text(string_concat);
+import macros/row_macros { macro record_ as assemble; macro select as query; macro with_ as update }
+import testapi { type I32; type String }
+import testapi/fields { fn create; fn selector }
+import testapi/fmt { fn i32_to_string }
+import testapi/io { fn print }
+import testapi/text { fn string_concat }
 
 type { Field[A]: A { mk; get } }
 

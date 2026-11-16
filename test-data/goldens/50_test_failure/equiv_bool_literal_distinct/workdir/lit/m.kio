@@ -1,6 +1,6 @@
-module lit/m;
+mod lit/m;
 
-import lit(Bool);
+import lit { type Bool }
 
 equiv bool_lit() {
   .t[Bool];

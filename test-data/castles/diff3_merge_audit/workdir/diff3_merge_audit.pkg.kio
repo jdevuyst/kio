@@ -1,4 +1,4 @@
-package diff3_merge_audit;
+pkg diff3_merge_audit;
 
 build {
   cache "out/.kio-cache/";

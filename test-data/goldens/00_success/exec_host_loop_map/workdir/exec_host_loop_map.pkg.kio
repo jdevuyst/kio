@@ -1,4 +1,4 @@
-package exec_host_loop_map;
+pkg exec_host_loop_map;
 
 build {
   cache "out/.kio-cache/";

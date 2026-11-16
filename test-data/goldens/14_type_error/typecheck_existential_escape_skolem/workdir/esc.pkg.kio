@@ -1,4 +1,4 @@
-package esc;
+pkg esc;
 
 build {
   cache "out/.kio-cache/";

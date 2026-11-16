@@ -1,4 +1,4 @@
-package qhe;
+pkg qhe;
 
 build {
   cache "out/.kio-cache/";

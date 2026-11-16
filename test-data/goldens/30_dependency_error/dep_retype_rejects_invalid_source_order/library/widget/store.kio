@@ -1,5 +1,5 @@
-module store;
+mod store;
 
-pub type { Node: Later { pub mk; pub get; }; };
+pub type { Node: Later { pub mk; pub get } }
 
-pub type { Later: . { pub mk; pub get; }; };
+pub type { Later: . { pub mk; pub get } }

@@ -1,4 +1,4 @@
-module choose;
+mod choose;
 
 import __comptime__;
 

@@ -1869,11 +1869,6 @@ pub(crate) struct BoundaryHostBinding {
     name: QualifiedTypeName,
     type_params: Vec<BoundaryNominalTypeParam>,
     binding: BoundaryHostTypeBinding,
-    /// Whether the source declaration carried the redundant `{ owned }`
-    /// annotation. Live declarations retain the bit for source-faithful
-    /// documentation; signature replay deliberately drops it because the
-    /// annotation selects no Rust representation.
-    owned: bool,
     origin: BoundaryHostBindingOrigin,
 }
 
@@ -1888,10 +1883,6 @@ impl BoundaryHostBinding {
 
     pub(crate) fn binding(&self) -> BoundaryHostTypeBinding {
         self.binding
-    }
-
-    pub(crate) fn owned(&self) -> bool {
-        self.owned
     }
 
     pub(crate) fn origin(&self) -> BoundaryHostBindingOrigin {
@@ -3703,7 +3694,7 @@ fn collect_root_host_bindings(
                     binding: host.role.map_or(BoundaryHostTypeBinding::Roleless, |role| {
                         BoundaryHostTypeBinding::Role(role.role)
                     }),
-                    owned: host.owned,
+
                     origin: BoundaryHostBindingOrigin::Live,
                 },
             )?;
@@ -3733,7 +3724,7 @@ fn collect_root_host_bindings(
                     binding: host.role.map_or(BoundaryHostTypeBinding::Roleless, |role| {
                         BoundaryHostTypeBinding::Role(role.role)
                     }),
-                    owned: host.owned,
+
                     origin: BoundaryHostBindingOrigin::Retained {
                         removed_at_version: removed.removed_at_version,
                     },
@@ -3766,7 +3757,7 @@ fn collect_root_host_bindings(
                         binding: host.role.map_or(BoundaryHostTypeBinding::Roleless, |role| {
                             BoundaryHostTypeBinding::Role(role.role)
                         }),
-                        owned: host.owned,
+
                         origin: BoundaryHostBindingOrigin::Retained {
                             removed_at_version: removed.removed_at_version,
                         },
@@ -7655,7 +7646,7 @@ mod tests {
             name: name.to_owned(),
             type_params,
             role: role.map(|role| RoleAnnotation { role, span: span() }),
-            owned: false,
+
             meta: meta(),
             doc: None,
         })
@@ -7772,7 +7763,7 @@ mod tests {
                             name,
                             type_params: Vec::new(),
                             role: None,
-                            owned: false,
+
                             meta: Meta::new(item.span()),
                             doc: None,
                         })
@@ -8487,11 +8478,11 @@ mod tests {
         ));
 
         let retained = replayed_interface(
-            r#"signature fixture v(2);
+            r#"sig fixture v(2);
 v(1) {
   nonbreaking {
     add {
-      module api {
+      mod api {
         type Capture[X] = [A_n2][A] (X & A_n2 & A);
         type { Payload[A]: Capture[A] {
           pub mk;
@@ -8505,9 +8496,9 @@ v(1) {
 v(2) {
   nonbreaking {
     remove {
-      module api {
-        consume;
-      }
+
+        api.consume;
+
     }
   }
 }
@@ -9363,11 +9354,11 @@ v(2) {
     #[test]
     fn collect_package_adds_retained_host_fn_and_retained_only_shells_without_execution() {
         let replayed = replayed_interface(
-            r#"signature fixture v(2);
+            r#"sig fixture v(2);
 v(1) {
   nonbreaking {
     add {
-      module api {
+      mod api {
         host type A;
         host type B;
         host fn retired() -> ((A & B) | A);
@@ -9378,11 +9369,11 @@ v(1) {
 v(2) {
   nonbreaking {
     remove {
-      module api {
-        A;
-        B;
-        retired;
-      }
+
+        api.A;
+        api.B;
+        api.retired;
+
     }
   }
 }
@@ -9431,11 +9422,11 @@ v(2) {
     #[test]
     fn root_host_bindings_keep_exact_live_and_retained_declarations() {
         let replayed = replayed_interface(
-            r#"signature fixture v(2);
+            r#"sig fixture v(2);
 v(1) {
   nonbreaking {
     add {
-      module legacy {
+      mod legacy {
         host type Removed[A];
       }
     }
@@ -9444,9 +9435,9 @@ v(1) {
 v(2) {
   nonbreaking {
     remove {
-      module legacy {
-        Removed;
-      }
+
+        legacy.Removed;
+
     }
   }
 }
@@ -9512,33 +9503,13 @@ v(2) {
     }
 
     #[test]
-    fn root_host_binding_preserves_live_owned_annotation() {
-        let mut owned_string = host_type("String", Vec::new(), Some(Role::Str));
-        let Item::HostType(declaration) = &mut owned_string else {
-            unreachable!("the helper constructs a host type")
-        };
-        declaration.owned = true;
-        let package = package_with_items("api", vec![owned_string]);
-
-        let prepared =
-            PreparedBoundaryCallableSites::collect_live(&package).expect("live exact host binding");
-        let bindings = prepared.host_bindings().collect::<Vec<_>>();
-        let [binding] = bindings.as_slice() else {
-            panic!("one live exact host binding: {bindings:#?}")
-        };
-        assert_eq!(binding.name(), &semantic_name("api", "String"));
-        assert!(binding.owned());
-        assert!(matches!(binding.origin(), BoundaryHostBindingOrigin::Live));
-    }
-
-    #[test]
     fn root_host_bindings_prefer_incompatible_live_over_retained_snapshot() {
         let replayed = replayed_interface(
-            r#"signature fixture v(2);
+            r#"sig fixture v(2);
 v(1) {
   nonbreaking {
     add {
-      module api {
+      mod api {
         host type H role(str);
       }
     }
@@ -9547,9 +9518,9 @@ v(1) {
 v(2) {
   nonbreaking {
     remove {
-      module api {
-        H;
-      }
+
+        api.H;
+
     }
   }
 }
@@ -9578,7 +9549,7 @@ v(2) {
             name: semantic_name("api", "H"),
             type_params: Vec::new(),
             binding: BoundaryHostTypeBinding::Role(role),
-            owned: false,
+
             origin: BoundaryHostBindingOrigin::Retained { removed_at_version },
         };
         insert_host_binding(&mut bindings, &mut suppressed, retained(Role::Str, 2))
@@ -9592,11 +9563,11 @@ v(2) {
     #[test]
     fn retained_host_fn_closure_keeps_its_exact_host_binding() {
         let replayed = replayed_interface(
-            r#"signature fixture v(2);
+            r#"sig fixture v(2);
 v(1) {
   nonbreaking {
     add {
-      module legacy {
+      mod legacy {
         host type H;
         host fn old(value: H) -> H;
       }
@@ -9606,9 +9577,9 @@ v(1) {
 v(2) {
   nonbreaking {
     remove {
-      module legacy {
-        old;
-      }
+
+        legacy.old;
+
     }
   }
 }
@@ -9686,11 +9657,11 @@ v(2) {
     #[test]
     fn retained_nominal_projection_preserves_roles_kinds_and_newtype_closure() {
         let replayed = replayed_interface(
-            r#"signature fixture v(2);
+            r#"sig fixture v(2);
 v(1) {
   nonbreaking {
     add {
-      module api {
+      mod api {
         host type Count role(i32);
         host type Token;
         host type Box[A];
@@ -9707,14 +9678,14 @@ v(1) {
 v(2) {
   nonbreaking {
     remove {
-      module api {
-        Count;
-        Token;
-        Box;
-        Inner;
-        Wrapper;
-        old;
-      }
+
+        api.Count;
+        api.Token;
+        api.Box;
+        api.Inner;
+        api.Wrapper;
+        api.old;
+
     }
   }
 }
@@ -9796,11 +9767,11 @@ v(2) {
     #[test]
     fn retained_host_signature_keeps_its_frozen_nominal_carrier_inventory() {
         let replayed = replayed_interface(
-            r#"signature fixture v(2);
+            r#"sig fixture v(2);
 v(1) {
   nonbreaking {
     add {
-      module api {
+      mod api {
         type { Token[A]: A { pub mk; get; }; };
         host fn old(value: Token[.]) -> .;
       }
@@ -9810,10 +9781,10 @@ v(1) {
 v(2) {
   nonbreaking {
     remove {
-      module api {
-        Token;
-        old;
-      }
+
+        api.Token;
+        api.old;
+
     }
   }
 }
@@ -9846,11 +9817,11 @@ v(2) {
     #[test]
     fn retained_host_signature_inventories_transparent_newtype_constructor_witness() {
         let replayed = replayed_interface(
-            r#"signature fixture v(2);
+            r#"sig fixture v(2);
 v(1) {
   nonbreaking {
     add {
-      module api {
+      mod api {
         host type Str role(str);
         type { Box[A]: A { pub mk; pub get; }; };
         type { Lift[*F]: F[Str] { pub mk; pub get; }; };
@@ -9862,11 +9833,11 @@ v(1) {
 v(2) {
   nonbreaking {
     remove {
-      module api {
-        Box;
-        Lift;
-        old;
-      }
+
+        api.Box;
+        api.Lift;
+        api.old;
+
     }
   }
 }
@@ -9895,11 +9866,11 @@ v(2) {
     #[test]
     fn retained_projection_fails_when_a_transitive_frozen_leaf_is_missing() {
         let mut replayed = replayed_interface(
-            r#"signature fixture v(2);
+            r#"sig fixture v(2);
 v(1) {
   nonbreaking {
     add {
-      module api {
+      mod api {
         host type Raw;
         type { Wrapper: Raw { pub mk; pub get; }; };
         host fn old(value: Wrapper) -> .;
@@ -9910,11 +9881,11 @@ v(1) {
 v(2) {
   nonbreaking {
     remove {
-      module api {
-        Raw;
-        Wrapper;
-        old;
-      }
+
+        api.Raw;
+        api.Wrapper;
+        api.old;
+
     }
   }
 }
@@ -9937,11 +9908,11 @@ v(2) {
     #[test]
     fn retained_carrier_does_not_require_or_publish_its_hidden_payload_closure() {
         let replayed = replayed_interface(
-            r#"signature fixture v(2);
+            r#"sig fixture v(2);
 v(1) {
   nonbreaking {
     add {
-      module api {
+      mod api {
         host type Secret;
         type { Carrier: (Secret & .) { mk; get; }; };
         host fn old(value: Carrier) -> .;
@@ -9952,11 +9923,11 @@ v(1) {
 v(2) {
   nonbreaking {
     remove {
-      module api {
-        Secret;
-        Carrier;
-        old;
-      }
+
+        api.Secret;
+        api.Carrier;
+        api.old;
+
     }
   }
 }
@@ -10000,11 +9971,11 @@ v(2) {
     #[test]
     fn retained_host_and_live_export_same_module_leaf_coexist() {
         let replayed = replayed_interface(
-            r#"signature fixture v(2);
+            r#"sig fixture v(2);
 v(1) {
   nonbreaking {
     add {
-      module api {
+      mod api {
         host fn same() -> .;
       }
     }
@@ -10013,7 +9984,7 @@ v(1) {
 v(2) {
   breaking {
     modify {
-      module api {
+      mod api {
         pub fn same() -> .;
       }
     }
@@ -10050,11 +10021,11 @@ v(2) {
     #[test]
     fn live_host_dominates_retained_history_at_the_same_exact_site() {
         let replayed = replayed_interface(
-            r#"signature fixture v(2);
+            r#"sig fixture v(2);
 v(1) {
   nonbreaking {
     add {
-      module api {
+      mod api {
         host fn same(value: .) -> .;
       }
     }
@@ -10063,9 +10034,9 @@ v(1) {
 v(2) {
   nonbreaking {
     remove {
-      module api {
-        same;
-      }
+
+        api.same;
+
     }
   }
 }
@@ -10088,11 +10059,11 @@ v(2) {
     #[test]
     fn duplicate_retained_sites_fail_closed() {
         let mut replayed = replayed_interface(
-            r#"signature fixture v(2);
+            r#"sig fixture v(2);
 v(1) {
   nonbreaking {
     add {
-      module api {
+      mod api {
         host fn old() -> .;
       }
     }
@@ -10101,9 +10072,9 @@ v(1) {
 v(2) {
   nonbreaking {
     remove {
-      module api {
-        old;
-      }
+
+        api.old;
+
     }
   }
 }
@@ -10123,11 +10094,11 @@ v(2) {
     #[test]
     fn inconsistent_retained_host_records_fail_closed() {
         let original = replayed_interface(
-            r#"signature fixture v(2);
+            r#"sig fixture v(2);
 v(1) {
   nonbreaking {
     add {
-      module api {
+      mod api {
         host type Payload;
         host fn old(value: Payload) -> .;
       }
@@ -10137,10 +10108,10 @@ v(1) {
 v(2) {
   nonbreaking {
     remove {
-      module api {
-        Payload;
-        old;
-      }
+
+        api.Payload;
+        api.old;
+
     }
   }
 }
@@ -10230,15 +10201,15 @@ v(2) {
     #[test]
     fn retained_alias_epoch_does_not_bind_live_same_name_newtype() {
         let replayed = replayed_interface(
-            r#"signature fixture v(2);
+            r#"sig fixture v(2);
 v(1) {
   nonbreaking {
     add {
-      module old {
+      mod old {
         type { Nominal: . { pub mk; pub get; }; };
       };
-      module api {
-        import old(Nominal);
+      mod api {
+        import old {type Nominal};
         type Wrapped = Nominal;
         host fn consume(value: Wrapped) -> .;
       }
@@ -10248,14 +10219,14 @@ v(1) {
 v(2) {
   breaking {
     modify {
-      module api {
+      mod api {
         type { Wrapped: . { pub mk; pub get; }; };
       }
     };
     remove {
-      module api {
-        consume;
-      }
+
+        api.consume;
+
     }
   }
 }
@@ -10300,11 +10271,11 @@ v(2) {
     #[test]
     fn retained_newtype_epoch_does_not_unfold_live_same_name_alias() {
         let replayed = replayed_interface(
-            r#"signature fixture v(2);
+            r#"sig fixture v(2);
 v(1) {
   nonbreaking {
     add {
-      module api {
+      mod api {
         host type Raw;
         type { Wrapped: Raw { pub mk; pub get; }; };
         host fn consume(value: Wrapped) -> (Wrapped & Raw);
@@ -10315,14 +10286,14 @@ v(1) {
 v(2) {
   breaking {
     modify {
-      module api {
+      mod api {
         type Wrapped = (. & .);
       }
     };
     remove {
-      module api {
-        consume;
-      }
+
+        api.consume;
+
     }
   }
 }
@@ -10382,11 +10353,11 @@ v(2) {
     #[test]
     fn retained_roots_omit_incompatible_same_name_newtype_epochs() {
         let replayed = replayed_interface(
-            r#"signature fixture v(3);
+            r#"sig fixture v(3);
 v(1) {
   nonbreaking {
     add {
-      module api {
+      mod api {
         type { Epoch: . { pub mk; pub get; }; };
         host fn first(value: Epoch) -> .;
       }
@@ -10396,29 +10367,29 @@ v(1) {
 v(2) {
   breaking {
     add {
-      module api {
+      mod api {
         host fn second(value: Epoch) -> .;
       }
     };
     modify {
-      module api {
+      mod api {
         type { Epoch: (. & .) { pub mk; pub get; }; };
       }
     };
     remove {
-      module api {
-        first;
-      }
+
+        api.first;
+
     }
   }
 }
 v(3) {
   breaking {
     remove {
-      module api {
-        Epoch;
-        second;
-      }
+
+        api.Epoch;
+        api.second;
+
     }
   }
 }
@@ -10436,11 +10407,11 @@ v(3) {
     #[test]
     fn retained_root_keeps_semantically_equal_live_newtype_despite_source_spans() {
         let replayed = replayed_interface(
-            r#"signature fixture v(2);
+            r#"sig fixture v(2);
 v(1) {
   nonbreaking {
     add {
-      module api {
+      mod api {
         type { Box[A]: A { pub mk; pub get; }; };
         host fn old(value: Box[.]) -> .;
       }
@@ -10450,9 +10421,9 @@ v(1) {
 v(2) {
   nonbreaking {
     remove {
-      module api {
-        old;
-      }
+
+        api.old;
+
     }
   }
 }
@@ -10488,11 +10459,11 @@ v(2) {
     #[test]
     fn retained_roots_keep_alpha_renamed_newtype_epochs() {
         let replayed = replayed_interface(
-            r#"signature fixture v(3);
+            r#"sig fixture v(3);
 v(1) {
   nonbreaking {
     add {
-      module api {
+      mod api {
         type { Box[A]: A { pub mk; pub get; }; };
         host fn first(value: Box[.]) -> .;
       }
@@ -10501,17 +10472,17 @@ v(1) {
 }
 v(2) {
   breaking {
-    add { module api { host fn second(value: Box[.]) -> .; } };
+    add { mod api { host fn second(value: Box[.]) -> .; } };
     modify {
-      module api {
+      mod api {
         type { Box[B]: B { pub mk; pub get; }; };
       }
     };
-    remove { module api { first; } }
+    remove {  api.first;  }
   }
 }
 v(3) {
-  breaking { remove { module api { Box; second; } } }
+  breaking { remove {  api.Box; api.second;  } }
 }
 "#,
         );
@@ -10526,11 +10497,11 @@ v(3) {
     #[test]
     fn retained_root_omits_incompatible_live_opaque_newtype_arity() {
         let replayed = replayed_interface(
-            r#"signature fixture v(2);
+            r#"sig fixture v(2);
 v(1) {
   nonbreaking {
     add {
-      module api {
+      mod api {
         type { Token[A]: A { mk; get; }; };
         host fn old(value: Token[.]) -> .;
       }
@@ -10540,9 +10511,9 @@ v(1) {
 v(2) {
   nonbreaking {
     remove {
-      module api {
-        old;
-      }
+
+        api.old;
+
     }
   }
 }
@@ -10586,11 +10557,11 @@ v(2) {
     #[test]
     fn retained_root_keeps_live_compatible_epoch_while_omitting_older_conflict() {
         let replayed = replayed_interface(
-            r#"signature fixture v(4);
+            r#"sig fixture v(4);
 v(1) {
   nonbreaking {
     add {
-      module api {
+      mod api {
         host type Str role(str);
         type { Token: . { pub mk; pub get; }; };
         host fn a_old(value: Token) -> .;
@@ -10601,24 +10572,24 @@ v(1) {
 v(2) {
   breaking {
     modify {
-      module api {
+      mod api {
         type { Token: Str { pub mk; pub get; }; };
       }
     };
     remove {
-      module api {
-        a_old;
-      }
+
+        api.a_old;
+
     }
   }
 }
 v(3) {
   breaking {
-    add { module api { host fn z_recent(value: Token) -> .; } }
+    add { mod api { host fn z_recent(value: Token) -> .; } }
   }
 }
 v(4) {
-  nonbreaking { remove { module api { z_recent; } } }
+  nonbreaking { remove {  api.z_recent;  } }
 }
 "#,
         );
@@ -10644,11 +10615,11 @@ v(4) {
     #[test]
     fn retained_root_keeps_live_compatible_host_type_epoch() {
         let replayed = replayed_interface(
-            r#"signature fixture v(3);
+            r#"sig fixture v(3);
 v(1) {
   nonbreaking {
     add {
-      module api {
+      mod api {
         host type H role(str);
         host fn a_old(value: H) -> .;
       }
@@ -10657,13 +10628,13 @@ v(1) {
 }
 v(2) {
   breaking {
-    add { module api { host fn z_recent(value: H) -> .; } };
-    modify { module api { host type H role(i32); } };
-    remove { module api { a_old; } }
+    add { mod api { host fn z_recent(value: H) -> .; } };
+    modify { mod api { host type H role(i32); } };
+    remove {  api.a_old;  }
   }
 }
 v(3) {
-  nonbreaking { remove { module api { z_recent; } } }
+  nonbreaking { remove {  api.z_recent;  } }
 }
 "#,
         );
@@ -10675,55 +10646,21 @@ v(3) {
     }
 
     #[test]
-    fn retained_root_ignores_rust_only_live_host_ownership() {
-        let replayed = replayed_interface(
-            r#"signature fixture v(2);
-v(1) {
-  nonbreaking {
-    add {
-      module api {
-        host type Text role(str);
-        host fn old(value: Text) -> Text;
-      }
-    }
-  }
-}
-v(2) { nonbreaking { remove { module api { old; } } } }
-"#,
-        );
-        let mut text = host_type("Text", Vec::new(), Some(Role::Str));
-        let Item::HostType(text) = &mut text else {
-            unreachable!("the fixture helper constructs a host type")
-        };
-        text.owned = true;
-        let package = package_with_items("api", vec![Item::HostType(text.clone())]);
-        let prepared = PreparedBoundaryCallableSites::collect(&package, Some(&replayed))
-            .expect("the redundant Rust source annotation is not an epoch conflict");
-        assert!(prepared.site(&host_site("api", "old")).is_some());
-        let binding = prepared
-            .host_bindings()
-            .find(|binding| binding.name() == &semantic_name("api", "Text"))
-            .expect("live Text binding");
-        assert!(binding.owned());
-        assert!(matches!(binding.origin(), BoundaryHostBindingOrigin::Live));
-    }
-
-    #[test]
     fn retained_alias_body_uses_its_own_frozen_imports() {
         let replayed = replayed_interface(
-            r#"signature fixture v(2);
+            r#"sig fixture v(2);
 v(1) {
   nonbreaking {
     add {
-      module types {
+      mod types {
         host type Payload;
       };
-      module defs {
+      mod defs {
         import types as t;
         type Wrapped = t.Payload;
       };
-      module api {
-        import defs(Wrapped);
+      mod api {
+        import defs {type Wrapped};
         host fn consume(value: Wrapped) -> .;
       }
     }
@@ -10732,9 +10669,9 @@ v(1) {
 v(2) {
   nonbreaking {
     remove {
-      module api {
-        consume;
-      }
+
+        api.consume;
+
     }
   }
 }
@@ -10759,11 +10696,11 @@ v(2) {
     #[test]
     fn retained_generic_alias_substitution_preserves_the_root_binder() {
         let replayed = replayed_interface(
-            r#"signature fixture v(2);
+            r#"sig fixture v(2);
 v(1) {
   nonbreaking {
     add {
-      module api {
+      mod api {
         host type Box[A];
         type Wrapped[A] = Box[A];
         host fn consume[A](value: Wrapped[A]) -> Wrapped[A];
@@ -10774,9 +10711,9 @@ v(1) {
 v(2) {
   nonbreaking {
     remove {
-      module api {
-        consume;
-      }
+
+        api.consume;
+
     }
   }
 }
@@ -10839,11 +10776,11 @@ v(2) {
     #[test]
     fn retained_higher_kinded_alias_accepts_a_partial_nominal_application() {
         let replayed = replayed_interface(
-            r#"signature fixture v(2);
+            r#"sig fixture v(2);
 v(1) {
   nonbreaking {
     add {
-      module api {
+      mod api {
         host type Pair[A][B];
         type Apply[*F] = F[.];
         host fn old(value: Apply[Pair[.]]) -> .;
@@ -10854,9 +10791,9 @@ v(1) {
 v(2) {
   nonbreaking {
     remove {
-      module api {
-        old;
-      }
+
+        api.old;
+
     }
   }
 }
@@ -10892,11 +10829,11 @@ v(2) {
     #[test]
     fn retained_callable_spine_accepts_a_trailing_higher_kinded_stage() {
         let replayed = replayed_interface(
-            r#"signature fixture v(2);
+            r#"sig fixture v(2);
 v(1) {
   nonbreaking {
     add {
-      module api {
+      mod api {
         host fn old()[*F] -> .;
       }
     }
@@ -10905,9 +10842,9 @@ v(1) {
 v(2) {
   nonbreaking {
     remove {
-      module api {
-        old;
-      }
+
+        api.old;
+
     }
   }
 }
@@ -10932,11 +10869,11 @@ v(2) {
     #[test]
     fn retained_value_type_rejects_an_incomplete_higher_kinded_forall() {
         let replayed = replayed_invalid_interface(
-            r#"signature fixture v(2);
+            r#"sig fixture v(2);
 v(1) {
   nonbreaking {
     add {
-      module api {
+      mod api {
         host fn old(callback: [*F] .) -> .;
       }
     }
@@ -10945,9 +10882,9 @@ v(1) {
 v(2) {
   nonbreaking {
     remove {
-      module api {
-        old;
-      }
+
+        api.old;
+
     }
   }
 }
@@ -10963,11 +10900,11 @@ v(2) {
     #[test]
     fn retained_kind_walk_rejects_a_wrong_kind_binder_application() {
         let replayed = replayed_invalid_interface(
-            r#"signature fixture v(2);
+            r#"sig fixture v(2);
 v(1) {
   nonbreaking {
     add {
-      module api {
+      mod api {
         host fn old[*F](value: F[F]) -> .;
       }
     }
@@ -10976,9 +10913,9 @@ v(1) {
 v(2) {
   nonbreaking {
     remove {
-      module api {
-        old;
-      }
+
+        api.old;
+
     }
   }
 }
@@ -10994,11 +10931,11 @@ v(2) {
     #[test]
     fn retained_kind_walk_rejects_a_wrong_kind_alias_actual_without_panicking() {
         let replayed = replayed_invalid_interface(
-            r#"signature fixture v(2);
+            r#"sig fixture v(2);
 v(1) {
   nonbreaking {
     add {
-      module api {
+      mod api {
         type Apply[*F] = F[.];
         host fn old(value: Apply[.]) -> .;
       }
@@ -11008,9 +10945,9 @@ v(1) {
 v(2) {
   nonbreaking {
     remove {
-      module api {
-        old;
-      }
+
+        api.old;
+
     }
   }
 }
@@ -11051,11 +10988,26 @@ v(2) {
 
         for (label, declaration, host) in cases {
             let source = format!(
-                "signature fixture v(2);\n\
-                 v(1) {{\n  nonbreaking {{\n    add {{\n      module api {{\n        \
-                 {declaration}\n        {host}\n      }}\n    }}\n  }}\n}}\n\
-                 v(2) {{\n  nonbreaking {{\n    remove {{\n      module api {{\n        \
-                 old;\n      }}\n    }}\n  }}\n}}\n"
+                "sig fixture v(2);
+v(1) {{
+  nonbreaking {{
+    add {{
+      mod api {{
+        {declaration}
+        {host}
+      }}
+    }}
+  }}
+}}
+v(2) {{
+  nonbreaking {{
+    remove {{
+        api.old;
+
+    }}
+  }}
+}}
+"
             );
             let replayed = replayed_invalid_interface(&source);
             let error =
@@ -11073,11 +11025,11 @@ v(2) {
     #[test]
     fn retained_kind_walk_rejects_an_invalid_alias_body() {
         let replayed = replayed_invalid_interface(
-            r#"signature fixture v(2);
+            r#"sig fixture v(2);
 v(1) {
   nonbreaking {
     add {
-      module api {
+      mod api {
         type Bad[A] = A[.];
         host fn old(value: Bad[.]) -> .;
       }
@@ -11087,9 +11039,9 @@ v(1) {
 v(2) {
   nonbreaking {
     remove {
-      module api {
-        old;
-      }
+
+        api.old;
+
     }
   }
 }
@@ -11105,11 +11057,11 @@ v(2) {
     #[test]
     fn future_same_module_declaration_does_not_bind_retained_root() {
         let replayed = replayed_invalid_interface(
-            r#"signature fixture v(2);
+            r#"sig fixture v(2);
 v(1) {
   nonbreaking {
     add {
-      module api {
+      mod api {
         host fn old(value: Future) -> .;
       }
     }
@@ -11118,14 +11070,14 @@ v(1) {
 v(2) {
   nonbreaking {
     add {
-      module api {
+      mod api {
         host type Future;
       }
     };
     remove {
-      module api {
-        old;
-      }
+
+        api.old;
+
     }
   }
 }
@@ -11147,11 +11099,11 @@ v(2) {
     #[test]
     fn retained_comptime_type_names_use_their_runtime_erasure() {
         let replayed = replayed_interface(
-            r#"signature fixture v(2);
+            r#"sig fixture v(2);
 v(1) {
   nonbreaking {
     add {
-      module api {
+      mod api {
         import __comptime__;
         host fn old(value: __Type__) -> Comptime_bool;
       }
@@ -11161,9 +11113,9 @@ v(1) {
 v(2) {
   nonbreaking {
     remove {
-      module api {
-        old;
-      }
+
+        api.old;
+
     }
   }
 }
@@ -11200,11 +11152,11 @@ v(2) {
     #[test]
     fn retained_type_binder_shadows_a_comptime_type_name() {
         let replayed = replayed_interface(
-            r#"signature fixture v(2);
+            r#"sig fixture v(2);
 v(1) {
   nonbreaking {
     add {
-      module api {
+      mod api {
         host fn old[Comptime_bool](value: Comptime_bool) -> Comptime_bool;
       }
     }
@@ -11213,9 +11165,9 @@ v(1) {
 v(2) {
   nonbreaking {
     remove {
-      module api {
-        old;
-      }
+
+        api.old;
+
     }
   }
 }
@@ -11245,11 +11197,11 @@ v(2) {
     #[test]
     fn retained_frozen_nominal_shadows_a_comptime_type_name() {
         let replayed = replayed_interface(
-            r#"signature fixture v(2);
+            r#"sig fixture v(2);
 v(1) {
   nonbreaking {
     add {
-      module api {
+      mod api {
         host type Comptime_bool;
         host fn old(value: Comptime_bool) -> Comptime_bool;
       }
@@ -11259,9 +11211,9 @@ v(1) {
 v(2) {
   nonbreaking {
     remove {
-      module api {
-        old;
-      }
+
+        api.old;
+
     }
   }
 }
@@ -11291,7 +11243,7 @@ v(2) {
         let cases = [
             (
                 "missing selective import",
-                "import missing(Comptime_bool);",
+                "import missing {type Comptime_bool};",
                 "Comptime_bool",
             ),
             (
@@ -11304,12 +11256,26 @@ v(2) {
 
         for (label, usage, written) in cases {
             let source = format!(
-                "signature fixture v(2);\n\
-                 v(1) {{\n  nonbreaking {{\n    add {{\n      module api {{\n        \
-                 {usage}\n        host fn old(value: {written}) -> .;\n      }}\n    }}\n  }}\n\
-                 }}\n\
-                 v(2) {{\n  nonbreaking {{\n    remove {{\n      module api {{\n        \
-                 old;\n      }}\n    }}\n  }}\n}}\n"
+                "sig fixture v(2);
+v(1) {{
+  nonbreaking {{
+    add {{
+      mod api {{
+        {usage}
+        host fn old(value: {written}) -> .;
+      }}
+    }}
+  }}
+}}
+v(2) {{
+  nonbreaking {{
+    remove {{
+        api.old;
+
+    }}
+  }}
+}}
+"
             );
             let replayed = replayed_invalid_interface(&source);
             assert!(
@@ -11335,11 +11301,11 @@ v(2) {
     #[test]
     fn retained_roots_never_union_frozen_nominals() {
         let mut forward = replayed_interface(
-            r#"signature fixture v(2);
+            r#"sig fixture v(2);
 v(1) {
   nonbreaking {
     add {
-      module api {
+      mod api {
         type { Onlyone: . { pub mk; pub get; }; };
         host fn first(value: Onlyone) -> .;
         host fn second(value: Onlyone) -> .;
@@ -11350,10 +11316,10 @@ v(1) {
 v(2) {
   nonbreaking {
     remove {
-      module api {
-        first;
-        second;
-      }
+
+        api.first;
+        api.second;
+
     }
   }
 }
@@ -11383,11 +11349,11 @@ v(2) {
     #[test]
     fn retained_interleaved_head_cut_is_exact_and_returned_callable_is_not_a_head() {
         let replayed = replayed_interface(
-            r#"signature fixture v(2);
+            r#"sig fixture v(2);
 v(1) {
   nonbreaking {
     add {
-      module api {
+      mod api {
         host type R;
         host type X;
         host type Y;
@@ -11399,9 +11365,9 @@ v(1) {
 v(2) {
   nonbreaking {
     remove {
-      module api {
-        staged;
-      }
+
+        api.staged;
+
     }
   }
 }
@@ -11484,11 +11450,11 @@ v(2) {
     #[test]
     fn retained_collection_is_order_independent_and_deduplicates_shells() {
         let forward = replayed_interface(
-            r#"signature fixture v(2);
+            r#"sig fixture v(2);
 v(1) {
   nonbreaking {
     add {
-      module api {
+      mod api {
         host type A;
         host type B;
         host fn first() -> (A | B);
@@ -11500,10 +11466,10 @@ v(1) {
 v(2) {
   nonbreaking {
     remove {
-      module api {
-        first;
-        second;
-      }
+
+        api.first;
+        api.second;
+
     }
   }
 }

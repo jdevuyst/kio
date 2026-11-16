@@ -1,5 +1,5 @@
-module app;
+mod app;
 
-import lib(Widget);
+import lib { type Widget }
 
 pub fn wrap(w: Widget) -> Widget { w }

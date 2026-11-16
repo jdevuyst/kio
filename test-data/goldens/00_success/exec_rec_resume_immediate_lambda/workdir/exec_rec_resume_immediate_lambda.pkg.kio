@@ -1,4 +1,4 @@
-package exec_rec_resume_immediate_lambda;
+pkg exec_rec_resume_immediate_lambda;
 
 build {
   cache "out/.kio-cache/";

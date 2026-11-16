@@ -1,17 +1,17 @@
 # Nested support import closure
 
 ```kio {}
-module example;
+mod example;
 
-import utilities/entry(run);
+import utilities/entry {fn run}
 
 fn result() { run() }
 ```
 
 ```kio {check_exit_code=11}
-module rejected;
+mod rejected;
 
-import utilities/entry(run);
+import utilities/entry {fn run}
 
 fn broken() { let x = ; () }
 ```

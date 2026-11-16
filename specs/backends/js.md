@@ -623,7 +623,7 @@ Given a package `hello` with:
 
 ```kio
 // hello.pkg.kio
-package hello;
+pkg hello;
 
 bridge {
   hello;
@@ -633,7 +633,7 @@ bridge {
 
 ```kio
 // hello.kio
-module hello;
+mod hello;
 
 host type String role(str);
 host fn print(s: String);
@@ -641,9 +641,9 @@ host fn print(s: String);
 
 ```kio
 // hello/main.kio
-module hello/main;
+mod hello/main;
 
-import hello(String, print);
+import hello {type String; fn print}
 
 pub fn main() { print("hello\n"[String]) }
 ```
@@ -671,7 +671,7 @@ binary JS objects:
 
 ```kio
 // pair_swap.pkg.kio
-package pair_swap;
+pkg pair_swap;
 
 bridge {
   pair_swap;
@@ -681,7 +681,7 @@ bridge {
 
 ```kio
 // pair_swap.kio
-module pair_swap;
+mod pair_swap;
 
 host type I32    role(i32);
 host type String role(str);
@@ -689,10 +689,10 @@ host type String role(str);
 
 ```kio
 // pair_swap/main.kio
-module pair_swap/main;
+mod pair_swap/main;
 
 import __intrinsics__;
-import pair_swap(I32, String);
+import pair_swap {type I32; type String}
 
 pub fn pair_swap(p: (I32 & String)) -> (String & I32) {
   __pair__[String][I32](__snd__[I32][String](p), __fst__[I32][String](p))

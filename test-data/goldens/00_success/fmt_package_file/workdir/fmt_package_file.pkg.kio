@@ -1,6 +1,6 @@
 // Package interface: the bridged modules whose host items and pub
 // exports form the package boundary.
-package fmt_package_file;
+pkg fmt_package_file;
 
 build {
   cache "out/.kio-cache/";

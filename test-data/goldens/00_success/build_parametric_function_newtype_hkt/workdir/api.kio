@@ -1,4 +1,4 @@
-module api;
+mod api;
 
 pub type { Callable[A]: A -> A { pub mk; pub get } }
 

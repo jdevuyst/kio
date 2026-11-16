@@ -1,28 +1,28 @@
-module pid/controller;
+mod pid/controller;
 
-import macros/row_macros(macro select);
-import pid/calibration(apply);
-import pid/model(
-, Accumulated_error
-, Bias
-, Calibration
-, Command
-, Derivative
-, Derivative_term
-, Error
-, Gains
-, Integral
-, Integral_term
-, Kd
-, Ki
-, Kp
-, Measured
-, Memory
-, Previous_error
-, Proportional
-, Step
-);
-import testapi(F64);
+import macros/row_macros { macro select }
+import pid/calibration { fn apply }
+import pid/model {
+  type Accumulated_error;
+  type Bias;
+  type Calibration;
+  type Command;
+  type Derivative;
+  type Derivative_term;
+  type Error;
+  type Gains;
+  type Integral;
+  type Integral_term;
+  type Kd;
+  type Ki;
+  type Kp;
+  type Measured;
+  type Memory;
+  type Previous_error;
+  type Proportional;
+  type Step
+}
+import testapi { type F64 }
 import testapi/arith as arith;
 
 fn control_output(bias: F64, proportional: F64, integral_term: F64, derivative_term: F64) -> F64 {

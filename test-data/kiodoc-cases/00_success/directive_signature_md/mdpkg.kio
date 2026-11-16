@@ -1,4 +1,4 @@
-module mdpkg;
+mod mdpkg;
 
 host type S role(str);
 

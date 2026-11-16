@@ -1,4 +1,4 @@
-package bounded_names;
+pkg bounded_names;
 
 build {
   target java {

@@ -1,4 +1,4 @@
-package exec_dyn_load_import_headers;
+pkg exec_dyn_load_import_headers;
 
 build {
   cache "out/.kio-cache/";

@@ -1,4 +1,4 @@
-module demo/main;
+mod demo/main;
 
 host type Text role(str);
 

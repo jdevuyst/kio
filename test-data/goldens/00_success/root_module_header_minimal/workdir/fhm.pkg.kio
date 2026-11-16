@@ -1,4 +1,4 @@
-package fhm;
+pkg fhm;
 
 build {
   cache "out/.kio-cache/";

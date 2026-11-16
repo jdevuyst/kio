@@ -6,22 +6,44 @@
 /// divisor is known to be non-zero, and `pow` is asked for a power only once
 /// the exponent is known to be non-negative. The guards are the calculator's
 /// faults, and the host arithmetic never sees an argument it cannot answer.
-module desk/eval;
+mod desk/eval;
 
-import desk/list(List, cons, is_empty, nil);
-import desk/num(int_eq, pow);
-import desk/op(Binary, Binop, Divide, Minus, Modulo, Op, Plus, Power, Times, Unary);
-import desk/op(Negate, Unop);
-import desk/outcome(Answer, Failure, divide_by_zero_fault, extra_operand_fault, failed_answer);
-import desk/outcome(fault_at, missing_operand_fault, negative_exponent_fault, value_answer);
-import desk/step(Action, App, Lit, Step, act_of, spot_of);
-import macros/control(macro if);
-import macros/match(macro match);
-import macros/row_macros(macro select);
-import macros/spine_macros(macro widen_sum);
-import testapi(Bool, I32);
-import testapi/arith(add_i32, div_i32, lt_i32, mod_i32, mul_i32, sub_i32);
-import testapi/iter(loop);
+import desk/list { type List; fn cons; fn is_empty; fn nil }
+import desk/num { fn int_eq; fn pow }
+import desk/op {
+  type Binary;
+  type Binop;
+  type Divide;
+  type Minus;
+  type Modulo;
+  type Op;
+  type Plus;
+  type Power;
+  type Times;
+  type Unary
+}
+import desk/op { type Negate; type Unop }
+import desk/outcome {
+  fn fault_at;
+  fn missing_operand_fault;
+  fn negative_exponent_fault;
+  fn value_answer
+}
+import desk/outcome {
+  type Answer;
+  type Failure;
+  fn divide_by_zero_fault;
+  fn extra_operand_fault;
+  fn failed_answer
+}
+import desk/step { type Action; type App; type Lit; type Step; fn act_of; fn spot_of }
+import macros/control { macro if }
+import macros/match { macro match }
+import macros/row_macros { macro select }
+import macros/spine_macros { macro widen_sum }
+import testapi { type Bool; type I32 }
+import testapi/arith { fn add_i32; fn div_i32; fn lt_i32; fn mod_i32; fn mul_i32; fn sub_i32 }
+import testapi/iter { fn loop }
 
 /// A value on the stack, remembering the token that produced it. That origin
 /// is what lets the trailing-operand fault point at the surplus token rather

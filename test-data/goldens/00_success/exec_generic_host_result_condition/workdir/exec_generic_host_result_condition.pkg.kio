@@ -1,4 +1,4 @@
-package exec_generic_host_result_condition;
+pkg exec_generic_host_result_condition;
 
 build {
   cache "out/.kio-cache/";

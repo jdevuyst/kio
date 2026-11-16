@@ -1,37 +1,37 @@
-module testapi/main;
+mod testapi/main;
 
-import library/macros/match(macro match);
-import library/macros/spine_macros(macro narrow_prod, macro widen_sum);
-import library/optics(
-, Iso
-, Lens
-, Prism
-, assoc_iso
-, compose_iso
-, compose_lens
-, compose_prism
-, fst_lens
-, id_lens
-, iso_to_lens
-, iso_to_prism
-, left_prism
-, over
-, over_iso
-, over_prism
-, preview
-, review
-, review_iso
-, right_prism
-, set
-, snd_lens
-, swap_iso
-, view
-, view_iso
-);
-import testapi(I32, String);
-import testapi/arith(add);
-import testapi/fmt(int_to_string);
-import testapi/io(print);
+import library/macros/match { macro match }
+import library/macros/spine_macros { macro narrow_prod; macro widen_sum }
+import library/optics {
+  type Iso;
+  type Lens;
+  type Prism;
+  fn assoc_iso;
+  fn compose_iso;
+  fn compose_lens;
+  fn compose_prism;
+  fn fst_lens;
+  fn id_lens;
+  fn iso_to_lens;
+  fn iso_to_prism;
+  fn left_prism;
+  fn over;
+  fn over_iso;
+  fn over_prism;
+  fn preview;
+  fn review;
+  fn review_iso;
+  fn right_prism;
+  fn set;
+  fn snd_lens;
+  fn swap_iso;
+  fn view;
+  fn view_iso
+}
+import testapi { type I32; type String }
+import testapi/arith { fn add }
+import testapi/fmt { fn int_to_string }
+import testapi/io { fn print }
 
 // optics — host-facing tour of the optic library.
 //

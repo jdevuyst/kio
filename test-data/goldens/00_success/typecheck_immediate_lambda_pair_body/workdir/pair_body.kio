@@ -1,4 +1,4 @@
-module pair_body;
+mod pair_body;
 
 fn identity[A](value: A) -> A { value }
 

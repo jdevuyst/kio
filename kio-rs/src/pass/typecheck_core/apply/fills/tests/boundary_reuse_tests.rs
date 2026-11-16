@@ -12,7 +12,7 @@ fn with_frontier(
     ),
 ) {
     let package = fixture(
-        "module boundary; type Alias = .; type Applied[A] = A; host type Token; host type Carrier[A];",
+        "mod boundary; type Alias = .; type Applied[A] = A; host type Token; host type Carrier[A];",
         "boundary",
     );
     let module = &package.module("boundary").unwrap().module;

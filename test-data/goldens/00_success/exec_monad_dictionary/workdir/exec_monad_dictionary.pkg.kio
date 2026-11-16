@@ -1,4 +1,4 @@
-package exec_monad_dictionary;
+pkg exec_monad_dictionary;
 
 build {
   cache "out/.kio-cache/";

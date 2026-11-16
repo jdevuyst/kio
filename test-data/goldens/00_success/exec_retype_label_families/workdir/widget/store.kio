@@ -1,8 +1,8 @@
-module widget/store;
+mod widget/store;
 
 import core/store as _rehost_gdgphcgfcphdhegphcgf;
 import testapi as _rehost_hegfhdhegbhagj;
-import widget/macros/row_macros(macro select);
+import widget/macros/row_macros { macro select }
 
 pub type String = _rehost_hegfhdhegbhagj.String;
 

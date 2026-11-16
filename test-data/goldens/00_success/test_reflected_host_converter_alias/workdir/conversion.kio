@@ -1,7 +1,7 @@
-module conversion;
+mod conversion;
 
 import __comptime__;
-import bridge(Text);
+import bridge { type Text }
 
 pub pure fn convert(value: Text) -> Text { value }
 

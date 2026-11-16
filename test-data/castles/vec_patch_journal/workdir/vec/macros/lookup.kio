@@ -1,21 +1,21 @@
 /// Sum-label lookup macros for structural sums.
-module vec/macros/lookup;
+mod vec/macros/lookup;
 
 import __intrinsics__;
 
 import __comptime__;
-import vec/macros/macro_util(
-, Matched_slot
-, Matched_slot_tail
-, Maybe_matched_slot
-, Slot
-, dnf_branch_slots
-, dnf_branch_spine
-, dnf_eliminate
-, dnf_eliminate_with_use
-, slot_term
-, take_first_matching
-);
+import vec/macros/macro_util {
+  type Matched_slot;
+  type Matched_slot_tail;
+  type Maybe_matched_slot;
+  type Slot;
+  fn dnf_branch_slots;
+  fn dnf_branch_spine;
+  fn dnf_eliminate;
+  fn dnf_eliminate_with_use;
+  fn slot_term;
+  fn take_first_matching
+}
 
 /// Boolean-like structural result captured by `contains`.
 pub type Lookup_bool = . | .;

@@ -1,8 +1,8 @@
-module testapi/main;
+mod testapi/main;
 
 import report as report;
 import scanner as scan;
-import testapi(I32, String);
+import testapi { type I32; type String }
 import testapi/fmt as fmt;
 import testapi/io as io;
 

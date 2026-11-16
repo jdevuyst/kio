@@ -1,4 +1,4 @@
-package retention;
+pkg retention;
 
 build {
   target java {

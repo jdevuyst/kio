@@ -1,4 +1,4 @@
-package wpu;
+pkg wpu;
 
 build {
   cache "out/.kio-cache/";

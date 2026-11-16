@@ -2,7 +2,7 @@
 ///
 /// Nominals like [`Some`] and [`None`] are collected from the compact type entries.
 /// The underlying function for the `+` operator is [`add`], which is also in scope.
-module docref/labelsops;
+mod docref/labelsops;
 
 /// Option type — nominal entries become valid intra-doc ref targets.
 ///

@@ -1,4 +1,4 @@
-package exec_labels_cross_module_sugar;
+pkg exec_labels_cross_module_sugar;
 
 build {
   cache "out/.kio-cache/";

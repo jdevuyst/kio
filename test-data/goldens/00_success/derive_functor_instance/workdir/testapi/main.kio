@@ -1,9 +1,9 @@
-module testapi/main;
+mod testapi/main;
 
-import macros/derive(macro derive);
-import testapi(String);
-import testapi/io(print);
-import testapi/text(string_concat);
+import macros/derive { macro derive }
+import testapi { type String }
+import testapi/io { fn print }
+import testapi/text { fn string_concat }
 
 pub type { Box[A]: A { pub mk; pub get } }
 

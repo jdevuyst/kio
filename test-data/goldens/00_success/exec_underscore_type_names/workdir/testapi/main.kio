@@ -1,7 +1,7 @@
-module testapi/main;
+mod testapi/main;
 
-import testapi(_String);
-import testapi/io(print);
+import testapi { type _String }
+import testapi/io { fn print }
 
 type _Alias = _String;
 

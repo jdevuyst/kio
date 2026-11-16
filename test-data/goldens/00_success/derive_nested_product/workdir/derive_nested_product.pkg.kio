@@ -1,4 +1,4 @@
-package derive_nested_product;
+pkg derive_nested_product;
 
 build {
   cache "out/.kio-cache/";

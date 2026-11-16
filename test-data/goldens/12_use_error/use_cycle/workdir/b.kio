@@ -1,5 +1,5 @@
-module b;
+mod b;
 
-import a(x);
+import a { fn x }
 
 pub fn y() { () }

@@ -1,4 +1,4 @@
-package derive_base;
+pkg derive_base;
 
 build {
   cache "out/.kio-cache/";

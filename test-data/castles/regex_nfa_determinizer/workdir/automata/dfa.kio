@@ -7,15 +7,15 @@
 /// the empty set. Totality is what lets the refinement compare whole rows
 /// without a missing-move case, and what makes recognition a walk that can
 /// never get stuck.
-module automata/dfa;
+mod automata/dfa;
 
-import automata/seq(Ints, List, member, nth_or);
-import automata/symbol(width);
-import macros/match(macro match);
-import macros/row_macros(macro select);
-import testapi(Bool, I32);
-import testapi/arith(add_i32, mul_i32);
-import testapi/iter(loop);
+import automata/seq { type Ints; type List; fn member; fn nth_or }
+import automata/symbol { fn width }
+import macros/match { macro match }
+import macros/row_macros { macro select }
+import testapi { type Bool; type I32 }
+import testapi/arith { fn add_i32; fn mul_i32 }
+import testapi/iter { fn loop }
 
 pub type Dfa = { Dfa_count: I32; Dfa_start: I32; Dfa_accepts: Ints; Dfa_table: Ints };
 

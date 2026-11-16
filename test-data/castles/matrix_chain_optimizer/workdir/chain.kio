@@ -1,13 +1,13 @@
-module chain;
+mod chain;
 
-import macros/control(macro if);
-import macros/row_macros(macro select);
-import macros/spine_macros(macro widen_sum);
-import testapi(Array, Bool, I32, String);
+import macros/control { macro if }
+import macros/row_macros { macro select }
+import macros/spine_macros { macro widen_sum }
+import testapi { type Array; type Bool; type I32; type String }
 import testapi/arith as math;
 import testapi/array as arrays;
 import testapi/fmt as fmt;
-import testapi/iter(loop);
+import testapi/iter { fn loop }
 import testapi/text as text;
 
 pub type Matrix = { Rows: I32; Cols: I32 };

@@ -1,5 +1,5 @@
 /// Adapter serving the list dependency's host requirements from this package's own capability modules.
-module docs_loader/list_host;
+mod docs_loader/list_host;
 
 import docs_loader/testapi as api;
 import docs_loader/testapi/arith as arith;

@@ -1,4 +1,4 @@
-module types;
+mod types;
 
 pub type A = .;
 

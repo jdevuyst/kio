@@ -1,4 +1,4 @@
-package polymorphic_callback_scope;
+pkg polymorphic_callback_scope;
 
 build {
   target js {

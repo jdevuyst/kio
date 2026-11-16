@@ -1,3 +1,3 @@
-module main;
+mod main;
 
 pub rec(loop) fn count[A](n: A) -> A { recur count[String]("x") }

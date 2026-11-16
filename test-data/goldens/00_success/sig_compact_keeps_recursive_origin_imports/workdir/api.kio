@@ -1,4 +1,4 @@
-module api;
+mod api;
 
 import left as left_dep;
 import right as right_dep;

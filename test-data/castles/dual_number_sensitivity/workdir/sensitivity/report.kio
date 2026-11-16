@@ -1,8 +1,8 @@
-module sensitivity/report;
+mod sensitivity/report;
 
-import macros/row_macros(macro select);
+import macros/row_macros { macro select }
 import sensitivity/jet as jet;
-import testapi(F64, String);
+import testapi { type F64; type String }
 import testapi/fmt as fmt;
 import testapi/io as io;
 

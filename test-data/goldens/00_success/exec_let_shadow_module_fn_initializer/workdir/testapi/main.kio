@@ -1,8 +1,8 @@
-module testapi/main;
+mod testapi/main;
 
-import testapi(I32, String);
-import testapi/fmt(int_to_string);
-import testapi/io(print);
+import testapi { type I32; type String }
+import testapi/fmt { fn int_to_string }
+import testapi/io { fn print }
 
 fn value() -> I32 { 7 }
 

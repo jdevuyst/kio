@@ -1,8 +1,8 @@
-module testapi/main;
+mod testapi/main;
 
-import macros/row_macros(macro with);
-import testapi(String);
-import testapi/io(print);
+import macros/row_macros { macro with }
+import testapi { type String }
+import testapi/io { fn print }
 
 type { A: String { mk; get } }
 

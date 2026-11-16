@@ -1,4 +1,4 @@
-package module_java;
+pkg module_java;
 
 build {
   cache "out/.kio-cache/";

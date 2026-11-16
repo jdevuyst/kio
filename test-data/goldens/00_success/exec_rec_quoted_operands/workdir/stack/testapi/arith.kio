@@ -1,6 +1,6 @@
-module stack/testapi/arith;
+mod stack/testapi/arith;
 
-import stack/testapi(Bool, I32);
+import stack/testapi { type Bool; type I32 }
 import testapi/arith as _rehost_hegfhdhegbhagjcpgbhcgjhegi;
 
 pub fn add_i32(p0: I32, p1: I32) -> I32 { _rehost_hegfhdhegbhagjcpgbhcgjhegi.add_i32(p0, p1) }

@@ -1,4 +1,4 @@
-dependency hkt;
+dep hkt;
 
 source {
   path "../../../poc/hkt/workdir/hkt.pkg.kio"

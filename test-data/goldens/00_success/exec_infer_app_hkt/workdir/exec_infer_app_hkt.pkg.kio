@@ -1,4 +1,4 @@
-package exec_infer_app_hkt;
+pkg exec_infer_app_hkt;
 
 build {
   cache "out/.kio-cache/";

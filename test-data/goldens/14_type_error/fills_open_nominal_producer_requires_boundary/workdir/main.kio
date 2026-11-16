@@ -1,6 +1,6 @@
-module main;
+mod main;
 
-import macros(Box, macro ignore);
+import macros { type Box; macro ignore }
 
 host fn boxed[A](callback: . -> .) -> Box[A];
 

@@ -1,4 +1,4 @@
-package build_skip_unsupported_explicit_id;
+pkg build_skip_unsupported_explicit_id;
 
 build {
   cache "out/.kio-cache/";

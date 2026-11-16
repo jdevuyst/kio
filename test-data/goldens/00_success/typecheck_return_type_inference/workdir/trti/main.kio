@@ -1,4 +1,4 @@
-module trti/main;
+mod trti/main;
 
 // Coverage for return-type-driven type-argument inference on
 // intrinsic calls — the typer path where a `Forall` binder appears
@@ -14,7 +14,7 @@ module trti/main;
 // the intrinsic-direct path.
 import __intrinsics__;
 
-import trti(String);
+import trti { type String }
 
 // Canonical case from language.md `:52` — `__absurd__` has
 // `[A]` only in the return type. The body sits in a checked

@@ -1,4 +1,4 @@
-package test_equiv_structural_recur_arm;
+pkg test_equiv_structural_recur_arm;
 
 build {
   cache "out/.kio-cache/";

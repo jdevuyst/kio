@@ -1,33 +1,49 @@
 /// This case's loading host: advertise a callback in the adapter, implement
 /// it through the separate `call` capability, and pass it into higher-order
 /// exports.
-module testapi/main;
+mod testapi/main;
 
-import defaults(default_host_adapter);
-import host_descriptor(Host_fn);
-import host_descriptor(host_fn_eq, mk_host_fn, mk_host_id);
-import hostrec(make_lit_default, serve_default, test_bool_default);
-import imageio(read_image_stdin);
-import loader(Apply, Hostfn_in, I32_in, I32_out, Lookup, Pair_in, diag_message);
-import loader(Diag, Host_adapter, Image, Loaded, Lr_diag, Lr_image, Surface);
-import loader(host_adapter_functions, host_adapter_types);
-import loader(host_fn_bindings_cons, mk_host_adapter, mk_host_fn_binding);
-import loader(instantiate, un_load_outcome);
-import loader/scan(load_package);
-import macros/control(macro if);
-import macros/match(macro match);
-import macros/row_macros(macro select);
-import macros/spine_macros(macro widen_sum);
-import prime(group_slots_cons, group_slots_nil);
-import result(Call_result, call_done, call_stuck);
-import testapi(Bool, I32, Scalar, String);
-import testapi/arith(add_i32);
-import testapi/fmt(int_to_string);
-import testapi/io(print);
-import testapi/iter(loop);
-import testapi/scalar(scalar_as_i32, scalar_of_i32);
-import testapi/text(string_concat);
-import value(Side, Value, value_to_scalar, vhost);
+import defaults { fn default_host_adapter }
+import host_descriptor { fn host_fn_eq; fn mk_host_fn; fn mk_host_id }
+import host_descriptor { type Host_fn }
+import hostrec { fn make_lit_default; fn serve_default; fn test_bool_default }
+import imageio { fn read_image_stdin }
+import loader {
+  type Apply;
+  type Hostfn_in;
+  type I32_in;
+  type I32_out;
+  type Lookup;
+  type Pair_in;
+  fn diag_message
+}
+import loader {
+  type Diag;
+  type Host_adapter;
+  type Image;
+  type Loaded;
+  type Lr_diag;
+  type Lr_image;
+  type Surface
+}
+import loader { fn host_adapter_functions; fn host_adapter_types }
+import loader { fn host_fn_bindings_cons; fn mk_host_adapter; fn mk_host_fn_binding }
+import loader { fn instantiate; fn un_load_outcome }
+import loader/scan { fn load_package }
+import macros/control { macro if }
+import macros/match { macro match }
+import macros/row_macros { macro select }
+import macros/spine_macros { macro widen_sum }
+import prime { fn group_slots_cons; fn group_slots_nil }
+import result { type Call_result; fn call_done; fn call_stuck }
+import testapi { type Bool; type I32; type Scalar; type String }
+import testapi/arith { fn add_i32 }
+import testapi/fmt { fn int_to_string }
+import testapi/io { fn print }
+import testapi/iter { fn loop }
+import testapi/scalar { fn scalar_as_i32; fn scalar_of_i32 }
+import testapi/text { fn string_concat }
+import value { type Side; type Value; fn value_to_scalar; fn vhost }
 
 // The host's own callback: double an i32 guest value, or report the shape
 // it wanted.

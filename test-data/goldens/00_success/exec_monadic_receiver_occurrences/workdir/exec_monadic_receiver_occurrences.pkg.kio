@@ -1,4 +1,4 @@
-package exec_monadic_receiver_occurrences;
+pkg exec_monadic_receiver_occurrences;
 
 build {
   cache "out/.kio-cache/";

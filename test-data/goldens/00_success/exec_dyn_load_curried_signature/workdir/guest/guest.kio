@@ -1,6 +1,6 @@
-module guest;
+mod guest;
 
-import hostapi(I32, add_i32);
+import hostapi { type I32; fn add_i32 }
 
 pub fn addc(a: I32)(b: I32) -> I32 { add_i32(a, b) }
 

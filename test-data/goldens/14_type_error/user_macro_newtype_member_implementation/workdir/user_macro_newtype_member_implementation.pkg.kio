@@ -1,4 +1,4 @@
-package user_macro_newtype_member_implementation;
+pkg user_macro_newtype_member_implementation;
 
 build {
   cache "out/.kio-cache/";

@@ -1,4 +1,4 @@
-package exec_kio_prime_emit_literal_typearg;
+pkg exec_kio_prime_emit_literal_typearg;
 
 build {
   cache "out/.kio-cache/";

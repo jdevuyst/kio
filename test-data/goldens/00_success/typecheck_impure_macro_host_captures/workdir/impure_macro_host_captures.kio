@@ -1,4 +1,4 @@
-module impure_macro_host_captures;
+mod impure_macro_host_captures;
 
 host type I32 role(i32);
 

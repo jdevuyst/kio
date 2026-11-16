@@ -778,8 +778,8 @@ fn auto_import_actions(
     };
     let current_path = module_path_string(module);
     let mut candidates = exported_modules(analysis, name);
-    candidates.retain(|path| path != &current_path);
-    candidates.sort_by(|a, b| {
+    candidates.retain(|(path, _)| path != &current_path);
+    candidates.sort_by(|(a, _), (b, _)| {
         a.matches('/')
             .count()
             .cmp(&b.matches('/').count())
@@ -787,7 +787,7 @@ fn auto_import_actions(
     });
     let is_unique = candidates.len() == 1;
     let mut actions = Vec::with_capacity(candidates.len());
-    for candidate in candidates {
+    for (candidate, selector_kind) in candidates {
         let alias = candidate.rsplit('/').next().unwrap_or(candidate.as_str());
         let alias_collision = module.imports.iter().any(|import_| {
             matches!(&import_.kind, ImportKind::Qualified { alias: existing, .. } if existing == alias)
@@ -807,6 +807,7 @@ fn auto_import_actions(
                 "uri": uri.as_str(),
                 "name": name,
                 "modulePath": candidate,
+                "selectorKind": selector_kind,
                 "alias": alias,
                 "aliasCollision": alias_collision,
                 "diagnosticRange": diagnostic.range,
@@ -878,9 +879,14 @@ fn resolve_auto_import(mut action: CodeAction, data: &serde_json::Value) -> Code
         .and_then(|v| serde_json::from_value::<Range>(v.clone()).ok());
     let mut edits = Vec::new();
     if alias_collision {
+        let Some(kind @ ("fn" | "type")) =
+            data.get("selectorKind").and_then(|value| value.as_str())
+        else {
+            return action;
+        };
         edits.push(TextEdit {
             range: insert_range,
-            new_text: format!("\nimport {module_path}({name});"),
+            new_text: format!("\nimport {module_path} {{{kind} {name}}}"),
         });
     } else {
         edits.push(TextEdit {
@@ -1084,7 +1090,7 @@ fn unresolved_name(diagnostic: &Diagnostic) -> Option<&str> {
     diagnostic.data.as_ref()?.get("unresolvedName")?.as_str()
 }
 
-fn exported_modules(analysis: &LspAnalysis, name: &str) -> Vec<String> {
+fn exported_modules(analysis: &LspAnalysis, name: &str) -> Vec<(String, &'static str)> {
     let mut modules = Vec::new();
     for (module_path, entry) in analysis.root_package_lowered.modules() {
         for item in &entry.module.items {
@@ -1092,12 +1098,15 @@ fn exported_modules(analysis: &LspAnalysis, name: &str) -> Vec<String> {
                 if declaration
                     .fn_def()
                     .is_some_and(|d| d.name == name && d.vis.is_pub())
-                    || declaration
-                        .newtype()
-                        .is_some_and(|n| n.name == name && n.vis.is_pub())
                     || declaration.host_fn().is_some_and(|h| h.name == name)
                 {
-                    modules.push(module_path.to_owned());
+                    modules.push((module_path.to_owned(), "fn"));
+                }
+                if declaration
+                    .newtype()
+                    .is_some_and(|n| n.name == name && n.vis.is_pub())
+                {
+                    modules.push((module_path.to_owned(), "type"));
                 }
             });
         }
@@ -1292,12 +1301,12 @@ mod tests {
     #[test]
     fn auto_import_insertion_preserves_header_and_import_boundaries() {
         for marked in [
-            "module main;|",
-            "module main \t;|\nfn f() -> . { () }\n",
-            "module main // header ; stays a comment\r\n;|\r\nfn f() -> . { () }\r\n",
-            "module main;|fn f() -> . { () }\n",
-            "module main;\nimport existing as e;|\nfn f() -> . { () }\n",
-            "module main;\nimport existing as e // import ; comment\r\n;|fn f() -> . { () }\n",
+            "mod main;|",
+            "mod main \t;|\nfn f() -> . { () }\n",
+            "mod main // header ; stays a comment\r\n;|\r\nfn f() -> . { () }\r\n",
+            "mod main;|fn f() -> . { () }\n",
+            "mod main;\nimport existing as e;|\nfn f() -> . { () }\n",
+            "mod main;\nimport existing as e // import ; comment\r\n;|fn f() -> . { () }\n",
         ] {
             let (prefix, suffix) = marked.split_once('|').unwrap();
             let source = format!("{prefix}{suffix}");
@@ -1328,13 +1337,13 @@ mod tests {
 
     #[test]
     fn auto_import_insertion_withholds_invalid_header_locations() {
-        let module = crate::pass::parser::parse_module_file("module main;\nfn f() -> . { () }\n")
+        let module = crate::pass::parser::parse_module_file("mod main;\nfn f() -> . { () }\n")
             .unwrap()
             .module;
         for source in [
-            "module main \nfn f() -> . { () }\n",
-            "module main\"\nfn f() -> . { () }\n",
-            "module main",
+            "mod main \nfn f() -> . { () }\n",
+            "mod main\"\nfn f() -> . { () }\n",
+            "mod main",
         ] {
             assert_eq!(import_insert_range(&module, source), None, "{source}");
         }
@@ -1344,12 +1353,12 @@ mod tests {
     fn comptime_literal_import_action_rechecks_and_rejects_stale_diagnostics() {
         let root = crate::lsp::util::test_file_path("/workspace/comptime-literal-action");
         let file = root.join("app/main.kio");
-        let provider = "module provider; import __comptime__; pub type Proof = __Comptime__; pub type Flag = Comptime_bool;";
-        let source = "module app/main; import provider(Proof, Flag); fn run(ct: Proof) -> Flag { __.t__(ct) }";
+        let provider = "mod provider; import __comptime__; pub type Proof = __Comptime__; pub type Flag = Comptime_bool;";
+        let source = "mod app/main; import provider {type Proof; type Flag} fn run(ct: Proof) -> Flag { __.t__(ct) }";
         let files = BTreeMap::from([
             (
                 root.join("proof.pkg.kio"),
-                "package proof; bridge { app/main; }".to_owned(),
+                "pkg proof; bridge { app/main; }".to_owned(),
             ),
             (root.join("provider.kio"), provider.to_owned()),
             (file.clone(), source.to_owned()),
@@ -1442,7 +1451,7 @@ mod tests {
         .expect("stale response");
         assert!(!stale_actions.iter().any(|action| matches!(action, CodeActionOrCommand::CodeAction(action) if action.title == "Import compile-time APIs")));
 
-        let commented = source.replace("module app/main;", "module app/main // header\n;");
+        let commented = source.replace("mod app/main;", "mod app/main // header\n;");
         let mut commented_overlay = overlay.clone();
         commented_overlay.insert(file.clone(), commented.clone());
         let failure =

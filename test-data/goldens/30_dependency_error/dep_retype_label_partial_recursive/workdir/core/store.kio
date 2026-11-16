@@ -1,3 +1,3 @@
-module core/store;
+mod core/store;
 
 pub rec type Pair[A] = { Foo[A]: (Bar[A] -> A) -> A; Bar[A]: (Foo[A] -> A) -> A };

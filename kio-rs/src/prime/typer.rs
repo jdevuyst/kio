@@ -1259,8 +1259,8 @@ mod tests {
 
     #[test]
     fn receiving_prime_rejects_assembled_comptime_import() {
-        let mut package = build_package("module x; fn f() -> . { () }");
-        let imports = parse("module x; import __comptime__;")
+        let mut package = build_package("mod x; fn f() -> . { () }");
+        let imports = parse("mod x; import __comptime__;")
             .expect("full syntax")
             .imports;
         package
@@ -1282,7 +1282,7 @@ mod tests {
         use crate::pass::visit_mut::{TypecheckVisitMut, walk_expr};
         use crate::pipeline::Pipeline;
 
-        let source = "module x;
+        let source = "mod x;
             import __intrinsics__;
             type { Box[A] <B> : A & B { mk; get; }; }
             fn f() -> . -> . {
@@ -1374,7 +1374,7 @@ mod tests {
 
     fn owned_argument_package() -> Package<Prime> {
         let package = build_package(
-            "module x;
+            "mod x;
              fn consume[A](_value: A) -> . { () }
              fn exercise() -> . { consume[. -> .](.(value: .) -> . { value }) }",
         );
@@ -1458,7 +1458,7 @@ mod tests {
             CallArg, Expr, ExpressionOccurrence, ExpressionSite, Meta, PathSegment, Type,
         };
 
-        let package = build_package("module x;");
+        let package = build_package("mod x;");
         let mut requalifier = crate::pass::typecheck_core::PrimeTypeRequalifier::new(
             &package.module("x").expect("module x").module,
         );
@@ -1537,7 +1537,7 @@ mod tests {
     #[test]
     fn bake_owned_args_nested_value_calls_roundtrip() {
         let package = build_package(
-            "module x;
+            "mod x;
              fn id[A](value: A) -> A { value }
              fn second(_first: ., value: .) -> . { value }
              fn exercise() -> . { second(id[.](id[.](())), id[.](())) }",
@@ -1560,7 +1560,7 @@ mod tests {
                 format!("let selected = {intrinsic}[Flag]; selected(flag, .() -> Flag {{ flag }})"),
             ] {
                 let original = build_package(&format!(
-                    "module x; import __intrinsics__; host type Flag role(bool); host type Other role(bool); fn run(flag: Flag) -> Flag {{ {body} }}"
+                    "mod x; import __intrinsics__; host type Flag role(bool); host type Other role(bool); fn run(flag: Flag) -> Flag {{ {body} }}"
                 ));
                 let checked = check_package(&original).expect("a concrete Boolean prefix checks");
                 let text = crate::backends::kio_prime::emit_module(checked.module("x").unwrap());
@@ -1580,7 +1580,7 @@ mod tests {
                 format!("fn run[B]() -> . {{ let selected = {intrinsic}[B]; () }}"),
             ] {
                 let original = build_package(&format!(
-                    "module x; import __intrinsics__; host type Flag role(bool); {declaration}"
+                    "mod x; import __intrinsics__; host type Flag role(bool); {declaration}"
                 ));
                 let error = check_package(&original)
                     .expect_err("fresh Prime requires explicit checked specialization");
@@ -1600,7 +1600,7 @@ mod tests {
             "let choose = __if_then_else__[Flag]; choose[.](flag, .() -> . { () }, .() -> . { () })",
         ] {
             let original = build_package(&format!(
-                "module x; import __intrinsics__; host type Flag role(bool); fn run(flag: Flag) -> . {{ {body} }}"
+                "mod x; import __intrinsics__; host type Flag role(bool); fn run(flag: Flag) -> . {{ {body} }}"
             ));
             let checked = check_package(&original).expect("an explicit Boolean prefix checks");
             let text = crate::backends::kio_prime::emit_module(checked.module("x").unwrap());
@@ -1620,7 +1620,7 @@ mod tests {
             "fn run[B]() -> . { let choose = __if_then_else__[B]; () }",
         ] {
             let original = build_package(&format!(
-                "module x; import __intrinsics__; host type Flag role(bool); {declaration}"
+                "mod x; import __intrinsics__; host type Flag role(bool); {declaration}"
             ));
             let error = check_package(&original)
                 .expect_err("fresh Prime must check the written Boolean prefix");
@@ -1635,7 +1635,7 @@ mod tests {
     #[test]
     fn numeric_literals_are_independently_checked_and_canonicalized() {
         let package = build_package(
-            "module x; host type I role(i128); host type U role(u128); host type F role(f32); fn integer() -> I { 00010[I] } fn minimum() -> I { -170141183460469231731687303715884105728[I] } fn maximum() -> U { 340282366920938463463374607431768211455[U] } fn zero() -> U { -0[U] } fn decimal() -> F { 0.1[F] } fn negative_zero() -> F { -1.0e-9999[F] }",
+            "mod x; host type I role(i128); host type U role(u128); host type F role(f32); fn integer() -> I { 00010[I] } fn minimum() -> I { -170141183460469231731687303715884105728[I] } fn maximum() -> U { 340282366920938463463374607431768211455[U] } fn zero() -> U { -0[U] } fn decimal() -> F { 0.1[F] } fn negative_zero() -> F { -1.0e-9999[F] }",
         );
         let checked = check_package(&package).expect("valid raw Prime numbers");
         let emitted = crate::backends::kio_prime::emit_module(checked.module("x").unwrap());
@@ -1656,7 +1656,7 @@ mod tests {
             ("f64", "1.8e308"),
         ] {
             let package = build_package(&format!(
-                "module x; host type N role({role}); fn value() -> N {{ {value}[N] }}"
+                "mod x; host type N role({role}); fn value() -> N {{ {value}[N] }}"
             ));
             assert!(check_package(&package).is_err(), "{role} {value}");
         }
@@ -1667,7 +1667,7 @@ mod tests {
     fn partial_intrinsic_schemes_emit_legal_capture_safe_type_binders() {
         use crate::pipeline::Pipeline;
 
-        let source = r#"module x;
+        let source = r#"mod x;
 import __intrinsics__;
 import __comptime__;
 host type A role(bool);
@@ -1740,12 +1740,12 @@ fn nested_replay[Eta](value: Eta) -> Eta & Eta {
     #[test]
     fn intrinsic_values_recheck_without_new_wrappers() {
         for source in [
-            "module x; import __intrinsics__; host type I32; fn f(x: I32, y: I32) -> I32 & I32 { let p = __pair__; p[I32][I32](x, y) }",
-            "module x; import __intrinsics__; host type I32; fn f(x: I32, y: I32) -> I32 & I32 { let p = __pair__[I32][I32]; p(x, y) }",
-            "module x; import __intrinsics__; fn f() -> [A][B](A & B) -> (A & B) { __pair__ }",
-            "module x; import __intrinsics__; host type I32; fn use(p: [A][B](A & B) -> (A & B), x: I32, y: I32) -> I32 & I32 { p[I32][I32](x, y) } fn f(x: I32, y: I32) -> I32 & I32 { use(__pair__, x, y) }",
-            "module x; import __intrinsics__; host type I32; fn f(x: I32, y: I32) -> I32 & I32 { let p = __pair__; let first = p[I32][I32](x, y); p[I32][I32](__fst__[I32][I32](first), y) }",
-            "module x; import __intrinsics__; host type First role(bool); fn f(c: First) -> First { let choose = __if_then_else__[First]; choose[First](c, .() -> First { .t[First] }, .() -> First { .f[First] }) } host type Later role(bool);",
+            "mod x; import __intrinsics__; host type I32; fn f(x: I32, y: I32) -> I32 & I32 { let p = __pair__; p[I32][I32](x, y) }",
+            "mod x; import __intrinsics__; host type I32; fn f(x: I32, y: I32) -> I32 & I32 { let p = __pair__[I32][I32]; p(x, y) }",
+            "mod x; import __intrinsics__; fn f() -> [A][B](A & B) -> (A & B) { __pair__ }",
+            "mod x; import __intrinsics__; host type I32; fn use(p: [A][B](A & B) -> (A & B), x: I32, y: I32) -> I32 & I32 { p[I32][I32](x, y) } fn f(x: I32, y: I32) -> I32 & I32 { use(__pair__, x, y) }",
+            "mod x; import __intrinsics__; host type I32; fn f(x: I32, y: I32) -> I32 & I32 { let p = __pair__; let first = p[I32][I32](x, y); p[I32][I32](__fst__[I32][I32](first), y) }",
+            "mod x; import __intrinsics__; host type First role(bool); fn f(c: First) -> First { let choose = __if_then_else__[First]; choose[First](c, .() -> First { .t[First] }, .() -> First { .f[First] }) } host type Later role(bool);",
         ] {
             let original = build_package(source);
             assert_eq!(intrinsic_value_record_count(&original), 1, "{source}");
@@ -1769,11 +1769,11 @@ fn nested_replay[Eta](value: Eta) -> Eta & Eta {
     #[test]
     fn intrinsic_values_saturated_calls_do_not_record() {
         let package = build_package(
-            "module x; import __intrinsics__; fn f(x: ., y: .) -> . & . { __pair__[.][.](x, y) }",
+            "mod x; import __intrinsics__; fn f(x: ., y: .) -> . & . { __pair__[.][.](x, y) }",
         );
         assert_eq!(intrinsic_value_record_count(&package), 0);
         let callable_result = build_package(
-            "module x; import __intrinsics__; host type I32; fn f(value: (I32 -> I32) & I32) -> I32 -> I32 { __fst__[I32 -> I32][I32](value) }",
+            "mod x; import __intrinsics__; host type I32; fn f(value: (I32 -> I32) & I32) -> I32 -> I32 { __fst__[I32 -> I32][I32](value) }",
         );
         assert_eq!(intrinsic_value_record_count(&callable_result), 0);
     }
@@ -1781,7 +1781,7 @@ fn nested_replay[Eta](value: Eta) -> Eta & Eta {
     #[test]
     fn intrinsic_values_require_explicit_boolean_specialization() {
         let package = build_package(
-            "module x; import __intrinsics__; host type First role(bool); host type Second role(bool); fn f() -> . { let choose = __if_then_else__; () }",
+            "mod x; import __intrinsics__; host type First role(bool); host type Second role(bool); fn f() -> . { let choose = __if_then_else__; () }",
         );
         let error = check_package(&package)
             .expect_err("visible role declarations cannot specialize an intrinsic value");
@@ -1799,11 +1799,11 @@ fn nested_replay[Eta](value: Eta) -> Eta & Eta {
         let package = build_package_modules(&[
             (
                 "provider.kio",
-                "module provider; pub host type Bool role(bool);",
+                "mod provider; pub host type Bool role(bool);",
             ),
             (
                 "x.kio",
-                "module x; import __intrinsics__; import provider as provider; type Selected = provider.Bool; fn choose[_Intrinsic_t0](c: Selected, value: _Intrinsic_t0) -> _Intrinsic_t0 { let pick = __if_then_else__[Selected]; pick[_Intrinsic_t0](c, .() -> _Intrinsic_t0 { value }, .() -> _Intrinsic_t0 { value }) }",
+                "mod x; import __intrinsics__; import provider as provider; type Selected = provider.Bool; fn choose[_Intrinsic_t0](c: Selected, value: _Intrinsic_t0) -> _Intrinsic_t0 { let pick = __if_then_else__[Selected]; pick[_Intrinsic_t0](c, .() -> _Intrinsic_t0 { value }, .() -> _Intrinsic_t0 { value }) }",
             ),
         ]);
         assert_eq!(intrinsic_value_record_count(&package), 1);
@@ -1827,7 +1827,7 @@ fn nested_replay[Eta](value: Eta) -> Eta & Eta {
     #[test]
     fn explicit_prime_arguments_keep_path_alias_literal_and_lambda_checks() {
         let package = build_package(
-            "module x;
+            "mod x;
              host type I32 role(i32);
              type Alias = I32;
              fn identity[A](value: A) -> A { value }
@@ -1849,7 +1849,7 @@ fn nested_replay[Eta](value: Eta) -> Eta & Eta {
     fn explicit_prime_argument_mismatches_keep_the_argument_span() {
         for (source, marker) in [
             (
-                "module x;
+                "mod x;
                  host type I32;
                  host type String;
                  fn identity[A](value: A) -> A { value }
@@ -1859,7 +1859,7 @@ fn nested_replay[Eta](value: Eta) -> Eta & Eta {
                 "wrong_value)",
             ),
             (
-                "module x;
+                "mod x;
                  host type I32;
                  host type String;
                  fn second[A](_first: A, value: A) -> A { value }
@@ -1890,13 +1890,10 @@ fn nested_replay[Eta](value: Eta) -> Eta & Eta {
     #[test]
     fn ordinary_qualified_import_does_not_expose_private_fn() {
         let package = build_package_modules(&[
-            (
-                "provider.kio",
-                "module provider; fn hidden(x: .) -> . { x }",
-            ),
+            ("provider.kio", "mod provider; fn hidden(x: .) -> . { x }"),
             (
                 "consumer.kio",
-                "module consumer; import provider as p; fn call() -> . { p.hidden(()) }",
+                "mod consumer; import provider as p; fn call() -> . { p.hidden(()) }",
             ),
         ]);
         let error = check_package(&package).expect_err("private fn stays private");
@@ -1911,7 +1908,7 @@ fn nested_replay[Eta](value: Eta) -> Eta & Eta {
     /// standalone walker.
     #[test]
     fn type_alias_body_kind_checks_standalone() {
-        let pkg = build_package("module x; type Pair[A][B] = (A & B);");
+        let pkg = build_package("mod x; type Pair[A][B] = (A & B);");
         check_package(&pkg).expect("check_package");
     }
 
@@ -1922,10 +1919,7 @@ fn nested_replay[Eta](value: Eta) -> Eta & Eta {
     /// on both the constructor and projector schemes.
     #[test]
     fn existentials_threaded_to_prime_and_typecheck() {
-        let pkg = build_package(
-            "module x; type { Pack[A] <U> : A & U { \
-             pub mk; pub get; }; };",
-        );
+        let pkg = build_package("mod x; type { Pack[A] <U> : A & U { pub mk; pub get; }; };");
         check_package(&pkg).expect("check_package");
         let entry = pkg.module("x").expect("module x present");
         let newtype = entry
@@ -1963,10 +1957,7 @@ fn nested_replay[Eta](value: Eta) -> Eta & Eta {
     /// [`typecheck_core::check_newtype_payload`].
     #[test]
     fn self_ref_under_arrow_lhs_rejected_standalone() {
-        let pkg = build_package(
-            "module x; rec type { Bad : (Bad -> .) { \
-             pub mk; pub get; }; };",
-        );
+        let pkg = build_package("mod x; rec type { Bad : (Bad -> .) { pub mk; pub get; }; };");
         let err = check_package(&pkg).expect_err("strict positivity rejects");
         match err.error {
             Error::Totality(_) => {}
@@ -1978,7 +1969,7 @@ fn nested_replay[Eta](value: Eta) -> Eta & Eta {
     /// bidirectional-checking helpers.
     #[test]
     fn simple_fn_def_body_checks_standalone() {
-        let pkg = build_package("module x; fn id[A](x: A) -> A { x }");
+        let pkg = build_package("mod x; fn id[A](x: A) -> A { x }");
         check_package(&pkg).expect("check_package");
     }
 
@@ -1990,7 +1981,7 @@ fn nested_replay[Eta](value: Eta) -> Eta & Eta {
 
         reset_annotation_plan_consumer_work();
         check_package(&build_package(
-            "module x; fn checked() -> . -> . { .(value: .) -> . { value } }",
+            "mod x; fn checked() -> . -> . { .(value: .) -> . { value } }",
         ))
         .expect("Prime checked lambda");
         let checked = annotation_plan_consumer_work();
@@ -2000,9 +1991,7 @@ fn nested_replay[Eta](value: Eta) -> Eta & Eta {
 
         reset_annotation_plan_consumer_work();
         check_package(&build_package(
-            "module x; fn synthesized() -> . -> . { \
-               let identity = .(value: .) -> . { value }; identity \
-             }",
+            "mod x; fn synthesized() -> . -> . { let identity = .(value: .) -> . { value }; identity }",
         ))
         .expect("Prime synthesized lambda");
         let synthesized = annotation_plan_consumer_work();
@@ -2012,7 +2001,7 @@ fn nested_replay[Eta](value: Eta) -> Eta & Eta {
 
         reset_annotation_plan_consumer_work();
         check_package(&build_package(
-            "module x; fn immediate() -> . { .(value) { value }(()) }",
+            "mod x; fn immediate() -> . { .(value) { value }(()) }",
         ))
         .expect("Prime immediate lambda");
         let immediate = annotation_plan_consumer_work();
@@ -2028,12 +2017,7 @@ fn nested_replay[Eta](value: Eta) -> Eta & Eta {
             "host type Second role(bool); host type First role(bool);",
         ] {
             let pkg = build_package(&format!(
-                "module x; import __intrinsics__; {declarations} \
-                 fn pick(c: First) -> First {{ \
-                   __if_then_else__[First][First](c, \
-                     .() -> First {{ .t[First] }}, \
-                     .() -> First {{ .f[First] }}) \
-                 }}"
+                "mod x; import __intrinsics__; {declarations} fn pick(c: First) -> First {{ __if_then_else__[First][First](c, .() -> First {{ .t[First] }}, .() -> First {{ .f[First] }}) }}"
             ));
             check_package(&pkg)
                 .expect("the explicit carrier is independent of unrelated role declarations");
@@ -2043,15 +2027,7 @@ fn nested_replay[Eta](value: Eta) -> Eta & Eta {
     #[test]
     fn if_intrinsic_rejects_a_mismatched_repeated_result() {
         let package = build_package(
-            "module x; import __intrinsics__; \
-             host type Bool role(bool); \
-             host type Left; \
-             host type Right; \
-             host fn left() -> Left; \
-             host fn right() -> Right; \
-             fn pick(c: Bool) -> Left { \
-               __if_then_else__[Bool][Left](c, .() { left() }, .() { right() }) \
-             }",
+            "mod x; import __intrinsics__; host type Bool role(bool); host type Left; host type Right; host fn left() -> Left; host fn right() -> Right; fn pick(c: Bool) -> Left { __if_then_else__[Bool][Left](c, .() { left() }, .() { right() }) }",
         );
         let error = check_package(&package).expect_err("both thunks must return the explicit type");
         let Error::Type(diagnostic) = error.error else {
@@ -2066,14 +2042,7 @@ fn nested_replay[Eta](value: Eta) -> Eta & Eta {
     #[test]
     fn if_intrinsic_keeps_selected_bool_with_another_role_declared_later() {
         let pkg = build_package(
-            "module x; import __intrinsics__; \
-             host type First role(bool); \
-             fn pick(c: First) -> First { \
-               __if_then_else__[First][First](c, \
-                 .() -> First { .t[First] }, \
-                 .() -> First { .f[First] }) \
-             } \
-             host type Later role(bool);",
+            "mod x; import __intrinsics__; host type First role(bool); fn pick(c: First) -> First { __if_then_else__[First][First](c, .() -> First { .t[First] }, .() -> First { .f[First] }) } host type Later role(bool);",
         );
         check_package(&pkg)
             .expect("a later ordinary Boolean-role declaration does not change selection");
@@ -2085,7 +2054,7 @@ fn nested_replay[Eta](value: Eta) -> Eta & Eta {
     /// `.> (. & .)` but its body returns `()`.
     #[test]
     fn return_type_mismatch_rejected_standalone() {
-        let pkg = build_package("module x;\nfn wrong() -> (. & .) { () }\n");
+        let pkg = build_package("mod x;\nfn wrong() -> (. & .) { () }\n");
         let err = check_package(&pkg).expect_err("expected type error");
         match err.error {
             Error::Type(_) => {}
@@ -2096,7 +2065,7 @@ fn nested_replay[Eta](value: Eta) -> Eta & Eta {
     #[test]
     fn annotated_lambda_synthesizes_named_complete_scheme_body() {
         let package = build_package(
-            "module x;
+            "mod x;
              fn identity[A](value: A) -> A { value }
              fn staged(_unit: .)[A](value: A) -> A { value }
              fn consume(_thunk: . -> [A] A -> A) -> . { () }
@@ -2122,7 +2091,7 @@ fn nested_replay[Eta](value: Eta) -> Eta & Eta {
     #[test]
     fn named_scheme_remains_rejected_in_monomorphic_argument_position() {
         let message = prime_type_error(
-            "module x;
+            "mod x;
              fn identity[A](value: A) -> A { value }
              fn consume(_value: .) -> . { () }
              fn bad() -> . { consume(identity) }",
@@ -2136,10 +2105,7 @@ fn nested_replay[Eta](value: Eta) -> Eta & Eta {
     #[test]
     fn elided_universal_call_type_arg_rejected_in_check_mode() {
         let message = prime_type_error(
-            "module x; \
-             fn id[T](value: T) -> T { value } \
-             fn choose[A](poly: [B] B -> B, value: A) -> A { poly[A](value) } \
-             fn bad() -> . { choose(id, ()) }",
+            "mod x; fn id[T](value: T) -> T { value } fn choose[A](poly: [B] B -> B, value: A) -> A { poly[A](value) } fn bad() -> . { choose(id, ()) }",
         );
         assert!(
             message.contains("Kio' requires an explicit type argument for `[A]`"),
@@ -2150,10 +2116,7 @@ fn nested_replay[Eta](value: Eta) -> Eta & Eta {
     #[test]
     fn elided_universal_call_type_arg_rejected_in_synth_mode() {
         let message = prime_type_error(
-            "module x; \
-             fn id[T](value: T) -> T { value } \
-             fn choose[A](poly: [B] B -> B, value: A) -> A { poly[A](value) } \
-             fn bad() -> . { let x = choose(id, ()); x }",
+            "mod x; fn id[T](value: T) -> T { value } fn choose[A](poly: [B] B -> B, value: A) -> A { poly[A](value) } fn bad() -> . { let x = choose(id, ()); x }",
         );
         assert!(
             message.contains("Kio' requires an explicit type argument for `[A]`"),
@@ -2164,11 +2127,7 @@ fn nested_replay[Eta](value: Eta) -> Eta & Eta {
     #[test]
     fn constructor_shaped_rank_n_alias_does_not_inherit_inference() {
         let message = prime_type_error(
-            "module x; \
-             type { Hidden <U> : U { \
-               pub mk; pub get; \
-             }; }; \
-             fn bad[A](poly: [B] B -> Hidden, value: A) -> Hidden { poly(value) }",
+            "mod x; type { Hidden <U> : U { pub mk; pub get; }; }; fn bad[A](poly: [B] B -> Hidden, value: A) -> Hidden { poly(value) }",
         );
         assert!(
             message.contains("Kio' requires an explicit type argument for `[B]`"),
@@ -2179,8 +2138,7 @@ fn nested_replay[Eta](value: Eta) -> Eta & Eta {
     #[test]
     fn elided_pair_type_args_rejected_standalone() {
         let message = prime_type_error(
-            "module x; import __intrinsics__; \
-             fn bad() -> (. & .) { __pair__((), ()) }",
+            "mod x; import __intrinsics__; fn bad() -> (. & .) { __pair__((), ()) }",
         );
         assert!(
             message.contains("Kio' requires an explicit type argument"),
@@ -2191,20 +2149,7 @@ fn nested_replay[Eta](value: Eta) -> Eta & Eta {
     #[test]
     fn existential_constructor_suffix_stays_inference_driven() {
         let package = build_package(
-            "module x; import __intrinsics__; \
-             type { Hidden <U> : U { \
-               pub mk; pub get; \
-             }; }; \
-             type { Pack[A] <U> : A & U { \
-               pub mk; pub get; \
-             }; }; \
-             fn hidden[U](value: U) -> Hidden { Hidden.mk(value) } \
-             fn direct[A][U](a: A, u: U) -> Pack[A] { \
-               Pack.mk[A](__pair__[A][U](a, u)) \
-             } \
-             fn partial[A][U](a: A, u: U) -> Pack[A] { \
-               Pack.mk[A](__pair__[A][U](a, u)) \
-             }",
+            "mod x; import __intrinsics__; type { Hidden <U> : U { pub mk; pub get; }; }; type { Pack[A] <U> : A & U { pub mk; pub get; }; }; fn hidden[U](value: U) -> Hidden { Hidden.mk(value) } fn direct[A][U](a: A, u: U) -> Pack[A] { Pack.mk[A](__pair__[A][U](a, u)) } fn partial[A][U](a: A, u: U) -> Pack[A] { Pack.mk[A](__pair__[A][U](a, u)) }",
         );
         check_package(&package).expect("constructor existential suffix remains inferable");
     }
@@ -2212,13 +2157,7 @@ fn nested_replay[Eta](value: Eta) -> Eta & Eta {
     #[test]
     fn existential_constructor_does_not_hide_elided_universal_prefix() {
         let message = prime_type_error(
-            "module x; import __intrinsics__; \
-             type { Pack[A] <U> : A & U { \
-               pub mk; pub get; \
-             }; }; \
-             fn bad[A][U](a: A, u: U) -> Pack[A] { \
-               Pack.mk(__pair__[A][U](a, u)) \
-             }",
+            "mod x; import __intrinsics__; type { Pack[A] <U> : A & U { pub mk; pub get; }; }; fn bad[A][U](a: A, u: U) -> Pack[A] { Pack.mk(__pair__[A][U](a, u)) }",
         );
         assert!(
             message.contains("Kio' requires an explicit type argument for `[A]`"),
@@ -2228,11 +2167,7 @@ fn nested_replay[Eta](value: Eta) -> Eta & Eta {
 
     #[test]
     fn empty_polymorphic_function_call_requires_type_arg() {
-        let message = prime_type_error(
-            "module x; \
-             fn make[A]() -> . { () } \
-             fn bad() -> . { make() }",
-        );
+        let message = prime_type_error("mod x; fn make[A]() -> . { () } fn bad() -> . { make() }");
         assert!(
             message.contains("Kio' requires an explicit type argument for `[A]`"),
             "got: {message}"
@@ -2242,26 +2177,12 @@ fn nested_replay[Eta](value: Eta) -> Eta & Eta {
     #[test]
     fn type_only_construction_is_valid_in_fresh_prime() {
         let package = build_package(
-            "module x; import __intrinsics__; \
-             type Identity[A] = A -> A; \
-             fn empty[A] -> . | A { __left__[.][A](()) } \
-             fn direct[A] -> A -> A { .(value: A) { value } } \
-             fn aliased[A] -> Identity[A] { .(value: A) { value } } \
-             fn higher[*F] -> F[.] -> F[.] { .(value: F[.]) { value } } \
-             fn retain() -> [A] . | A { empty } \
-             fn returned() -> [A] A -> A { .[A] { .(value: A) { value } } } \
-             fn apply(function: [A] A -> A) -> . { function[.](()) } \
-             fn main() { \
-               direct[.](()); aliased[.](()); returned()[.](()); \
-               apply(direct); apply(aliased); \
-               apply(.[A] { .(value: A) { value } }); \
-               let saved = empty; let _ = saved[.]; () \
-             }",
+            "mod x; import __intrinsics__; type Identity[A] = A -> A; fn empty[A] -> . | A { __left__[.][A](()) } fn direct[A] -> A -> A { .(value: A) { value } } fn aliased[A] -> Identity[A] { .(value: A) { value } } fn higher[*F] -> F[.] -> F[.] { .(value: F[.]) { value } } fn retain() -> [A] . | A { empty } fn returned() -> [A] A -> A { .[A] { .(value: A) { value } } } fn apply(function: [A] A -> A) -> . { function[.](()) } fn main() { direct[.](()); aliased[.](()); returned()[.](()); apply(direct); apply(aliased); apply(.[A] { .(value: A) { value } }); let saved = empty; let _ = saved[.]; () }",
         );
         check_package(&package).expect("ordinary type abstractions are shared Kio/Kio' syntax");
         for source in [
-            "module x; fn bad[*F] -> . { () }",
-            "module x; fn bad() { let value = .[*F] { () }; () }",
+            "mod x; fn bad[*F] -> . { () }",
+            "mod x; fn bad() { let value = .[*F] { () }; () }",
         ] {
             let message = prime_type_error(source);
             assert!(message.contains("higher-kinded"), "{message}");
@@ -2273,17 +2194,7 @@ fn nested_replay[Eta](value: Eta) -> Eta & Eta {
         use crate::ast::{CallArg, Expr, Item, Type};
 
         let typed = check_package(&build_package(
-            "module x; \
-             host type N; \
-             host fn nil[A]() -> A; \
-             fn identity[A](value: A) -> A { value } \
-             fn use(value: .) -> . { value } \
-             fn residual_nil() -> . -> N { nil[N] } \
-             fn nested_nil() -> N { nil[N]() } \
-             fn saturated_nil() -> N { nil[N](()) } \
-             fn residual_identity() -> N -> N { identity[N] } \
-             fn saturated_identity(value: N) -> N { identity[N](value) } \
-             fn monomorphic_empty() -> . { use() }",
+            "mod x; host type N; host fn nil[A]() -> A; fn identity[A](value: A) -> A { value } fn use(value: .) -> . { value } fn residual_nil() -> . -> N { nil[N] } fn nested_nil() -> N { nil[N]() } fn saturated_nil() -> N { nil[N](()) } fn residual_identity() -> N -> N { identity[N] } fn saturated_identity(value: N) -> N { identity[N](value) } fn monomorphic_empty() -> . { use() }",
         ))
         .expect("fresh Kio' keeps type-only packets residual and bakes empty Unit calls");
         let module = &typed.module("x").expect("module x present").module();
@@ -2349,10 +2260,8 @@ fn nested_replay[Eta](value: Eta) -> Eta & Eta {
 
     #[test]
     fn empty_polymorphic_non_function_call_requires_type_arg() {
-        let message = prime_type_error(
-            "module x; \
-             fn bad(poly: [A] A) -> . { let value = poly(); () }",
-        );
+        let message =
+            prime_type_error("mod x; fn bad(poly: [A] A) -> . { let value = poly(); () }");
         assert!(
             message.contains("Kio' requires an explicit type argument for `[A]`"),
             "got: {message}"
@@ -2364,10 +2273,7 @@ fn nested_replay[Eta](value: Eta) -> Eta & Eta {
         use crate::ast::{CallArg, Expr, Item};
 
         let pkg = build_package(
-            "module x; \
-             fn use(value: .) -> . { value } \
-             fn implicit() -> . { use() } \
-             fn explicit() -> . { use(()) }",
+            "mod x; fn use(value: .) -> . { value } fn implicit() -> . { use() } fn explicit() -> . { use(()) }",
         );
         let typed = check_package(&pkg).expect("both Unit applications typecheck");
         let module = &typed.module("x").expect("module x present").module();
@@ -2396,7 +2302,7 @@ fn nested_replay[Eta](value: Eta) -> Eta & Eta {
         use crate::ast::{CallArg, Expr, Item, Type};
 
         let package = build_package(
-            "module x;
+            "mod x;
              type Unit_alias = .;
              fn zero[A]() -> . { () }
              fn identity[A](value: A) -> A { value }
@@ -2453,7 +2359,7 @@ fn nested_replay[Eta](value: Eta) -> Eta & Eta {
         use crate::ast::{CallArg, Expr, Item, Type};
 
         let package = build_package(
-            "module x;
+            "mod x;
              host type N;
              fn consume[A](value: N) -> . { () }
              fn residual() -> N -> . { consume[.] }",
@@ -2482,12 +2388,7 @@ fn nested_replay[Eta](value: Eta) -> Eta & Eta {
     #[test]
     fn nested_elided_universal_under_existential_inference_rejected() {
         let message = prime_type_error(
-            "module x; import __intrinsics__; \
-             type { Hidden <U> : U { \
-               pub mk; pub get; \
-             }; }; \
-             fn from_bottom[A](never: !) -> A { __absurd__[A](never) } \
-             fn bad(never: !) -> Hidden { Hidden.mk(from_bottom(never)) }",
+            "mod x; import __intrinsics__; type { Hidden <U> : U { pub mk; pub get; }; }; fn from_bottom[A](never: !) -> A { __absurd__[A](never) } fn bad(never: !) -> Hidden { Hidden.mk(from_bottom(never)) }",
         );
         assert!(
             message.contains("Kio' requires an explicit type argument for `[A]`"),
@@ -2498,11 +2399,12 @@ fn nested_replay[Eta](value: Eta) -> Eta & Eta {
     #[test]
     fn multi_layer_flat_call_rejected_standalone() {
         let pkg = build_package(
-            "module x;\n\
-             type { A : . { pub mk; pub get; }; };\n\
-             type { B : . { pub mk; pub get; }; };\n\
-             fn foo[A](v1: A)[B](v2: B) -> . { () }\n\
-             fn main() -> . { foo[A](A.mk(()), B.mk(())) }\n",
+            "mod x;
+type { A : . { pub mk; pub get; }; };
+type { B : . { pub mk; pub get; }; };
+fn foo[A](v1: A)[B](v2: B) -> . { () }
+fn main() -> . { foo[A](A.mk(()), B.mk(())) }
+",
         );
         let err = check_package(&pkg).expect_err("Kio' rejects multi-layer flat call");
         match err.error {
@@ -2517,11 +2419,12 @@ fn nested_replay[Eta](value: Eta) -> Eta & Eta {
     #[test]
     fn multi_layer_curried_call_accepted_standalone() {
         let pkg = build_package(
-            "module x;\n\
-             type { A : . { pub mk; pub get; }; };\n\
-             type { B : . { pub mk; pub get; }; };\n\
-             fn foo[A](v1: A)[B](v2: B) -> . { () }\n\
-             fn main() -> . { foo[A](A.mk(()))[B](B.mk(())) }\n",
+            "mod x;
+type { A : . { pub mk; pub get; }; };
+type { B : . { pub mk; pub get; }; };
+fn foo[A](v1: A)[B](v2: B) -> . { () }
+fn main() -> . { foo[A](A.mk(()))[B](B.mk(())) }
+",
         );
         check_package(&pkg).expect("Kio' accepts curried call");
     }
@@ -2530,8 +2433,9 @@ fn nested_replay[Eta](value: Eta) -> Eta & Eta {
     fn polymorphic_local_fn_call_canonicalizes_type_arg_slot() {
         use crate::ast::{CallArg, Expr, Item};
         let pkg = build_package(
-            "module x;\n\
-             fn apply[A](f: [B] B -> B, x: A) -> A { f[A](x) }\n",
+            "mod x;
+fn apply[A](f: [B] B -> B, x: A) -> A { f[A](x) }
+",
         );
         let typed = check_package(&pkg).expect("check_package");
         let entry = typed.module("x").expect("module x present");
@@ -2578,15 +2482,10 @@ fn nested_replay[Eta](value: Eta) -> Eta & Eta {
         use crate::ast::{Expr, ImportKind, Item, PathSegment, Type};
 
         let package = build_package_modules(&[
-            (
-                "provider.kio",
-                "module provider; pub host type I32 role(i32);",
-            ),
+            ("provider.kio", "mod provider; pub host type I32 role(i32);"),
             (
                 "consumer.kio",
-                "module consumer; \
-                 fn id[A](value: A) -> A { value } \
-                 fn value(x: .) -> . { id(x) }",
+                "mod consumer; fn id[A](value: A) -> A { value } fn value(x: .) -> . { id(x) }",
             ),
         ]);
         let mut package = crate::pass::alpha_normalize::normalize_package(&package)
@@ -2661,10 +2560,11 @@ fn nested_replay[Eta](value: Eta) -> Eta & Eta {
         use crate::ast::{CallArg, Expr, Item};
 
         let pkg = build_package(
-            "module x;\n\
-             host type N;\n\
-             host fn produce(_unit: .) -> [A] A;\n\
-             fn returned() -> N { produce(())[N] }\n",
+            "mod x;
+host type N;
+host fn produce(_unit: .) -> [A] A;
+fn returned() -> N { produce(())[N] }
+",
         );
         let typed = check_package(&pkg).expect("check returned polymorphic value call");
         let entry = typed.module("x").expect("module x present");
@@ -2692,9 +2592,10 @@ fn nested_replay[Eta](value: Eta) -> Eta & Eta {
         use crate::ast::{CallArg, Expr, Item};
 
         let pkg = build_package(
-            "module x;\n\
-             fn apply1[A](f: [B] B -> B, x: A) -> A { f[A](x) }\n\
-             fn apply2[A](f: [B] B -> B, x: A) -> A { f[A](x) }\n",
+            "mod x;
+fn apply1[A](f: [B] B -> B, x: A) -> A { f[A](x) }
+fn apply2[A](f: [B] B -> B, x: A) -> A { f[A](x) }
+",
         );
         let typed = check_package(&pkg).expect("check_package");
         let entry = typed.module("x").expect("module x present");

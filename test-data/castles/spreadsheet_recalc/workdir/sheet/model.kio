@@ -8,14 +8,30 @@
 /// The last two edits change the graph, not just a value: edit 2 gives `D3` a
 /// formula that no longer names `C3` (breaking the cycle), and edit 4 gives
 /// `A3` a formula naming `B3`, which already reads `A3` (closing a new one).
-module sheet/model;
+mod sheet/model;
 
-import sheet/addr(Addr, make_addr);
-import sheet/cells(Sheet, empty_sheet, formula_content, number_content, set_content);
-import sheet/formula(Expr, add, cell_ref, if_else, lit_num, max_range, mul, sub, sum_range);
-import sheet/list(List, cons, nil);
-import sheet/recalc(Edit, clear_edit, formula_edit, number_edit);
-import testapi(I32);
+import sheet/addr { type Addr; fn make_addr }
+import sheet/cells {
+  type Sheet;
+  fn empty_sheet;
+  fn formula_content;
+  fn number_content;
+  fn set_content
+}
+import sheet/formula {
+  type Expr;
+  fn add;
+  fn cell_ref;
+  fn if_else;
+  fn lit_num;
+  fn max_range;
+  fn mul;
+  fn sub;
+  fn sum_range
+}
+import sheet/list { type List; fn cons; fn nil }
+import sheet/recalc { type Edit; fn clear_edit; fn formula_edit; fn number_edit }
+import testapi { type I32 }
 
 fn a1() -> Addr { make_addr(0, 0) }
 

@@ -2,7 +2,7 @@
 set -eu
 
 formatted=$("$KIO_BIN" fmt - <<'KIO'
-module fmt_block_prefix_comments;
+mod fmt_block_prefix_comments;
 fn call() { let result = choose (factory // call boundary
 (())) { () }; result }
 fn field() { choose (record // field boundary

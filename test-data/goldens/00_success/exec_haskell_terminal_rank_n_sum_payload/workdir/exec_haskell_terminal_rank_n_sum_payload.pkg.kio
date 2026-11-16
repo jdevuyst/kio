@@ -1,4 +1,4 @@
-package exec_haskell_terminal_rank_n_sum_payload;
+pkg exec_haskell_terminal_rank_n_sum_payload;
 
 build {
   cache "out/.kio-cache/";

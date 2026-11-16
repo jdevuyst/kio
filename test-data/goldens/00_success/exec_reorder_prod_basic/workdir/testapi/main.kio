@@ -1,10 +1,10 @@
-module testapi/main;
+mod testapi/main;
 
-import macros/spine_macros(macro one_prod, macro reorder_prod);
-import testapi(I32, String);
-import testapi/fmt(int_to_string);
-import testapi/io(print);
-import testapi/text(string_concat);
+import macros/spine_macros { macro one_prod; macro reorder_prod }
+import testapi { type I32; type String }
+import testapi/fmt { fn int_to_string }
+import testapi/io { fn print }
+import testapi/text { fn string_concat }
 
 // `reorder_prod` permutes the factors of a product. Source
 // `(String & I32)` has the same factor multiset as target

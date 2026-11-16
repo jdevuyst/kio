@@ -48,8 +48,7 @@ use std::path::Path;
 use crate::exit_code::ExitCode;
 use crate::package_collection::{self, DeclaredDependency};
 
-const HELP_DEP_TEMPLATE: &str = "\
-Usage: kio dep <subcommand>
+const HELP_DEP_TEMPLATE: &str = "Usage: kio dep <subcommand>
 
 Manage the current package's declared dependencies (`<local>.dep.kio`).
 
@@ -93,8 +92,7 @@ sealed-contract break on `update`); 1 on internal error.
 
 See {base}/specs/cli.md#kio-dep-subcommand for full command behavior.";
 
-const HELP_FETCH_TEMPLATE: &str = "\
-Usage: kio dep fetch [--force] [<name>...]
+const HELP_FETCH_TEMPLATE: &str = "Usage: kio dep fetch [--force] [<name>...]
 
 Materialize the current package's dependencies without building.
 
@@ -127,8 +125,7 @@ internal error.
 
 See {base}/specs/cli.md#kio-dep-fetch---force-name for full command behavior.";
 
-const HELP_UPDATE_TEMPLATE: &str = "\
-Usage: kio dep update [--allow-breaking] [<name>...]
+const HELP_UPDATE_TEMPLATE: &str = "Usage: kio dep update [--allow-breaking] [<name>...]
 
 Re-pin the current package's git dependencies.
 
@@ -165,8 +162,7 @@ sealed-contract break); 1 on internal error.
 
 See {base}/specs/cli.md#kio-dep-update---allow-breaking-name for full command behavior.";
 
-const HELP_CLEAN_TEMPLATE: &str = "\
-Usage: kio dep clean [<name>...]
+const HELP_CLEAN_TEMPLATE: &str = "Usage: kio dep clean [<name>...]
 
 Remove the current package's materialized dependency trees.
 
@@ -672,7 +668,7 @@ mod tests {
     #[test]
     fn no_dependencies_is_noop_success() {
         let dir = tempfile::tempdir().expect("tempdir");
-        std::fs::write(dir.path().join("app.pkg.kio"), "package app;\n").expect("write pkg");
+        std::fs::write(dir.path().join("app.pkg.kio"), "pkg app;\n").expect("write pkg");
         assert_eq!(fetch_at(dir.path(), &[], false), ExitCode::Success);
         assert_eq!(update_at(dir.path(), &[], false), ExitCode::Success);
     }
@@ -682,13 +678,13 @@ mod tests {
     #[test]
     fn unknown_named_dependency_is_dep_error() {
         let dir = tempfile::tempdir().expect("tempdir");
-        std::fs::write(dir.path().join("app.pkg.kio"), "package app;\n").expect("write pkg");
+        std::fs::write(dir.path().join("app.pkg.kio"), "pkg app;\n").expect("write pkg");
         // Declare a local `path` dependency so the dep set is non-empty.
         std::fs::create_dir_all(dir.path().join("lib")).expect("mk lib");
-        std::fs::write(dir.path().join("lib/lib.pkg.kio"), "package lib;\n").expect("write lib");
+        std::fs::write(dir.path().join("lib/lib.pkg.kio"), "pkg lib;\n").expect("write lib");
         std::fs::write(
             dir.path().join("lib.dep.kio"),
-            "dependency lib;\n\nsource {\n  path \"lib/lib.pkg.kio\";\n}\n",
+            "dep lib;\n\nsource {\n  path \"lib/lib.pkg.kio\";\n}\n",
         )
         .expect("write dep");
         assert_eq!(
@@ -707,18 +703,15 @@ mod tests {
     #[test]
     fn update_path_dependency_materializes() {
         let dir = tempfile::tempdir().expect("tempdir");
-        std::fs::write(dir.path().join("app.pkg.kio"), "package app;\n").expect("write pkg");
+        std::fs::write(dir.path().join("app.pkg.kio"), "pkg app;\n").expect("write pkg");
         std::fs::create_dir_all(dir.path().join("src/greet")).expect("mk dep dir");
-        std::fs::write(
-            dir.path().join("src/greet/greet.pkg.kio"),
-            "package greet;\n",
-        )
-        .expect("write dep pkg");
-        std::fs::write(dir.path().join("src/greet/hello.kio"), "module hello;\n")
+        std::fs::write(dir.path().join("src/greet/greet.pkg.kio"), "pkg greet;\n")
+            .expect("write dep pkg");
+        std::fs::write(dir.path().join("src/greet/hello.kio"), "mod hello;\n")
             .expect("write dep mod");
         std::fs::write(
             dir.path().join("greet.dep.kio"),
-            "dependency greet;\n\nsource {\n  path \"src/greet/greet.pkg.kio\";\n}\n",
+            "dep greet;\n\nsource {\n  path \"src/greet/greet.pkg.kio\";\n}\n",
         )
         .expect("write dep");
         assert_eq!(update_at(dir.path(), &[], false), ExitCode::Success);
@@ -734,18 +727,15 @@ mod tests {
     #[test]
     fn clean_removes_materialized_tree() {
         let dir = tempfile::tempdir().expect("tempdir");
-        std::fs::write(dir.path().join("app.pkg.kio"), "package app;\n").expect("write pkg");
+        std::fs::write(dir.path().join("app.pkg.kio"), "pkg app;\n").expect("write pkg");
         std::fs::create_dir_all(dir.path().join("src/greet")).expect("mk dep dir");
-        std::fs::write(
-            dir.path().join("src/greet/greet.pkg.kio"),
-            "package greet;\n",
-        )
-        .expect("write dep pkg");
-        std::fs::write(dir.path().join("src/greet/hello.kio"), "module hello;\n")
+        std::fs::write(dir.path().join("src/greet/greet.pkg.kio"), "pkg greet;\n")
+            .expect("write dep pkg");
+        std::fs::write(dir.path().join("src/greet/hello.kio"), "mod hello;\n")
             .expect("write dep mod");
         std::fs::write(
             dir.path().join("greet.dep.kio"),
-            "dependency greet;\n\nsource {\n  path \"src/greet/greet.pkg.kio\";\n}\n",
+            "dep greet;\n\nsource {\n  path \"src/greet/greet.pkg.kio\";\n}\n",
         )
         .expect("write dep");
 
@@ -773,38 +763,51 @@ mod tests {
     #[test]
     fn fetch_rehost_rebinds_locally() {
         let dir = tempfile::tempdir().expect("tempdir");
-        std::fs::write(dir.path().join("app.pkg.kio"), "package app;\n").expect("write pkg");
+        std::fs::write(dir.path().join("app.pkg.kio"), "pkg app;\n").expect("write pkg");
         std::fs::write(
             dir.path().join("provtypes.kio"),
-            "module provtypes;\n\nhost type Str role(str);\n",
+            "mod provtypes;\n\nhost type Str role(str);\n",
         )
         .expect("write type provider");
         std::fs::write(
             dir.path().join("provfn.kio"),
-            "module provfn;\n\nimport provtypes(Str);\n\nhost fn shout(s: Str);\n",
+            "mod provfn;\n\nimport provtypes {type Str}\n\nhost fn shout(s: Str);\n",
         )
         .expect("write function provider");
         std::fs::create_dir_all(dir.path().join("src/lib")).expect("mk dep");
         std::fs::write(
             dir.path().join("src/lib/lib.pkg.kio"),
-            "package lib;\n\nbridge {\n  greet;\n  types;\n}\n",
+            "pkg lib;\n\nbridge {\n  greet;\n  types;\n}\n",
         )
         .expect("write dep pkg");
         std::fs::write(
             dir.path().join("src/lib/types.kio"),
-            "module types;\n\nhost type Str role(str);\n",
+            "mod types;\n\nhost type Str role(str);\n",
         )
         .expect("write types");
         std::fs::write(
             dir.path().join("src/lib/greet.kio"),
-            "module greet;\n\nimport types(Str);\n\nhost fn shout(p0: Str) -> .;\n\n\
-             pub fn greet(s: Str) -> . { shout(s) }\n",
+            "mod greet;
+
+import types {type Str}
+
+host fn shout(p0: Str) -> .;
+
+pub fn greet(s: Str) -> . { shout(s) }
+",
         )
         .expect("write greet");
         std::fs::write(
             dir.path().join("lib.dep.kio"),
-            "dependency lib;\n\nsource {\n  path \"src/lib/lib.pkg.kio\";\n}\n\n\
-             rehost lib/greet to provfn;\nrehost lib/types to provtypes;\n",
+            "dep lib;
+
+source {
+  path \"src/lib/lib.pkg.kio\";
+}
+
+rehost lib/greet to provfn;
+rehost lib/types to provtypes;
+",
         )
         .expect("write dep");
 
@@ -831,9 +834,12 @@ mod tests {
             greet.contains("pub fn shout(p0: Str) { _rehost_hahcgphggggo.shout(p0) }"),
             "greet: {greet}"
         );
-        // The cross-module `import types(Str)` stays put — the alias is
+        // The cross-module `import types { type Str }` stays put — the alias is
         // re-exported from `lib/types`, so no importer redirect is needed.
-        assert!(greet.contains("import lib/types(Str);"), "greet: {greet}");
+        assert!(
+            greet.contains("import lib/types { type Str }"),
+            "greet: {greet}"
+        );
     }
 
     #[cfg(feature = "surface")]
@@ -842,30 +848,40 @@ mod tests {
         let dir = tempfile::tempdir().expect("tempdir");
         std::fs::write(
             dir.path().join("app.pkg.kio"),
-            "package app;\n\nbridge {\n  provider;\n}\n",
+            "pkg app;\n\nbridge {\n  provider;\n}\n",
         )
         .expect("write pkg");
         std::fs::write(
             dir.path().join("provider.kio"),
-            "module provider;\n\nhost fn loop[S][R](step: S -> (S | R), state: S) -> R;\n",
+            "mod provider;\n\nhost fn loop[S][R](step: S -> (S | R), state: S) -> R;\n",
         )
         .expect("write provider");
         std::fs::create_dir_all(dir.path().join("src/lib")).expect("mk dep");
         std::fs::write(
             dir.path().join("src/lib/lib.pkg.kio"),
-            "package lib;\n\nbridge {\n  api;\n}\n",
+            "pkg lib;\n\nbridge {\n  api;\n}\n",
         )
         .expect("write dep pkg");
         std::fs::write(
             dir.path().join("src/lib/api.kio"),
-            "module api;\n\nhost fn loop[S][R](step: S -> (S | R), state: S) -> R;\n\n\
-             rec(loop) fn _rehost_hahcgphggjgegfhc(_value: .) -> . { () }\n",
+            "mod api;
+
+host fn loop[S][R](step: S -> (S | R), state: S) -> R;
+
+rec(loop) fn _rehost_hahcgphggjgegfhc(_value: .) -> . { () }
+",
         )
         .expect("write api");
         std::fs::write(
             dir.path().join("lib.dep.kio"),
-            "dependency lib;\n\nsource {\n  path \"src/lib/lib.pkg.kio\";\n}\n\n\
-             rehost lib/api to provider;\n",
+            "dep lib;
+
+source {
+  path \"src/lib/lib.pkg.kio\";
+}
+
+rehost lib/api to provider;
+",
         )
         .expect("write dep");
 
@@ -892,37 +908,51 @@ mod tests {
         let dir = tempfile::tempdir().expect("tempdir");
         std::fs::write(
             dir.path().join("app.pkg.kio"),
-            "package app;\n\nbridge {\n  local;\n}\n",
+            "pkg app;\n\nbridge {\n  local;\n}\n",
         )
         .expect("write pkg");
         // The consumer holds the congruent counterpart newtype.
         std::fs::write(
             dir.path().join("local.kio"),
-            "module local;\n\npub type { Tag: . { pub mk; pub get; }; };\n",
+            "mod local;\n\npub type { Tag: . { pub mk; pub get; }; };\n",
         )
         .expect("write local");
         std::fs::create_dir_all(dir.path().join("src/lib")).expect("mk dep");
         std::fs::write(
             dir.path().join("src/lib/lib.pkg.kio"),
-            "package lib;\n\nbridge {\n  store;\n  relay;\n}\n",
+            "pkg lib;\n\nbridge {\n  store;\n  relay;\n}\n",
         )
         .expect("write dep pkg");
         std::fs::write(
             dir.path().join("src/lib/store.kio"),
-            "module store;\n\npub type { Tag: . { pub mk; pub get; }; };\n\n\
-             pub fn make_tag() -> Tag { Tag.mk(()) }\n",
+            "mod store;
+
+pub type { Tag: . { pub mk; pub get; }; };
+
+pub fn make_tag() -> Tag { Tag.mk(()) }
+",
         )
         .expect("write store");
         std::fs::write(
             dir.path().join("src/lib/relay.kio"),
-            "module relay;\n\nimport store(Tag, make_tag);\n\n\
-             pub fn relay_tag() -> Tag { make_tag() }\n",
+            "mod relay;
+
+import store {type Tag; fn make_tag}
+
+pub fn relay_tag() -> Tag { make_tag() }
+",
         )
         .expect("write relay");
         std::fs::write(
             dir.path().join("lib.dep.kio"),
-            "dependency lib;\n\nsource {\n  path \"src/lib/lib.pkg.kio\";\n}\n\n\
-             retype lib/store to local;\n",
+            "dep lib;
+
+source {
+  path \"src/lib/lib.pkg.kio\";
+}
+
+retype lib/store to local;
+",
         )
         .expect("write dep");
 
@@ -933,7 +963,10 @@ mod tests {
             store.contains("import local as _rehost_gmgpgdgbgm;"),
             "store: {store}"
         );
-        assert!(!store.contains("import local(Tag);"), "store: {store}");
+        assert!(
+            !store.contains("import local { type Tag }"),
+            "store: {store}"
+        );
         assert!(
             store.contains("pub type Tag = _rehost_gmgpgdgbgm.Tag;"),
             "store: {store}"
@@ -947,11 +980,14 @@ mod tests {
             "store still declares Tag: {store}"
         );
         let relay = std::fs::read_to_string(dir.path().join("lib/relay.kio")).expect("read relay");
-        // `relay`'s `import lib/store(Tag)` is redirected to the
+        // `relay`'s `import lib/store { type Tag }` is redirected to the
         // counterpart; `make_tag` (a non-retyped fn) keeps its `from`.
-        assert!(relay.contains("import local(Tag);"), "relay: {relay}");
         assert!(
-            relay.contains("import lib/store(make_tag);"),
+            relay.contains("import local { type Tag }"),
+            "relay: {relay}"
+        );
+        assert!(
+            relay.contains("import lib/store { fn make_tag }"),
             "relay: {relay}"
         );
     }
@@ -962,32 +998,43 @@ mod tests {
         let dir = tempfile::tempdir().expect("tempdir");
         std::fs::write(
             dir.path().join("app.pkg.kio"),
-            "package app;\n\nbridge {\n  core/store;\n}\n",
+            "pkg app;\n\nbridge {\n  core/store;\n}\n",
         )
         .expect("write pkg");
         std::fs::create_dir_all(dir.path().join("core")).expect("mk core");
         std::fs::write(
             dir.path().join("core/store.kio"),
-            "module core/store;\n\npub type { Tag: . { pub mk; pub get; }; };\n",
+            "mod core/store;\n\npub type { Tag: . { pub mk; pub get; }; };\n",
         )
         .expect("write counterpart");
         std::fs::create_dir_all(dir.path().join("src/lib")).expect("mk dep");
         std::fs::write(
             dir.path().join("src/lib/lib.pkg.kio"),
-            "package lib;\n\nbridge {\n  store;\n}\n",
+            "pkg lib;\n\nbridge {\n  store;\n}\n",
         )
         .expect("write dep pkg");
         std::fs::write(
             dir.path().join("src/lib/store.kio"),
-            "module store;\n\npub type { Tag: . { pub mk; pub get; }; };\n\n\
-             fn _rehost_gdgphcgfcphdhegphcgf() -> . { () }\n\n\
-             literal _rehost_gdgphcgfcphdhegphcgf_n2 = 2;\n",
+            "mod store;
+
+pub type { Tag: . { pub mk; pub get; }; };
+
+fn _rehost_gdgphcgfcphdhegphcgf() -> . { () }
+
+lit _rehost_gdgphcgfcphdhegphcgf_n2 = 2;
+",
         )
         .expect("write store");
         std::fs::write(
             dir.path().join("lib.dep.kio"),
-            "dependency lib;\n\nsource {\n  path \"src/lib/lib.pkg.kio\";\n}\n\n\
-             retype lib/store to core/store;\n",
+            "dep lib;
+
+source {
+  path \"src/lib/lib.pkg.kio\";
+}
+
+retype lib/store to core/store;
+",
         )
         .expect("write dep");
 
@@ -1013,30 +1060,36 @@ mod tests {
         let dir = tempfile::tempdir().expect("tempdir");
         std::fs::write(
             dir.path().join("app.pkg.kio"),
-            "package app;\n\nbridge {\n  local;\n}\n",
+            "pkg app;\n\nbridge {\n  local;\n}\n",
         )
         .expect("write pkg");
         // Counterpart `Tag` has an incongruent payload (`!` vs the dep's `.`).
         std::fs::write(
             dir.path().join("local.kio"),
-            "module local;\n\npub type { Tag: ! { pub mk; pub get; }; };\n",
+            "mod local;\n\npub type { Tag: ! { pub mk; pub get; }; };\n",
         )
         .expect("write local");
         std::fs::create_dir_all(dir.path().join("src/lib")).expect("mk dep");
         std::fs::write(
             dir.path().join("src/lib/lib.pkg.kio"),
-            "package lib;\n\nbridge {\n  store;\n}\n",
+            "pkg lib;\n\nbridge {\n  store;\n}\n",
         )
         .expect("write dep pkg");
         std::fs::write(
             dir.path().join("src/lib/store.kio"),
-            "module store;\n\npub type { Tag: . { pub mk; pub get; }; };\n",
+            "mod store;\n\npub type { Tag: . { pub mk; pub get; }; };\n",
         )
         .expect("write store");
         std::fs::write(
             dir.path().join("lib.dep.kio"),
-            "dependency lib;\n\nsource {\n  path \"src/lib/lib.pkg.kio\";\n}\n\n\
-             retype lib/store to local;\n",
+            "dep lib;
+
+source {
+  path \"src/lib/lib.pkg.kio\";
+}
+
+retype lib/store to local;
+",
         )
         .expect("write dep");
 
@@ -1059,18 +1112,18 @@ mod tests {
     /// materialize into. The dependency is unmaterialized until the first
     /// fetch.
     fn write_path_dependency_consumer(dir: &Path) {
-        std::fs::write(dir.join("app.pkg.kio"), "package app;\n").expect("write pkg");
+        std::fs::write(dir.join("app.pkg.kio"), "pkg app;\n").expect("write pkg");
         std::fs::create_dir_all(dir.join("vendor/greetlib")).expect("mk vendor");
         std::fs::write(
             dir.join("vendor/greetlib/greetlib.pkg.kio"),
-            "package greetlib;\n",
+            "pkg greetlib;\n",
         )
         .expect("write dep pkg");
-        std::fs::write(dir.join("vendor/greetlib/greet.kio"), "module greet;\n")
+        std::fs::write(dir.join("vendor/greetlib/greet.kio"), "mod greet;\n")
             .expect("write dep mod");
         std::fs::write(
             dir.join("greetlib.dep.kio"),
-            "dependency greetlib;\n\nsource {\n  path \"vendor/greetlib/greetlib.pkg.kio\";\n}\n",
+            "dep greetlib;\n\nsource {\n  path \"vendor/greetlib/greetlib.pkg.kio\";\n}\n",
         )
         .expect("write dep");
     }
@@ -1120,7 +1173,7 @@ mod tests {
         // (the full path prunes it).
         std::fs::write(
             dir.path().join("greetlib/stale.kio"),
-            "module greetlib/stale;\n",
+            "mod greetlib/stale;\n",
         )
         .expect("write stale");
         assert_eq!(

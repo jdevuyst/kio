@@ -1,9 +1,9 @@
-signature native_docs v(3);
+sig native_docs v(3);
 
 v(1) {
   nonbreaking {
     add {
-      module testapi/native {
+      mod testapi/native {
         host fn archived()
       }
     }

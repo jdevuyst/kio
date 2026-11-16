@@ -1,4 +1,4 @@
-module main;
+mod main;
 
 import __intrinsics__;
 

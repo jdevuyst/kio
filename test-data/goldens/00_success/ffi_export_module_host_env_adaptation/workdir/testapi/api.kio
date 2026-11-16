@@ -1,6 +1,6 @@
-module testapi/api;
+mod testapi/api;
 
-import testapi(I32, String);
+import testapi { type I32; type String }
 
 pub fn tag() -> String { "bridge-module"[String] }
 

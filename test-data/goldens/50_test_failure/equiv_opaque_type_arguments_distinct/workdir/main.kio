@@ -1,4 +1,4 @@
-module main;
+mod main;
 
 equiv opaque_types(f: [A] . -> (. | .)) {
   f[.](());

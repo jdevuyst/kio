@@ -1,4 +1,4 @@
-package routed_newtype_payload_collision;
+pkg routed_newtype_payload_collision;
 
 build {
   cache "out/.kio-cache/";

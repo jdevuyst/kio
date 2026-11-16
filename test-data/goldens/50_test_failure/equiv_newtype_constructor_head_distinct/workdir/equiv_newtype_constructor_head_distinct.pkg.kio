@@ -1,4 +1,4 @@
-package equiv_newtype_constructor_head_distinct;
+pkg equiv_newtype_constructor_head_distinct;
 
 build {
   cache "out/.kio-cache/";

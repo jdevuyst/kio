@@ -1,12 +1,12 @@
 /// Root module FIFO queue core with two-list representation, invariant predicates, and loop-step helpers.
 /// A ready-to-use library module for your own Kio package.
-module library/core;
+mod library/core;
 
-import library/list/core(cons, head, nil, uncons);
-import library/macros/control(Bool as Control_bool, macro if);
-import library/macros/match(macro match);
-import library/macros/spine_macros(macro widen_sum);
-import list/core(List);
+import library/list/core { fn cons; fn head; fn nil; fn uncons }
+import library/macros/control { type Bool as Control_bool; macro if }
+import library/macros/match { macro match }
+import library/macros/spine_macros { macro widen_sum }
+import list/core { type List }
 
 // The representation is Okasaki's two-list queue (Purely Functional Data
 // Structures §5.2): a `Queue[A]` is a `front` cons-list we dequeue from and
@@ -67,8 +67,8 @@ fn list_is_empty[A](xs: List[A]) -> Bool {
 // The queue type
 // =====================================================================
 //
-// The newtype keeps the two spine roles from being swapped by a stray
-// product reorder. Callers of `mk_unchecked` must preserve the front/back
+// The nominal type keeps the two spine roles from being swapped by a stray
+// product reorder. Callers of `Queue.mk` must preserve the front/back
 // invariant; the loop-driven API restores it through its smart constructor.
 /// Two-list FIFO queue whose front is empty only when the back is empty.
 pub type { Queue[A]: List[A] & List[A] { pub mk; pub get } }

@@ -1,7 +1,7 @@
-module middle;
+mod middle;
 
 import origin as original;
-import testapi(String);
+import testapi { type String }
 
 type Caption = .;
 

@@ -1,4 +1,4 @@
-package ufcs_block_grouped_forward_reverse;
+pkg ufcs_block_grouped_forward_reverse;
 
 build {
   cache "out/.kio-cache/";

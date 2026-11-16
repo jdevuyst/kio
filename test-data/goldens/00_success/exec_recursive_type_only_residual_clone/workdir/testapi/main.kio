@@ -1,6 +1,6 @@
-module testapi/main;
+mod testapi/main;
 
-import testapi/iter(loop);
+import testapi/iter { fn loop }
 
 type Token = .;
 

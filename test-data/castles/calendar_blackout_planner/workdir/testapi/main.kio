@@ -1,10 +1,10 @@
-module testapi/main;
+mod testapi/main;
 
 import calendar_blackout_planner/model as model;
 import calendar_blackout_planner/report as report;
 import calendar_blackout_planner/scoring as scoring;
-import testapi(String);
-import testapi/io(print);
+import testapi { type String }
+import testapi/io { fn print }
 
 pub fn main() {
   let alpha = model.alpha();

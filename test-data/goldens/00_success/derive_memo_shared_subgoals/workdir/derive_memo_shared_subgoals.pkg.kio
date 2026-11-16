@@ -1,4 +1,4 @@
-package derive_memo_shared_subgoals;
+pkg derive_memo_shared_subgoals;
 
 build {
   cache "out/.kio-cache/";

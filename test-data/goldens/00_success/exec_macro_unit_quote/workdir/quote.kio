@@ -1,4 +1,4 @@
-module quote;
+mod quote;
 
 import __comptime__;
 

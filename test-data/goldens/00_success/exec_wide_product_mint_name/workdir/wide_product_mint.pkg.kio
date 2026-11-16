@@ -1,4 +1,4 @@
-package wide_product_mint;
+pkg wide_product_mint;
 
 build {
   cache "out/.kio-cache/";

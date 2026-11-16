@@ -1,4 +1,4 @@
-module main;
+mod main;
 
 type Pair = A & B;
 
@@ -7,7 +7,7 @@ type Triple = A & B & C;
 type Sum = A | B | C;
 
 fn f(x: A & B) -> A | B { x }
-module main;
+mod main;
 
 type Pair = A & B;
 

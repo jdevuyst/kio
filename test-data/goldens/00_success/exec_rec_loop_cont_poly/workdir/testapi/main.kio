@@ -1,12 +1,12 @@
-module testapi/main;
+mod testapi/main;
 
-import macros/control(macro if);
-import macros/spine_macros(macro one_prod);
-import testapi(Bool, I32, String);
-import testapi/arith(add_i32, leq_i32, mul_i32, sub_i32);
-import testapi/fmt(i32_to_string);
-import testapi/io(print);
-import testapi/iter(loop);
+import macros/control { macro if }
+import macros/spine_macros { macro one_prod }
+import testapi { type Bool; type I32; type String }
+import testapi/arith { fn add_i32; fn leq_i32; fn mul_i32; fn sub_i32 }
+import testapi/fmt { fn i32_to_string }
+import testapi/io { fn print }
+import testapi/iter { fn loop }
 
 pub rec(loop) fn fact(n: I32) -> I32 {
   if(leq_i32(n, 1)) { 1 } else { mul_i32(n, recur(cont) fact(sub_i32(n, 1))) }

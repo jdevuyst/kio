@@ -1,4 +1,4 @@
-package fmsb;
+pkg fmsb;
 
 build {
   cache "out/.kio-cache/";

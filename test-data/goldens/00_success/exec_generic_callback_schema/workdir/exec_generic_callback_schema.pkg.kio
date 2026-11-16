@@ -1,4 +1,4 @@
-package exec_generic_callback_schema;
+pkg exec_generic_callback_schema;
 
 build {
   cache "out/.kio-cache/";

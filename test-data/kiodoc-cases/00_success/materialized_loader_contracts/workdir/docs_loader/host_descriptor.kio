@@ -1,13 +1,13 @@
 /// Exact host-declaration identities and the requirements carried by a loaded image.
-module docs_loader/host_descriptor;
+mod docs_loader/host_descriptor;
 
-import docs_loader/list/core(List, cons, nil, uncons);
-import docs_loader/macros/control(macro if);
-import docs_loader/macros/match(macro match);
-import docs_loader/macros/spine_macros(macro widen_sum);
-import docs_loader/testapi(Bool, String);
-import docs_loader/testapi/iter(loop);
-import docs_loader/testapi/text(string_concat, string_eq);
+import docs_loader/list/core { type List; fn cons; fn nil; fn uncons }
+import docs_loader/macros/control { macro if }
+import docs_loader/macros/match { macro match }
+import docs_loader/macros/spine_macros { macro widen_sum }
+import docs_loader/testapi { type Bool; type String }
+import docs_loader/testapi/iter { fn loop }
+import docs_loader/testapi/text { fn string_concat; fn string_eq }
 
 /// The identity of one host declaration: declaring module and local name.
 pub type { Host_id: String & String }

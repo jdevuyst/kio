@@ -1,4 +1,4 @@
-package fbc;
+pkg fbc;
 
 build {
   cache "out/.kio-cache/";

@@ -1,4 +1,4 @@
-package build_rec_group_cloned_elaboration_binders;
+pkg build_rec_group_cloned_elaboration_binders;
 
 build {
   cache "out/.kio-cache/";

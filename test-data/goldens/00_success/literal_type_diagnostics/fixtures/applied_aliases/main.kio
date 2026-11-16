@@ -1,7 +1,7 @@
-module main;
+mod main;
 
 import numbers as n;
-import numbers(Int as Imported_int);
+import numbers { type Int as Imported_int }
 
 type Int = n.Identity[n.Int];
 

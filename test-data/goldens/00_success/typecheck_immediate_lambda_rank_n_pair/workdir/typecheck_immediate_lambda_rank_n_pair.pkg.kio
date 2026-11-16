@@ -1,4 +1,4 @@
-package typecheck_immediate_lambda_rank_n_pair;
+pkg typecheck_immediate_lambda_rank_n_pair;
 
 build {
   cache "out/.kio-cache/";

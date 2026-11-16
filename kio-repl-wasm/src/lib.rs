@@ -358,7 +358,7 @@ fn trailing_blocks_repl() -> Repl {
     let files = BTreeMap::from([
         (
             root.join("app.pkg.kio"),
-            "package app; bridge { app; provider; }".to_owned(),
+            "pkg app; bridge { app; provider; }".to_owned(),
         ),
         (
             root.join("app.kio"),
@@ -386,14 +386,11 @@ fn type_only_values_repl() -> Repl {
     let files = BTreeMap::from([
         (
             root.join("app.pkg.kio"),
-            "package app; bridge { app; }".to_owned(),
+            "pkg app; bridge { app; }".to_owned(),
         ),
         (
             root.join("app.kio"),
-            "module app; type Existing = .; \
-             fn mark[A] { () } \
-             fn delayed[A]() { () }"
-                .to_owned(),
+            "mod app; type Existing = .; fn mark[A] { () } fn delayed[A]() { () }".to_owned(),
         ),
     ]);
     Repl {
@@ -453,20 +450,20 @@ fn declaration_selectors_repl() -> Repl {
             source.push_str(
                 "\npub fn choose_three(left: ., _middle: ., _right: .) { left }\n\
                  pub op _ ? __ : ___ { impl choose_three }\n\
-                 pub varop [] { foldr choose empty }\n",
+                 pub op_var [] { foldr choose empty }\n",
             );
         } else if path == "demo/main.kio" {
-            let import = "varop [* *]";
+            let import = "op_var [* *]";
             assert_eq!(source.matches(import).count(), 1, "selector fixture import changed");
             source = source.replace(
                 import,
-                "varop [* *], varop [* *] as [% %]",
+                "op_var [* *]; op_var [* *] as [% %]",
             );
             source.push_str("\npub fn browser_alias_use() { [% () %] }\n");
         } else if path == "demo/other.kio" {
             source.push_str(
                 "\npub fn empty() { () }\n\
-                 pub varop [* *] { foldr choose empty }\n\
+                 pub op_var [* *] { foldr choose empty }\n\
                  pub fn foreign_marked_use() { [* () *] }\n",
             );
         }
@@ -491,9 +488,9 @@ mod tests {
         let mut repl = Repl {
             poc_id: "macro-highlighting".to_owned(),
             session: Session::new_in_memory(root.clone(), std::collections::BTreeMap::from([
-                (root.join("app.pkg.kio"), "package app; bridge { app; }".to_owned()),
-                (root.join("app.kio"), "module app; import provider(macro identity as selected);".to_owned()),
-                (root.join("provider.kio"), "module provider; import __comptime__; pure fn implementation(_ct: __Comptime__, _source: __Type__, value: __Checked_term__) -> __Checked_term__ { value } pub macro identity : [Source] Source -> Source { impl implementation; };".to_owned()),
+                (root.join("app.pkg.kio"), "pkg app; bridge { app; }".to_owned()),
+                (root.join("app.kio"), "mod app; import provider {macro identity as selected}".to_owned()),
+                (root.join("provider.kio"), "mod provider; import __comptime__; pure fn implementation(_ct: __Comptime__, _source: __Type__, value: __Checked_term__) -> __Checked_term__ { value } pub macro identity : [Source] Source -> Source { impl implementation; };".to_owned()),
             ])),
             init_banner: String::new(),
             completion_names: OnceCell::new(),
@@ -574,7 +571,7 @@ mod tests {
                 verbose: false,
             })
             .output;
-        for keyword in ["op", "varop"] {
+        for keyword in ["op", "op_var"] {
             assert!(
                 listing.contains(&format!(
                     "\x1b[38;2;229;192;123mpub\x1b[0m \x1b[38;2;229;192;123m{keyword}\x1b[0m"
@@ -589,14 +586,14 @@ mod tests {
                 "pub op _ + _ { impl choose }",
             ),
             (
-                ":sig arithmetic.(varop [*",
-                "arithmetic.(varop [* *])",
-                "pub varop [* *] { foldr choose empty }",
+                ":sig arithmetic.(op_var [*",
+                "arithmetic.(op_var [* *])",
+                "pub op_var [* *] { foldr choose empty }",
             ),
             (
-                ":sig arithmetic.(varop []",
-                "arithmetic.(varop [])",
-                "pub varop [] { foldr choose empty }",
+                ":sig arithmetic.(op_var []",
+                "arithmetic.(op_var [])",
+                "pub op_var [] { foldr choose empty }",
             ),
             (
                 ":sig arithmetic.(op _ ?",
@@ -623,10 +620,10 @@ mod tests {
                 expected
             );
         }
-        let command = parse_command(":sig arithmetic.(varop [**])").unwrap();
+        let command = parse_command(":sig arithmetic.(op_var [**])").unwrap();
         assert_eq!(
             strip_ansi(&repl.run_command(command).output).trim(),
-            "pub varop [* *] { foldr choose empty }"
+            "pub op_var [* *] { foldr choose empty }"
         );
         repl.run_command(Command::Reset);
         let line = ":sig arithmetic.(op _ +";
@@ -857,13 +854,13 @@ mod tests {
         let files = BTreeMap::from([
             (
                 root.join("app.pkg.kio"),
-                "package app; bridge { app/**; }".to_owned(),
+                "pkg app; bridge { app/**; }".to_owned(),
             ),
             (
                 root.join("app/first.kio"),
-                "module app/first; import __comptime__;".to_owned(),
+                "mod app/first; import __comptime__;".to_owned(),
             ),
-            (root.join("app/second.kio"), "module app/second;".to_owned()),
+            (root.join("app/second.kio"), "mod app/second;".to_owned()),
         ]);
         let mut repl = Repl {
             poc_id: "completion".to_owned(),
@@ -903,15 +900,15 @@ mod tests {
         let files = BTreeMap::from([
             (
                 root.join("app.pkg.kio"),
-                "package app; bridge { app/**; }".to_owned(),
+                "pkg app; bridge { app/**; }".to_owned(),
             ),
             (
                 root.join("app/first.kio"),
-                "module app/first; fn first() { () }".to_owned(),
+                "mod app/first; fn first() { () }".to_owned(),
             ),
             (
                 root.join("app/second.kio"),
-                "module app/second; fn second() { () }".to_owned(),
+                "mod app/second; fn second() { () }".to_owned(),
             ),
         ]);
         let mut repl = Repl {

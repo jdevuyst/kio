@@ -1,8 +1,8 @@
-module testapi/main;
+mod testapi/main;
 
-import macros/match(macro match);
-import testapi(String);
-import testapi/io(print);
+import macros/match { macro match }
+import testapi { type String }
+import testapi/io { fn print }
 
 // Regression: the compiler must handle deeply nested (but legal)
 // programs without overflowing its stack. `deep`'s body is 200

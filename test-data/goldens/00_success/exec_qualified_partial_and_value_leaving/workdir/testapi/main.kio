@@ -1,9 +1,9 @@
-module testapi/main;
+mod testapi/main;
 
-import testapi(String);
+import testapi { type String }
 import testapi/helper as h;
-import testapi/helper(logged);
-import testapi/io(print);
+import testapi/helper { fn logged }
+import testapi/io { fn print }
 
 // Partial calls and type-only applications produce function values. Both
 // unqualified and qualified effectful values delay their effect until

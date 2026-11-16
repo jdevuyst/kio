@@ -1,22 +1,22 @@
-module shared/testapi/main;
+mod shared/testapi/main;
 
 import shared/dict/dict as d;
-import shared/dict/dict(macro get_or_lazy);
-import shared/fallback/countdown(countdown);
+import shared/dict/dict { macro get_or_lazy }
+import shared/fallback/countdown { fn countdown }
 import shared/option/core as o;
-import shared/option/core(
-, macro or_else_lazy as option_or_else_lazy
-, macro unwrap_or_lazy as option_unwrap_or_lazy
-);
+import shared/option/core {
+  macro or_else_lazy as option_or_else_lazy;
+  macro unwrap_or_lazy as option_unwrap_or_lazy
+}
 import shared/result/result as r;
-import shared/result/result(
-, macro or_else_lazy as result_or_else_lazy
-, macro unwrap_err_or_lazy
-, macro unwrap_or_lazy as result_unwrap_or_lazy
-);
-import shared/testapi(I32, String);
-import shared/testapi/fmt(int_to_string);
-import shared/testapi/io(print);
+import shared/result/result {
+  macro or_else_lazy as result_or_else_lazy;
+  macro unwrap_err_or_lazy;
+  macro unwrap_or_lazy as result_unwrap_or_lazy
+}
+import shared/testapi { type I32; type String }
+import shared/testapi/fmt { fn int_to_string }
+import shared/testapi/io { fn print }
 
 fn emit(value: I32) { print(int_to_string(value)); print("\n") }
 

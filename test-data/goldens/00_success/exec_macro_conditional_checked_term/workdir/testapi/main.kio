@@ -1,6 +1,6 @@
-module testapi/main;
+mod testapi/main;
 
-import provider(macro choose);
+import provider { macro choose }
 import testapi/io as io;
 
 pub fn main() { choose(); io.print("checked\n") }

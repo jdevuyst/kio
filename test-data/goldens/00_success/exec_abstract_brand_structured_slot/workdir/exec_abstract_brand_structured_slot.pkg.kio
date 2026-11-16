@@ -1,4 +1,4 @@
-package exec_abstract_brand_structured_slot;
+pkg exec_abstract_brand_structured_slot;
 
 build {
   cache "out/.kio-cache/";

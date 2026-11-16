@@ -1,6 +1,6 @@
-module guest;
+mod guest;
 
-import hostapi(String);
+import hostapi { type String }
 
 pub fn banner() -> String {
   "The quick brown fox jumps over the lazy dog while the loader folds "

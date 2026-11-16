@@ -1,4 +1,4 @@
-package ledger_rule_audit;
+pkg ledger_rule_audit;
 
 build {
   cache "out/.kio-cache/";

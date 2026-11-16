@@ -1,4 +1,4 @@
-package build_skip_unsupported_present;
+pkg build_skip_unsupported_present;
 
 build {
   cache "out/.kio-cache/";

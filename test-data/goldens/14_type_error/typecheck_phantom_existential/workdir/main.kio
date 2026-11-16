@@ -1,4 +1,4 @@
-module main;
+mod main;
 
 // Phantom existential `<U>`: declared on the newtype header but
 // never appears in the payload `a`. Rejected at the typer because

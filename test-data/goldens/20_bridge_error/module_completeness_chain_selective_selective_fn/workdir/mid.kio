@@ -1,5 +1,5 @@
-module mid;
+mod mid;
 
-import cap(tick);
+import cap { fn tick }
 
 pub fn pass() { tick() }

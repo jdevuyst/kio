@@ -1,4 +1,4 @@
-package build_comptime_proof_lambda;
+pkg build_comptime_proof_lambda;
 
 build {
   cache "out/.kio-cache/";

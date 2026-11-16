@@ -1,4 +1,4 @@
-package intrinsic_value_packets;
+pkg intrinsic_value_packets;
 
 build {
   cache "out/.kio-cache/";

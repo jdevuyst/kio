@@ -1,4 +1,4 @@
-module main;
+mod main;
 
 /// Function documentation.
 fn f() {

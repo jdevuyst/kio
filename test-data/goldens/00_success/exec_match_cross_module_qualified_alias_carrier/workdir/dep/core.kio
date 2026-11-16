@@ -1,4 +1,4 @@
-module dep/core;
+mod dep/core;
 
 pub type { Box[A]: A { pub mk; pub get } }
 

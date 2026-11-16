@@ -734,12 +734,12 @@ pub enum ResolvedBinderKind {
     /// `alias`. `name` is the parameter's name.
     TypeParam,
     /// A top-level `fn` declared in this module or imported from
-    /// a sibling module via `import m(foo);`. `name` is the fn's
+    /// a sibling module via `import m { fn foo }`. `name` is the fn's
     /// identifier; the Lowered impl looks the source module up to
     /// fill in `module_path`.
     Fn,
     /// A top-level `fn` reached through a cross-module import
-    /// (`import m(foo);`). `name` is the imported identifier;
+    /// (`import m { fn foo }`). `name` is the imported identifier;
     /// the Lowered impl resolves the source module via the
     /// per-module env's cross-module imports.
     CrossModuleFn,
@@ -753,7 +753,7 @@ pub enum ResolvedBinderKind {
     /// The head segment of a two-segment newtype path
     /// (`Foo.mk_foo`). `name` is the newtype's identifier.
     Newtype,
-    /// A cross-module newtype, imported via `import m(Foo);`.
+    /// A cross-module newtype, imported via `import m { type Foo }`.
     CrossModuleNewtype,
     /// The `.<member>` tail of a two-segment newtype path.
     /// `name` is the member's identifier; `parent` carries the

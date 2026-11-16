@@ -1,11 +1,11 @@
-module testapi/main;
+mod testapi/main;
 
-import greet(hello);
-import nums(bump, scale, start, value);
-import testapi(I32, String);
-import testapi/fmt(int_to_string);
-import testapi/io(print);
-import testapi/text(string_concat);
+import greet { fn hello }
+import nums { fn bump; fn scale; fn start; fn value }
+import testapi { type I32; type String }
+import testapi/fmt { fn int_to_string }
+import testapi/io { fn print }
+import testapi/text { fn string_concat }
 
 // A guest whose `main` (in this entry module) calls `pub fn`s declared in
 // two other modules — `nums` (a newtype counter) and `greet` (a string

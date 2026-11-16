@@ -1,4 +1,4 @@
-package gfr;
+pkg gfr;
 
 build {
   cache "out/.kio-cache/";

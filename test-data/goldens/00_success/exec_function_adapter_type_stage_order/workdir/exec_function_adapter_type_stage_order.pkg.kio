@@ -1,4 +1,4 @@
-package exec_function_adapter_type_stage_order;
+pkg exec_function_adapter_type_stage_order;
 
 build {
   cache "out/.kio-cache/";

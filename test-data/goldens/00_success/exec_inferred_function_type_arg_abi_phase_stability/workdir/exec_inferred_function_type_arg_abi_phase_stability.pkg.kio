@@ -1,4 +1,4 @@
-package exec_inferred_function_type_arg_abi_phase_stability;
+pkg exec_inferred_function_type_arg_abi_phase_stability;
 
 build {
   cache "out/.kio-cache/";

@@ -1,33 +1,33 @@
-module catalog/engine;
+mod catalog/engine;
 
 import catalog/audit as audit;
 import catalog/circulation as circulation;
-import catalog/domain(
-, Applied
-, Audit_list
-, Book_index
-, Failure
-, Hold_list
-, Hold_rec
-, Line_list
-, Member_index
-, Op
-, Op_list
-);
-import catalog/domain(cat, istr);
+import catalog/domain {
+  type Applied;
+  type Audit_list;
+  type Book_index;
+  type Failure;
+  type Hold_list;
+  type Hold_rec;
+  type Line_list;
+  type Member_index;
+  type Op;
+  type Op_list
+}
+import catalog/domain { fn cat; fn istr }
 import catalog/fixtures as fixtures;
 import catalog/ledger as ledger;
 import catalog/report as report;
 import catalog/shelf as shelf;
 import list/core as lcore;
 import list/list as list;
-import macros/match(macro match);
-import macros/row_macros(macro select);
+import macros/match { macro match }
+import macros/row_macros { macro select }
 import result/result as result;
-import testapi(I32, String);
-import testapi/arith(add_i32);
-import testapi/io(print);
-import testapi/iter(loop);
+import testapi { type I32; type String }
+import testapi/arith { fn add_i32 }
+import testapi/io { fn print }
+import testapi/iter { fn loop }
 
 type State = {
   Books: Book_index;

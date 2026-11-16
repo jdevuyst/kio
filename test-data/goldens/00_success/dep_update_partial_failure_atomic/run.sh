@@ -97,7 +97,7 @@ sha_a_blib=$(init_repo "$blib_repo" "$blib_bare") || fail "cannot assemble blib 
 # loop processes `alib` (the compatible move) first and `blib` (the block)
 # second — the order that exposes a non-atomic re-pin.
 cat > "$scratch/consumer/alib.dep.kio" <<EOF
-dependency alib;
+dep alib;
 
 source {
   git "$alib_bare";
@@ -106,7 +106,7 @@ source {
 }
 EOF
 cat > "$scratch/consumer/blib.dep.kio" <<EOF
-dependency blib;
+dep blib;
 
 source {
   git "$blib_bare";

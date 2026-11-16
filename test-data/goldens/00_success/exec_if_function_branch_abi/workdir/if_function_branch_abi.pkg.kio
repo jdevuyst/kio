@@ -1,4 +1,4 @@
-package if_function_branch_abi;
+pkg if_function_branch_abi;
 
 build {
   cache "out/.kio-cache/";

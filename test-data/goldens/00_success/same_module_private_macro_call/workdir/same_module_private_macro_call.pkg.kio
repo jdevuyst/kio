@@ -1,4 +1,4 @@
-package same_module_private_macro_call;
+pkg same_module_private_macro_call;
 
 build {
   cache "out/.kio-cache/";

@@ -1,4 +1,4 @@
-package exec_rec_operand_order;
+pkg exec_rec_operand_order;
 
 build {
   cache "out/.kio-cache/";

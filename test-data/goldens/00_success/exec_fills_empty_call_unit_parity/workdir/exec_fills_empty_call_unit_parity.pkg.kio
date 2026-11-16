@@ -1,4 +1,4 @@
-package exec_fills_empty_call_unit_parity;
+pkg exec_fills_empty_call_unit_parity;
 
 build {
   cache "out/.kio-cache/";

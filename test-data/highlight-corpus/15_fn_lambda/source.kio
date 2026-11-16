@@ -1,4 +1,4 @@
-module m;
+mod m;
 
 fn apply(f: T, x: A) -> B { f(.(y: A) { y }, x) }
 fn compound_stem() -> . { .item_value. { item_value1 } }

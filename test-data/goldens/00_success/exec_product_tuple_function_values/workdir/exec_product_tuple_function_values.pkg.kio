@@ -1,4 +1,4 @@
-package exec_product_tuple_function_values;
+pkg exec_product_tuple_function_values;
 
 build {
   cache "out/.kio-cache/";

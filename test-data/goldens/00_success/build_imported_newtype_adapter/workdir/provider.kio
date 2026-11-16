@@ -1,4 +1,4 @@
-module provider;
+mod provider;
 
 pub type { Token: . { pub mk; pub get } }
 

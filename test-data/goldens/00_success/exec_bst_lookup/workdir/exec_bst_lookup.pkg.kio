@@ -1,4 +1,4 @@
-package exec_bst_lookup;
+pkg exec_bst_lookup;
 
 build {
   cache "out/.kio-cache/";

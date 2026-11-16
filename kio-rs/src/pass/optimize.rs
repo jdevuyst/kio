@@ -4235,8 +4235,7 @@ mod tests {
     fn project_zero_after_tuple_picks_first() {
         let m = optimize_one(
             "x/main",
-            "module x/main; import __intrinsics__; \
-             fn t() -> . { __fst__[.][ .]( __pair__[.][ .]( (), ())) }",
+            "mod x/main; import __intrinsics__; fn t() -> . { __fst__[.][ .]( __pair__[.][ .]( (), ())) }",
         );
         let body = fn_body(&m, "t");
         assert!(
@@ -4477,11 +4476,7 @@ mod tests {
     fn project_after_tuple_retains_effects_exposed_by_substitution_and_beta() {
         let module = optimize_one(
             "x/main",
-            "module x/main; import __intrinsics__; \
-             host type N; host fn first() -> N; host fn second() -> N; \
-             fn direct() -> N { __fst__[N][ N]( __pair__[N][ N]( first(), second())) } \
-             fn bound() -> N { let pair = (first(), second()); __fst__[N][ N]( pair) } \
-             fn closure() -> N { __fst__[N][ N]( .() -> N & N { (first(), second()) }()) }",
+            "mod x/main; import __intrinsics__; host type N; host fn first() -> N; host fn second() -> N; fn direct() -> N { __fst__[N][ N]( __pair__[N][ N]( first(), second())) } fn bound() -> N { let pair = (first(), second()); __fst__[N][ N]( pair) } fn closure() -> N { __fst__[N][ N]( .() -> N & N { (first(), second()) }()) }",
         );
         for name in ["direct", "bound", "closure"] {
             let body = fn_body(&module, name);
@@ -4511,12 +4506,7 @@ mod tests {
     fn field_get_after_tuple_preserves_projector_semantics() {
         let m = optimize_one(
             "x/main",
-            "module x/main; import __intrinsics__; \
-             host type I32 role(i32); \
-             type { Hed: I32; }; \
-             fn t(x: I32) -> I32 { \
-               Hed.get(__fst__[Hed][ .]( __pair__[Hed][ .]( Hed.mk(x), ()))) \
-             }",
+            "mod x/main; import __intrinsics__; host type I32 role(i32); type { Hed: I32; }; fn t(x: I32) -> I32 { Hed.get(__fst__[Hed][ .]( __pair__[Hed][ .]( Hed.mk(x), ()))) }",
         );
         let body = fn_body(&m, "t");
         if is_path_ref(body, "x") {
@@ -4565,7 +4555,7 @@ mod tests {
     fn field_get_over_recovered_tail_composes_to_original_product() {
         let module = optimize_one(
             "x/main",
-            "module x/main; import __intrinsics__; type { A: .; B: .; C: .; } type Wide = A & B & C; fn read(r: Wide) -> . { C.get(__snd__[B][C](__snd__[A][B & C](r))) }",
+            "mod x/main; import __intrinsics__; type { A: .; B: .; C: .; } type Wide = A & B & C; fn read(r: Wide) -> . { C.get(__snd__[B][C](__snd__[A][B & C](r))) }",
         );
         let body = fn_body(&module, "read");
         assert!(
@@ -4580,7 +4570,7 @@ mod tests {
     fn field_update_preserved_tail_slots_compose_to_original_product() {
         let module = optimize_one(
             "x/main",
-            "module x/main; import __intrinsics__; type { A: .; B: .; C: .; D: .; } type Wide = A & B & C & D; fn update(r: Wide) -> Wide { (__fst__(r), __fst__(__snd__(r)), C.mk(()), __snd__(__snd__(__snd__(r)))) }",
+            "mod x/main; import __intrinsics__; type { A: .; B: .; C: .; D: .; } type Wide = A & B & C & D; fn update(r: Wide) -> Wide { (__fst__(r), __fst__(__snd__(r)), C.mk(()), __snd__(__snd__(__snd__(r)))) }",
         );
         let body = fn_body(&module, "update");
         assert!(
@@ -4806,11 +4796,7 @@ mod tests {
     /// → substitute E for x in F. The let disappears.
     #[test]
     fn let_fuse_single_use_inlines_pure_value() {
-        let m = optimize_one(
-            "x/main",
-            "module x/main; \
-             fn t[A](y: A) -> A { let x = y; x }",
-        );
+        let m = optimize_one("x/main", "mod x/main; fn t[A](y: A) -> A { let x = y; x }");
         // Whole body should reduce to a bare `y`.
         let body = fn_body(&m, "t");
         assert!(!contains(body, &|e| matches!(e, Expr::Let { .. })));
@@ -4827,15 +4813,7 @@ mod tests {
     fn let_fuse_keeps_type_application_before_a_later_effect() {
         let m = optimize_one(
             "x/main",
-            "module x/main; \
-             host type N; \
-             host fn effect(_unit: .) -> .; \
-             fn stage(_unit: .)[A] -> A -> A { .(value: A) -> A { value } } \
-             fn t(value: N) -> N { \
-               let residual = stage()[N]; \
-               effect(()); \
-               residual(value) \
-             }",
+            "mod x/main; host type N; host fn effect(_unit: .) -> .; fn stage(_unit: .)[A] -> A -> A { .(value: A) -> A { value } } fn t(value: N) -> N { let residual = stage()[N]; effect(()); residual(value) }",
         );
         let body = fn_body(&m, "t");
         assert!(
@@ -4850,16 +4828,7 @@ mod tests {
     fn declared_pure_calls_feed_dce_without_overriding_lexical_binders() {
         let m = optimize_one(
             "x/main",
-            "module x/main; import __intrinsics__; \
-             pure fn factory() { () } \
-             host fn effect() -> .; \
-             fn direct() { factory(); () } \
-             fn parameter(factory: . -> .) { factory(); () } \
-             fn binding() { let factory = effect; factory(); () } \
-             fn closure(factory: . -> .) -> . -> . { .() { factory(); () } } \
-             fn branch(s: (. -> .) | .) { \
-               __either__[. -> .][ .][ .]( s, .(factory: . -> .) { factory(); () }, .() { () }) \
-             }",
+            "mod x/main; import __intrinsics__; pure fn factory() { () } host fn effect() -> .; fn direct() { factory(); () } fn parameter(factory: . -> .) { factory(); () } fn binding() { let factory = effect; factory(); () } fn closure(factory: . -> .) -> . -> . { .() { factory(); () } } fn branch(s: (. -> .) | .) { __either__[. -> .][ .][ .]( s, .(factory: . -> .) { factory(); () }, .() { () }) }",
         );
         assert!(matches!(fn_body(&m, "direct"), Expr::Unit { .. }));
         for name in ["parameter", "binding", "closure", "branch"] {
@@ -4874,10 +4843,7 @@ mod tests {
     fn shared_purity_distinguishes_closure_construction_from_invocation() {
         let m = recover_one(
             "x/main",
-            "module x/main; host fn effect() -> .; \
-             fn literal() -> . -> . { .() { effect() } } \
-             fn pure_call() { .() { () }() } \
-             fn effect_call() { .() { effect() }() }",
+            "mod x/main; host fn effect() -> .; fn literal() -> . -> . { .() { effect() } } fn pure_call() { .() { () }() } fn effect_call() { .() { effect() }() }",
         );
         assert!(is_pure(fn_body(&m, "literal")));
         assert!(is_pure(fn_body(&m, "pure_call")));
@@ -4890,8 +4856,7 @@ mod tests {
     fn let_fuse_zero_use_pure_drops_let() {
         let m = optimize_one(
             "x/main",
-            "module x/main; \
-             fn t[A](y: A, z: A) -> A { let x = y; z }",
+            "mod x/main; fn t[A](y: A, z: A) -> A { let x = y; z }",
         );
         let body = fn_body(&m, "t");
         // Body should be just `z`.
@@ -4917,14 +4882,7 @@ mod tests {
     #[test]
     fn let_fuse_impure_value_moves_past_pure_predecessor() {
         let (body, changed) = fuse_recovered_top_let(
-            "module x/main; \
-             host type I32 role(i32); \
-             host fn sub_i32(a: I32, b: I32) -> I32; \
-             fn pick_second(a: I32, b: I32) -> I32 { b } \
-             fn t(x: I32) -> I32 { \
-               let delayed = sub_i32(x, 1[I32]); \
-               pick_second(x, delayed) \
-             }",
+            "mod x/main; host type I32 role(i32); host fn sub_i32(a: I32, b: I32) -> I32; fn pick_second(a: I32, b: I32) -> I32 { b } fn t(x: I32) -> I32 { let delayed = sub_i32(x, 1[I32]); pick_second(x, delayed) }",
         );
         assert!(changed, "expected the top-level let to fuse: {body:?}");
         assert!(!matches!(body, Expr::Let { .. }));
@@ -4933,14 +4891,7 @@ mod tests {
     #[test]
     fn let_fuse_impure_value_stops_at_impure_predecessor() {
         let (body, changed) = fuse_recovered_top_let(
-            "module x/main; \
-             host type I32 role(i32); \
-             host fn sub_i32(a: I32, b: I32) -> I32; \
-             fn pick_second(a: I32, b: I32) -> I32 { b } \
-             fn t(x: I32) -> I32 { \
-               let delayed = sub_i32(x, 1[I32]); \
-               pick_second(sub_i32(x, 2[I32]), delayed) \
-             }",
+            "mod x/main; host type I32 role(i32); host fn sub_i32(a: I32, b: I32) -> I32; fn pick_second(a: I32, b: I32) -> I32 { b } fn t(x: I32) -> I32 { let delayed = sub_i32(x, 1[I32]); pick_second(sub_i32(x, 2[I32]), delayed) }",
         );
         assert!(!changed, "let crossed an earlier effect: {body:?}");
         assert!(matches!(body, Expr::Let { .. }));
@@ -4949,29 +4900,9 @@ mod tests {
     #[test]
     fn let_fuse_impure_value_stays_outside_deferred_uses() {
         let sources = [
-            "module x/main; import control(Bool, macro if); \
-             host type I32 role(i32); \
-             host fn sub_i32(a: I32, b: I32) -> I32; \
-             fn t(cond: Bool, x: I32) -> I32 { \
-               let delayed = sub_i32(x, 1[I32]); \
-               if (cond) { delayed } else { x } \
-             }",
-            "module x/main; import __intrinsics__; \
-             host type I32 role(i32); \
-             host fn sub_i32(a: I32, b: I32) -> I32; \
-             fn t(value: I32 | I32, x: I32) -> I32 { \
-               let delayed = sub_i32(x, 1[I32]); \
-               __either__(value, \
-                 .(left: I32) -> I32 { delayed }, \
-                 .(right: I32) -> I32 { x }) \
-             }",
-            "module x/main; \
-             host type I32 role(i32); \
-             host fn sub_i32(a: I32, b: I32) -> I32; \
-             fn t(x: I32) -> (I32 -> I32) { \
-               let delayed = sub_i32(x, 1[I32]); \
-               .(_arg: I32) -> I32 { delayed } \
-             }",
+            "mod x/main; import control {type Bool; macro if} host type I32 role(i32); host fn sub_i32(a: I32, b: I32) -> I32; fn t(cond: Bool, x: I32) -> I32 { let delayed = sub_i32(x, 1[I32]); if (cond) { delayed } else { x } }",
+            "mod x/main; import __intrinsics__; host type I32 role(i32); host fn sub_i32(a: I32, b: I32) -> I32; fn t(value: I32 | I32, x: I32) -> I32 { let delayed = sub_i32(x, 1[I32]); __either__(value, .(left: I32) -> I32 { delayed }, .(right: I32) -> I32 { x }) }",
+            "mod x/main; host type I32 role(i32); host fn sub_i32(a: I32, b: I32) -> I32; fn t(x: I32) -> (I32 -> I32) { let delayed = sub_i32(x, 1[I32]); .(_arg: I32) -> I32 { delayed } }",
         ];
         for source in sources {
             let (body, changed) = fuse_recovered_top_let(source);
@@ -4983,24 +4914,8 @@ mod tests {
     #[test]
     fn let_fuse_impure_value_moves_past_pure_let_and_seq_prefixes() {
         let sources = [
-            "module x/main; \
-             host type I32 role(i32); \
-             host fn sub_i32(a: I32, b: I32) -> I32; \
-             fn pick_second(a: I32, b: I32) -> I32 { b } \
-             fn t(x: I32) -> I32 { \
-               let delayed = sub_i32(x, 1[I32]); \
-               let prefix = x; \
-               pick_second(prefix, delayed) \
-             }",
-            "module x/main; \
-             host type I32 role(i32); \
-             host fn sub_i32(a: I32, b: I32) -> I32; \
-             fn pick_second(a: I32, b: I32) -> I32 { b } \
-             fn t(x: I32) -> I32 { \
-               let delayed = sub_i32(x, 1[I32]); \
-               (); \
-               pick_second(x, delayed) \
-             }",
+            "mod x/main; host type I32 role(i32); host fn sub_i32(a: I32, b: I32) -> I32; fn pick_second(a: I32, b: I32) -> I32 { b } fn t(x: I32) -> I32 { let delayed = sub_i32(x, 1[I32]); let prefix = x; pick_second(prefix, delayed) }",
+            "mod x/main; host type I32 role(i32); host fn sub_i32(a: I32, b: I32) -> I32; fn pick_second(a: I32, b: I32) -> I32 { b } fn t(x: I32) -> I32 { let delayed = sub_i32(x, 1[I32]); (); pick_second(x, delayed) }",
         ];
         for source in sources {
             let (body, changed) = fuse_recovered_top_let(source);
@@ -5012,15 +4927,7 @@ mod tests {
     #[test]
     fn let_fuse_uses_alpha_distinct_inner_binder() {
         let (body, changed) = fuse_recovered_top_let(
-            "module x/main; \
-             host type I32 role(i32); \
-             host fn sub_i32(a: I32, b: I32) -> I32; \
-             fn pick_second(a: I32, b: I32) -> I32 { b } \
-             fn t(x: I32, replacement: I32) -> I32 { \
-               let delayed = sub_i32(x, 1[I32]); \
-               let x = replacement; \
-               pick_second(x, delayed) \
-             }",
+            "mod x/main; host type I32 role(i32); host fn sub_i32(a: I32, b: I32) -> I32; fn pick_second(a: I32, b: I32) -> I32 { b } fn t(x: I32, replacement: I32) -> I32 { let delayed = sub_i32(x, 1[I32]); let x = replacement; pick_second(x, delayed) }",
         );
         assert!(
             changed,
@@ -5038,11 +4945,7 @@ mod tests {
 
     #[test]
     fn beta_reduces_unary_function_literal_call() {
-        let m = optimize_one(
-            "x/main",
-            "module x/main; \
-             fn t() -> . { .(_u: .) { () }(()) }",
-        );
+        let m = optimize_one("x/main", "mod x/main; fn t() -> . { .(_u: .) { () }(()) }");
         let body = fn_body(&m, "t");
         assert!(
             matches!(body, Expr::Unit { .. }),
@@ -5060,7 +4963,7 @@ mod tests {
     #[test]
     fn beta_reduces_nullary_literal_with_omitted_or_explicit_unit() {
         for call in [".() { () }()", ".() { () }(())"] {
-            let m = optimize_one("x/main", &format!("module x/main; fn t() {{ {call} }}"));
+            let m = optimize_one("x/main", &format!("mod x/main; fn t() {{ {call} }}"));
             assert!(matches!(fn_body(&m, "t"), Expr::Unit { .. }), "{call}");
         }
     }
@@ -5069,8 +4972,7 @@ mod tests {
     fn nullary_beta_keeps_effectful_unit_argument_before_body() {
         let m = optimize_one(
             "x/main",
-            "module x/main; host fn before() -> .; host fn after() -> .; \
-             fn t() { .() { after() }(before()) }",
+            "mod x/main; host fn before() -> .; host fn after() -> .; fn t() { .() { after() }(before()) }",
         );
         let Expr::Seq { value, body, .. } = fn_body(&m, "t") else {
             panic!("Unit argument and body effects must both remain")
@@ -5089,8 +4991,7 @@ mod tests {
     fn nullary_beta_preserves_returned_closure_and_capture() {
         let m = optimize_one(
             "x/main",
-            "module x/main; fn t[A](captured: A) -> A -> A { \
-             .() { .(later: A) { captured } }() }",
+            "mod x/main; fn t[A](captured: A) -> A -> A { .() { .(later: A) { captured } }() }",
         );
         let Expr::FnExpr { sig, body, .. } = fn_body(&m, "t") else {
             panic!("the returned closure must remain")
@@ -5107,7 +5008,7 @@ mod tests {
             "fn t() -> . -> . { .()() { () }(()) }",
             "fn t() -> [A] A -> A { .()[A](value: A) { value }(()) }",
         ] {
-            let m = optimize_one("x/main", &format!("module x/main; {source}"));
+            let m = optimize_one("x/main", &format!("mod x/main; {source}"));
             assert!(
                 matches!(fn_body(&m, "t"), Expr::Call { callee, .. }
                 if matches!(callee.as_ref(), Expr::FnExpr { .. })),
@@ -5120,25 +5021,7 @@ mod tests {
     fn natural_match_and_user_named_equivalent_recover_one_dispatch() {
         let m = optimize_one(
             "x/main",
-            "module x/main; import match(macro match, match_checked); \
-             macro choose : [Source][Clauses] (Source & Clauses) -> [Target] Target \
-             { trailing product; impl(fills) match_checked } \
-             host type Left; host type Middle; host type Right; \
-             host fn chosen[A](payload: A) -> .; \
-             fn ordinary(value: Left | Middle | Right) { \
-               match (value) { \
-                 (.(left: Left) { chosen(left) }, \
-                  .(middle: Middle) { chosen(middle) }, \
-                  .(right: Right) { chosen(right) }) \
-               } \
-             } \
-             fn renamed(value: Left | Middle | Right) { \
-               choose (value) { \
-                 (.(left: Left) { chosen(left) }, \
-                  .(middle: Middle) { chosen(middle) }, \
-                  .(right: Right) { chosen(right) }) \
-               } \
-             }",
+            "mod x/main; import match {macro match; fn match_checked} macro choose : [Source][Clauses] (Source & Clauses) -> [Target] Target { trailing product; impl(fills) match_checked } host type Left; host type Middle; host type Right; host fn chosen[A](payload: A) -> .; fn ordinary(value: Left | Middle | Right) { match (value) { (.(left: Left) { chosen(left) }, .(middle: Middle) { chosen(middle) }, .(right: Right) { chosen(right) }) } } fn renamed(value: Left | Middle | Right) { choose (value) { (.(left: Left) { chosen(left) }, .(middle: Middle) { chosen(middle) }, .(right: Right) { chosen(right) }) } }",
         );
         for name in ["ordinary", "renamed"] {
             let body = fn_body(&m, name);
@@ -5163,14 +5046,7 @@ mod tests {
     #[test]
     fn nested_unit_match_clauses_do_not_survive_as_calls() {
         const MODULE_PATH: &str = "x/main";
-        const SOURCE: &str = "module x/main; import match(macro match); \
-             fn t() -> . { \
-               match () { .(_u: .) { \
-                 match () { .(_u: .) { \
-                   match () { .(_u: .) { () } } \
-                 } } \
-               } } \
-             }";
+        const SOURCE: &str = "mod x/main; import match {macro match} fn t() -> . { match () { .(_u: .) { match () { .(_u: .) { match () { .(_u: .) { () } } } } } } }";
 
         #[cfg(feature = "parallel")]
         let pool = rayon::ThreadPoolBuilder::new()
@@ -5210,10 +5086,7 @@ mod tests {
     fn absurd_propagates_past_let_body() {
         let m = optimize_one(
             "x/main",
-            "module x/main; import __intrinsics__; \
-             fn t[A](b: !) -> A { \
-               let x = __absurd__[A]( b); x \
-             }",
+            "mod x/main; import __intrinsics__; fn t[A](b: !) -> A { let x = __absurd__[A]( b); x }",
         );
         let body = fn_body(&m, "t");
         // No `Let` remains — collapsed to the bare call.
@@ -5237,13 +5110,7 @@ mod tests {
     fn match_after_left_injection_picks_left_arm() {
         let m = optimize_one(
             "x/main",
-            "module x/main; import __intrinsics__; \
-             fn t[A][B](x: A, y: A) -> A { \
-               __either__(\
-                 __left__[A][ B]( x), \
-                 .(l: A) -> A { l }, \
-                 .(r: B) -> A { y }) \
-             }",
+            "mod x/main; import __intrinsics__; fn t[A][B](x: A, y: A) -> A { __either__(__left__[A][ B]( x), .(l: A) -> A { l }, .(r: B) -> A { y }) }",
         );
         // No `EnrichedMatch` should remain — collapsed to a let.
         let body = fn_body(&m, "t");
@@ -5264,10 +5131,7 @@ mod tests {
     fn project_one_after_tuple_picks_second() {
         let m = optimize_one(
             "x/main",
-            "module x/main; import __intrinsics__; \
-             fn t[A][B](x: A, y: B) -> B { \
-               __snd__[A][ B]( __pair__[A][ B]( x, y)) \
-             }",
+            "mod x/main; import __intrinsics__; fn t[A][B](x: A, y: B) -> B { __snd__[A][ B]( __pair__[A][ B]( x, y)) }",
         );
         let body = fn_body(&m, "t");
         // The body should be exactly the second arg's path
@@ -5285,10 +5149,7 @@ mod tests {
     fn pure_tuple_tail_projection_drops_recovery_let() {
         let m = optimize_one(
             "x/main",
-            "module x/main; import __intrinsics__; \
-             fn t[A][B][C](x: A, y: B, z: C) -> B & C { \
-               __snd__[A][ B & C]( __pair__[A][ B & C]( x, __pair__[B][ C]( y, z))) \
-             }",
+            "mod x/main; import __intrinsics__; fn t[A][B][C](x: A, y: B, z: C) -> B & C { __snd__[A][ B & C]( __pair__[A][ B & C]( x, __pair__[B][ C]( y, z))) }",
         );
         let body = fn_body(&m, "t");
         assert!(
@@ -5418,13 +5279,7 @@ mod tests {
     fn inject_match_let_fuse_compose() {
         let m = optimize_one(
             "x/main",
-            "module x/main; import __intrinsics__; \
-             fn t[A](x: A) -> A { \
-               __either__(\
-                 __left__[A][ A]( x), \
-                 .(l: A) -> A { l }, \
-                 .(r: A) -> A { r }) \
-             }",
+            "mod x/main; import __intrinsics__; fn t[A](x: A) -> A { __either__(__left__[A][ A]( x), .(l: A) -> A { l }, .(r: A) -> A { r }) }",
         );
         let body = fn_body(&m, "t");
         // No match, no inject, no let — collapsed to `x`.
@@ -5444,17 +5299,7 @@ mod tests {
     fn let_fuse_revisits_nested_static_injection_match() {
         let m = optimize_one(
             "x/main",
-            "module x/main; import __intrinsics__; \
-             type { Red: . { mk; get; }; }; \
-             type { Green: . { mk; get; }; }; \
-             type { Blue: . { mk; get; }; }; \
-             host fn consume[A](value: A) -> .; \
-             fn t() -> . { \
-               let green = Green.mk(()); \
-               let inner = __left__[Green][ Blue]( green); \
-               let widened = __right__[Red][ Green | Blue]( inner); \
-               consume[Red | Green | Blue](widened) \
-             }",
+            "mod x/main; import __intrinsics__; type { Red: . { mk; get; }; }; type { Green: . { mk; get; }; }; type { Blue: . { mk; get; }; }; host fn consume[A](value: A) -> .; fn t() -> . { let green = Green.mk(()); let inner = __left__[Green][ Blue]( green); let widened = __right__[Red][ Green | Blue]( inner); consume[Red | Green | Blue](widened) }",
         );
         let body = fn_body(&m, "t");
         assert!(
@@ -5485,15 +5330,7 @@ mod tests {
     fn match_fusion_fires_on_non_colliding_case_of_case() {
         let m = optimize_one(
             "x/main",
-            "module x/main; import __intrinsics__; \
-             fn t[A](s: A | A) -> (A | A) { \
-               __either__(\
-                 __either__[A][ A][ A | A]( s, \
-                   .(x: A) -> (A | A) { __left__[A][ A]( x) }, \
-                   .(y: A) -> (A | A) { __right__[A][ A]( y) }), \
-                 .(p: A) -> (A | A) { __left__[A][ A]( p) }, \
-                 .(q: A) -> (A | A) { __right__[A][ A]( q) }) \
-             }",
+            "mod x/main; import __intrinsics__; fn t[A](s: A | A) -> (A | A) { __either__(__either__[A][ A][ A | A]( s, .(x: A) -> (A | A) { __left__[A][ A]( x) }, .(y: A) -> (A | A) { __right__[A][ A]( y) }), .(p: A) -> (A | A) { __left__[A][ A]( p) }, .(q: A) -> (A | A) { __right__[A][ A]( q) }) }",
         );
         let body = fn_body(&m, "t");
         let Expr::EnrichedMatch { scrutinee, .. } = body else {
@@ -5519,15 +5356,7 @@ mod tests {
     fn no_match_fusion_mode_leaves_nested_case_tree_unexpanded() {
         let m = recover_one(
             "x/main",
-            "module x/main; import __intrinsics__; \
-             fn t[A](s: A | A) -> (A | A) { \
-               __either__( \
-                 __either__[A][ A][ A | A]( s, \
-                   .(x: A) -> (A | A) { __left__[A][ A]( x) }, \
-                   .(y: A) -> (A | A) { __right__[A][ A]( y) }), \
-                 .(p: A) -> (A | A) { __left__[A][ A]( p) }, \
-                 .(q: A) -> (A | A) { __right__[A][ A]( q) }) \
-             }",
+            "mod x/main; import __intrinsics__; fn t[A](s: A | A) -> (A | A) { __either__( __either__[A][ A][ A | A]( s, .(x: A) -> (A | A) { __left__[A][ A]( x) }, .(y: A) -> (A | A) { __right__[A][ A]( y) }), .(p: A) -> (A | A) { __left__[A][ A]( p) }, .(q: A) -> (A | A) { __right__[A][ A]( q) }) }",
         );
         let body = optimize_expr_in_mode(
             &OptimizerCtx::default(),
@@ -5550,15 +5379,7 @@ mod tests {
     fn match_fusion_uses_alpha_distinct_case_binders() {
         let m = optimize_one(
             "x/main",
-            "module x/main; import __intrinsics__; \
-             fn t[A](s: A | A, x: A) -> (A | A) { \
-               __either__(\
-                 __either__[A][ A][ A | A]( s, \
-                   .(x: A) -> (A | A) { __left__[A][ A]( x) }, \
-                   .(y: A) -> (A | A) { __right__[A][ A]( y) }), \
-                 .(p: A) -> (A | A) { __left__[A][ A]( x) }, \
-                 .(q: A) -> (A | A) { __right__[A][ A]( q) }) \
-             }",
+            "mod x/main; import __intrinsics__; fn t[A](s: A | A, x: A) -> (A | A) { __either__(__either__[A][ A][ A | A]( s, .(x: A) -> (A | A) { __left__[A][ A]( x) }, .(y: A) -> (A | A) { __right__[A][ A]( y) }), .(p: A) -> (A | A) { __left__[A][ A]( x) }, .(q: A) -> (A | A) { __right__[A][ A]( q) }) }",
         );
         let body = fn_body(&m, "t");
         let Expr::EnrichedMatch {
@@ -5602,11 +5423,7 @@ mod tests {
     fn constant_fold_selects_then_on_literal_true() {
         let m = optimize_one(
             "x/main",
-            "module x/main; import __intrinsics__; import control(macro if); \
-             import testapi(Bool); \
-             fn t[A](a: A, b: A) -> A { \
-               if (.t) { a } else { b } \
-             }",
+            "mod x/main; import __intrinsics__; import control {macro if} import testapi {type Bool} fn t[A](a: A, b: A) -> A { if (.t) { a } else { b } }",
         );
         let body = fn_body(&m, "t");
         assert!(
@@ -5620,10 +5437,7 @@ mod tests {
     fn bound_conditional_recovers_dynamic_literal_thunks_and_captures() {
         let m = optimize_one(
             "x/main",
-            "module x/main; import control(Bool, macro if); \
-             fn t[A](flag: Bool, outer: A, other: A) -> A { \
-               if(flag) { outer } else { other } \
-             }",
+            "mod x/main; import control {type Bool; macro if} fn t[A](flag: Bool, outer: A, other: A) -> A { if(flag) { outer } else { other } }",
         );
         let body = fn_body(&m, "t");
         let Expr::EnrichedConditional {
@@ -5644,10 +5458,7 @@ mod tests {
     fn bound_conditional_preserves_shadowed_branch_captures() {
         let m = optimize_one(
             "x/main",
-            "module x/main; import control(Bool, macro if); \
-             fn t[A](flag: Bool, outer: A, other: A) -> A { \
-               if(flag) { .(outer: A) { outer }(other) } else { outer } \
-             }",
+            "mod x/main; import control {type Bool; macro if} fn t[A](flag: Bool, outer: A, other: A) -> A { if(flag) { .(outer: A) { outer }(other) } else { outer } }",
         );
         let body = fn_body(&m, "t");
         let Expr::EnrichedConditional {
@@ -5666,11 +5477,7 @@ mod tests {
     fn bound_conditional_keeps_effectful_condition_once() {
         let m = optimize_one(
             "x/main",
-            "module x/main; import control(Bool, macro if); \
-             host fn condition() -> Bool; \
-             fn t[A](left: A, right: A) -> A { \
-               if(condition()) { left } else { right } \
-             }",
+            "mod x/main; import control {type Bool; macro if} host fn condition() -> Bool; fn t[A](left: A, right: A) -> A { if(condition()) { left } else { right } }",
         );
         let body = fn_body(&m, "t");
         let Expr::EnrichedConditional {
@@ -5696,13 +5503,7 @@ mod tests {
                 let module = optimize_one(
                     "x/main",
                     &format!(
-                        "module x/main; import __intrinsics__; \
-                         host type Bool role(bool); \
-                         host fn left() -> Bool; host fn right() -> Bool; \
-                         fn choose() -> Bool {{ \
-                           let packet = ({left}, .() {{ right() }}); \
-                           {intrinsic}[Bool](packet) \
-                         }}"
+                        "mod x/main; import __intrinsics__; host type Bool role(bool); host fn left() -> Bool; host fn right() -> Bool; fn choose() -> Bool {{ let packet = ({left}, .() {{ right() }}); {intrinsic}[Bool](packet) }}"
                     ),
                 );
                 let body = fn_body(&module, "choose");
@@ -5751,18 +5552,7 @@ mod tests {
     fn canonical_boolean_macros_and_operators_remove_inline_rhs_thunks() {
         let module = optimize_one(
             "x/main",
-            "module x/main; \
-             import control(Bool, macro and, macro or, not, op macro _ && .__, op macro _ || .__); \
-             fn direct(left: Bool, middle: Bool, right: Bool) -> Bool { \
-               and(left, .() { or(middle, .() { not(right) }) }) \
-             } \
-             fn blocks(left: Bool, middle: Bool, right: Bool) -> Bool { \
-               and(left) { or(middle) { not(right) } } \
-             } \
-             fn operators(left: Bool, middle: Bool, right: Bool) -> Bool { \
-               left && (middle || not(right)) \
-             } \
-             fn opaque(left: Bool, right: . -> Bool) -> Bool { and(left, right) }",
+            "mod x/main; import control {type Bool; macro and; macro or; fn not; op_macro _ && .__; op_macro _ || .__} fn direct(left: Bool, middle: Bool, right: Bool) -> Bool { and(left, .() { or(middle, .() { not(right) }) }) } fn blocks(left: Bool, middle: Bool, right: Bool) -> Bool { and(left) { or(middle) { not(right) } } } fn operators(left: Bool, middle: Bool, right: Bool) -> Bool { left && (middle || not(right)) } fn opaque(left: Bool, right: . -> Bool) -> Bool { and(left, right) }",
         );
         for name in ["direct", "blocks", "operators"] {
             let body = fn_body(&module, name);
@@ -5789,9 +5579,7 @@ mod tests {
     fn bound_conditional_keeps_effectful_unselected_thunk_factory() {
         let m = optimize_one(
             "x/main",
-            "module x/main; import control(Bool, macro if); \
-             host fn factory() -> . -> .; \
-             fn t(flag: Bool) { if(flag, .() { () }, factory()) }",
+            "mod x/main; import control {type Bool; macro if} host fn factory() -> . -> .; fn t(flag: Bool) { if(flag, .() { () }, factory()) }",
         );
         let body = fn_body(&m, "t");
         let Expr::Let {
@@ -5833,8 +5621,7 @@ mod tests {
     fn bound_conditional_guard_keeps_a_unary_unit_thunk() {
         let m = recover_one(
             "x/main",
-            "module x/main; import control(Bool, macro if); \
-             fn t(flag: Bool) { if(flag, .(unit: .) { unit }, .() { () }) }",
+            "mod x/main; import control {type Bool; macro if} fn t(flag: Bool) { if(flag, .(unit: .) { unit }, .() { () }) }",
         );
         let mut body = fn_body(&m, "t").clone();
         // The catalog composes child tail projections before this parent rule.
@@ -5952,11 +5739,7 @@ mod tests {
     fn constant_fold_selects_else_on_literal_false() {
         let m = optimize_one(
             "x/main",
-            "module x/main; import __intrinsics__; import control(macro if); \
-             import testapi(Bool); \
-             fn t[A](a: A, b: A) -> A { \
-               if (.f) { a } else { b } \
-             }",
+            "mod x/main; import __intrinsics__; import control {macro if} import testapi {type Bool} fn t[A](a: A, b: A) -> A { if (.f) { a } else { b } }",
         );
         let body = fn_body(&m, "t");
         assert!(
@@ -5987,9 +5770,7 @@ mod tests {
     fn newtype_unwrap_of_wrap_collapses_to_payload() {
         let m = optimize_one(
             "x/main",
-            "module x/main; import __intrinsics__; \
-             type { Foo[A]: A { pub mk; pub get; }; }; \
-             fn t[A](x: A) -> A { Foo.get[A](Foo.mk[A](x)) }",
+            "mod x/main; import __intrinsics__; type { Foo[A]: A { pub mk; pub get; }; }; fn t[A](x: A) -> A { Foo.get[A](Foo.mk[A](x)) }",
         );
         let body = fn_body(&m, "t");
         assert!(
@@ -6010,14 +5791,11 @@ mod tests {
         let parsed_modules = [
             (
                 "a.kio",
-                "module a; \
-                 type { Foo: . { pub mk; pub get; }; };",
+                "mod a; type { Foo: . { pub mk; pub get; }; };",
             ),
             (
                 "b.kio",
-                "module b; \
-                 type { Foo: . { pub mk; pub get; }; }; \
-                 fn t(value: .) -> . { Foo.get(Foo.mk(value)) }",
+                "mod b; type { Foo: . { pub mk; pub get; }; }; fn t(value: .) -> . { Foo.get(Foo.mk(value)) }",
             ),
         ]
         .into_iter()
@@ -6074,24 +5852,15 @@ mod tests {
         let parsed_modules = [
             (
                 "provider.kio",
-                "module provider; \
-                 pub type { Box: . { pub mk; pub get; }; };",
+                "mod provider; pub type { Box: . { pub mk; pub get; }; };",
             ),
             (
                 "decoy.kio",
-                "module decoy; \
-                 pub type { Box: . { pub mk; pub get; }; };",
+                "mod decoy; pub type { Box: . { pub mk; pub get; }; };",
             ),
             (
                 "consumer.kio",
-                "module consumer; \
-                 import provider(Box); \
-                 import provider as p; import provider as q; import decoy as d; \
-                 fn same_provider(value: .) -> . { p.Box.get(q.Box.mk(value)) } \
-                 fn mixed_route(value: .) -> . { Box.get(p.Box.mk(value)) } \
-                 fn distinct_provider(value: d.Box) -> p.Box { \
-                   p.Box.mk(d.Box.get(value)) \
-                 }",
+                "mod consumer; import provider {type Box} import provider as p; import provider as q; import decoy as d; fn same_provider(value: .) -> . { p.Box.get(q.Box.mk(value)) } fn mixed_route(value: .) -> . { Box.get(p.Box.mk(value)) } fn distinct_provider(value: d.Box) -> p.Box { p.Box.mk(d.Box.get(value)) }",
             ),
         ]
         .into_iter()
@@ -6141,7 +5910,7 @@ mod tests {
     /// the DCE Seq arm.
     #[test]
     fn dead_code_elimination_drops_pure_seq_statement() {
-        let m = optimize_one("x/main", "module x/main; fn t() -> . { (); () }");
+        let m = optimize_one("x/main", "mod x/main; fn t() -> . { (); () }");
         let body = fn_body(&m, "t");
         assert!(
             !contains(body, &|e| matches!(e, Expr::Seq { .. })),

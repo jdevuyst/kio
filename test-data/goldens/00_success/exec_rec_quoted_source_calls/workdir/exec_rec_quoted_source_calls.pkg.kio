@@ -1,4 +1,4 @@
-package exec_rec_quoted_source_calls;
+pkg exec_rec_quoted_source_calls;
 
 build {
   cache "out/.kio-cache/";

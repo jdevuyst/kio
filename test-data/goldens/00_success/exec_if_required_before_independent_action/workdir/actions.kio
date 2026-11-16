@@ -1,4 +1,4 @@
-module actions;
+mod actions;
 
 import __comptime__;
 

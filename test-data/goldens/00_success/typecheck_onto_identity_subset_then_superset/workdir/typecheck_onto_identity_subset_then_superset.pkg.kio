@@ -1,4 +1,4 @@
-package typecheck_onto_identity_subset_then_superset;
+pkg typecheck_onto_identity_subset_then_superset;
 
 build {
   cache "out/.kio-cache/";

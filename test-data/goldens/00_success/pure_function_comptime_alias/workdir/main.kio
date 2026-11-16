@@ -1,6 +1,6 @@
-module main;
+mod main;
 
-import provider(Flag, Proof, make_flag);
+import provider { type Flag; type Proof; fn make_flag }
 
 pure fn value(ct: Proof) -> Flag { let flag = make_flag(ct); flag }
 

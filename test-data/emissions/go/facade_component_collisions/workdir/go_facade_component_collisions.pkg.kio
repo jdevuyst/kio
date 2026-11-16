@@ -1,4 +1,4 @@
-package go_facade_component_collisions;
+pkg go_facade_component_collisions;
 
 build {
   cache "out/.kio-cache/";

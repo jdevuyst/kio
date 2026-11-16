@@ -47,9 +47,9 @@ awk -v scratch="$scratch" '
       }
       if (example) {
         print $0 > body
-        if ($0 ~ /^[ \t]*module[ \t]+[[:alnum:]_]+(\/[[:alnum:]_]+)*[ \t]*;/) {
+        if ($0 ~ /^[ \t]*mod[ \t]+[[:alnum:]_]+(\/[[:alnum:]_]+)*[ \t]*;/) {
           module = $0
-          sub(/^[ \t]*module[ \t]+/, "", module)
+          sub(/^[ \t]*mod[ \t]+/, "", module)
           sub(/[ \t]*;.*/, "", module)
         }
       }

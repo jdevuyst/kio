@@ -1,9 +1,9 @@
-module inventory_cycle_counter/report;
+mod inventory_cycle_counter/report;
 
 import inventory_cycle_counter/audit as audit;
-import inventory_cycle_counter/model(Bin, Code, Expected, Observed);
-import macros/row_macros(macro select);
-import testapi(String);
+import inventory_cycle_counter/model { type Bin; type Code; type Expected; type Observed }
+import macros/row_macros { macro select }
+import testapi { type String }
 import testapi/fmt as fmt;
 import testapi/text as text;
 

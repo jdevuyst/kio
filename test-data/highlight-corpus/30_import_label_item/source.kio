@@ -1,10 +1,10 @@
-module x;
+mod x;
 
-import provider(
-  , Item
-  , // nominal selector trivia
-    Selected
-  );
+import provider {
+   type Item
+  ; // nominal selector trivia
+    type Selected
+  }
 
 fn keep(ordinary_value: Item) -> Item { ordinary_value }
 

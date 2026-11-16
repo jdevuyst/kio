@@ -10,34 +10,34 @@
 /// submission against the answer, accepting it outright when it is already
 /// reduced and accepting it with a note when it is merely equivalent. `main`
 /// prints one block per exercise and then the class summary.
-module testapi/main;
+mod testapi/main;
 
-import macros/match(macro match);
-import macros/row_macros(macro select);
+import macros/match { macro match }
+import macros/row_macros { macro select }
 import rational/expr as expr;
 import rational/fixture as fixture;
 import rational/grader as grader;
-import rational/grader(
-, Equivalent_count
-, Exact_count
-, Exercise
-, Note
-, Outcome
-, Question
-, Roster
-, Submitted
-, Tally
-, Undefined_count
-, Verdict
-, Wrong_count
-);
+import rational/grader {
+  type Equivalent_count;
+  type Exact_count;
+  type Exercise;
+  type Note;
+  type Outcome;
+  type Question;
+  type Roster;
+  type Submitted;
+  type Tally;
+  type Undefined_count;
+  type Verdict;
+  type Wrong_count
+}
 import rational/render as render;
 import rational/text as text;
-import testapi(I32, String);
+import testapi { type I32; type String }
 import testapi/arith as arith;
 import testapi/fmt as fmt;
 import testapi/io as io;
-import testapi/iter(loop);
+import testapi/iter { fn loop }
 
 fn line(body: String) { io.print(text.cat2(body, "\n")) }
 

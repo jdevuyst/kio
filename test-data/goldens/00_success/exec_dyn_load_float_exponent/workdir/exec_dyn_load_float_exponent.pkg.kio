@@ -1,4 +1,4 @@
-package exec_dyn_load_float_exponent;
+pkg exec_dyn_load_float_exponent;
 
 build {
   cache "out/.kio-cache/";

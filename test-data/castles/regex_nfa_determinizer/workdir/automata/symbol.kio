@@ -1,11 +1,11 @@
 /// The alphabet: three letters coded 0, 1, 2. Epsilon takes the code one
 /// past the alphabet rather than a negative marker, so a transition's
 /// symbol slot is always a valid index into the letter table.
-module automata/symbol;
+mod automata/symbol;
 
-import macros/control(macro if);
-import testapi(Bool, I32, String);
-import testapi/arith(eq_i32);
+import macros/control { macro if }
+import testapi { type Bool; type I32; type String }
+import testapi/arith { fn eq_i32 }
 
 pub fn code_a() -> I32 { 0 }
 

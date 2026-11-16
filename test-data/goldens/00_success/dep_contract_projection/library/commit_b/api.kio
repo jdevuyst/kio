@@ -1,7 +1,7 @@
-module api;
+mod api;
 
-import surface(Choice, Tag, zero);
-import surface(op _ + _);
+import surface { op _ + _ }
+import surface { type Choice; type Tag; lit zero }
 
 pub type Identity[Value] = Value;
 

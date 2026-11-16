@@ -1,6 +1,6 @@
-module guest;
+mod guest;
 
-import hostapi(F32, F64, add_f64);
+import hostapi { type F32; type F64; fn add_f64 }
 
 pub fn tiny() -> F64 { add_f64(1.5e-3, 2.5e2) }
 

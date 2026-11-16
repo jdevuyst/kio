@@ -1,4 +1,4 @@
-module main;
+mod main;
 
 // `broken`'s body opens with `{` but never closes before the next
 // top-level `fn`. The tree-skeleton builder marks the group as

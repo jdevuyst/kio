@@ -1,8 +1,8 @@
-module derive_recursive_missing_unit_precondition/main;
+mod derive_recursive_missing_unit_precondition/main;
 
 import __intrinsics__;
 
-import macros/derive(macro derive);
+import macros/derive { macro derive }
 
 type { Token: . { mk; get } }
 

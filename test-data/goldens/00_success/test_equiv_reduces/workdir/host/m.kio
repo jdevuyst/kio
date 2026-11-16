@@ -1,6 +1,6 @@
-module host/m;
+mod host/m;
 
-import host(foo);
+import host { fn foo }
 
 fn id_unit() { () }
 

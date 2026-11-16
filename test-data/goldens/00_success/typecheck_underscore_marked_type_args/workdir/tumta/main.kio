@@ -1,4 +1,4 @@
-module tumta/main;
+mod tumta/main;
 
 // Surface-Kio coverage of `_`-marked type-arg slots at call
 // sites: the typer treats each `_` as an elided positional
@@ -14,7 +14,7 @@ module tumta/main;
 // case is non-Kio' (no IS_KIO_PRIME marker).
 import __intrinsics__;
 
-import tumta(String);
+import tumta { type String }
 
 // `__left__ : [A][B](x: A) -> (a | B)`. Two positional
 // `_` slots in front of `x` stand in for the two type-args; the

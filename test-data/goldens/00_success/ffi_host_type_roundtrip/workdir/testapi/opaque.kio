@@ -1,6 +1,6 @@
-module testapi/opaque;
+mod testapi/opaque;
 
-import testapi(I32, Token);
+import testapi { type I32; type Token }
 
 host fn make_token(p0: I32) -> Token;
 

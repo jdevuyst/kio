@@ -18,7 +18,7 @@ fn package(source: &str) -> TempDir {
     let dir = TempDir::new().expect("create documentation package");
     fs::write(
         dir.path().join("pkg.pkg.kio"),
-        "package pkg;\nbuild { cache (); docs { md \".\"; } }\nbridge { pkg; }\n",
+        "pkg pkg;\nbuild { cache (); docs { md \".\"; } }\nbridge { pkg; }\n",
     )
     .unwrap();
     fs::write(dir.path().join("pkg.kio"), source).unwrap();
@@ -67,7 +67,7 @@ fn plain_html(source: &str) -> String {
 
 #[test]
 fn kiodoc_recursive_group_site_and_directives_keep_complete_context() {
-    let source = "module pkg;\n\n\
+    let source = "mod pkg;\n\n\
         /// Group prose.\n\
         rec {\n\
           /// Alias prose. [`@signature Node`]\n\
@@ -100,7 +100,7 @@ fn kiodoc_recursive_group_site_and_directives_keep_complete_context() {
     fs::write(
         dir.path().join("copied.kio"),
         format!(
-            "module copied;\n{}\n",
+            "mod copied;\n{}\n",
             copied.expect("rendered recursive declaration")
         ),
     )
@@ -131,7 +131,7 @@ fn kiodoc_recursive_group_outer_and_nominal_docs_are_validated() {
         ),
     ] {
         let dir = package(&format!(
-            "module pkg;\n{outer}rec {{\ntype Chain = Node;\n{member}type {{ Node: . | Chain {{ mk; get; }}; }};\n}}\n"
+            "mod pkg;\n{outer}rec {{\ntype Chain = Node;\n{member}type {{ Node: . | Chain {{ mk; get; }}; }};\n}}\n"
         ));
         let output = doc(dir.path(), &["check"]);
         let diagnostics = format!(
@@ -154,7 +154,7 @@ fn kiodoc_recursive_group_outer_and_nominal_docs_are_validated() {
 #[test]
 fn kiodoc_recursive_nominals_are_type_oriented_doc_targets() {
     let dir = package(
-        "module pkg;\n\n\
+        "mod pkg;\n\n\
         /// Type [`Twig`]. Signature [`@signature Twig`]. Source [`@source Twig`].\n\
         rec { type Tree = Twig; type { Twig: . | Tree; }; }\n\
         /// Type [`List`]. Signature [`@signature List`]. Source [`@source List`].\n\
@@ -188,7 +188,7 @@ fn kiodoc_recursive_group_private_names_do_not_enter_package_scope() {
     let mut escaped = Vec::new();
     for directive in ["Hidden", "@signature Hidden", "@source Node"] {
         let dir = package(
-            "module pkg;\nrec { type Hidden = Node; type { Node: . | Hidden { mk; get; }; }; }\n",
+            "mod pkg;\nrec { type Hidden = Node; type { Node: . | Hidden { mk; get; }; }; }\n",
         );
         fs::write(dir.path().join("input.md"), format!("[`{directive}`]\n")).unwrap();
         let output = doc(dir.path(), &["check"]);
@@ -205,7 +205,7 @@ fn kiodoc_recursive_group_private_names_do_not_enter_package_scope() {
 #[test]
 fn kiodoc_recursive_named_compact_type_preserves_group_and_member_ownership() {
     let dir = package(
-        "module pkg;\n\n\
+        "mod pkg;\n\n\
         /// Grove group prose.\n\
         rec {\n\
           /// Branch prose. Signature [`@signature Branches`]. Source [`@source Branch`].\n\

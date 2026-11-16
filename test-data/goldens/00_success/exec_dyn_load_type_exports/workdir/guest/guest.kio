@@ -1,7 +1,7 @@
-module guest;
+mod guest;
 
-import hostapi(I32, Resource, add_i32);
-import internal(bump);
+import hostapi { type I32; type Resource; fn add_i32 }
+import internal { fn bump }
 
 pub type Twin[A] = A & A;
 

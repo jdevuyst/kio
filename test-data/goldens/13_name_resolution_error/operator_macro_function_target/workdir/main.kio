@@ -1,5 +1,5 @@
-module main;
+mod main;
 
 fn identity(value: .) { value }
 
-op macro # _ { impl identity }
+op_macro # _ { impl identity }

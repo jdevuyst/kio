@@ -3,7 +3,7 @@ set -eu
 
 # Calling a projected callback retains its ordinary-call boundary after formatting.
 formatted=$("$KIO_BIN" fmt - <<'KIO'
-module api;
+mod api;
 pub type { Vault[A]: A { mk; get } }
 pub fn run(vault: Vault[. -> .]) { (vault.>Vault.get)() }
 pub fn unit(vault: Vault[. -> .]) { (vault.>Vault.get)(()) }

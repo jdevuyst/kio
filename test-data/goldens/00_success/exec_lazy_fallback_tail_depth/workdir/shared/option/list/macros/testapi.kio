@@ -1,4 +1,4 @@
-module shared/option/list/macros/testapi;
+mod shared/option/list/macros/testapi;
 
 host type String role(str);
 

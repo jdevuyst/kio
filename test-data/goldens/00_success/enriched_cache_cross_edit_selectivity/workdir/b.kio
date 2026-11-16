@@ -1,3 +1,3 @@
-module b;
+mod b;
 
 pub fn fb() { () }

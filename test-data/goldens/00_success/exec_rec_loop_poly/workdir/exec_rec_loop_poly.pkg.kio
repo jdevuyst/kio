@@ -1,4 +1,4 @@
-package exec_rec_loop_poly;
+pkg exec_rec_loop_poly;
 
 build {
   cache "out/.kio-cache/";

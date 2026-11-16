@@ -1,4 +1,4 @@
-package exec_nested_labeled_arithmetic;
+pkg exec_nested_labeled_arithmetic;
 
 build {
   cache "out/.kio-cache/";

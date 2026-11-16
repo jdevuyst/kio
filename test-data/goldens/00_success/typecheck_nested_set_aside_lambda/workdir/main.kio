@@ -1,4 +1,4 @@
-module main;
+mod main;
 
 fn apply[A](next: A -> A) -> A -> A { next }
 

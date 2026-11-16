@@ -1,4 +1,4 @@
-dependency docs_loader;
+dep docs_loader;
 
 source {
   path "../../../../poc/dyn_load_prime/workdir/dyn_load_prime.pkg.kio"

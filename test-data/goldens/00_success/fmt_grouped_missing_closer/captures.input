@@ -1,1 +1,1 @@
-module app; macro make: . { impl f; captures ((Type) }
+mod app; macro make: . { impl f; captures ((Type) }

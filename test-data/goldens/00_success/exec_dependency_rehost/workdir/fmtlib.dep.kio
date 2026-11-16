@@ -1,4 +1,4 @@
-dependency fmtlib;
+dep fmtlib;
 
 source {
   path "../library/fmtlib/fmtlib.pkg.kio"

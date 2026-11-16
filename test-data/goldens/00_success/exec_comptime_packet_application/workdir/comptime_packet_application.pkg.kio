@@ -1,4 +1,4 @@
-package comptime_packet_application;
+pkg comptime_packet_application;
 
 build {
   cache "out/.kio-cache/";

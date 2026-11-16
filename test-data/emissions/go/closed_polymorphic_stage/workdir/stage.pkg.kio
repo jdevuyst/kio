@@ -1,4 +1,4 @@
-package stage;
+pkg stage;
 
 build {
   target go {

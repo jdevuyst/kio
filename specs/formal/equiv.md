@@ -359,7 +359,7 @@ equiv distinct[A](v: A, w: A) {
 ### 5.6. Stuck `__if_then_else__` on an opaque condition
 
 ```kio
-import macros/control(macro if);
+import macros/control {macro if}
 
 equiv stuck_if_eq(c: Bool) {
   if(c) { foo() } else { bar() };

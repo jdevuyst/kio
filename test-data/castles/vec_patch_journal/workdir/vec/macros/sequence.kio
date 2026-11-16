@@ -1,5 +1,5 @@
 /// Sequencing through an explicitly supplied bind function.
-module vec/macros/sequence;
+mod vec/macros/sequence;
 
 import __comptime__;
 

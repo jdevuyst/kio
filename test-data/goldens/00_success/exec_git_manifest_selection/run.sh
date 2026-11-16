@@ -36,7 +36,7 @@ commit_fixture '2020-01-01T00:00:00 +0000' initial
 
 write_dependency() {
   {
-    printf 'dependency %s;\n\nsource {\n' "$1"
+    printf 'dep %s;\n\nsource {\n' "$1"
     printf '  git "%s";\n  ref "main"' "$repository"
     if [ -n "$2" ]; then
       printf ';\n  path "%s"' "$2"

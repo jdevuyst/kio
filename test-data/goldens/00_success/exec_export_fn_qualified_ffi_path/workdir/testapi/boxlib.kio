@@ -1,4 +1,4 @@
-module testapi/boxlib;
+mod testapi/boxlib;
 
 // An actual `Token` passed to `Box` comes from the caller; this same-leaf
 // declaration must not capture it when `Box(Token)` expands in this module.

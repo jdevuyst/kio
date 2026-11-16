@@ -686,12 +686,12 @@ impl Parser {
     /// not a special block — see `specs/prime.md` § Host declarations.
     /// There is no `env` block in Kio'.
     fn module(&mut self) -> Result<(), ParseError> {
-        self.expect_ident_named("module").map_err(|_| ParseError {
+        self.expect_ident_named("mod").map_err(|_| ParseError {
             offset: self.current_offset(),
-            message: "expected `module` declaration at the start of the file".into(),
+            message: "expected `mod` declaration at the start of the file".into(),
         })?;
         self.module_path()?;
-        self.expect_kind(&TokenKind::Semicolon, "`;` after `module` path")?;
+        self.expect_kind(&TokenKind::Semicolon, "`;` after `mod` path")?;
 
         while self.ident_named("import") {
             self.import_stmt()?;
@@ -748,40 +748,56 @@ impl Parser {
             let (alias, span) = self.expect_ident_with_span("alias after `as`")?;
             Self::validate_value_name(&alias, span)?;
         } else {
-            self.expect_kind(&TokenKind::LParen, "`(` after the import provider")?;
-            self.skip_commas();
-            if matches!(self.peek_kind(), Some(TokenKind::RParen)) {
+            self.expect_kind(&TokenKind::LBrace, "`{` after the import provider")?;
+            while matches!(self.peek_kind(), Some(TokenKind::Semicolon)) {
+                self.advance();
+            }
+            if matches!(self.peek_kind(), Some(TokenKind::RBrace)) {
                 return self.err("expected at least one imported item");
             }
             loop {
-                if (self.ident_named("op") || self.ident_named("varop"))
-                    && !matches!(self.peek_kind_at(1), Some(TokenKind::Ident(name)) if name == "as")
-                    && !matches!(
-                        self.peek_kind_at(1),
-                        Some(TokenKind::Comma | TokenKind::RParen)
-                    )
+                let kind = if self.eat_ident_named("fn") {
+                    false
+                } else if self.eat_ident_named("type") {
+                    true
+                } else if self.ident_named("op")
+                    || self.ident_named("op_macro")
+                    || self.ident_named("op_var")
                 {
                     return self.err("operator imports are surface syntax — not in Kio'");
-                }
+                } else if self.ident_named("lit") || self.ident_named("macro") {
+                    return self.err("literal and macro imports are surface syntax — not in Kio'");
+                } else {
+                    return self.err("expected import kind `fn` or `type`");
+                };
                 let (name, span) = self.expect_ident_with_span("imported identifier")?;
-                Self::validate_value_or_type_name(&name, span)?;
+                if kind {
+                    Self::validate_type_name(&name, span)?;
+                } else {
+                    Self::validate_value_name(&name, span)?;
+                }
                 if self.eat_ident_named("as") {
                     let (alias, span) = self.expect_ident_with_span("alias after `as`")?;
-                    if Self::is_type_name(&name) {
+                    if kind {
                         Self::validate_type_name(&alias, span)?;
                     } else {
                         Self::validate_value_name(&alias, span)?;
                     }
                 }
-                let saw_comma = self.skip_commas();
-                if matches!(self.peek_kind(), Some(TokenKind::RParen)) {
+                if matches!(self.peek_kind(), Some(TokenKind::RBrace)) {
                     break;
                 }
-                if !saw_comma {
-                    return self.err("expected `,` or `)` in the import list");
+                self.expect_kind(&TokenKind::Semicolon, "`;` or `}` in the import list")?;
+                while matches!(self.peek_kind(), Some(TokenKind::Semicolon)) {
+                    self.advance();
+                }
+                if matches!(self.peek_kind(), Some(TokenKind::RBrace)) {
+                    break;
                 }
             }
-            self.expect_kind(&TokenKind::RParen, "`)` closing the import list")?;
+            self.expect_kind(&TokenKind::RBrace, "`}` closing the import list")?;
+            self.optional_outer_semicolon();
+            return Ok(());
         }
         self.expect_kind(&TokenKind::Semicolon, "`;` after the import")?;
         Ok(())
@@ -857,8 +873,8 @@ impl Parser {
             } else {
                 self.type_alias_after_keyword()
             }
-        } else if self.ident_named("literal") {
-            self.err("`literal` aliases are Kio surface sugar — not in Kio'")
+        } else if self.ident_named("lit") {
+            self.err("`lit` aliases are Kio surface sugar — not in Kio'")
         } else if self.ident_named("if") {
             self.err("`if`/`else` is surface sugar — not in Kio'")
         } else if self.ident_named("match") {
@@ -867,7 +883,7 @@ impl Parser {
             self.err(
                 "`op` declarations are Kio surface sugar for user-defined operators — not in Kio'",
             )
-        } else if self.ident_named("varop") {
+        } else if self.ident_named("op_var") {
             self.err("variadic operator declarations are Kio surface sugar — not in Kio'")
         } else if self.ident_named("macro") {
             self.err("`macro` declarations are not in Kio'")
@@ -969,11 +985,10 @@ impl Parser {
     }
 
     /// After consuming `host type`:
-    /// `IDENT TypeParamList? RoleAnnotation? OwnedBlock? ';'`.
+    /// `IDENT TypeParamList? RoleAnnotation? ';'`.
     ///
     /// A host type is an opaque nominal type the host supplies; the
-    /// optional `role(...)` annotation pins its literal role. The optional
-    /// source-compatible `{ owned }` block selects no alternate facade.
+    /// optional `role(...)` annotation pins its literal role.
     /// The role name comes from the grammar's closed vocabulary; whether its
     /// host type has admissible parameters remains a semantic check.
     fn host_type_after_keyword(&mut self) -> Result<(), ParseError> {
@@ -1005,9 +1020,6 @@ impl Parser {
             }
             self.expect_kind(&TokenKind::RParen, "`)` closing `role` annotation")?;
         }
-        if matches!(self.peek_kind(), Some(TokenKind::LBrace)) {
-            self.owned_block()?;
-        }
         self.expect_kind(&TokenKind::Semicolon, "`;` ending `host type`")?;
         Ok(())
     }
@@ -1028,21 +1040,6 @@ impl Parser {
             self.type_()?;
         }
         self.expect_kind(&TokenKind::Semicolon, "`;` ending `host fn`")?;
-        Ok(())
-    }
-
-    /// `OwnedBlock ::= '{' 'owned' '}'`, the optional source-compatible
-    /// host-type annotation that selects no alternate facade.
-    fn owned_block(&mut self) -> Result<(), ParseError> {
-        self.expect_kind(
-            &TokenKind::LBrace,
-            "`{` opening `host type` attribute block",
-        )?;
-        self.expect_ident_named("owned")?;
-        self.expect_kind(
-            &TokenKind::RBrace,
-            "`}` closing `host type` attribute block",
-        )?;
         Ok(())
     }
 
@@ -1414,16 +1411,6 @@ impl Parser {
                 self.type_with_chain(false)?;
             }
             return Ok(());
-        }
-
-        // Standalone existential type expressions `(<U>, body)` are
-        // no longer admissible — existentials are declared on a
-        // nominal header.
-        if self.at_sym("<") {
-            return self.err(
-                "standalone existential type expressions are no longer admissible; \
-                 existentials live on a nominal header (`type { Name[A] <U>: body { mk; get; }; }`)",
-            );
         }
 
         // Leading `&` / `|` layouts stay in the explicit chain path.
@@ -1850,21 +1837,18 @@ mod tests {
 
     #[test]
     fn default_is_an_ordinary_name_not_a_declaration_modifier() {
-        ok("module m; import helpers(default as d, default); fn default() { () }");
+        ok("mod m; import helpers { fn default as d; fn default } fn default() { () }");
         for source in [
-            "module m; default host type Int role(i32);",
-            "module m; default pub host type Int role(i32);",
-            "module m; default pub type Number = numbers.Int;",
-            "module m; default type Number = Identity(numbers.Int);",
-            "module m; import numbers(default Int as Number, default Bool);",
-            "module m; rec { default type Number = Int; type { Box : Int { mk; get; }; } }",
-            "module m; pub default host type Int role(i32);",
-            "module m; default default host type Int role(i32);",
-            "module m; default host fn value();",
-            "module m; default fn value() {}",
-            "module m; default type { Int : . {}; }",
-            "module m; import numbers(default value);",
-            "module m; import numbers(default Int as value);",
+            "mod m; default host type Int role(i32);",
+            "mod m; default pub host type Int role(i32);",
+            "mod m; default pub type Number = numbers.Int;",
+            "mod m; default type Number = Identity(numbers.Int);",
+            "mod m; rec { default type Number = Int; type { Box : Int { mk; get; }; } }",
+            "mod m; pub default host type Int role(i32);",
+            "mod m; default default host type Int role(i32);",
+            "mod m; default host fn value();",
+            "mod m; default fn value() {}",
+            "mod m; default type { Int : . {}; }",
         ] {
             assert!(parse_module(source).is_err(), "{source}");
         }
@@ -1876,20 +1860,20 @@ mod tests {
             "i8", "i16", "i32", "i64", "i128", "u8", "u16", "u32", "u64", "u128", "f32", "f64",
             "bool", "str",
         ] {
-            ok(&format!("module x; host type T role({role});"));
+            ok(&format!("mod x; host type T role({role});"));
         }
-        assert!(err("module x; host type T role(no_such_role);").contains("unknown `role`"));
+        assert!(err("mod x; host type T role(no_such_role);").contains("unknown `role`"));
     }
 
     #[test]
     fn host_declarations_reject_scoped_visibility() {
         for declaration in ["fn f() -> .;", "type T;"] {
             assert!(
-                err(&format!("module x; pub(x) host {declaration}"))
+                err(&format!("mod x; pub(x) host {declaration}"))
                     .contains("host declarations cannot use `pub(path)`")
             );
             for modifier in ["host", "pub host", "host pub"] {
-                ok(&format!("module x; {modifier} {declaration}"));
+                ok(&format!("mod x; {modifier} {declaration}"));
             }
         }
     }
@@ -1898,85 +1882,67 @@ mod tests {
     fn boolean_literals_require_adjacent_marker() {
         for literal in [". t", ".\nf", ".// keep\nt"] {
             assert!(
-                err(&format!("module x; fn f() {{ {literal}[Bool] }}"))
+                err(&format!("mod x; fn f() {{ {literal}[Bool] }}"))
                     .contains("immediately after `.`")
             );
         }
-        ok("module x; fn f() { .t[Bool] } fn g() { .f[Bool] }");
+        ok("mod x; fn f() { .t[Bool] } fn g() { .f[Bool] }");
     }
 
     #[test]
     fn numeric_separators_stay_between_digits() {
         for literal in ["1__0", "1_", "1.0__1", "1.0e1__0", "1e1_", "2e3", "2E-3"] {
-            let _ = err(&format!("module x; fn f() {{ {literal}[Number] }}"));
+            let _ = err(&format!("mod x; fn f() {{ {literal}[Number] }}"));
         }
         for literal in ["1_0", "1.0_1", "1.0e1_0", "2.0e3", "2.0E-3"] {
-            ok(&format!("module x; fn f() {{ {literal}[Number] }}"));
+            ok(&format!("mod x; fn f() {{ {literal}[Number] }}"));
         }
     }
 
     #[test]
     fn empty_module_decl_only() {
-        ok("module foo;");
+        ok("mod foo;");
     }
 
     #[test]
     fn type_only_ordinary_functions_and_lambdas() {
-        ok("module example; \
+        ok("mod example; \
             fn named[A][B] -> . { () } \
             pure fn default[A] { () } \
             fn returned() -> [A] . { .[A] { () } } \
             fn annotated() -> [A] . { .[A] -> . { () } } \
             fn explicit[A]() { () }");
         for source in [
-            "module example; fn constant -> . { () }",
-            "module example; host fn imported[A] -> .;",
-            "module example; fn invalid() { . { () } }",
+            "mod example; fn constant -> . { () }",
+            "mod example; host fn imported[A] -> .;",
+            "mod example; fn invalid() { . { () } }",
         ] {
             err(source);
         }
-        ok("module example; host fn imported[A]() -> .;");
-    }
-
-    #[test]
-    fn rejects_env_block() {
-        // The `env { … }` block is surface sugar that was removed; host
-        // items are ordinary module items (`host type` / `host fn`).
-        // See specs/prime.md § Host declarations — there is no `env` block.
-        err("module foo; \
-             env { type String role(str); type Box[A]; fn read(x: Box[String]) -> String; } \
-             fn id(x: String) -> String { x }");
-        err("module foo; \
-             env { type Token; fn print(s: String) -> .; } \
-             type String = .;");
+        ok("mod example; host fn imported[A]() -> .;");
     }
 
     #[test]
     fn host_items_as_module_items() {
-        ok("module foo; \
+        ok("mod foo; \
              host type String role(str); host type Box[A]; \
              host fn read(x: Box[String]) -> String; \
              fn id(x: String) -> String { x }");
     }
 
     #[test]
-    fn host_type_owned_block() {
-        ok("module foo; host type Handle { owned }; type Alias = .;");
-    }
-
-    #[test]
     fn fn_def_id() {
-        ok("module m; fn id[A](x: A) -> A { x }");
+        ok("mod m; fn id[A](x: A) -> A { x }");
     }
 
     #[test]
     fn pure_fn_modifier() {
-        ok("module m; pure fn id[A](x: A) -> A { x }");
+        ok("mod m; pure fn id[A](x: A) -> A { x }");
     }
 
     #[test]
     fn pure_type_modifier_rejected() {
-        let message = err("module m; pure type Pair[A][B] = (A & B);");
+        let message = err("mod m; pure type Pair[A][B] = (A & B);");
         assert!(
             message.contains("`pure`") && message.contains("`type`"),
             "{message}"
@@ -1985,7 +1951,7 @@ mod tests {
 
     #[test]
     fn pure_newtype_modifier_rejected() {
-        let message = err("module m; pure type { Wrap[A] : A { pub mk; pub get; }; };");
+        let message = err("mod m; pure type { Wrap[A] : A { pub mk; pub get; }; };");
         assert!(
             message.contains("`pure`") && message.contains("`type`"),
             "{message}"
@@ -1994,33 +1960,33 @@ mod tests {
 
     #[test]
     fn pure_and_visibility_modifiers_accept_either_order() {
-        ok("module m; pub pure fn f() -> . { () }");
-        ok("module m; pure pub fn f() -> . { () }");
-        ok("module m; pub(scope/path) pure fn f() -> . { () }");
-        ok("module m; pure pub(scope/path) fn f() -> . { () }");
+        ok("mod m; pub pure fn f() -> . { () }");
+        ok("mod m; pure pub fn f() -> . { () }");
+        ok("mod m; pub(scope/path) pure fn f() -> . { () }");
+        ok("mod m; pure pub(scope/path) fn f() -> . { () }");
     }
 
     #[test]
     fn duplicate_pure_modifier_rejected() {
-        let message = err("module m; pure pure fn f() -> . { () }");
+        let message = err("mod m; pure pure fn f() -> . { () }");
         assert!(message.contains("duplicate `pure` modifier"), "{message}");
     }
 
     #[test]
     fn pure_host_and_macro_declarations_rejected() {
-        let host_fn = err("module m; pure host fn f() -> .;");
+        let host_fn = err("mod m; pure host fn f() -> .;");
         assert!(
             host_fn.contains("`pure` means that a function does not call host functions"),
             "{host_fn}"
         );
 
-        let host_type = err("module m; pure host type T;");
+        let host_type = err("mod m; pure host type T;");
         assert!(
             host_type.contains("`pure` is valid only on ordinary `fn` declarations"),
             "{host_type}"
         );
 
-        let macro_decl = err("module m; pure macro e: . -> . { impl helper }");
+        let macro_decl = err("mod m; pure macro e: . -> . { impl helper }");
         assert!(macro_decl.contains("`macro`"), "{macro_decl}");
     }
 
@@ -2028,7 +1994,7 @@ mod tests {
     fn rejects_angle_universal_binder() {
         // Universals are `[A]`-shaped; `<A>` is reserved for
         // existentials in their paren-wrapped position.
-        let m = err("module m; fn id<A>(x: A) -> A { x }");
+        let m = err("mod m; fn id<A>(x: A) -> A { x }");
         assert!(
             m.contains("`[`")
                 || m.contains("[type-param]")
@@ -2041,14 +2007,14 @@ mod tests {
 
     #[test]
     fn type_alias_bracket_binder() {
-        ok("module m; type Pair[A][B] = (A & B);");
+        ok("mod m; type Pair[A][B] = (A & B);");
     }
 
     #[test]
     fn type_binder_name_class_matches_kio_parser() {
         for name in ["A", "_A", "_Foo_bar", "Foo123_bar4", "_Foo__"] {
             ok(&format!(
-                "module m; fn id[{name}](x: {name}) -> {name} {{ x }}"
+                "mod m; fn id[{name}](x: {name}) -> {name} {{ x }}"
             ));
         }
         for name in [
@@ -2063,29 +2029,29 @@ mod tests {
             "Foo__bar",
             "Foo1bar",
         ] {
-            let message = err(&format!("module m; fn id[{name}](x: .) -> . {{ x }}"));
+            let message = err(&format!("mod m; fn id[{name}](x: .) -> . {{ x }}"));
             assert!(
                 message.contains("must match _?[A-Z][a-z]*[0-9]*(?:_[a-z]+[0-9]*)*_*"),
                 "{message}"
             );
         }
-        let reserved = err("module m; fn id[__Type__](x: .) -> . { x }");
+        let reserved = err("mod m; fn id[__Type__](x: .) -> . { x }");
         assert!(reserved.contains("may not begin with `__`"), "{reserved}");
     }
 
     #[test]
     fn type_declaration_heads_enforce_type_name_contract() {
-        ok("module m; \
+        ok("mod m; \
              host type Host; host type _Host; \
              type Alias = .; type _Alias = .; \
              type { Box : . { mk; get; }; }; \
              type { _Box : . { mk; get; }; };");
 
         for (name, source) in [
-            ("_foo", "module m; type _foo = .;"),
-            ("_1Foo", "module m; host type _1Foo;"),
-            ("_FooBar", "module m; type { _FooBar : . { mk; get; }; };"),
-            ("__Foo", "module m; type __Foo = .;"),
+            ("_foo", "mod m; type _foo = .;"),
+            ("_1Foo", "mod m; host type _1Foo;"),
+            ("_FooBar", "mod m; type { _FooBar : . { mk; get; }; };"),
+            ("__Foo", "mod m; type __Foo = .;"),
         ] {
             let message = err(source);
             assert!(
@@ -2097,62 +2063,62 @@ mod tests {
 
     #[test]
     fn type_expr_lowercase_path_rejected() {
-        let msg = err("module m; type T = string;");
+        let msg = err("mod m; type T = string;");
         assert!(msg.contains("type name `string`"), "msg = {msg}");
     }
 
     #[test]
     fn type_expr_reserved_internal_path_accepted() {
-        ok("module m; type T = __Type__;");
+        ok("mod m; type T = __Type__;");
     }
 
     #[test]
     fn type_expr_qualified_type_path_accepted() {
-        ok("module m; type T = pkg/types.Box[A];");
+        ok("mod m; type T = pkg/types.Box[A];");
     }
 
     #[test]
     fn newtype_bracket_binder() {
-        ok("module m; type { Wrap[A] : A { pub mk; pub get; }; };");
+        ok("mod m; type { Wrap[A] : A { pub mk; pub get; }; };");
     }
 
     #[test]
     fn function_type_bracket_binder() {
-        ok("module m; type Id = [A] A -> A;");
+        ok("mod m; type Id = [A] A -> A;");
     }
 
     #[test]
     fn parenthesized_grouped_function_type() {
-        ok("module m; type Id = ([A] A -> A);");
-        ok("module m; type Pair = (& ([A] A -> A) & (. -> .));");
+        ok("mod m; type Id = ([A] A -> A);");
+        ok("mod m; type Pair = (& ([A] A -> A) & (. -> .));");
     }
 
     #[test]
     fn square_pairs_have_exactly_one_binder_or_type() {
         for source in [
-            "module m; type Id = [A, B] A -> B;",
-            "module m; fn pair[A, B](a: A) -> A { a }",
-            "module m; host type Pair[A, B];",
-            "module m; type { Pair[A, B] : A { mk; get; }; };",
-            "module m; type Pair[A, B] = A & B;",
-            "module m; fn run() { .[A, B](a: A) { a } }",
-            "module m; type Applied = Pair[A, B];",
-            "module m; type Applied = Pair[];",
-            "module m; type Applied = Pair[,A];",
-            "module m; type Applied = Pair[A,];",
-            "module m; type Applied = Pair(A);",
-            "module m; type Applied = (Pair)[A];",
-            "module m; fn run() { 42[I32, I64] }",
-            "module m; fn run() { 42(I32) }",
+            "mod m; type Id = [A, B] A -> B;",
+            "mod m; fn pair[A, B](a: A) -> A { a }",
+            "mod m; host type Pair[A, B];",
+            "mod m; type { Pair[A, B] : A { mk; get; }; };",
+            "mod m; type Pair[A, B] = A & B;",
+            "mod m; fn run() { .[A, B](a: A) { a } }",
+            "mod m; type Applied = Pair[A, B];",
+            "mod m; type Applied = Pair[];",
+            "mod m; type Applied = Pair[,A];",
+            "mod m; type Applied = Pair[A,];",
+            "mod m; type Applied = Pair(A);",
+            "mod m; type Applied = (Pair)[A];",
+            "mod m; fn run() { 42[I32, I64] }",
+            "mod m; fn run() { 42(I32) }",
         ] {
             err(source);
         }
-        ok("module m; type Pair[A][B] = A & B; type Applied = Pair[List[I32]][[T] T -> T];");
+        ok("mod m; type Pair[A][B] = A & B; type Applied = Pair[List[I32]][[T] T -> T];");
     }
 
     #[test]
     fn binder_run_requires_body_type() {
-        let m = err("module m; type F = [A] -> R;");
+        let m = err("mod m; type F = [A] -> R;");
         assert!(
             m.contains("type-binder run must be followed by a body type"),
             "msg = {m}"
@@ -2161,13 +2127,13 @@ mod tests {
 
     #[test]
     fn comma_after_function_type_binder_rejected() {
-        let m = err("module m; type Id = ([A], A) -> A;");
+        let m = err("mod m; type Id = ([A], A) -> A;");
         assert!(m.contains("expected") || m.contains("grouped"), "msg = {m}");
     }
 
     #[test]
     fn comma_function_type_value_group_rejected() {
-        let m = err("module m; type F = (A, B) -> C;");
+        let m = err("mod m; type F = (A, B) -> C;");
         assert!(
             m.contains("commas are not product type syntax"),
             "msg = {m}"
@@ -2175,22 +2141,16 @@ mod tests {
     }
 
     #[test]
-    fn standalone_existential_type_rejected() {
-        // Standalone existential type expressions no longer parse —
-        // existentials live on a nominal header.
-        let m = err("module m; type Pack[A] = (<U>, (A & U));");
-        assert!(
-            m.contains("standalone existential") || m.contains("nominal header"),
-            "msg = {m}"
-        );
+    fn malformed_type_atom_is_rejected() {
+        err("mod m; type Pack[A] = (<U>, (A & U));");
     }
 
     #[test]
     fn newtype_universal_with_header_existential() {
         // Universals in brackets, existentials trailing as `<X>` atoms.
-        ok("module m; type { Pack[A] <U> : (A & U) { pub mk; pub get; }; };");
-        ok("module m; type { _Pack[_A] <_Hidden> : (_A & _Hidden) { pub mk; pub get; }; };");
-        let message = err("module m; type { Pack <_hidden> : . { pub mk; pub get; }; };");
+        ok("mod m; type { Pack[A] <U> : (A & U) { pub mk; pub get; }; };");
+        ok("mod m; type { _Pack[_A] <_Hidden> : (_A & _Hidden) { pub mk; pub get; }; };");
+        let message = err("mod m; type { Pack <_hidden> : . { pub mk; pub get; }; };");
         assert!(
             message.contains("must match _?[A-Z][a-z]*[0-9]*(?:_[a-z]+[0-9]*)*_*"),
             "{message}"
@@ -2207,32 +2167,32 @@ mod tests {
 
     #[test]
     fn unit_type_stays_separate_from_equals() {
-        ok("module m; type A=.;");
-        ok("module m; type A = .;");
+        ok("mod m; type A=.;");
+        ok("mod m; type A = .;");
     }
 
     #[test]
     fn fused_kind_star_run_accepted() {
         // `**` / `***` lex as one greedy all-stars run; the binder
         // consumes the run and reads the following name.
-        ok("module m; type T[*F] = .;");
-        ok("module m; type T[**G] = .;");
-        ok("module m; type T[***H] = .;");
+        ok("mod m; type T[*F] = .;");
+        ok("mod m; type T[**G] = .;");
+        ok("mod m; type T[***H] = .;");
     }
 
     #[test]
     fn compact_forall_brackets_peel_from_maximal_runs() {
-        ok("module m; fn higher[A][*F][**G](x: A) -> A { x }");
-        ok("module m; type Nested = [A][B] A -> B;");
-        ok("module m; fn lambda() -> . { .[*F](x: F[.]) -> F[.] { x } }");
+        ok("mod m; fn higher[A][*F][**G](x: A) -> A { x }");
+        ok("mod m; type Nested = [A][B] A -> B;");
+        ok("mod m; fn lambda() -> . { .[*F](x: F[.]) -> F[.] { x } }");
     }
 
     #[test]
     fn malformed_or_nested_forall_binders_stay_rejected() {
         for source in [
-            "module m; fn missing[A(x: A) -> A { x }",
-            "module m; fn nameless[*](x: .) -> . { x }",
-            "module m; fn nested[[A]](x: A) -> A { x }",
+            "mod m; fn missing[A(x: A) -> A { x }",
+            "mod m; fn nameless[*](x: .) -> . { x }",
+            "mod m; fn nested[[A]](x: A) -> A { x }",
         ] {
             assert!(!err(source).is_empty(), "malformed binder parsed: {source}");
         }
@@ -2244,59 +2204,57 @@ mod tests {
         // `><` (two binders with no whitespace) fuse; the parser peels
         // the `>` and leaves the residual for the next consumer —
         // mirrors kio-rs's `expect_existential_close`.
-        ok("module m; type { Single[A] <U>: (A & U) { pub mk; pub get; }; };");
-        ok("module m; type { Pair[A] <U><V>: (A & U & V) { pub mk; pub get; }; };");
+        ok("mod m; type { Single[A] <U>: (A & U) { pub mk; pub get; }; };");
+        ok("mod m; type { Pair[A] <U><V>: (A & U & V) { pub mk; pub get; }; };");
     }
 
     #[test]
     fn fused_unit_dot_before_chain_op_peeled() {
         // `.&` / `.|` fuse the unit atom with the chain separator; the
         // parser peels the `.` — mirrors kio-rs's `at_unit_type_dot`.
-        ok("module m; type P = (.& A);");
-        ok("module m; type S = (.| A);");
-        ok("module m; type P2 = (A &.);");
+        ok("mod m; type P = (.& A);");
+        ok("mod m; type S = (.| A);");
+        ok("mod m; type P2 = (A &.);");
     }
 
     #[test]
     fn fused_arrow_after_unit_dot_peeled() {
         // `.->` fuses the unit domain with the function arrow; peeling
         // the `.` leaves `->` for the arrow consumer.
-        ok("module m; type F = .-> .;");
+        ok("mod m; type F = .-> .;");
     }
 
     #[test]
     fn fused_amp_run_still_one_separator() {
         // All-`&` / all-`|` runs collapse to one chain separator
         // whether spaced (`& & &`) or fused (`&&&`).
-        ok("module m; type P = (A && B);");
-        ok("module m; type P2 = (&&& A &&& B &&&);");
-        ok("module m; type S = (A || B);");
+        ok("mod m; type P = (A && B);");
+        ok("mod m; type P2 = (&&& A &&& B &&&);");
+        ok("mod m; type S = (A || B);");
     }
 
     #[test]
     fn fused_mixed_op_run_rejected() {
         // `&|` is neither an all-`&` nor an all-`|` run — mixing
         // still rejects, fused or spaced.
-        let m = err("module m; type P = (A &| B);");
+        let m = err("mod m; type P = (A &| B);");
         assert!(m.contains("mixing") || m.contains("expected"), "msg = {m}");
     }
 
     #[test]
     fn host_type_and_fn_module_body_items() {
-        // Opaque host declarations live in the module body: a `host
+        // Opaque host declarations live in the mod body: a `host
         // type` with a `role(...)` annotation and a signature-only
         // `host fn` whose value parameter references it.
-        ok("module m; host type String role(str); host fn print(p0: String) -> .;");
+        ok("mod m; host type String role(str); host fn print(p0: String) -> .;");
     }
 
     #[test]
-    fn host_type_generic_and_owned() {
-        // A generic host type, a host type with the source-compatible
-        // redundant `{ owned }` block, and a host fn taking a parametric host
-        // type.
-        ok("module m; \
+    fn host_type_generic() {
+        // A generic host type and a host fn taking a parametric host type.
+        ok("mod m; \
              host type Box[T]; \
-             host type File { owned }; \
+             host type File; \
              host fn read_string(x: Box[String]) -> String;");
     }
 
@@ -2304,10 +2262,10 @@ mod tests {
     fn host_items_accept_redundant_pub() {
         // Host items are always public; a `pub` before or after `host`
         // is admitted but redundant.
-        ok("module m; pub host type Token;");
-        ok("module m; host pub type Token;");
-        ok("module m; pub host fn print(p0: String) -> .;");
-        ok("module m; host pub fn print(p0: String) -> .;");
+        ok("mod m; pub host type Token;");
+        ok("mod m; host pub type Token;");
+        ok("mod m; pub host fn print(p0: String) -> .;");
+        ok("mod m; host pub fn print(p0: String) -> .;");
     }
 
     #[test]
@@ -2316,17 +2274,17 @@ mod tests {
         // `type` / `fn`. A function *named* `host` parses as an
         // ordinary definition, and `host` is usable as a value
         // identifier inside a body.
-        ok("module m; fn host() -> . { () }");
-        ok("module m; fn f() -> . { host } fn host() -> . { () }");
+        ok("mod m; fn host() -> . { () }");
+        ok("mod m; fn f() -> . { host } fn host() -> . { () }");
     }
 
     #[test]
     fn host_fn_unit_default_still_rejects_a_body() {
-        ok("module m; host fn print(p0: String);");
-        ok("module m; host fn tick();");
-        ok("module m; host fn staged()[A];");
-        ok("module m; host fn staged[A](value: A)[B](other: B);");
-        let m = err("module m; host fn print(p0: String) { () }");
+        ok("mod m; host fn print(p0: String);");
+        ok("mod m; host fn tick();");
+        ok("mod m; host fn staged()[A];");
+        ok("mod m; host fn staged[A](value: A)[B](other: B);");
+        let m = err("mod m; host fn print(p0: String) { () }");
         assert!(m.contains("`;`"), "msg = {m}");
     }
 
@@ -2334,27 +2292,27 @@ mod tests {
     fn host_fn_with_type_binder() {
         // Type-parameter binders precede the value group, as in any
         // function signature.
-        ok("module m; host fn identity[A](x: A) -> A;");
+        ok("mod m; host fn identity[A](x: A) -> A;");
     }
 
     #[test]
     fn rejects_mismatched_binder_brackets() {
         // `[A>` mismatches bracket opener with angle closer — the
         // closer expectation complains.
-        let m = err("module m; fn id[A>(x: A) -> A { x }");
+        let m = err("mod m; fn id[A>(x: A) -> A { x }");
         assert!(m.contains("`]`"), "msg = {m}");
     }
 
     #[test]
     fn fn_def_unit_returns_unit() {
-        ok("module m; fn main() -> . { () }");
+        ok("mod m; fn main() -> . { () }");
     }
 
     #[test]
     fn fn_def_unit_return_elided() {
         // The `-> .` annotation may be omitted (one optional type
         // position; see specs/language.md § Function definitions).
-        ok("module m; fn main() { () }");
+        ok("mod m; fn main() { () }");
     }
 
     // ---- Block-body semicolon runs --------------------------------------
@@ -2369,12 +2327,12 @@ mod tests {
 
     #[test]
     fn block_repeated_and_trailing_semicolons_parse() {
-        ok("module x; fn f() -> . { ;;; ();;; ();;; }");
+        ok("mod x; fn f() -> . { ;;; ();;; ();;; }");
     }
 
     #[test]
     fn final_semicolon_after_block_expression_is_ignored() {
-        ok("module x; fn f() -> . { (); }");
+        ok("mod x; fn f() -> . { (); }");
     }
 
     #[test]
@@ -2382,31 +2340,31 @@ mod tests {
         // A block with no final expression is a parse error — the `;`
         // runs never supply the mandatory trailing expression.
         assert!(
-            err("module x; fn f() -> . { }").contains("no final expression"),
+            err("mod x; fn f() -> . { }").contains("no final expression"),
             "empty block rejected"
         );
         assert!(
-            err("module x; fn f() -> . { ;; }").contains("no final expression"),
+            err("mod x; fn f() -> . { ;; }").contains("no final expression"),
             "`;`-only block rejected"
         );
         assert!(
-            err("module x; fn f() -> . { let x = (); }").contains("no final expression"),
+            err("mod x; fn f() -> . { let x = (); }").contains("no final expression"),
             "block ending in a statement rejected"
         );
     }
 
     #[test]
     fn type_alias_with_params() {
-        ok("module m; type Pair[A][B] = (A & B);");
+        ok("mod m; type Pair[A][B] = (A & B);");
     }
 
     #[test]
     fn label_forwarding_is_not_kio_prime_syntax() {
         for source in [
-            "module m; type {forward} = {count};",
-            "module m; pub type {forward} = {count};",
-            "module m; pub(scope/path) type {forward} = {origin.count};",
-            "module m; rec { type {forward} = {count}; type Alias = .; }",
+            "mod m; type {forward} = {count};",
+            "mod m; pub type {forward} = {count};",
+            "mod m; pub(scope/path) type {forward} = {origin.count};",
+            "mod m; rec { type {forward} = {count}; type Alias = .; }",
         ] {
             let message = err(source);
             assert!(
@@ -2415,8 +2373,8 @@ mod tests {
             );
         }
         for source in [
-            "module m; type {Forward} = {Count};",
-            "module m; rec { type {Forward} = {Count}; type Alias = .; }",
+            "mod m; type {Forward} = {Count};",
+            "mod m; rec { type {Forward} = {Count}; type Alias = .; }",
         ] {
             let message = err(source);
             assert!(
@@ -2424,19 +2382,19 @@ mod tests {
                 "{source}: {message}"
             );
         }
-        ok("module m; type Alias = .; pub(scope/path) type Scoped[A] = A;");
-        ok("module m; fn type(forward: .) -> . { forward }");
+        ok("mod m; type Alias = .; pub(scope/path) type Scoped[A] = A;");
+        ok("mod m; fn type(forward: .) -> . { forward }");
     }
 
     #[test]
     fn rejects_literal_side_alias() {
-        let m = err("module m; literal greeting = \"hi\";");
+        let m = err("mod m; lit greeting = \"hi\";");
         assert!(m.contains("surface sugar"), "msg = {m}");
     }
 
     #[test]
     fn newtype_nullary() {
-        ok("module m; type { Wrap : . { pub mk; pub get; }; };");
+        ok("mod m; type { Wrap : . { pub mk; pub get; }; };");
     }
 
     #[test]
@@ -2447,24 +2405,24 @@ mod tests {
             "rec type { Loop : . | Loop { mk; get }; }",
             "rec { type A = B; type B = A }",
         ] {
-            ok(&format!("module m; {declaration} fn next() -> . {{ () }}"));
-            ok(&format!("module m; {declaration}; fn next() -> . {{ () }}"));
-            err(&format!("module m; {declaration};;"));
+            ok(&format!("mod m; {declaration} fn next() -> . {{ () }}"));
+            ok(&format!("mod m; {declaration}; fn next() -> . {{ () }}"));
+            err(&format!("mod m; {declaration};;"));
         }
-        for declaration in ["type A = .", "host type A { owned }", "host fn f() -> ."] {
-            err(&format!("module m; {declaration}"));
-            ok(&format!("module m; {declaration};"));
+        for declaration in ["type A = .", "host type A", "host fn f() -> ."] {
+            err(&format!("mod m; {declaration}"));
+            ok(&format!("mod m; {declaration};"));
         }
-        err("module m; ; fn f() -> . { () }");
+        err("mod m; ; fn f() -> . { () }");
     }
 
     #[test]
     fn newtype_semicolon_edges_preserve_member_policy() {
         for body in ["mk; get", "; mk; get;", ";; get;; mk;;"] {
-            ok(&format!("module m; type {{ Wrap : . {{ {body} }}; }}"));
+            ok(&format!("mod m; type {{ Wrap : . {{ {body} }}; }}"));
         }
         for body in ["mk get", ";", "mk; mk; get", "mk"] {
-            err(&format!("module m; type {{ Wrap : . {{ {body} }}; }}"));
+            err(&format!("mod m; type {{ Wrap : . {{ {body} }}; }}"));
         }
     }
 
@@ -2475,10 +2433,10 @@ mod tests {
             "; N: . { mk; get };",
             "N: . { ;;; mk;;; get;;; };",
         ] {
-            ok(&format!("module m; type {{ {entry} }}"));
+            ok(&format!("mod m; type {{ {entry} }}"));
         }
         for entry in [";; N: . { mk; get }", "N: . { mk; get };;", ";", ""] {
-            err(&format!("module m; type {{ {entry} }}"));
+            err(&format!("mod m; type {{ {entry} }}"));
         }
     }
 
@@ -2494,12 +2452,10 @@ mod tests {
             "rec type Alias = { N: . | Alias { mk; get; }; };",
             "rec { type Alias = { N: . { mk; get; }; }; type Other = Alias; }",
         ] {
-            err(&format!("module m; {declaration}"));
+            err(&format!("mod m; {declaration}"));
         }
-        ok(
-            "module m; pub(scope) type { _N[*F][A]<Hidden>: F[A] & Hidden { pub(scope) get; mk; }; }",
-        );
-        ok("module m; rec type { N: . | N { mk; get; }; }");
+        ok("mod m; pub(scope) type { _N[*F][A]<Hidden>: F[A] & Hidden { pub(scope) get; mk; }; }");
+        ok("mod m; rec type { N: . | N { mk; get; }; }");
     }
 
     #[test]
@@ -2515,7 +2471,7 @@ mod tests {
             "mk() { () }; get;",
             "mk; get { () };",
         ] {
-            err(&format!("module m; type {{ N: . {{ {members} }}; }}"));
+            err(&format!("mod m; type {{ N: . {{ {members} }}; }}"));
         }
     }
 
@@ -2526,7 +2482,7 @@ mod tests {
             "; type A = B; type B = A;",
             "; type { Box : A { mk; get }; }; type A = Box;",
         ] {
-            ok(&format!("module m; rec {{ {body} }}"));
+            ok(&format!("mod m; rec {{ {body} }}"));
         }
         for body in [
             "type A = B type B = A",
@@ -2537,18 +2493,18 @@ mod tests {
             ";",
             "; type A = A;",
         ] {
-            err(&format!("module m; rec {{ {body} }}"));
+            err(&format!("mod m; rec {{ {body} }}"));
         }
     }
 
     #[test]
     fn newtype_recursive_self_ref() {
-        ok("module m; rec type { List[A] : (. | (A & List[A])) { pub mk; pub get; }; };");
+        ok("mod m; rec type { List[A] : (. | (A & List[A])) { pub mk; pub get; }; };");
     }
 
     #[test]
     fn mutually_recursive_type_group_is_kio_prime_syntax() {
-        ok("module m; rec { \
+        ok("mod m; rec { \
              type Loop = Box; \
              type { Box : . | Loop { pub mk; pub get; }; }; \
              }");
@@ -2556,74 +2512,68 @@ mod tests {
 
     #[test]
     fn recursive_type_forms_keep_the_kio_prime_boundary_narrow() {
-        assert!(err("module m; rec type Loop = Loop;").contains("explicit singleton nominal"));
+        assert!(err("mod m; rec type Loop = Loop;").contains("explicit singleton nominal"));
         assert!(
-            err("module m; rec type Loop = { Next: Loop };").contains("explicit singleton nominal")
+            err("mod m; rec type Loop = { Next: Loop };").contains("explicit singleton nominal")
         );
         assert!(
-            err("module m; pub rec { type A = B; type B = A; }").contains("no leading visibility")
+            err("mod m; pub rec { type A = B; type B = A; }").contains("no leading visibility")
         );
-        assert!(
-            err("module m; rec { fn f() -> . { () } type A = .; }").contains("expected `type`")
-        );
+        assert!(err("mod m; rec { fn f() -> . { () } type A = .; }").contains("expected `type`"));
     }
 
     #[test]
     fn newtype_with_existential_binder() {
-        ok("module m; type { Pack[A] <U> : (A & U) { pub mk; pub get; }; };");
+        ok("mod m; type { Pack[A] <U> : (A & U) { pub mk; pub get; }; };");
     }
 
     #[test]
     fn newtype_with_multiple_existential_binders() {
-        ok("module m; type { Pack[A] <L> <R> : (A & L & R) { pub mk; pub get; }; };");
+        ok("mod m; type { Pack[A] <L> <R> : (A & L & R) { pub mk; pub get; }; };");
     }
 
     #[test]
     fn newtype_with_existentials_no_universals() {
-        ok("module m; type { Pack <U> : U { pub mk; pub get; }; };");
+        ok("mod m; type { Pack <U> : U { pub mk; pub get; }; };");
     }
 
     #[test]
     fn newtype_members_reversed_order() {
-        ok("module m; type { Wrap[A] : A { pub get; pub mk; }; };");
+        ok("mod m; type { Wrap[A] : A { pub get; pub mk; }; };");
     }
 
     #[test]
     fn newtype_duplicate_constructor_rejected() {
-        let m = err("module m; type { W : . { pub mk; pub mk; pub get; }; };");
+        let m = err("mod m; type { W : . { pub mk; pub mk; pub get; }; };");
         assert!(m.contains("duplicate `mk`"), "got: {m}");
     }
 
     #[test]
     fn newtype_missing_projector_rejected() {
-        let m = err("module m; type { W : . { pub mk; }; };");
+        let m = err("mod m; type { W : . { pub mk; }; };");
         assert!(m.contains("missing `get`"), "got: {m}");
     }
 
     #[test]
     fn import_intrinsics() {
-        ok("module m; import __intrinsics__;");
+        ok("mod m; import __intrinsics__;");
     }
 
     #[test]
     fn import_selection_requires_separators() {
-        let m = err("module m; import provider(type String);");
-        assert!(
-            m.contains("expected `,` or `)` in the import list"),
-            "got: {m}"
-        );
+        err("mod m; import provider { fn foo type String }");
     }
 
     #[test]
     fn import_qualified_with_alias() {
-        ok("module m; import a/b as q;");
+        ok("mod m; import a/b as q;");
     }
 
     #[test]
     fn prime_only_internal_qualified_import_is_rejected() {
         for source in [
-            "module m; import __internal__ a/b as __reserved__;",
-            "module m; import __internal__ as q;",
+            "mod m; import __internal__ a/b as __reserved__;",
+            "mod m; import __internal__ as q;",
         ] {
             let message = err(source);
             assert!(
@@ -2635,18 +2585,17 @@ mod tests {
 
     #[test]
     fn multi_segment_module_decl_and_import_path() {
-        ok("module a/b/c; import x/y/z(f);");
+        ok("mod a/b/c; import x/y/z { fn f }");
     }
 
     #[test]
-    fn import_selection_accepts_a1_layout_and_contextual_names() {
+    fn import_selection_accepts_kinds_and_layout() {
         for source in [
-            "module m; import provider(foo);",
-            "module m; import provider(\n  , Foo\n  , foo\n  );",
-            "module m; import provider(,, Foo,, foo,,);",
-            "module m; import provider(op, varop, variadic, import, type);",
-            "module m; import provider(op);",
-            "module m; import provider(\n  // first item\n  Foo // separator\n  , foo\n);",
+            "mod m; import provider { fn foo }",
+            "mod m; import provider { type Foo; fn foo; }",
+            "mod m; import provider { ;; type Foo;;; fn foo;; };",
+            "mod m; import provider { fn op; fn op_var; fn import; fn type }",
+            "mod m; import provider { // first item\n type Foo; // separator\n fn foo }",
         ] {
             ok(source);
         }
@@ -2655,40 +2604,43 @@ mod tests {
     #[test]
     fn empty_or_incomplete_import_selection_is_rejected() {
         for source in [
-            "module m; import provider();",
-            "module m; import provider(,,);",
-            "module m; import provider(",
-            "module m; import provider(foo,",
-            "module m; import provider(foo;",
-            "module m; import provider(foo)",
-            "module m; import provider;",
+            "mod m; import provider {}",
+            "mod m; import provider { ;;; }",
+            "mod m; import provider { fn foo };;",
+            "mod m; import provider {",
+            "mod m; import provider { fn foo;",
+            "mod m; import provider { fn foo",
+            "mod m; import provider;",
+            "mod m; import provider { foo }",
         ] {
             assert!(!err(source).is_empty(), "accepted `{source}`");
         }
     }
 
     #[test]
-    fn surface_operator_imports_and_variadic_declarations_are_rejected() {
+    fn surface_imports_and_variadic_declarations_are_rejected() {
         for source in [
-            "module m; import syntax(op _ <+> _);",
-            "module m; import syntax(Foo, op _ ? _ : ___);",
-            "module m; import syntax(varop [* *]);",
+            "mod m; import syntax { op _ <+> _ }",
+            "mod m; import syntax { op_macro _ ? _ : ___ }",
+            "mod m; import syntax { op_var [* *] }",
+            "mod m; import syntax { lit answer }",
+            "mod m; import syntax { macro build }",
         ] {
-            assert!(err(source).contains("operator imports are surface syntax"));
+            err(source);
         }
         assert!(
-            err("module m; pub varop [* *] { foldr1 step seed; };")
+            err("mod m; pub op_var [* *] { foldr1 step seed; } ")
                 .contains("operator declarations are Kio surface sugar")
         );
     }
 
     #[test]
     fn builtin_imports_keep_their_phase_and_statement_boundaries() {
-        assert!(err("module m; import __comptime__;").contains("compile-time surface syntax"));
+        assert!(err("mod m; import __comptime__;").contains("compile-time surface syntax"));
         for source in [
-            "module m; import __intrinsics__(__pair__);",
-            "module m; import __intrinsics__ as core;",
-            "module m; fn f() -> . { () } import provider(foo);",
+            "mod m; import __intrinsics__ { fn __pair__ }",
+            "mod m; import __intrinsics__ as core;",
+            "mod m; fn f() -> . { () } import provider { fn foo }",
         ] {
             assert!(!err(source).is_empty(), "accepted `{source}`");
         }
@@ -2696,19 +2648,19 @@ mod tests {
 
     #[test]
     fn doc_comment_cannot_attach_to_an_import() {
-        for import in ["import __intrinsics__;", "import provider(foo);"] {
-            let message = err(&format!("module m;\n/// Documentation\n{import}"));
+        for import in ["import __intrinsics__;", "import provider { fn foo }"] {
+            let message = err(&format!("mod m;\n/// Documentation\n{import}"));
             assert!(message.contains("`import` clauses are not documented"));
         }
-        ok("module m; import provider(foo);\n/// Documentation\nfn f() -> . { () }");
-        ok("module m; fn f(import: .) -> . {\n/// Parameter\nimport\n}");
-        ok("module m; fn\n/// Name trivia\nimport() -> . { () }");
-        ok("module\n/// Module-name trivia\nimport;");
+        ok("mod m; import provider { fn foo }\n/// Documentation\nfn f() -> . { () }");
+        ok("mod m; fn f(import: .) -> . {\n/// Parameter\nimport\n}");
+        ok("mod m; fn\n/// Name trivia\nimport() -> . { () }");
+        ok("mod\n/// Module-name trivia\nimport;");
     }
 
     #[test]
     fn match_identifier_is_not_a_surface_construct() {
-        ok("module m; fn match() -> . { () } fn f() -> . { match() }");
+        ok("mod m; fn match() -> . { () } fn f() -> . { match() }");
     }
 
     #[test]
@@ -2742,7 +2694,7 @@ mod tests {
                 format!("{alias}.Box.make(())"),
             ] {
                 ok(&format!(
-                    "module m; import provider as {alias}; fn run() {{ {expression} }}"
+                    "mod m; import provider as {alias}; fn run() {{ {expression} }}"
                 ));
             }
         }
@@ -2762,20 +2714,20 @@ mod tests {
             "if.",
             "do..value()",
         ] {
-            err(&format!("module m; fn run() {{ {expression} }}"));
+            err(&format!("mod m; fn run() {{ {expression} }}"));
         }
     }
 
     #[test]
     fn rejects_unlowered_operator_calls() {
-        err("module m; fn f() -> . { into!(x) }");
+        err("mod m; fn f() -> . { into!(x) }");
     }
 
     #[test]
     fn macro_imports_erase_while_contextual_names_remain_ordinary() {
-        for selector in ["macro", "macro as local"] {
+        for selector in ["fn macro", "fn macro as local"] {
             ok(&format!(
-                "module m; import provider({selector}); fn macro() {{ () }}"
+                "mod m; import provider {{ {selector} }} fn macro() {{ () }}"
             ));
         }
         for selector in [
@@ -2785,19 +2737,19 @@ mod tests {
             "macro as as local",
         ] {
             err(&format!(
-                "module m; import provider({selector}); fn run() {{ () }}"
+                "mod m; import provider {{ {selector} }} fn run() {{ () }}"
             ));
         }
-        err("module m; macro build: . -> . { impl helper }");
-        ok("module m; fn macro() { () } fn run() { macro() }");
+        err("mod m; macro build: . -> . { impl helper }");
+        ok("mod m; fn macro() { () } fn run() { macro() }");
     }
 
     #[test]
     fn dotted_value_paths_are_identifier_led_and_precede_calls() {
-        ok("module m; fn f(x: .) -> . { module_alias.member(x) }");
+        ok("mod m; fn f(x: .) -> . { module_alias.member(x) }");
         for source in [
-            "module m; fn f() -> . { (value).member }",
-            "module m; fn f() -> . { value().member }",
+            "mod m; fn f() -> . { (value).member }",
+            "mod m; fn f() -> . { value().member }",
         ] {
             let message = err(source);
             assert!(message.contains("dotted value paths"), "msg = {message}");
@@ -2809,45 +2761,45 @@ mod tests {
         // Chained `&`/`|` are accepted as part of the language-level
         // any-position-operator rule (specs/language.md § Comma-
         // separated lists and operator chains).
-        ok("module m; type T = (A & B & C);");
+        ok("mod m; type T = (A & B & C);");
     }
 
     #[test]
     fn accepts_chained_pipe() {
-        ok("module m; type T = (A | B | C);");
+        ok("mod m; type T = (A | B | C);");
     }
 
     #[test]
     fn accepts_leading_amp() {
         // Leading-operator multi-line layout (the formatter's
         // canonical shape for chains too long to fit on one line).
-        ok("module m; type T = ( & A & B & C );");
+        ok("mod m; type T = ( & A & B & C );");
     }
 
     #[test]
     fn accepts_repeated_amp_and_pipe() {
-        ok("module m; type P = ( &&& A &&& B &&& );");
-        ok("module m; type S = ( ||| A ||| B ||| );");
+        ok("mod m; type P = ( &&& A &&& B &&& );");
+        ok("mod m; type S = ( ||| A ||| B ||| );");
     }
 
     #[test]
     fn accepts_unary_and_empty_type_delimiter_runs() {
-        ok("module m; type P = & A;");
-        ok("module m; type S = | A;");
-        ok("module m; type P = &;");
-        ok("module m; type S = |;");
-        ok("module m; type P = (&);");
-        ok("module m; type S = (|);");
-        ok("module m; type P = (A &);");
-        ok("module m; type S = (A |);");
+        ok("mod m; type P = & A;");
+        ok("mod m; type S = | A;");
+        ok("mod m; type P = &;");
+        ok("mod m; type S = |;");
+        ok("mod m; type P = (&);");
+        ok("mod m; type S = (|);");
+        ok("mod m; type P = (A &);");
+        ok("mod m; type S = (A |);");
     }
 
     #[test]
     fn rejects_comma_product_type_delimiter_runs() {
         for source in [
-            "module m; type P = (A, B);",
-            "module m; type P = (, A ,);",
-            "module m; type P = (,,,);",
+            "mod m; type P = (A, B);",
+            "mod m; type P = (, A ,);",
+            "mod m; type P = (,,,);",
         ] {
             let m = err(source);
             assert!(
@@ -2859,24 +2811,24 @@ mod tests {
 
     #[test]
     fn rejects_mixed_amp_pipe_in_chain() {
-        let m = err("module m; type T = (A & B | C);");
+        let m = err("mod m; type T = (A & B | C);");
         assert!(m.contains("mixing"), "msg = {m}");
-        let m = err("module m; type T = A & B | C;");
+        let m = err("mod m; type T = A & B | C;");
         assert!(m.contains("mixing"), "msg = {m}");
-        let m = err("module m; type T = A | B & C;");
+        let m = err("mod m; type T = A | B & C;");
         assert!(m.contains("mixing"), "msg = {m}");
     }
 
     #[test]
     fn accepts_comma_framed_value_grouping() {
-        ok("module m; fn f(x: A) -> A { (x,) }");
-        ok("module m; fn f(x: A) -> A { (, x) }");
-        ok("module m; fn f() -> . { (,,,) }");
+        ok("mod m; fn f(x: A) -> A { (x,) }");
+        ok("mod m; fn f(x: A) -> A { (, x) }");
+        ok("mod m; fn f() -> . { (,,,) }");
     }
 
     #[test]
     fn rejects_n_ary_tuple_value() {
-        let m = err("module m; fn f() -> . { (a, b) }");
+        let m = err("mod m; fn f() -> . { (a, b) }");
         assert!(m.contains("n-ary tuple"), "msg = {m}");
     }
 
@@ -2885,13 +2837,13 @@ mod tests {
         // Kio' mandates the `[Type]` annotation on every literal
         // (specs/grammar.md § Kio' grammar — `LiteralCall ::= LITERAL
         // '[' Type ']'`); the bare-literal form is surface-only.
-        let m = err("module m; fn f() -> . { 42; () }");
+        let m = err("mod m; fn f() -> . { 42; () }");
         assert!(m.contains("annotation") || m.contains("Kio'"), "msg = {m}");
-        let m = err("module m; fn f() -> . { 3.14; () }");
+        let m = err("mod m; fn f() -> . { 3.14; () }");
         assert!(m.contains("annotation") || m.contains("Kio'"), "msg = {m}");
-        let m = err("module m; fn f() -> . { \"hi\"; () }");
+        let m = err("mod m; fn f() -> . { \"hi\"; () }");
         assert!(m.contains("annotation") || m.contains("Kio'"), "msg = {m}");
-        let m = err("module m; fn f() -> . { .t; () }");
+        let m = err("mod m; fn f() -> . { .t; () }");
         assert!(m.contains("annotation") || m.contains("Kio'"), "msg = {m}");
     }
 
@@ -2900,11 +2852,11 @@ mod tests {
         // The trailing `[Type]` annotation form — `42[I32]`,
         // `"hi"[String]`, `.t[Bool]` — is mandatory on every Kio'
         // literal.
-        ok("module m; fn f() -> . { 42[I32]; () }");
-        ok("module m; fn f() -> . { 3.14[F64]; () }");
-        ok("module m; fn f() -> . { \"hi\"[String]; () }");
-        ok("module m; fn f() -> . { .t[Bool]; () }");
-        ok("module m; fn f() -> . { .f[Bool]; () }");
+        ok("mod m; fn f() -> . { 42[I32]; () }");
+        ok("mod m; fn f() -> . { 3.14[F64]; () }");
+        ok("mod m; fn f() -> . { \"hi\"[String]; () }");
+        ok("mod m; fn f() -> . { .t[Bool]; () }");
+        ok("mod m; fn f() -> . { .f[Bool]; () }");
     }
 
     #[test]
@@ -2912,32 +2864,32 @@ mod tests {
         // The old lexer-side width suffix (`42i32`) is gone: the
         // digits lex as a bare literal and the `i32` as a trailing
         // identifier the parser can't place.
-        err("module m; fn f() -> . { 42i32 }");
+        err("mod m; fn f() -> . { 42i32 }");
     }
 
     #[test]
     fn fn_without_annotations() {
         // `fn` value-params and return type may be left bare — the
         // type is filled by bidirectional flow from the use site.
-        ok("module m; fn a() -> . { .(x) { x }(()) }");
+        ok("mod m; fn a() -> . { .(x) { x }(()) }");
     }
 
     #[test]
     fn fn_value_param_annotation_accepted() {
         // The `: T` value-parameter annotation is optional but
         // admissible — load-bearing for a `let`-bound lambda.
-        ok("module m; fn a() -> . { .(x: .) { x }(()) }");
+        ok("mod m; fn a() -> . { .(x: .) { x }(()) }");
     }
 
     #[test]
     fn fn_return_annotation_accepted() {
         // The `-> R` return-type annotation is optional but admissible.
-        ok("module m; fn a() -> . { .(x) -> . { x }(()) }");
+        ok("mod m; fn a() -> . { .(x) -> . { x }(()) }");
     }
 
     #[test]
     fn let_binder_annotation_is_not_kio_prime_grammar() {
-        let msg = err("module m; fn a() -> . { let y: . = (); y }");
+        let msg = err("mod m; fn a() -> . { let y: . = (); y }");
         assert!(
             msg.contains("expected `}` closing block")
                 || msg.contains("expected end of file")
@@ -2948,15 +2900,15 @@ mod tests {
 
     #[test]
     fn nested_function_type() {
-        ok("module m; fn a(t: . -> .) -> . { t(()) }");
+        ok("mod m; fn a(t: . -> .) -> . { t(()) }");
     }
 
     #[test]
     fn accepts_bare_unary_function_type() {
-        ok("module m; type F = A -> B;");
-        ok("module m; type F = A -> B -> C;");
-        ok("module m; type F = A -> (B & C);");
-        ok("module m; type F = (A -> B);");
+        ok("mod m; type F = A -> B;");
+        ok("mod m; type F = A -> B -> C;");
+        ok("mod m; type F = A -> (B & C);");
+        ok("mod m; type F = (A -> B);");
     }
 
     #[test]
@@ -2964,34 +2916,34 @@ mod tests {
         for result in ["B & C", "B | C", "& B &", "| B |", "&", "|"] {
             for domain in ["A", "(A)", "(A & B)", "(A | B)", "([A] A -> A)"] {
                 for source in [
-                    format!("module m; type F = {domain} -> {result};"),
-                    format!("module m; fn f() -> {domain} -> {result} {{ () }}"),
-                    format!("module m; fn f() {{ .() -> {domain} -> {result} {{ () }} }}"),
+                    format!("mod m; type F = {domain} -> {result};"),
+                    format!("mod m; fn f() -> {domain} -> {result} {{ () }}"),
+                    format!("mod m; fn f() {{ .() -> {domain} -> {result} {{ () }} }}"),
                 ] {
                     let message = err(&source);
                     if matches!(result, "B & C" | "B | C") {
                         assert!(message.contains("right of `->`"), "{source}: {message}");
                     }
                 }
-                ok(&format!("module m; type F = {domain} -> ({result});"));
+                ok(&format!("mod m; type F = {domain} -> ({result});"));
             }
             if matches!(result, "B & C" | "B | C") {
-                ok(&format!("module m; fn f() -> {result} {{ () }}"));
-                ok(&format!("module m; fn f() {{ .() -> {result} {{ () }} }}"));
+                ok(&format!("mod m; fn f() -> {result} {{ () }}"));
+                ok(&format!("mod m; fn f() {{ .() -> {result} {{ () }} }}"));
             }
         }
-        ok("module m; type F = A -> B -> C;");
-        ok("module m; type F = A -> [B] B & B;");
+        ok("mod m; type F = A -> B -> C;");
+        ok("mod m; type F = A -> [B] B & B;");
     }
 
     #[test]
     fn rejects_bare_product_or_sum_arrow_lhs() {
-        let msg = err("module m; type F = A & B -> C;");
+        let msg = err("mod m; type F = A & B -> C;");
         assert!(
             msg.contains("left of `->`") || msg.contains("parenthesized"),
             "msg = {msg}"
         );
-        let msg = err("module m; type F = A | B -> C;");
+        let msg = err("mod m; type F = A | B -> C;");
         assert!(
             msg.contains("left of `->`") || msg.contains("parenthesized"),
             "msg = {msg}"
@@ -3001,42 +2953,40 @@ mod tests {
     #[test]
     fn explicit_type_stage_accepts_compound_product_type() {
         // Type operands belong to the explicit square stage.
-        ok("module m; import __intrinsics__; fn a(p: (. & .)) -> . { __snd__[.][.](p) }");
+        ok("mod m; import __intrinsics__; fn a(p: (. & .)) -> . { __snd__[.][.](p) }");
     }
 
     #[test]
     fn explicit_type_stage_accepts_compound_sum_type() {
         ok(
-            "module m; import __intrinsics__; fn a(s: (. | .)) -> . { __either__[.][.][.](s, .(_l) { () }, .(_r) { () }) }",
+            "mod m; import __intrinsics__; fn a(s: (. | .)) -> . { __either__[.][.][.](s, .(_l) { () }, .(_r) { () }) }",
         );
     }
 
     #[test]
     fn explicit_type_stage_accepts_function_type() {
         // A function type stays inside the explicit type stage.
-        ok(
-            "module m; import __intrinsics__; fn a() -> . { __pair__[(. -> .)][.](.(_x) { () }, ()) }",
-        );
+        ok("mod m; import __intrinsics__; fn a() -> . { __pair__[(. -> .)][.](.(_x) { () }, ()) }");
     }
 
     #[test]
     fn boolean_operand_intrinsics_are_ordinary_explicit_core_calls() {
         for intrinsic in ["__and__", "__or__"] {
             ok(&format!(
-                "module m; import __intrinsics__; host type Flag role(bool); fn f(x: Flag) -> Flag {{ let selected = {intrinsic}[Flag]; selected(x, .() -> Flag {{ x }}) }}"
+                "mod m; import __intrinsics__; host type Flag role(bool); fn f(x: Flag) -> Flag {{ let selected = {intrinsic}[Flag]; selected(x, .() -> Flag {{ x }}) }}"
             ));
         }
     }
 
     #[test]
     fn explicit_type_stage_accepts_bottom_type() {
-        ok("module m; import __intrinsics__; fn a(b: !) -> . { __absurd__[.](b) }");
+        ok("mod m; import __intrinsics__; fn a(b: !) -> . { __absurd__[.](b) }");
     }
 
     #[test]
     fn explicit_type_stage_and_value_packet_have_separate_roles() {
         // Name roles follow written stage delimiters, before lookup.
-        ok("module m; fn a() -> . { f[A](b) }");
+        ok("mod m; fn a() -> . { f[A](b) }");
     }
 
     #[test]
@@ -3055,12 +3005,12 @@ mod tests {
             "f[A]()(())",
             "f // type stage follows trivia\n [A](value)",
         ] {
-            ok(&format!("module m; fn run() {{ {expression} }}"));
+            ok(&format!("mod m; fn run() {{ {expression} }}"));
         }
         // Type arguments and literal annotations share the square delimiter;
         // declaration brackets continue to bind names.
         ok(
-            "module m; host type Number role(i32); type Alias[A] = A; fn id[A](x: A) -> A { x } fn run() { id[Alias[Number]](42[Number]) }",
+            "mod m; host type Number role(i32); type Alias[A] = A; fn id[A](x: A) -> A { x } fn run() { id[Alias[Number]](42[Number]) }",
         );
     }
 
@@ -3076,7 +3026,7 @@ mod tests {
             "f(.[A](v: A) -> A { A })",
             "f(__value)",
         ] {
-            ok(&format!("module m; fn run() {{ {expr} }}"));
+            ok(&format!("mod m; fn run() {{ {expr} }}"));
         }
         for expr in [
             "f(A)",
@@ -3089,7 +3039,7 @@ mod tests {
             "f((A)[B]())",
             "f(.() { g(A) })",
         ] {
-            err(&format!("module m; fn run() {{ {expr} }}"));
+            err(&format!("mod m; fn run() {{ {expr} }}"));
         }
     }
 
@@ -3114,13 +3064,13 @@ mod tests {
             "f(.[A] A)",
             "f[A].member",
         ] {
-            err(&format!("module m; fn run() {{ {expression} }}"));
+            err(&format!("mod m; fn run() {{ {expression} }}"));
         }
     }
 
     #[test]
     fn call_args_accept_exact_name_roles_only() {
-        ok("module ok; fn id[A](x: A) -> A { x } \
+        ok("mod ok; fn id[A](x: A) -> A { x } \
              fn ordinary[A](value: A) -> A { id[A](value) } \
              fn marked[_A](_value: _A) -> _A { id[_A](_value) } \
              fn qualified[_A](_value: _A) -> _A { \
@@ -3147,7 +3097,7 @@ mod tests {
             ("m.__FooBar.member", "__FooBar"),
         ] {
             let message = err(&format!(
-                "module bad; fn id[A](x: A) -> A {{ x }} \
+                "mod bad; fn id[A](x: A) -> A {{ x }} \
                  fn f[_A](x: .) -> . {{ id({argument}, x) }}"
             ));
             assert!(message.contains(invalid_name), "{argument}: {message}");
@@ -3156,9 +3106,9 @@ mod tests {
 
     #[test]
     fn expression_paths_accept_exact_name_roles_only() {
-        ok("module ok; fn f[_A](_value: .) -> . { m._Foo.member[_A](_value) }");
-        ok("module ok; fn f[_A](_value: .) -> . { __pair__[_A][_A](_value, _value) }");
-        ok("module ok; fn f() -> . { __Foo.member(__value) }");
+        ok("mod ok; fn f[_A](_value: .) -> . { m._Foo.member[_A](_value) }");
+        ok("mod ok; fn f[_A](_value: .) -> . { __pair__[_A][_A](_value, _value) }");
+        ok("mod ok; fn f() -> . { __Foo.member(__value) }");
         for (expression, invalid_name) in [
             ("_FooBar", "_FooBar"),
             ("_1Foo", "_1Foo"),
@@ -3169,7 +3119,7 @@ mod tests {
             ("m.FooBar.member", "FooBar"),
             ("m.__FooBar.member", "__FooBar"),
         ] {
-            let message = err(&format!("module bad; fn f() -> . {{ {expression} }}"));
+            let message = err(&format!("mod bad; fn f() -> . {{ {expression} }}"));
             assert!(message.contains(invalid_name), "{expression}: {message}");
         }
     }
@@ -3177,41 +3127,42 @@ mod tests {
     #[test]
     fn letterless_reserved_shapes_are_not_names() {
         for name in ["__", "___", "____", "__1__"] {
-            let expression = err(&format!("module bad; fn f() -> . {{ {name} }}"));
+            let expression = err(&format!("mod bad; fn f() -> . {{ {name} }}"));
             assert!(!expression.is_empty(), "expression path accepted `{name}`");
 
-            let ty = err(&format!("module bad; type T = {name};"));
+            let ty = err(&format!("mod bad; type T = {name};"));
             assert!(!ty.is_empty(), "type path accepted `{name}`");
         }
 
         ok(
-            "module good; import __intrinsics__; type T = __Type__; fn f(x: ., y: .) -> . { __pair__[.][.](x, y) }",
+            "mod good; import __intrinsics__; type T = __Type__; fn f(x: ., y: .) -> . { __pair__[.][.](x, y) }",
         );
     }
 
     #[test]
     fn named_import_aliases_are_shared_core_syntax() {
         ok(
-            "module m; import provider(Foo as Bar, foo as bar, foo as other, same as same, op as operation, varop as variadic); fn run() -> . { () }",
+            "mod m; import provider { type Foo as Bar; fn foo as bar; fn same as same; fn op as operation } fn run() -> . { () }",
         );
         for selection in [
-            "Foo as bar",
-            "foo as Bar",
-            "foo as __bad__",
+            "type Foo as bar",
+            "fn foo as Bar",
+            "fn foo as __bad__",
             "op _ + _ as _ - _",
-            "varop [* *] as [% %]",
-            "{field} as renamed",
+            "op_var [* *] as [% %]",
         ] {
-            assert!(!err(&format!("module m; import provider({selection});")).is_empty());
+            assert!(!err(&format!("mod m; import provider {{ {selection} }}")).is_empty());
         }
     }
 
     #[test]
     fn selective_imports_accept_exact_name_roles_only() {
-        ok("module m; import provider(Foo, foo, _Foo, _foo, _foo1); fn a() -> . { () }");
+        ok(
+            "mod m; import provider { type Foo; fn foo; type _Foo; fn _foo; fn _foo1 } fn a() -> . { () }",
+        );
         for name in ["_FooBar", "_1Foo", "FooBar", "__Foo"] {
             let message = err(&format!(
-                "module m; import provider({name}); fn a() -> . {{ () }}"
+                "mod m; import provider {{ type {name} }} fn a() -> . {{ () }}"
             ));
             assert!(message.contains(name), "{name}: {message}");
         }
@@ -3220,69 +3171,69 @@ mod tests {
     #[test]
     fn marked_type_names_are_rejected_in_value_only_roles() {
         for source in [
-            "module m; type T = m._Foo;",
-            "module m; type T = m.Foo;",
-            "module m; fn f(_: .) -> . { let _ = (); .(_: .) { () }(()) }",
+            "mod m; type T = m._Foo;",
+            "mod m; type T = m.Foo;",
+            "mod m; fn f(_: .) -> . { let _ = (); .(_: .) { () }(()) }",
         ] {
             ok(source);
         }
         for (role, invalid, valid) in [
-            ("module head", "module _Foo;", "module _foo;"),
-            ("module tail", "module m/_Foo;", "module m/_foo;"),
+            ("mod head", "mod _Foo;", "mod _foo;"),
+            ("mod tail", "mod m/_Foo;", "mod m/_foo;"),
             (
                 "qualified import source",
-                "module m; import _Foo as dep; fn f() -> . { () }",
-                "module m; import _foo as dep; fn f() -> . { () }",
+                "mod m; import _Foo as dep; fn f() -> . { () }",
+                "mod m; import _foo as dep; fn f() -> . { () }",
             ),
             (
                 "qualified import source tail",
-                "module m; import provider/_Foo as dep; fn f() -> . { () }",
-                "module m; import provider/_foo as dep; fn f() -> . { () }",
+                "mod m; import provider/_Foo as dep; fn f() -> . { () }",
+                "mod m; import provider/_foo as dep; fn f() -> . { () }",
             ),
             (
                 "qualified import alias",
-                "module m; import provider as _Foo; fn f() -> . { () }",
-                "module m; import provider as _foo; fn f() -> . { () }",
+                "mod m; import provider as _Foo; fn f() -> . { () }",
+                "mod m; import provider as _foo; fn f() -> . { () }",
             ),
             (
                 "function name",
-                "module m; fn _Foo() -> . { () }",
-                "module m; fn _foo() -> . { () }",
+                "mod m; fn _Foo() -> . { () }",
+                "mod m; fn _foo() -> . { () }",
             ),
             (
                 "host function name",
-                "module m; host fn _Foo() -> .;",
-                "module m; host fn _foo() -> .;",
+                "mod m; host fn _Foo() -> .;",
+                "mod m; host fn _foo() -> .;",
             ),
             (
                 "function parameter",
-                "module m; fn f(_Foo: .) -> . { () }",
-                "module m; fn f(_foo: .) -> . { () }",
+                "mod m; fn f(_Foo: .) -> . { () }",
+                "mod m; fn f(_foo: .) -> . { () }",
             ),
             (
                 "host function parameter",
-                "module m; host fn f(_Foo: .) -> .;",
-                "module m; host fn f(_foo: .) -> .;",
+                "mod m; host fn f(_Foo: .) -> .;",
+                "mod m; host fn f(_foo: .) -> .;",
             ),
             (
                 "lambda parameter",
-                "module m; fn f() -> . { .(_Foo: .) { () } }",
-                "module m; fn f() -> . { .(_foo: .) { () } }",
+                "mod m; fn f() -> . { .(_Foo: .) { () } }",
+                "mod m; fn f() -> . { .(_foo: .) { () } }",
             ),
             (
                 "let binder",
-                "module m; fn f() -> . { let _Foo = (); () }",
-                "module m; fn f() -> . { let _foo = (); () }",
+                "mod m; fn f() -> . { let _Foo = (); () }",
+                "mod m; fn f() -> . { let _foo = (); () }",
             ),
             (
-                "type-path module qualifier",
-                "module m; type T = _Foo.Bar;",
-                "module m; type T = _foo.Bar;",
+                "type-path mod qualifier",
+                "mod m; type T = _Foo.Bar;",
+                "mod m; type T = _foo.Bar;",
             ),
             (
-                "type-path module qualifier tail",
-                "module m; type T = provider/_Foo.Bar;",
-                "module m; type T = provider/_foo.Bar;",
+                "type-path mod qualifier tail",
+                "mod m; type T = provider/_Foo.Bar;",
+                "mod m; type T = provider/_foo.Bar;",
             ),
         ] {
             let message = err(invalid);
@@ -3293,10 +3244,10 @@ mod tests {
 
     #[test]
     fn slash_only_qualified_type_paths_are_rejected() {
-        for source in ["module m; type T = m._Foo;", "module m; type T = m.Foo;"] {
+        for source in ["mod m; type T = m._Foo;", "mod m; type T = m.Foo;"] {
             ok(source);
         }
-        for source in ["module m; type T = m/_Foo;", "module m; type T = m/Foo;"] {
+        for source in ["mod m; type T = m/_Foo;", "mod m; type T = m/Foo;"] {
             let message = err(source);
             assert!(
                 message.contains("qualified type paths use"),
@@ -3309,14 +3260,14 @@ mod tests {
     fn malformed_lambda_value_never_becomes_a_type_argument() {
         // A malformed lambda remains a rejected value; it cannot fall back
         // to a type argument after consuming its structural dot.
-        let _message = err("module m; fn a() -> . { f(.[A] A) }");
+        let _message = err("mod m; fn a() -> . { f(.[A] A) }");
     }
 
     #[test]
     fn function_type_leading_binder_run_accepted() {
         // `[A][B] T -> R` — all binders at the leading position,
         // then a value group.
-        ok("module m; fn a(_f: [A][B] A -> B) -> . { () }");
+        ok("mod m; fn a(_f: [A][B] A -> B) -> . { () }");
     }
 
     #[test]
@@ -3324,12 +3275,12 @@ mod tests {
         // `P0 -> [A] P1 -> R` is `Function(P0, Forall(A,
         // Function(P1, R)))`: the arrow return can be any type,
         // including a `forall`.
-        ok("module m; fn a(_f: A -> [B] B -> A) -> . { () }");
+        ok("mod m; fn a(_f: A -> [B] B -> A) -> . { () }");
     }
 
     #[test]
     fn nested_function_return_forall_accepted() {
-        ok("module m; fn a(_f: A -> B -> [C] C -> C) -> . { () }");
+        ok("mod m; fn a(_f: A -> B -> [C] C -> C) -> . { () }");
     }
 
     #[test]
@@ -3338,7 +3289,7 @@ mod tests {
         // `([U] U -> R) -> R`, the shape an existential newtype's
         // CPS projector takes as a continuation. `specs/prime.md`
         // § Kind grammar / § Mid-position binders admit Rank-N.
-        ok("module m; fn a(_f: ([U] U -> .) -> .) -> . { () }");
+        ok("mod m; fn a(_f: ([U] U -> .) -> .) -> . { () }");
     }
 
     #[test]
@@ -3347,7 +3298,7 @@ mod tests {
         // CPS projector. This is what `route` eta-expands a
         // value-position projector reference into, so the kio-prime
         // build-target round-trip must re-verify it.
-        ok("module m; \
+        ok("mod m; \
             type { Pack <U> : . & U { mk; get; }; }; \
             fn a(_f: Pack -> [R] ([U] (Pack & U) -> R) -> R) -> . { () }");
     }

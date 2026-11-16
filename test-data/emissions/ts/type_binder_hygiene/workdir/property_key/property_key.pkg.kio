@@ -1,4 +1,4 @@
-package property_key;
+pkg property_key;
 
 build {
   target ts {

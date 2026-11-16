@@ -1,4 +1,4 @@
-package macro_optional_phantom_result;
+pkg macro_optional_phantom_result;
 
 build {
   cache "out/.kio-cache/";

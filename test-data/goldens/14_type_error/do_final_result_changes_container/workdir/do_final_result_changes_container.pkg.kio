@@ -1,4 +1,4 @@
-package do_final_result_changes_container;
+pkg do_final_result_changes_container;
 
 build {
   cache "out/.kio-cache/";

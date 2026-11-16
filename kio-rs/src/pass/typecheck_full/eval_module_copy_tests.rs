@@ -37,7 +37,7 @@ fn clone_then_filter(
 
 fn fixture(discarded_functions: usize, body_statements: usize) -> Module {
     let mut source = String::from(
-        "/// Provider documentation\nmodule provider;\n\
+        "/// Provider documentation\nmod provider;\n\
          import __comptime__;\n\
          /// Retained type\ntype Value = .;\n\
          pure fn selected(_ct: __Comptime__, _ty: __Type__, value: __Checked_term__)\n\

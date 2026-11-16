@@ -1,7 +1,7 @@
-module adapter;
+mod adapter;
 
 import origin as source;
-import origin(Item, Wrap);
+import origin { type Item; type Wrap }
 
 pub type Item = source.Item;
 

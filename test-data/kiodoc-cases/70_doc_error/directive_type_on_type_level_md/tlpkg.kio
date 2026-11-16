@@ -1,4 +1,4 @@
-module tlpkg;
+mod tlpkg;
 
 host type S role(str);
 

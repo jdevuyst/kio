@@ -1,4 +1,4 @@
-package user_elaborator_inline_implementation;
+pkg user_elaborator_inline_implementation;
 
 build {
   cache "out/.kio-cache/";

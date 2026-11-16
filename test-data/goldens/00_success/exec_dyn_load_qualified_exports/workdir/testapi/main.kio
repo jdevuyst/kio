@@ -1,24 +1,24 @@
 /// This case's loading host: qualified export lookups and typed contract checks over the piped-in image.
-module testapi/main;
+mod testapi/main;
 
-import defaults(apply_default, eval_default);
-import imageio(read_image_stdin);
-import loader(Contract, Image, Lr_diag, Lr_image);
-import loader(Diag);
-import loader(contract_check, contract_cons, contract_nil, mk_expect);
-import loader(diag_message, export_term, un_load_outcome);
-import loader/scan(load_package);
-import macros/match(macro match);
-import macros/spine_macros(macro widen_sum);
-import prime(Term);
-import result(Ev_done, Ev_stuck);
-import testapi(I32, Scalar, String);
-import testapi/fmt(int_to_string);
-import testapi/io(print);
-import testapi/scalar(scalar_as_i32);
-import testapi/text(string_concat);
-import value(Value);
-import value(value_to_scalar, vunit);
+import defaults { fn apply_default; fn eval_default }
+import imageio { fn read_image_stdin }
+import loader { fn contract_check; fn contract_cons; fn contract_nil; fn mk_expect }
+import loader { fn diag_message; fn export_term; fn un_load_outcome }
+import loader { type Contract; type Image; type Lr_diag; type Lr_image }
+import loader { type Diag }
+import loader/scan { fn load_package }
+import macros/match { macro match }
+import macros/spine_macros { macro widen_sum }
+import prime { type Term }
+import result { type Ev_done; type Ev_stuck }
+import testapi { type I32; type Scalar; type String }
+import testapi/fmt { fn int_to_string }
+import testapi/io { fn print }
+import testapi/scalar { fn scalar_as_i32 }
+import testapi/text { fn string_concat }
+import value { fn value_to_scalar; fn vunit }
+import value { type Value }
 
 // Call a zero-parameter export (one unit application) and render its i32;
 // a name that resolves to no unique surface export renders so.

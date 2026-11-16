@@ -1,14 +1,14 @@
-module index/scan;
+mod index/scan;
 
 import index/analysis as analysis;
 import index/automaton as sam;
 import index/numbers as num;
-import macros/control(macro if);
-import macros/row_macros(macro record, macro select);
-import testapi(Array, Bool, I32);
+import macros/control { macro if }
+import macros/row_macros { macro record; macro select }
+import testapi { type Array; type Bool; type I32 }
 import testapi/arith as n;
 import testapi/array as a;
-import testapi/iter(loop);
+import testapi/iter { fn loop }
 
 rec(loop) fn copy_span(source: Array[I32], position: I32, stop: I32, result: Array[I32]) -> Array[I32] {
   if(num.less(position, stop)) {

@@ -1,4 +1,4 @@
-module main;
+mod main;
 
-import first(pick);
-import second(pick);
+import first { lit pick }
+import second { lit pick }

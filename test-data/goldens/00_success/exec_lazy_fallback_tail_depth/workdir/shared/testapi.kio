@@ -1,4 +1,4 @@
-module shared/testapi;
+mod shared/testapi;
 
 import testapi as _rehost_hegfhdhegbhagj;
 

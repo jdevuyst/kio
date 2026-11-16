@@ -1,7 +1,7 @@
-module cases/generic;
+mod cases/generic;
 
-import common(macro common);
-import testapi(String);
+import common { macro common }
+import testapi { type String }
 
 pub fn literal_first(witness: String) -> String {
   let selected = common(.() { "generic" })(.() { witness });

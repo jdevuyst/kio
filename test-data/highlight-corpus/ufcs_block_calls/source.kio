@@ -1,6 +1,6 @@
-module splices;
+mod splices;
 
-import library/custom(macro outer, macro inner);
+import library/custom {macro outer; macro inner}
 
 fn run(receiver: .) {
   receiver.>outer (extra) { first } next { second };

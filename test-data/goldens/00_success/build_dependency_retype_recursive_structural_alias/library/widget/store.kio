@@ -1,4 +1,4 @@
-module store;
+mod store;
 
 import __intrinsics__;
 

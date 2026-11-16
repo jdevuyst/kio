@@ -1,4 +1,4 @@
-package gate_array_dp;
+pkg gate_array_dp;
 
 build {
   cache "out/.kio-cache/";

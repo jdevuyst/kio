@@ -15,9 +15,9 @@
 //! - `Expr::UserMacro` — reference palettes, `match`, `derive`, and
 //!   package-defined macro calls alike.
 //! - `Expr::Ufcs` — regular UFCS (`r.>f`) and macro-UFCS
-//!   (`r.>iso(T)`) dispatch.
+//!   (`r.>iso[T]`) dispatch.
 //! - `Item::Labels` — compact nominal declarations.
-//! - `Item::LiteralAlias` — `literal` declarations.
+//! - `Item::LiteralAlias` — `lit` declarations.
 //! - `Item::Equiv`, `Item::Op`, `Item::Fold`, term-level `Item::RecGroup`, and
 //!   user macro declarations; operator-pattern imports are
 //!   rejected for the same reason. `Item::TypeRecGroup` is shared Kio' syntax
@@ -230,7 +230,7 @@ impl SurfaceToPrime for PrimeLower {
         &mut self,
         d: crate::ast::VariadicOperator<Surface>,
     ) -> Result<Item<Prime>, Error> {
-        Err(prime_reject("`varop` declaration", d.meta.span))
+        Err(prime_reject("`op_var` declaration", d.meta.span))
     }
 
     fn rewrite_item_rec_group(&mut self, d: RecGroup<Surface>) -> Result<Item<Prime>, Error> {
@@ -248,7 +248,7 @@ impl SurfaceToPrime for PrimeLower {
         &mut self,
         a: LiteralAlias<Surface>,
     ) -> Result<Item<Prime>, Error> {
-        Err(prime_reject("`literal` declaration", a.meta.span))
+        Err(prime_reject("`lit` declaration", a.meta.span))
     }
 
     fn rewrite_import_op_pattern(&mut self, span: Span) -> Result<(), Error> {
@@ -257,6 +257,10 @@ impl SurfaceToPrime for PrimeLower {
 
     fn rewrite_import_macro(&mut self, span: Span) -> Result<(), Error> {
         Err(prime_reject("macro `import` item", span))
+    }
+
+    fn rewrite_import_literal(&mut self, span: Span) -> Result<(), Error> {
+        Err(prime_reject("literal `import` item", span))
     }
 
     fn rewrite_import_comptime(&mut self, span: Span) -> Result<(), Error> {
@@ -283,7 +287,7 @@ mod tests {
 
     #[test]
     fn lower_module_passes_kio_prime_program_through() {
-        let module = parse_module("module x; fn id[A](x: A) -> A { x }");
+        let module = parse_module("mod x; fn id[A](x: A) -> A { x }");
         let lowered = lower_module(module).expect("lower_module");
         assert_eq!(lowered.path.segments, vec!["x"]);
         assert_eq!(lowered.items.len(), 1);
@@ -291,34 +295,43 @@ mod tests {
 
     #[test]
     fn lower_module_rejects_macro_import_before_provider_resolution() {
-        let module = parse_module("module consumer; import provider(macro choose as pick);");
+        let module = parse_module("mod consumer; import provider {macro choose as pick}");
         let error = lower_module(module).expect_err("macro tags are surface-only");
         assert!(err_msg(error).contains("macro `import` item"));
 
-        let ordinary = parse_module("module consumer; import provider(macro as pick);");
+        let ordinary = parse_module("mod consumer; import provider {fn macro as pick}");
         lower_module(ordinary).expect("the ordinary name macro remains a valid import");
     }
 
     #[test]
+    fn lower_module_rejects_literal_import_before_provider_resolution() {
+        let module = parse_module("mod consumer; import provider { lit one as local }");
+        let error = lower_module(module).expect_err("literal selectors are surface-only");
+        assert!(err_msg(error).contains("literal `import` item"));
+        let declaration = parse_module("mod consumer; lit one = 1;");
+        let error = lower_module(declaration).expect_err("literal declarations are surface-only");
+        assert!(err_msg(error).contains("`lit` declaration"));
+        lower_module(parse_module(
+            "mod consumer; import provider { fn one as local }",
+        ))
+        .expect("ordinary function selections remain Prime");
+    }
+
+    #[test]
     fn lower_module_rejects_comptime_import() {
-        let module = parse_module("module x; import __comptime__; fn f() -> . { () }");
+        let module = parse_module("mod x; import __comptime__; fn f() -> . { () }");
         let msg = err_msg(lower_module(module).expect_err("comptime import is surface-only"));
         assert!(msg.contains("`import __comptime__`"), "{msg}");
         assert!(msg.contains("use the `kio` binary"), "{msg}");
         lower_module(parse_module(
-            "module x; import __intrinsics__; fn f() -> . { () }",
+            "mod x; import __intrinsics__; fn f() -> . { () }",
         ))
         .expect("runtime intrinsics remain Prime");
     }
 
     #[test]
     fn lower_module_passes_recursive_type_group_through() {
-        let module = parse_module(
-            "module x; rec { \
-               type A = B; \
-               type { B: A { mk; get; }; }; \
-             }",
-        );
+        let module = parse_module("mod x; rec { type A = B; type { B: A { mk; get; }; }; }");
         let lowered = lower_module(module).expect("recursive type group is Kio' syntax");
         let [Item::TypeRecGroup(group)] = lowered.items.as_slice() else {
             panic!("expected one recursive type group")
@@ -328,7 +341,7 @@ mod tests {
 
     #[test]
     fn lower_module_rejects_tuple_literal() {
-        let module = parse_module("module x; fn f() -> . { (.t, .f) }");
+        let module = parse_module("mod x; fn f() -> . { (.t, .f) }");
         let msg = err_msg(lower_module(module).expect_err("rejects tuple"));
         assert!(msg.contains("tuple literal"), "names form: {msg}");
         assert!(msg.contains("kio-prime"), "frames as kio-prime-only: {msg}");
@@ -336,7 +349,7 @@ mod tests {
 
     #[test]
     fn lower_module_rejects_if_block_call() {
-        let module = parse_module("module x; fn f() -> . { if (.t) { () } else { () } }");
+        let module = parse_module("mod x; fn f() -> . { if (.t) { () } else { () } }");
         let Some(Item::FnDef(def)) = module.items.first() else {
             panic!("expected function with if body");
         };
@@ -347,9 +360,8 @@ mod tests {
 
     #[test]
     fn parser_rejects_lowercase_nominal_head_before_prime_lower() {
-        let msg = err_msg(
-            parse("module x; type T = {f: .};").expect_err("rejects lowercase nominal head"),
-        );
+        let msg =
+            err_msg(parse("mod x; type T = {f: .};").expect_err("rejects lowercase nominal head"));
         assert!(
             msg.contains("type name `f`") && msg.contains("uppercase first letter"),
             "names form: {msg}"
@@ -358,23 +370,21 @@ mod tests {
 
     #[test]
     fn lower_module_rejects_iso() {
-        let module = parse_module("module x; import provider(macro iso); fn f() -> . { iso(()) }");
+        let module = parse_module("mod x; import provider {macro iso} fn f() -> . { iso(()) }");
         let msg = err_msg(lower_module(module).expect_err("rejects iso"));
         assert!(msg.contains("macro `import` item"), "names form: {msg}");
     }
 
     #[test]
     fn lower_module_rejects_into() {
-        let module =
-            parse_module("module x; import provider(macro into); fn f() -> . { into(()) }");
+        let module = parse_module("mod x; import provider {macro into} fn f() -> . { into(()) }");
         let msg = err_msg(lower_module(module).expect_err("rejects into"));
         assert!(msg.contains("macro `import` item"), "names form: {msg}");
     }
 
     #[test]
     fn lower_module_rejects_onto() {
-        let module =
-            parse_module("module x; import provider(macro onto); fn f() -> . { onto(()) }");
+        let module = parse_module("mod x; import provider {macro onto} fn f() -> . { onto(()) }");
         let msg = err_msg(lower_module(module).expect_err("rejects onto"));
         assert!(msg.contains("macro `import` item"), "names form: {msg}");
     }
@@ -382,7 +392,7 @@ mod tests {
     #[test]
     fn lower_module_rejects_match_macro() {
         let module = parse_module(
-            "module x; import provider(macro match); fn f[A](v: A) -> . { match(v, (.() { () })) }",
+            "mod x; import provider {macro match} fn f[A](v: A) -> . { match(v, (.() { () })) }",
         );
         let msg = err_msg(lower_module(module).expect_err("rejects match"));
         assert!(msg.contains("macro `import` item"), "names form: {msg}");
@@ -390,7 +400,7 @@ mod tests {
 
     #[test]
     fn lower_module_rejects_compact_nominals() {
-        let module = parse_module("module x; type { F: . };");
+        let module = parse_module("mod x; type { F: . };");
         let msg = err_msg(lower_module(module).expect_err("rejects compact nominal"));
         assert!(
             msg.contains("compact nominal declaration"),
@@ -400,12 +410,8 @@ mod tests {
 
     #[test]
     fn lower_module_rejects_compact_nominals_inside_recursive_type_group() {
-        let module = parse_module(
-            "module x; rec { \
-               type A = { To_b: B }; \
-               type { B: A { mk; get; }; }; \
-             }",
-        );
+        let module =
+            parse_module("mod x; rec { type A = { To_b: B }; type { B: A { mk; get; }; }; }");
         let msg = err_msg(lower_module(module).expect_err("rejects grouped compact nominal"));
         assert!(
             msg.contains("compact nominal declaration"),
@@ -415,7 +421,7 @@ mod tests {
 
     #[test]
     fn lower_module_rejects_ufcs() {
-        let module = parse_module("module x; fn f() -> . { let r = (); r.>f }");
+        let module = parse_module("mod x; fn f() -> . { let r = (); r.>f }");
         let msg = err_msg(lower_module(module).expect_err("rejects ufcs"));
         assert!(msg.contains("UFCS"), "names form: {msg}");
         assert!(msg.contains("kio-prime"), "frames as kio-prime-only: {msg}");
@@ -423,9 +429,8 @@ mod tests {
 
     #[test]
     fn lower_module_rejects_macro_ufcs() {
-        let module = parse_module(
-            "module x; import provider(macro iso); fn f() -> . { let r = (); r.>iso }",
-        );
+        let module =
+            parse_module("mod x; import provider {macro iso} fn f() -> . { let r = (); r.>iso }");
         let msg = err_msg(lower_module(module).expect_err("rejects macro-UFCS"));
         assert!(msg.contains("macro `import` item"), "names form: {msg}");
         assert!(msg.contains("kio-prime"), "frames as kio-prime-only: {msg}");
@@ -433,16 +438,14 @@ mod tests {
 
     #[test]
     fn lower_module_rejects_align() {
-        let module =
-            parse_module("module x; import provider(macro align); fn f() -> . { align(()) }");
+        let module = parse_module("mod x; import provider {macro align} fn f() -> . { align(()) }");
         let msg = err_msg(lower_module(module).expect_err("rejects align"));
         assert!(msg.contains("macro `import` item"), "names form: {msg}");
     }
 
     #[test]
     fn lower_module_rejects_atom() {
-        let module =
-            parse_module("module x; import provider(macro atom); fn f() -> . { atom(()) }");
+        let module = parse_module("mod x; import provider {macro atom} fn f() -> . { atom(()) }");
         let msg = err_msg(lower_module(module).expect_err("rejects atom"));
         assert!(msg.contains("macro `import` item"), "names form: {msg}");
     }
@@ -457,7 +460,7 @@ mod tests {
     #[test]
     fn lower_module_rejects_reorder_sum() {
         let module = parse_module(
-            "module x; import provider(macro reorder_sum); fn f() -> . { reorder_sum(()) }",
+            "mod x; import provider {macro reorder_sum} fn f() -> . { reorder_sum(()) }",
         );
         let msg = err_msg(lower_module(module).expect_err("rejects reorder_sum"));
         assert!(msg.contains("macro `import` item"), "names form: {msg}");
@@ -466,7 +469,7 @@ mod tests {
     #[test]
     fn lower_module_rejects_reorder_prod() {
         let module = parse_module(
-            "module x; import provider(macro reorder_prod); fn f() -> . { reorder_prod(()) }",
+            "mod x; import provider {macro reorder_prod} fn f() -> . { reorder_prod(()) }",
         );
         let msg = err_msg(lower_module(module).expect_err("rejects reorder_prod"));
         assert!(msg.contains("macro `import` item"), "names form: {msg}");
@@ -475,7 +478,7 @@ mod tests {
     #[test]
     fn lower_module_rejects_narrow_sum() {
         let module = parse_module(
-            "module x; import provider(macro narrow_sum); fn f() -> . { narrow_sum(()) }",
+            "mod x; import provider {macro narrow_sum} fn f() -> . { narrow_sum(()) }",
         );
         let msg = err_msg(lower_module(module).expect_err("rejects narrow_sum"));
         assert!(msg.contains("macro `import` item"), "names form: {msg}");
@@ -484,7 +487,7 @@ mod tests {
     #[test]
     fn lower_module_rejects_narrow_prod() {
         let module = parse_module(
-            "module x; import provider(macro narrow_prod); fn f() -> . { narrow_prod(()) }",
+            "mod x; import provider {macro narrow_prod} fn f() -> . { narrow_prod(()) }",
         );
         let msg = err_msg(lower_module(module).expect_err("rejects narrow_prod"));
         assert!(msg.contains("macro `import` item"), "names form: {msg}");
@@ -492,9 +495,8 @@ mod tests {
 
     #[test]
     fn lower_module_rejects_widen_sum() {
-        let module = parse_module(
-            "module x; import provider(macro widen_sum); fn f() -> . { widen_sum(()) }",
-        );
+        let module =
+            parse_module("mod x; import provider {macro widen_sum} fn f() -> . { widen_sum(()) }");
         let msg = err_msg(lower_module(module).expect_err("rejects widen_sum"));
         assert!(msg.contains("macro `import` item"), "names form: {msg}");
     }
@@ -502,7 +504,7 @@ mod tests {
     #[test]
     fn lower_module_rejects_widen_prod() {
         let module = parse_module(
-            "module x; import provider(macro widen_prod); fn f() -> . { widen_prod(()) }",
+            "mod x; import provider {macro widen_prod} fn f() -> . { widen_prod(()) }",
         );
         let msg = err_msg(lower_module(module).expect_err("rejects widen_prod"));
         assert!(msg.contains("macro `import` item"), "names form: {msg}");
@@ -511,7 +513,7 @@ mod tests {
     #[test]
     fn lower_module_rejects_one_sum() {
         let module =
-            parse_module("module x; import provider(macro one_sum); fn f() -> . { one_sum(()) }");
+            parse_module("mod x; import provider {macro one_sum} fn f() -> . { one_sum(()) }");
         let msg = err_msg(lower_module(module).expect_err("rejects one_sum"));
         assert!(msg.contains("macro `import` item"), "names form: {msg}");
     }
@@ -519,14 +521,14 @@ mod tests {
     #[test]
     fn lower_module_rejects_one_prod() {
         let module =
-            parse_module("module x; import provider(macro one_prod); fn f() -> . { one_prod(()) }");
+            parse_module("mod x; import provider {macro one_prod} fn f() -> . { one_prod(()) }");
         let msg = err_msg(lower_module(module).expect_err("rejects one_prod"));
         assert!(msg.contains("macro `import` item"), "names form: {msg}");
     }
 
     #[test]
     fn lower_module_rejects_fit() {
-        let module = parse_module("module x; import provider(macro fit); fn f() -> . { fit(()) }");
+        let module = parse_module("mod x; import provider {macro fit} fn f() -> . { fit(()) }");
         let msg = err_msg(lower_module(module).expect_err("rejects fit"));
         assert!(msg.contains("macro `import` item"), "names form: {msg}");
     }
@@ -536,7 +538,7 @@ mod tests {
         // Host items are NOT surface-only — they are opaque Kio'
         // declarations — so `prime::lower` accepts them with no
         // rejection.
-        let module = parse_module("module x; host type Map[K][V];");
+        let module = parse_module("mod x; host type Map[K][V];");
         let lowered = lower_module(module).expect("lower_module");
         assert_eq!(lowered.items.len(), 1);
         assert!(matches!(lowered.items[0], crate::ast::Item::HostType(_)));
@@ -544,7 +546,7 @@ mod tests {
 
     #[test]
     fn lower_module_passes_host_fn_through() {
-        let module = parse_module("module x; host type S role(str); host fn print(s: S) -> .;");
+        let module = parse_module("mod x; host type S role(str); host fn print(s: S) -> .;");
         let lowered = lower_module(module).expect("lower_module");
         assert_eq!(lowered.items.len(), 2);
         assert!(matches!(lowered.items[1], crate::ast::Item::HostFn(_)));
@@ -555,7 +557,7 @@ mod tests {
         // The package file's `bridge` glob list is phase-independent and
         // carries verbatim through the kio-prime lowering.
         let package_file =
-            crate::pass::parser::parse_package_file("package pkg;\nbridge { pkg; }", None)
+            crate::pass::parser::parse_package_file("pkg pkg;\nbridge { pkg; }", None)
                 .expect("parse_package_file");
         let lowered = lower_package_file(package_file).expect("lower_package_file");
         assert_eq!(lowered.bridge.expect("bridge block").globs.len(), 1);
@@ -563,7 +565,7 @@ mod tests {
 
     #[test]
     fn lower_module_rejects_import_op_pattern() {
-        let module = parse("module x; import m(op _ +);").expect("provider-aware surface parse");
+        let module = parse("mod x; import m {op _ +}").expect("provider-aware surface parse");
         let msg = err_msg(lower_module(module).expect_err("rejects op-pattern import"));
         assert!(msg.contains("operator-pattern"), "names form: {msg}");
         assert!(msg.contains("kio-prime"), "frames as kio-prime-only: {msg}");
@@ -577,7 +579,7 @@ mod tests {
 
     #[test]
     fn lower_module_preserves_pure_fn() {
-        let module = parse_module("module x; pure fn f() -> . { () }");
+        let module = parse_module("mod x; pure fn f() -> . { () }");
         let lowered = lower_module(module).expect("accepts pure fn");
         let Item::FnDef(def) = &lowered.items[0] else {
             panic!("expected fn")
@@ -587,7 +589,7 @@ mod tests {
 
     #[test]
     fn parser_rejects_pure_type_alias() {
-        let msg = err_msg(parse("module x; pure type T = .;").expect_err("rejects pure type"));
+        let msg = err_msg(parse("mod x; pure type T = .;").expect_err("rejects pure type"));
         assert!(
             msg.contains("only on ordinary `fn`"),
             "directed error: {msg}"
@@ -597,7 +599,7 @@ mod tests {
     #[test]
     fn parser_rejects_pure_nominal_type() {
         let msg = err_msg(
-            parse("module x; pure type { W: . { pub mk; pub get } }")
+            parse("mod x; pure type { W: . { pub mk; pub get } }")
                 .expect_err("rejects pure nominal type"),
         );
         assert!(
@@ -608,7 +610,7 @@ mod tests {
 
     #[test]
     fn lower_module_accepts_pub_fn_without_pure() {
-        let module = parse_module("module x; pub fn f() -> . { () }");
+        let module = parse_module("mod x; pub fn f() -> . { () }");
         let lowered = lower_module(module).expect("lower_module");
         assert_eq!(lowered.items.len(), 1);
     }

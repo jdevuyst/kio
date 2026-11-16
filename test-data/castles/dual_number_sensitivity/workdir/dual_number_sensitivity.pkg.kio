@@ -1,4 +1,4 @@
-package dual_number_sensitivity;
+pkg dual_number_sensitivity;
 
 build {
   cache "out/.kio-cache/";

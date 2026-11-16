@@ -5,13 +5,13 @@
 /// table renderer needs is therefore derived from data the engine already
 /// holds: an integer's width from its magnitude, a text datum's width
 /// from the length recorded beside it when the datum was written.
-module query/text;
+mod query/text;
 
-import macros/control(macro if);
-import testapi(Bool, I32, String);
-import testapi/arith(add_i32, leq_i32, lt_i32, mul_i32, sub_i32);
-import testapi/iter(loop);
-import testapi/text(string_concat);
+import macros/control { macro if }
+import testapi { type Bool; type I32; type String }
+import testapi/arith { fn add_i32; fn leq_i32; fn lt_i32; fn mul_i32; fn sub_i32 }
+import testapi/iter { fn loop }
+import testapi/text { fn string_concat }
 
 pub fn cat2(a: String, b: String) -> String { string_concat(a, b) }
 

@@ -1,4 +1,4 @@
-module op_decl_with_hash_run;
+mod op_decl_with_hash_run;
 
 op _ ## _ { impl review; };
 

@@ -1,10 +1,10 @@
-module demo/a;
+mod demo/a;
 
 import __comptime__;
 
 host type Num role(i32);
 
-pub literal truth = 1;
+pub lit truth = 1;
 
 equiv proof() {
   ();

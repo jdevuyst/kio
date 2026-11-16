@@ -1,4 +1,4 @@
-module continuations/macros/testapi;
+mod continuations/macros/testapi;
 
 import macros/testapi as _rehost_gngbgdhcgphdcphegfhdhegbhagj;
 

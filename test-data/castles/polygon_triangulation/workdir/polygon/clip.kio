@@ -1,13 +1,13 @@
-module polygon/clip;
+mod polygon/clip;
 
-import macros/control(macro if);
-import macros/row_macros(macro select);
-import macros/spine_macros(macro widen_sum);
+import macros/control { macro if }
+import macros/row_macros { macro select }
+import macros/spine_macros { macro widen_sum }
 import polygon/geometry as geo;
-import testapi(Array, Bool, I32, String);
+import testapi { type Array; type Bool; type I32; type String }
 import testapi/arith as num;
 import testapi/array as arr;
-import testapi/iter(loop);
+import testapi/iter { fn loop }
 
 type Ring = { Before: Array[I32]; After: Array[I32]; Active: Array[Bool] };
 
@@ -73,7 +73,7 @@ rec(loop) fn clip_ring(
     arr.array_push(triangles, (a, cursor, c));
     triangles.>widen_sum
   } else if(geo.equal(misses, remaining)) {
-    "no removable ear".>widen_sum
+    "no removable ear"[String].>widen_sum
   } else if(is_ear(points, ring, a, cursor, c)) {
     arr.array_push(triangles, (a, cursor, c));
     arr.array_set(ring.>select { After.get }, a, c);

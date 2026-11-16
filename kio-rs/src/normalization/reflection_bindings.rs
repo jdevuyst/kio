@@ -1819,7 +1819,7 @@ mod tests {
     fn forall_instantiation_preserves_lexical_arguments_and_alias_body_environments() {
         let package = crate::normalization::artifact::tests::lowered_package(&[(
             "a.kio",
-            "module a; type T = .; type Alias[A] = [B] A -> B;",
+            "mod a; type T = .; type Alias[A] = [B] A -> B;",
         )]);
         let ctx = EvalCtx::new().with_package(Some(&package));
         let caller = ReflectedVariable::live("T".into(), 0).as_type();

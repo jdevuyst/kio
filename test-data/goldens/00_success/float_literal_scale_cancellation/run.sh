@@ -7,7 +7,7 @@ trap 'rm -rf "$work"' EXIT INT TERM HUP
 cp workdir/float_literal_scale_cancellation.pkg.kio "$work/"
 cd "$work"
 awk 'BEGIN {
-  print "module main; host type Float role(f32); host type Double role(f64);"
+  print "mod main; host type Float role(f32); host type Double role(f64);"
   printf "equiv whole_scale() { 1"
   for (i = 0; i < 660000; i++) printf "1"
   print ".0e-660000[Float]; 1.1111111640930176[Float] }"

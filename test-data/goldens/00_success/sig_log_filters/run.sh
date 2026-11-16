@@ -25,12 +25,12 @@ cd "$scratch" || exit 1
 "$KIO_BIN" sig commit -m "gen 1" >/dev/null 2>&1 || exit 1
 
 # v(2): breaking removal of `serve` + nonbreaking add of `widen`.
-printf 'module api;\n\npub fn widen() -> . { () }\n' > api.kio
+printf 'mod api;\n\npub fn widen() -> . { () }\n' > api.kio
 "$KIO_BIN" sig stage --force >/dev/null 2>&1 || exit 1
 "$KIO_BIN" sig commit -m "gen 2" >/dev/null 2>&1 || exit 1
 
 # v(3): nonbreaking add of `extend`.
-printf 'module api;\n\npub fn widen() -> . { () }\n\npub fn extend() -> . { () }\n' > api.kio
+printf 'mod api;\n\npub fn widen() -> . { () }\n\npub fn extend() -> . { () }\n' > api.kio
 "$KIO_BIN" sig stage >/dev/null 2>&1 || exit 1
 "$KIO_BIN" sig commit -m "gen 3" >/dev/null 2>&1 || exit 1
 

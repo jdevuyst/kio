@@ -1,4 +1,4 @@
-module dict/macros/testapi;
+mod dict/macros/testapi;
 
 host type String role(str);
 

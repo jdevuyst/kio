@@ -1,4 +1,4 @@
-package typecheck_nested_expected_applications;
+pkg typecheck_nested_expected_applications;
 
 build {
   cache "out/.kio-cache/";

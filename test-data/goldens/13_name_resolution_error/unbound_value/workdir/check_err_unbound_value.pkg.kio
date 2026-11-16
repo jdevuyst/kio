@@ -1,4 +1,4 @@
-package check_err_unbound_value;
+pkg check_err_unbound_value;
 
 build {
   cache "out/.kio-cache/";

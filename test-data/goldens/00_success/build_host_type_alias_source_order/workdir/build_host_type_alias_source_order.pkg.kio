@@ -1,4 +1,4 @@
-package build_host_type_alias_source_order;
+pkg build_host_type_alias_source_order;
 
 build {
   cache "out/.kio-cache/";

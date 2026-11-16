@@ -1,4 +1,4 @@
-package build_nested_recursive_generic_labels;
+pkg build_nested_recursive_generic_labels;
 
 build {
   cache "out/.kio-cache/";

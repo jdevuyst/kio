@@ -4,10 +4,10 @@ fn open_change_and_complete(kind: &str, marked: &str) -> Value {
     let cursor = marked.find('|').expect("completion marker");
     let source = marked.replacen('|', "", 1);
     let dir = TempDir::new("completion-context-protocol");
-    dir.write("outer.pkg.kio", "package outer;\n");
+    dir.write("outer.pkg.kio", "pkg outer;\n");
     let path = dir.write(&format!("workspace/app{kind}.kio"), &source);
     if kind != ".pkg" {
-        dir.write("workspace/app.pkg.kio", "package app;\n");
+        dir.write("workspace/app.pkg.kio", "pkg app;\n");
     }
     let workspace = path.parent().expect("workspace");
     let uri = path_to_file_uri(&path);
@@ -77,13 +77,13 @@ fn lsp_grouped_reference_prefixes_keep_callable_completion() {
         "macro inspect : . { impl(fills) ((hel|",
         "macro inspect : . { impl ((|",
         "macro inspect : . { captures ((hel|",
-        "varop [] { foldl ((hel|",
-        "varop [] { foldl ((helper)) ((hel|",
-        "varop [] { foldl helper helper; finalize ((hel|",
+        "op_var [] { foldl ((hel|",
+        "op_var [] { foldl ((helper)) ((hel|",
+        "op_var [] { foldl helper helper; finalize ((hel|",
         "rec((hel|",
         "fn run(x: .) { x.>((hel|",
     ] {
-        let source = format!("module app; pure fn helper() {{ () }}\n{tail}");
+        let source = format!("mod app; pure fn helper() {{ () }}\n{tail}");
         let completion = open_change_and_complete("", &source);
         assert!(
             completion_labels(&completion).contains(&"helper"),
@@ -92,7 +92,7 @@ fn lsp_grouped_reference_prefixes_keep_callable_completion() {
     }
     let completion = open_change_and_complete(
         "",
-        "module app; pure fn fills() { () }\nmacro inspect : . { impl(fi|",
+        "mod app; pure fn fills() { () }\nmacro inspect : . { impl(fi|",
     );
     assert!(
         completion_labels(&completion).contains(&"fills"),
@@ -114,7 +114,7 @@ fn lsp_type_only_completion_keeps_binder_positions_and_scopes_distinct() {
             vec!["B", "Existing"],
         ),
     ] {
-        let source = format!("module app;\npub type Existing = .;\n{tail}");
+        let source = format!("mod app;\npub type Existing = .;\n{tail}");
         let completion = open_change_and_complete("", &source);
         assert_eq!(exact_labels(&completion), expected, "{tail}: {completion}");
     }
@@ -162,7 +162,7 @@ fn lsp_protocol_neutral_block_completion_tracks_lexical_scope() {
             vec!["run"],
         ),
     ] {
-        let marked = format!("module app; rec(loop) fn run[A](parent: .) {{ {body}");
+        let marked = format!("mod app; rec(loop) fn run[A](parent: .) {{ {body}");
         let result = open_change_and_complete("", &marked);
         let labels = completion_labels(&result);
         if expected.iter().any(|word| !labels.contains(word))
@@ -177,26 +177,22 @@ fn lsp_protocol_neutral_block_completion_tracks_lexical_scope() {
 #[test]
 fn lsp_protocol_completion_closed_contexts_are_exact_after_open_and_change() {
     for (kind, source, expected) in [
-        ("", "|", vec!["module"]),
-        (".pkg", "|", vec!["package"]),
-        (".dep", "|", vec!["dependency"]),
+        ("", "|", vec!["mod"]),
+        (".pkg", "|", vec!["pkg"]),
+        (".dep", "|", vec!["dep"]),
         (".lock", "|", vec!["lock"]),
-        (".sig", "|", vec!["signature"]),
+        (".sig", "|", vec!["sig"]),
         (
             ".pkg",
-            "package app; build { cache (); |",
+            "pkg app; build { cache (); |",
             vec!["docs", "target"],
         ),
         (
             ".pkg",
-            "package app; build { target rust {} |",
+            "pkg app; build { target rust {} |",
             vec!["cache", "docs", "target"],
         ),
-        (
-            ".dep",
-            "dependency app; source { |",
-            vec!["git", "path", "ref"],
-        ),
+        (".dep", "dep app; source { |", vec!["git", "path", "ref"]),
         (
             ".lock",
             "lock app; resolved { |",
@@ -204,22 +200,22 @@ fn lsp_protocol_completion_closed_contexts_are_exact_after_open_and_change() {
         ),
         (
             ".dep",
-            "dependency app; source { path \"nested/app.pkg.kio\"; |",
+            "dep app; source { path \"nested/app.pkg.kio\"; |",
             vec!["git", "ref"],
         ),
         (
             ".dep",
-            "dependency app; source { ref \"main\"; path \"nested/app.pkg.kio\"; |",
+            "dep app; source { ref \"main\"; path \"nested/app.pkg.kio\"; |",
             vec!["git"],
         ),
         (
             ".dep",
-            "dependency app; source { git \"repo\"; ref \"main\"; |",
+            "dep app; source { git \"repo\"; ref \"main\"; |",
             vec!["path"],
         ),
         (
             ".dep",
-            "dependency app; source { git \"repo\"; path \"nested/app.pkg.kio\"; ref \"main\"; |",
+            "dep app; source { git \"repo\"; path \"nested/app.pkg.kio\"; ref \"main\"; |",
             vec![],
         ),
         (
@@ -234,10 +230,10 @@ fn lsp_protocol_completion_closed_contexts_are_exact_after_open_and_change() {
         ),
         (
             ".sig",
-            "signature app v(1); v(1) { |",
+            "sig app v(1); v(1) { |",
             vec!["breaking", "nonbreaking", "with"],
         ),
-        ("", "module app; type { A: . { mk; |", vec!["get", "pub"]),
+        ("", "mod app; type { A: . { mk; |", vec!["get", "pub"]),
     ] {
         assert_eq!(
             exact_labels(&open_change_and_complete(kind, source)),
@@ -250,11 +246,7 @@ fn lsp_protocol_completion_closed_contexts_are_exact_after_open_and_change() {
 #[test]
 fn lsp_protocol_git_manifest_completion_retracts_after_real_edits() {
     for (kind, header, required) in [
-        (
-            "dep",
-            "dependency app; source",
-            "git \"repo\"; ref \"main\";",
-        ),
+        ("dep", "dep app; source", "git \"repo\"; ref \"main\";"),
         (
             "lock",
             "lock app; resolved",
@@ -262,7 +254,7 @@ fn lsp_protocol_git_manifest_completion_retracts_after_real_edits() {
         ),
     ] {
         let dir = TempDir::new("git-manifest-completion-edits");
-        dir.write("app.pkg.kio", "package app;\n");
+        dir.write("app.pkg.kio", "pkg app;\n");
         let initial = format!("{header} {{ {required} ");
         let path = dir.write(&format!("app.{kind}.kio"), &initial);
         let uri = path_to_file_uri(&path);
@@ -301,11 +293,8 @@ fn lsp_protocol_git_manifest_completion_retracts_after_real_edits() {
         assert_eq!(lsp.shutdown(), 0);
     }
     for (kind, source) in [
-        (
-            ".dep",
-            "dependency app; source { path \"nested/|app.pkg.kio\"; }",
-        ),
-        (".dep", "dependency app; source { // pa|th\n }"),
+        (".dep", "dep app; source { path \"nested/|app.pkg.kio\"; }"),
+        (".dep", "dep app; source { // pa|th\n }"),
         (
             ".lock",
             "lock app; resolved { path \"nested/|app.pkg.kio\"; }",
@@ -322,12 +311,12 @@ fn lsp_protocol_git_manifest_completion_retracts_after_real_edits() {
 #[test]
 fn lsp_protocol_completion_suppresses_non_name_contexts_after_open_and_change() {
     for source in [
-        "module app; fn earlier() { () } fn run() { \"lit|eral\" }",
-        "module app; fn earlier() { () } fn run() { 12|3 }",
-        "module app; fn earlier() { () } fn run() { .t| }",
-        "module app; fn earlier() { () } fn run() { // ear|lier\n () }",
-        "module app; fn earlier() { () } fn run(new|name: .) { () }",
-        "module app; fn earlier() { () } fn run() { let new|name = (); () }",
+        "mod app; fn earlier() { () } fn run() { \"lit|eral\" }",
+        "mod app; fn earlier() { () } fn run() { 12|3 }",
+        "mod app; fn earlier() { () } fn run() { .t| }",
+        "mod app; fn earlier() { () } fn run() { // ear|lier\n () }",
+        "mod app; fn earlier() { () } fn run(new|name: .) { () }",
+        "mod app; fn earlier() { () } fn run() { let new|name = (); () }",
     ] {
         assert!(
             exact_labels(&open_change_and_complete("", source)).is_empty(),
@@ -340,22 +329,22 @@ fn lsp_protocol_completion_suppresses_non_name_contexts_after_open_and_change() 
 fn lsp_protocol_completion_preserves_scope_and_recursive_identity_after_open_and_change() {
     for (source, included, excluded) in [
         (
-            "module app; fn earlier() { () } fn run(value: .) { let local = value; |",
+            "mod app; fn earlier() { () } fn run(value: .) { let local = value; |",
             vec!["earlier", "value", "local"],
             vec!["run"],
         ),
         (
-            "module app; type Earlier = .; fn run[A](value: A) -> A|",
+            "mod app; type Earlier = .; fn run[A](value: A) -> A|",
             vec!["Earlier", "A"],
             vec!["run", "value"],
         ),
         (
-            "module app; fn run() { .(local: .) { | } }",
+            "mod app; fn run() { .(local: .) { | } }",
             vec!["local"],
             vec!["run"],
         ),
         (
-            "module app; rec(loop) fn run(value: .) -> . { recur ru|n(value) }",
+            "mod app; rec(loop) fn run(value: .) -> . { recur ru|n(value) }",
             vec!["run"],
             vec!["value"],
         ),
@@ -375,7 +364,7 @@ fn lsp_protocol_completion_preserves_scope_and_recursive_identity_after_open_and
 fn lsp_protocol_named_target_completion_uses_the_header_backend() {
     for (source, expected) in [
         (
-            "package app; build { target rust {} target (|",
+            "pkg app; build { target rust {} target (|",
             vec![
                 "go",
                 "haskell",
@@ -389,19 +378,19 @@ fn lsp_protocol_named_target_completion_uses_the_header_backend() {
             ],
         ),
         (
-            "package app; build { target (rust, \"web\") { | } }",
+            "pkg app; build { target (rust, \"web\") { | } }",
             vec!["baseline", "namespace", "out", "thread_safety"],
         ),
         (
-            "package app; build { target (js, \"rust\") { | } }",
+            "pkg app; build { target (js, \"rust\") { | } }",
             vec!["baseline", "namespace", "out"],
         ),
         (
-            "package app; build { target js { baseline latest; | } }",
+            "pkg app; build { target js { baseline latest; | } }",
             vec!["namespace", "out"],
         ),
-        ("package app; build { target (js, |", vec![]),
-        ("package app; build { target (js, \"we|b\") {} }", vec![]),
+        ("pkg app; build { target (js, |", vec![]),
+        ("pkg app; build { target (js, \"we|b\") {} }", vec![]),
     ] {
         let result = open_change_and_complete(".pkg", source);
         assert_eq!(exact_labels(&result), expected, "{source}");
@@ -410,10 +399,10 @@ fn lsp_protocol_named_target_completion_uses_the_header_backend() {
 
 #[test]
 fn lsp_protocol_completion_edit_replaces_the_whole_atom_after_open_and_change() {
-    let source = "package app; build { ca|che (); }";
+    let source = "pkg app; build { ca|che (); }";
     let cursor = source.find('|').expect("completion marker");
     let source = source.replacen('|', "", 1);
-    let result = open_change_and_complete(".pkg", "package app; build { ca|che (); }");
+    let result = open_change_and_complete(".pkg", "pkg app; build { ca|che (); }");
     let item = result["items"]
         .as_array()
         .expect("completion items")
@@ -428,9 +417,13 @@ fn lsp_protocol_completion_edit_replaces_the_whole_atom_after_open_and_change() 
         .expect("start character");
     let end_line = range["end"]["line"].as_u64().expect("end line");
     let end_character = range["end"]["character"].as_u64().expect("end character");
-    assert_eq!((start_line, start_character), (0, 21));
-    assert_eq!((end_line, end_character), (0, 26));
-    assert_eq!(&source[21..26], "cache");
+    let start = source.find("cache").unwrap();
+    assert_eq!((start_line, start_character), (0, start as u64));
+    assert_eq!(
+        (end_line, end_character),
+        (0, (start + "cache".len()) as u64)
+    );
+    assert_eq!(&source[start..start + "cache".len()], "cache");
     assert_eq!(edit["newText"].as_str(), Some("cache"));
-    assert_eq!(cursor, 23);
+    assert_eq!(cursor, start + 2);
 }

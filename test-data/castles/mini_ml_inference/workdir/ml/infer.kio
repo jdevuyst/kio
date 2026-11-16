@@ -1,15 +1,15 @@
-module ml/infer;
+mod ml/infer;
 
 import list/core as lists;
-import macros/match(macro match);
-import macros/spine_macros(macro widen_sum);
+import macros/match { macro match }
+import macros/spine_macros { macro widen_sum }
 import ml/schemes as schemes;
 import ml/syntax as ast;
 import ml/types as types;
 import ml/unify as unify;
-import testapi(I32, String);
+import testapi { type I32; type String }
 import testapi/arith as arith;
-import testapi/iter(loop);
+import testapi/iter { fn loop }
 import testapi/text as text;
 
 type Inferred = (types.Ty & types.Substitution & I32) | String;

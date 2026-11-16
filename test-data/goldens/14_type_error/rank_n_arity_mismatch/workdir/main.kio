@@ -1,4 +1,4 @@
-module main;
+mod main;
 
 fn higher(f: [U] U -> U, x: .) { f[.](x) }
 

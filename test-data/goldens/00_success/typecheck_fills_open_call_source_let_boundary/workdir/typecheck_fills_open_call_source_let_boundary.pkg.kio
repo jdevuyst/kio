@@ -1,4 +1,4 @@
-package typecheck_fills_open_call_source_let_boundary;
+pkg typecheck_fills_open_call_source_let_boundary;
 
 build {
   cache "out/.kio-cache/";

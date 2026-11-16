@@ -10,9 +10,9 @@ builds exhaustive dispatch. They are not keywords or ambient builtins. A real
 module must depend on the library and select their macro declarations explicitly:
 
 ```kio {ignore}
-import macros/match(macro match);
-import macros/spine_macros(macro widen_sum);
-import macros/tuple_macros(macro concat);
+import macros/match {macro match}
+import macros/spine_macros {macro widen_sum}
+import macros/tuple_macros {macro concat}
 ```
 
 Here `macros` is the configured dependency name. Follow
@@ -29,11 +29,11 @@ bridge {
   kiodoc;
 }
 
-module kiodoc;
+mod kiodoc;
 
-import match(macro match);
-import tuple_macros(macro concat);
-import spine_macros(macro widen_sum);
+import match {macro match}
+import tuple_macros {macro concat}
+import spine_macros {macro widen_sum}
 
 host type Int role(i32);
 host type String role(str);

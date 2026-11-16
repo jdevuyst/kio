@@ -1,4 +1,4 @@
-package taba;
+pkg taba;
 
 build {
   cache "out/.kio-cache/";

@@ -1,4 +1,4 @@
-module testapi/main;
+mod testapi/main;
 
 import flow/fixtures as fixtures;
 import flow/report as report;

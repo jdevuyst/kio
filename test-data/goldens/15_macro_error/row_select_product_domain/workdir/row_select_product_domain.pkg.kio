@@ -1,4 +1,4 @@
-package row_select_product_domain;
+pkg row_select_product_domain;
 
 build {
   cache "out/.kio-cache/";

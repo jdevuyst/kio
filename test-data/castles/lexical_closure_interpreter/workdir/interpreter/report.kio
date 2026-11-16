@@ -1,12 +1,12 @@
-module interpreter/report;
+mod interpreter/report;
 
 import interpreter/evaluator as evaluator;
 import interpreter/input as input;
 import interpreter/parser as parser;
 import interpreter/syntax as ast;
 import interpreter/values as values;
-import macros/match(macro match);
-import testapi(I32, String);
+import macros/match { macro match }
+import testapi { type I32; type String }
 import testapi/fmt as fmt;
 import testapi/io as io;
 

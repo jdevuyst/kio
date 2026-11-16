@@ -1,7 +1,7 @@
-module main;
+mod main;
 
-import numbers(Int);
-import numbers(Other_bool, Other_float, Other_int, Other_string);
+import numbers { type Int }
+import numbers { type Other_bool; type Other_float; type Other_int; type Other_string }
 
 pure fn value() -> Int { let value = 42[Int]; value }
 

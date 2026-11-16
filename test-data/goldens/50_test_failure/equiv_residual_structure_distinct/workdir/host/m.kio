@@ -1,7 +1,7 @@
-module host/m;
+mod host/m;
 
-import host(T, effect);
-import macros/control(macro scope);
+import host { type T; fn effect }
+import macros/control { macro scope }
 
 type { Box: T { pub mk; pub get } }
 

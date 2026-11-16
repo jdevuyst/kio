@@ -1,4 +1,4 @@
-package typecheck_immediate_lambda_pair_body;
+pkg typecheck_immediate_lambda_pair_body;
 
 build {
   cache "out/.kio-cache/";

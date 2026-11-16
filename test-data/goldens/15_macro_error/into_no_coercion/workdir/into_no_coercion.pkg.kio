@@ -1,4 +1,4 @@
-package into_no_coercion;
+pkg into_no_coercion;
 
 build {
   cache "out/.kio-cache/";

@@ -1,4 +1,4 @@
-dependency vec;
+dep vec;
 
 source {
   path "../../../poc/vec/workdir/vec.pkg.kio"

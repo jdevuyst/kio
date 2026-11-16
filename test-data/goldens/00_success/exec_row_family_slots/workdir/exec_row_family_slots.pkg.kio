@@ -1,4 +1,4 @@
-package exec_row_family_slots;
+pkg exec_row_family_slots;
 
 build {
   cache "out/.kio-cache/";

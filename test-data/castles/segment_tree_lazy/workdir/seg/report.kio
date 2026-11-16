@@ -1,20 +1,20 @@
 /// Rendering. The transcript has to stand on its own -- a reader who never
 /// opens the source should be able to see what each operation asked for,
 /// what both structures answered, and what each one paid for the answer.
-module seg/report;
+mod seg/report;
 
-import macros/control(macro if);
-import seg/num(int_lt);
-import testapi(Array, Bool, I32, String);
-import testapi/arith(add_i32, leq_i32, sub_i32);
-import testapi/array(array_get);
-import testapi/fmt(int_to_string);
-import testapi/io(print);
-import testapi/iter(loop);
-import testapi/text(string_concat);
+import macros/control { macro if }
+import seg/num { fn int_lt }
+import testapi { type Array; type Bool; type I32; type String }
+import testapi/arith { fn add_i32; fn leq_i32; fn sub_i32 }
+import testapi/array { fn array_get }
+import testapi/fmt { fn int_to_string }
+import testapi/io { fn print }
+import testapi/iter { fn loop }
+import testapi/text { fn string_concat }
 
 /// How many cells of an array dump go on one line.
-literal per_line = 16;
+lit per_line = 16;
 
 pub fn cat(a: String, b: String) -> String { string_concat(a, b) }
 

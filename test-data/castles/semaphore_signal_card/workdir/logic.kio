@@ -1,7 +1,7 @@
-module logic;
+mod logic;
 
-import macros/control(macro if);
-import testapi(Bool);
+import macros/control { macro if }
+import testapi { type Bool }
 
 pub fn not(flag: Bool) -> Bool {
   if(flag) { .f } else { .t }

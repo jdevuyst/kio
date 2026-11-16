@@ -1,6 +1,6 @@
-module testapi/main;
+mod testapi/main;
 
 import river_bytecode_vm/report as report;
-import testapi/io(print);
+import testapi/io { fn print }
 
 pub fn main() { print(report.render()) }

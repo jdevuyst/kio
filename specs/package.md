@@ -22,14 +22,14 @@ package-file and module grammar productions, see
 A package directory contains:
 
 - **`<name>.pkg.kio`** — the package file. Exactly one per package. Begins
-  with `package <name>;`, where `<name>` is the filename stem. Carries the
+  with `pkg <name>;`, where `<name>` is the filename stem. Carries the
   optional `build` block and the optional single `bridge { ... }` block.
 - **`*.kio`** (except `<pkg>.sig.kio`, `<local>.dep.kio`, and
   `<local>.lock.kio`, below) — Kio source modules. Contain
   types, functions, operators, macros, `equiv` claims, `host type` /
   `host fn` declarations, and other module-body items.
-  A root module begins with `module <name>;`. Submodules live in
-  separate files (`module root/sub;`).
+  A root module begins with `mod <name>;`. Submodules live in
+  separate files (`mod root/sub;`).
 - **`<pkg>.sig.kio`** — the optional compatibility changelog (at most one per
   package, at the package root), recording the contract surface version by
   version; maintained by `kio sig` (see [§ Compatibility](#compatibility) and
@@ -53,12 +53,12 @@ siblings.
 
 ## Module-name rules
 
-Two coherence rules constrain a regular module's `module <path>;`
+Two coherence rules constrain a regular module's `mod <path>;`
 declaration. Both are checked at parse time; a violation is a parse error
 (exit code `11`).
 
 1. **Declared name matches filesystem path.** The `/`-separated segments in
-   `module <path>;` must equal the file's location relative to the package
+   `mod <path>;` must equal the file's location relative to the package
    root, with the trailing `.kio` extension stripped.
 2. **Package membership is path-derived.** The package root is the nearest
    ancestor containing `<name>.pkg.kio`; a regular module belongs to that
@@ -74,7 +74,7 @@ The package file starts with its required header, followed by optional `build`
 and `bridge` blocks in either order. Its canonical formatting is:
 
 ```kio
-package app;
+pkg app;
 
 build {
   cache "out/.kio-cache/";
@@ -92,7 +92,7 @@ bridge {
 
 The formatter's canonical order is:
 
-1. `package <name>;`
+1. `pkg <name>;`
 2. optional `build { ... }`
 3. optional `bridge { ... }`
 
@@ -109,7 +109,7 @@ A module declares the capabilities it needs from its host with `host type` and
 `host fn` items, and what it offers back with ordinary `pub` items:
 
 ```kio
-module app;
+mod app;
 
 host type String role(str);
 host type Token;
@@ -148,18 +148,8 @@ literal. See [`language.md` § Literals](language.md#literals).
 Host types are opaque inside Kio code. Structural typing does not cross a host
 type boundary; values move in or out through host functions.
 
-The optional `{ owned }` block remains accepted for source compatibility. A
-`role(str)` declaration may therefore still spell:
-
-```kio
-host type Owned_str role(str) { owned };
-```
-
-The block is a redundant source-compatibility annotation, not a language-level
-operation.
-It selects no alternate facade: the Rust backend renders every `role(str)`
-value in owned form at every occurrence, whether the block is present or not.
-Other backends likewise assign the block no runtime meaning.
+The Rust backend renders each `role(str)` value in owned form at every
+occurrence.
 
 ## The bridge block
 
@@ -309,7 +299,7 @@ excluded from module discovery. For the file grammar, see
 
 ```kio
 // foobar.dep.kio
-dependency foobar;
+dep foobar;
 
 source {
   path "../foobar/foobar.pkg.kio"
@@ -317,7 +307,7 @@ source {
 ```
 
 **The local name is a consumer-chosen alias.** The stem (`foobar` above, matched
-by the `dependency <local>;` header) is the name *this* package gives the
+by the `dep <local>;` header) is the name *this* package gives the
 dependency, not necessarily the dependency's own package name. The consumer
 picks it, so two dependencies that happen to share an internal package name can
 still be told apart by distinct local names.
@@ -340,7 +330,7 @@ are admitted, and a `source` block declares **exactly one** of them:
 
 ```kio
 // foobar.dep.kio — one package in a git repository
-dependency foobar;
+dep foobar;
 
 source {
   git "https://example.com/foobar.git";
@@ -415,8 +405,8 @@ compatible (see [`cli.md` § `kio dep update`](cli.md#kio-dep-update) and
 **A dependency is a re-rooted package.** The dependency is an ordinary Kio
 package. Depending on it means resolving its `*.pkg.kio`, then **re-rooting its
 module tree under the local name**: the local name becomes a synthetic leading
-module segment, so the dependency's `module app;` is reachable as `foobar/app`,
-its `module app/io;` as `foobar/app/io`, and so on. The whole dependency tree
+module segment, so the dependency's `mod app;` is reachable as `foobar/app`,
+its `mod app/io;` as `foobar/app/io`, and so on. The whole dependency tree
 nests beneath the one `foobar` root, which keeps every dependency namespaced —
 two dependencies, or a dependency and a local module, can never collide on a
 module path.
@@ -425,7 +415,7 @@ module path.
 under the re-rooted path, with the ordinary `import` forms:
 
 ```kio
-import foobar/app(greet);
+import foobar/app {fn greet}
 import foobar/app as fb;
 ```
 
@@ -438,7 +428,7 @@ them onto a consumer module that provides replacements:
 
 ```kio
 // foobar.dep.kio
-dependency foobar;
+dep foobar;
 
 source {
   path "../foobar/foobar.pkg.kio"
@@ -479,7 +469,7 @@ collapses one copy onto another, the `newtype` analogue of `rehost`:
 
 ```kio
 // widget.dep.kio — `widget` re-exports a `Tag` it shares with `core`
-dependency widget;
+dep widget;
 
 source {
   path "../widget/widget.pkg.kio"
@@ -647,10 +637,10 @@ non-recursive step — from a local `path` or a remote `git` source:
 ## Build target files
 
 The package file's optional `build { ... }` block configures compilation
-targets. It may precede or follow `bridge` after `package <name>;`.
+targets. It may precede or follow `bridge` after `pkg <name>;`.
 
 ```kio
-package mypkg;
+pkg mypkg;
 
 build {
   cache "out/.kio-cache/";

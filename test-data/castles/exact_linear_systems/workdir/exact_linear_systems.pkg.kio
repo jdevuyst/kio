@@ -1,4 +1,4 @@
-package exact_linear_systems;
+pkg exact_linear_systems;
 
 build {
   cache "out/.kio-cache/";

@@ -1,4 +1,4 @@
-package c3_fn;
+pkg c3_fn;
 
 build {
   cache "out/.kio-cache/";

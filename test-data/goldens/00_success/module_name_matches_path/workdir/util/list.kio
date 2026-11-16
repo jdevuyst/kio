@@ -1,4 +1,4 @@
-module util/list;
+mod util/list;
 
 // Per rule 1 of `specs/package.md` § Module-Name Rules, a module at a
 // non-trivial path inside the package declares its `module …;` as the

@@ -212,7 +212,7 @@ mod tests {
 
     #[test]
     fn rendered_source_directives_keep_declaration_order_and_local_shadowing() {
-        let scope = ModuleScope::from_source("module app; import provider(macro selected); fn early(selected: . -> .) { selected(()); later(()) } macro later : . -> . { impl implementation; }; fn after() { later(()); selected(()) }").unwrap();
+        let scope = ModuleScope::from_source("mod app; import provider {macro selected} fn early(selected: . -> .) { selected(()); later(()) } macro later : . -> . { impl implementation; }; fn after() { later(()); selected(()) }").unwrap();
         let render = |term: &str| {
             let markdown = super::super::rewrite::rewrite_with_context(
                 &format!("[`@source {term}`]"),
@@ -248,7 +248,7 @@ mod tests {
     #[test]
     fn operator_queries_keep_short_spelling_and_complete_identity() {
         let module = crate::pass::parser::parse(concat!(
-            "module api; ",
+            "mod api; ",
             "pub op _ + _ { impl plus; }; ",
             "pub op - __ { impl negate; }; ",
             "pub op _ - __ { impl subtract; };"
@@ -258,7 +258,7 @@ mod tests {
         let boundary_refs = crate::kiodoc::refs::module_scope_from_surface_for_boundary(&module);
         let local = ModuleScope::from_module(module.clone());
         let boundary = PackageBoundaryScope::from_bridged_module_asts(
-            Some("package pkg; bridge { api; }"),
+            Some("pkg pkg; bridge { api; }"),
             std::iter::once(("api", &module)),
         );
         for (query, signature, anchor) in [
@@ -311,12 +311,12 @@ mod tests {
 
     #[test]
     fn operator_query_aliases_preserve_visibility_and_first_boundary_owner() {
-        let first =
-            "module first; op _ + _ { impl hidden; }; pub op _ * _ { impl first_product; };";
-        let second = "module second; pub op _ + _ { impl second_sum; }; pub op _ * _ { impl second_product; };";
-        let third = "module third; pub op _ + _ { impl third_sum; };";
+        let first = "mod first; op _ + _ { impl hidden; }; pub op _ * _ { impl first_product; };";
+        let second =
+            "mod second; pub op _ + _ { impl second_sum; }; pub op _ * _ { impl second_product; };";
+        let third = "mod third; pub op _ + _ { impl third_sum; };";
         let boundary = PackageBoundaryScope::from_bridged_modules(
-            Some("package pkg; bridge { first; second; third; }"),
+            Some("pkg pkg; bridge { first; second; third; }"),
             [("first", first), ("second", second), ("third", third)].into_iter(),
         );
         for query in ["+", "op _ + _"] {
@@ -348,10 +348,10 @@ mod tests {
     #[test]
     fn exact_operator_names_precede_qualified_path_fallback() {
         let module = crate::pass::parser::parse(concat!(
-            "module api; ",
+            "mod api; ",
             "pub op _ +? _ { impl symbolic; }; ",
             "pub op _ / _ { impl slash; }; ",
-            "pub varop [* *] { foldl push empty; };"
+            "pub op_var [* *] { foldl push empty; };"
         ))
         .unwrap();
         let local_refs = crate::kiodoc::refs::module_scope_from_surface(&module);
@@ -362,7 +362,7 @@ mod tests {
         };
         let local = ModuleScope::from_module(module.clone());
         let boundary = PackageBoundaryScope::from_bridged_module_asts(
-            Some("package pkg; bridge { api; }"),
+            Some("pkg pkg; bridge { api; }"),
             std::iter::once(("api", &module)),
         );
         for (query, anchor) in [
@@ -370,7 +370,7 @@ mod tests {
             ("op _ +? _", "op-api-op_20_5f_20_2b_3f_20_5f"),
             ("/", "op-api-op_20_5f_20_2f_20_5f"),
             ("op _ / _", "op-api-op_20_5f_20_2f_20_5f"),
-            ("varop [* *]", "op-api-varop_20_5b_2a_20_2a_5d"),
+            ("op_var [* *]", "op-api-op_5fvar_20_5b_2a_20_2a_5d"),
         ] {
             assert_eq!(
                 crate::kiodoc::refs::resolve_in_module(query, &local_refs),
@@ -397,19 +397,11 @@ mod tests {
     #[test]
     fn boundary_checker_and_views_agree_on_all_supported_declaration_kinds() {
         let module = crate::pass::parser::parse(
-            "module api; pub fn value(x: .) -> . { x } \
-             pub type Alias = .; pub literal text = \"x\"; \
-             pub type { Box: . { pub mk; get; }; }; \
-             pub type Row = { Field: .; }; pub type { Other: .; }; \
-             pub type Forward = Field; \
-             pub op _ + _ { impl add; }; pub macro choose : . -> . { impl choose_impl; }; \
-             host type Text role(str); host fn emit(value: Text) -> .; \
-             rec(loop) { pub fn first(x: .) -> . { recur second(x) }; fn second(x: .) -> . { recur first(x) } } \
-             rec { pub type Chain = Node; pub type { Node: . | Chain { mk; get; }; }; pub type Markers = { Mark: .; }; }"
+            "mod api; pub fn value(x: .) -> . { x } pub type Alias = .; pub lit text = \"x\"; pub type { Box: . { pub mk; get; }; }; pub type Row = { Field: .; }; pub type { Other: .; }; pub type Forward = Field; pub op _ + _ { impl add; }; pub macro choose : . -> . { impl choose_impl; }; host type Text role(str); host fn emit(value: Text) -> .; rec(loop) { pub fn first(x: .) -> . { recur second(x) }; fn second(x: .) -> . { recur first(x) } } rec { pub type Chain = Node; pub type { Node: . | Chain { mk; get; }; }; pub type Markers = { Mark: .; }; }"
         ).unwrap();
         let refs = crate::kiodoc::refs::module_scope_from_surface_for_boundary(&module);
         let boundary = PackageBoundaryScope::from_bridged_module_asts(
-            Some("package pkg; bridge { api; }"),
+            Some("pkg pkg; bridge { api; }"),
             std::iter::once(("api", &module)),
         );
         let entries = crate::doc_entry::exported_documented_items_module(&module);
@@ -456,11 +448,10 @@ mod tests {
     #[test]
     fn boundary_links_preserve_selection_and_never_borrow_unsupported_names() {
         use crate::kiodoc::render::{rewrite::rewrite, site::SymbolIndex};
-        let public = "module api; pub type { Foo: .; }; fn foo() -> . { () } \
-                      pub type { Box: . { pub mk; get; }; };";
-        let other = "module other; pub fn make() -> . { () } pub type { Box: . { mk; get; }; };";
+        let public = "mod api; pub type { Foo: .; }; fn foo() -> . { () } pub type { Box: . { pub mk; get; }; };";
+        let other = "mod other; pub fn make() -> . { () } pub type { Box: . { mk; get; }; };";
         let boundary = PackageBoundaryScope::from_bridged_modules(
-            Some("package pkg; bridge { api; other; }"),
+            Some("pkg pkg; bridge { api; other; }"),
             [("api", public), ("other", other)].into_iter(),
         );
         let mut index = SymbolIndex::default();
@@ -506,8 +497,8 @@ mod tests {
 
     #[test]
     fn module_scope_resolves_signature() {
-        let scope = ModuleScope::from_source("module pkg/main;\npub fn add(x: Int) -> Int { x }\n")
-            .unwrap();
+        let scope =
+            ModuleScope::from_source("mod pkg/main;\npub fn add(x: Int) -> Int { x }\n").unwrap();
         let sig = scope.signature("add").unwrap();
         assert!(sig.contains("fn add"));
         assert!(!sig.contains('{'));
@@ -515,8 +506,8 @@ mod tests {
 
     #[test]
     fn module_scope_resolves_source() {
-        let scope = ModuleScope::from_source("module pkg/main;\npub fn add(x: Int) -> Int { x }\n")
-            .unwrap();
+        let scope =
+            ModuleScope::from_source("mod pkg/main;\npub fn add(x: Int) -> Int { x }\n").unwrap();
         let src = scope.source("add").unwrap();
         assert!(src.contains("fn add"));
         assert!(src.contains('{'));
@@ -525,7 +516,7 @@ mod tests {
     #[test]
     fn module_scope_strips_doc_comment_from_source() {
         let scope = ModuleScope::from_source(
-            "module pkg/main;\n/// docs here\npub fn add(x: Int) -> Int { x }\n",
+            "mod pkg/main;\n/// docs here\npub fn add(x: Int) -> Int { x }\n",
         )
         .unwrap();
         let src = scope.source("add").unwrap();
@@ -534,8 +525,8 @@ mod tests {
 
     #[test]
     fn module_scope_resolves_type() {
-        let scope = ModuleScope::from_source("module pkg/main;\npub fn add(x: Int) -> Int { x }\n")
-            .unwrap();
+        let scope =
+            ModuleScope::from_source("mod pkg/main;\npub fn add(x: Int) -> Int { x }\n").unwrap();
         let ty = scope.ty("add").unwrap();
         // The bound-value type — no `fn` keyword, no item name, no
         // value-binder names.
@@ -546,14 +537,14 @@ mod tests {
 
     #[test]
     fn compact_nominals_render_the_owner_with_exact_visibility() {
-        let source = "module api; type { Hidden: .; }; pub(api) type { Scoped: .; }; pub type Row = { Field: .; };";
+        let source = "mod api; type { Hidden: .; }; pub(api) type { Scoped: .; }; pub type Row = { Field: .; };";
         let module = ModuleScope::from_source(source).unwrap();
         for name in ["Hidden", "Scoped", "Field"] {
             assert!(module.signature(name).is_some(), "{name}");
             assert_eq!(module.ty(name), None);
         }
         let boundary = PackageBoundaryScope::from_bridged_modules(
-            Some("package pkg; bridge { api; }"),
+            Some("pkg pkg; bridge { api; }"),
             std::iter::once(("api", source)),
         );
         assert_eq!(
@@ -570,18 +561,18 @@ mod tests {
     #[test]
     fn recursive_group_boundary_lookup_keeps_context_without_exporting_peers() {
         let module = crate::pass::parser::parse(
-            "module api;\nrec { pub type { Visible: . | Hidden { mk; get; }; }; type { Hidden: . | Visible { mk; get; }; }; }\n",
+            "mod api;\nrec { pub type { Visible: . | Hidden { mk; get; }; }; type { Hidden: . | Visible { mk; get; }; }; }\n",
         ).unwrap();
         for scope in [
             PackageBoundaryScope::from_bridged_module_asts(
-                Some("package pkg; bridge { api; }"),
+                Some("pkg pkg; bridge { api; }"),
                 std::iter::once(("api", &module)),
             ),
             PackageBoundaryScope::from_bridged_modules(
-                Some("package pkg; bridge { api; }"),
+                Some("pkg pkg; bridge { api; }"),
                 std::iter::once((
                     "api",
-                    "module api;\nrec { pub type { Visible: . | Hidden { mk; get; }; }; type { Hidden: . | Visible { mk; get; }; }; }\n",
+                    "mod api;\nrec { pub type { Visible: . | Hidden { mk; get; }; }; type { Hidden: . | Visible { mk; get; }; }; }\n",
                 )),
             ),
         ] {
@@ -598,11 +589,12 @@ mod tests {
     #[test]
     fn module_scope_resolves_exact_rec_group_member() {
         let scope = ModuleScope::from_source(
-            "module pkg/main;\n\
-             rec(loop) {\n\
-               fn first(value: First) -> First { recur second(value) };\n\
-               fn second(value: Second) -> Second { recur first(value) }\n\
-             }\n",
+            "mod pkg/main;
+rec(loop) {
+fn first(value: First) -> First { recur second(value) };
+fn second(value: Second) -> Second { recur first(value) }
+}
+",
         )
         .unwrap();
 
@@ -622,7 +614,7 @@ mod tests {
     #[test]
     fn module_scope_resolves_host_fn_signature() {
         let scope = ModuleScope::from_source(
-            "module pkg/main;\nhost type S role(str);\nhost fn print(p0: S) -> .;\n",
+            "mod pkg/main;\nhost type S role(str);\nhost fn print(p0: S) -> .;\n",
         )
         .unwrap();
         let sig = scope.signature("print").unwrap();
@@ -632,7 +624,7 @@ mod tests {
     #[test]
     fn module_scope_host_fn_type() {
         let scope = ModuleScope::from_source(
-            "module pkg/main;\nhost type S role(str);\nhost fn print(p0: S) -> .;\n",
+            "mod pkg/main;\nhost type S role(str);\nhost fn print(p0: S) -> .;\n",
         )
         .unwrap();
         let ty = scope.ty("print").unwrap();
@@ -645,7 +637,7 @@ mod tests {
     fn module_scope_type_on_host_type_none() {
         // `@type` against a `host type` resolves to `None` — a host
         // type binds no value.
-        let scope = ModuleScope::from_source("module pkg/main;\nhost type S role(str);\n").unwrap();
+        let scope = ModuleScope::from_source("mod pkg/main;\nhost type S role(str);\n").unwrap();
         assert!(scope.ty("S").is_none());
     }
 
@@ -653,19 +645,19 @@ mod tests {
     fn module_scope_type_on_type_level_name_none() {
         // `@type` against a `type` resolves to `None` — the alias
         // binds no value; `kio doc check` reports the kind error.
-        let scope = ModuleScope::from_source("module pkg/main;\ntype Same[A] = A;\n").unwrap();
+        let scope = ModuleScope::from_source("mod pkg/main;\ntype Same[A] = A;\n").unwrap();
         assert!(scope.ty("Same").is_none());
     }
 
     #[test]
     fn alias_views_select_the_written_declaration_in_both_scopes() {
         let source = concat!(
-            "module pkg/api; pub fn field() -> . { () } ",
+            "mod pkg/api; pub fn field() -> . { () } ",
             "pub type Field = Original; type Hidden = Original;",
         );
         let local = ModuleScope::from_source(source).unwrap();
         let boundary = PackageBoundaryScope::from_bridged_modules(
-            Some("package pkg; bridge { pkg/api; }"),
+            Some("pkg pkg; bridge { pkg/api; }"),
             std::iter::once(("pkg/api", source)),
         );
         for scope in [&local as &dyn DirectiveScope, &boundary] {
@@ -693,25 +685,23 @@ mod tests {
 
     #[test]
     fn module_scope_unknown_term_none() {
-        let scope =
-            ModuleScope::from_source("module pkg/main;\npub fn add() -> . { () }\n").unwrap();
+        let scope = ModuleScope::from_source("mod pkg/main;\npub fn add() -> . { () }\n").unwrap();
         assert!(scope.signature("mystery").is_none());
     }
 
     #[test]
     fn module_scope_qualified_path_none() {
-        let scope =
-            ModuleScope::from_source("module pkg/main;\npub fn add() -> . { () }\n").unwrap();
+        let scope = ModuleScope::from_source("mod pkg/main;\npub fn add() -> . { () }\n").unwrap();
         assert!(scope.signature("pkg.other.add").is_none());
     }
 
     #[test]
     fn package_boundary_scope_resolves_bridged_host_fn() {
         let scope = PackageBoundaryScope::from_bridged_modules(
-            Some("package pkg;\nbridge { pkg; }\n"),
+            Some("pkg pkg;\nbridge { pkg; }\n"),
             std::iter::once((
                 "pkg",
-                "module pkg;\nhost type S role(str);\nhost fn emit(value: S) -> .;\n",
+                "mod pkg;\nhost type S role(str);\nhost fn emit(value: S) -> .;\n",
             )),
         );
         let sig = scope.signature("emit").expect("emit resolves");
@@ -723,8 +713,8 @@ mod tests {
     fn package_boundary_scope_skips_unbridged_module() {
         // A module not selected by any glob contributes no items.
         let scope = PackageBoundaryScope::from_bridged_modules(
-            Some("package pkg;\nbridge { pkg; }\n"),
-            std::iter::once(("other", "module other;\nhost fn emit() -> .;\n")),
+            Some("pkg pkg;\nbridge { pkg; }\n"),
+            std::iter::once(("other", "mod other;\nhost fn emit() -> .;\n")),
         );
         assert!(scope.signature("emit").is_none());
     }
@@ -732,15 +722,16 @@ mod tests {
     #[test]
     fn package_boundary_scope_resolves_only_exported_recursive_members() {
         let scope = PackageBoundaryScope::from_bridged_modules(
-            Some("package pkg;\nbridge { pkg/main; }\n"),
+            Some("pkg pkg;\nbridge { pkg/main; }\n"),
             std::iter::once((
                 "pkg/main",
-                "module pkg/main;\n\
-                 rec(loop) {\n\
-                   fn local(value: .) -> . { recur exported(value) };\n\
-                   pub(pkg) fn scoped(value: .) -> . { recur local(value) };\n\
-                   pub fn exported(value: .) -> . { recur scoped(value) }\n\
-                 }\n",
+                "mod pkg/main;
+rec(loop) {
+fn local(value: .) -> . { recur exported(value) };
+pub(pkg) fn scoped(value: .) -> . { recur local(value) };
+pub fn exported(value: .) -> . { recur scoped(value) }
+}
+",
             )),
         );
 

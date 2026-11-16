@@ -6,16 +6,16 @@
 /// and decoding costs one subtraction: the host env has no division or
 /// bit operations to spend on a packed tag. Immediates are therefore
 /// non-negative and below `ptr_base`.
-module gc/slot;
+mod gc/slot;
 
-import macros/control(macro if);
-import macros/match(macro match);
-import macros/row_macros(macro select);
-import macros/spine_macros(macro widen_sum);
-import testapi(Bool, I32);
-import testapi/arith(add_i32, leq_i32, sub_i32);
+import macros/control { macro if }
+import macros/match { macro match }
+import macros/row_macros { macro select }
+import macros/spine_macros { macro widen_sum }
+import testapi { type Bool; type I32 }
+import testapi/arith { fn add_i32; fn leq_i32; fn sub_i32 }
 
-literal ptr_base = 1000;
+lit ptr_base = 1000;
 
 pub type Slot = { Ptr: I32 } | { Imm: I32 };
 

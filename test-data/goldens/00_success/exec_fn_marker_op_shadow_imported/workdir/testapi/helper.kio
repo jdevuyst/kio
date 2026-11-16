@@ -1,7 +1,7 @@
-module testapi/helper;
+mod testapi/helper;
 
-import testapi(I32);
-import testapi/arith(add_i32);
+import testapi { type I32 }
+import testapi/arith { fn add_i32 }
 
 pub fn combine(a: I32, b: I32) -> I32 { add_i32(a, b) }
 

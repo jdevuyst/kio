@@ -1,4 +1,4 @@
-package exec_semantic_function_reflection;
+pkg exec_semantic_function_reflection;
 
 build {
   cache "out/.kio-cache/";

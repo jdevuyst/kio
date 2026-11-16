@@ -1,6 +1,6 @@
-module testapi/arith;
+mod testapi/arith;
 
-import testapi(F32, F64);
+import testapi { type F32; type F64 }
 
 host fn add_f32(p0: F32, p1: F32) -> F32;
 

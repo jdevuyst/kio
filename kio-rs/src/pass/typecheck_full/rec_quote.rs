@@ -384,7 +384,7 @@ mod tests {
                 };
                 let inner = "stages(recur(cont) left())";
                 let outer = "stages(recur(cont) left())(next())";
-                let source = format!("module p;
+                let source = format!("mod p;
                     import __comptime__;
                     host type Bool role(bool);
                     host type Second;

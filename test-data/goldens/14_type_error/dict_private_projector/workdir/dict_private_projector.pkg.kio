@@ -1,4 +1,4 @@
-package dict_private_projector;
+pkg dict_private_projector;
 
 build {
   cache "out/.kio-cache/";

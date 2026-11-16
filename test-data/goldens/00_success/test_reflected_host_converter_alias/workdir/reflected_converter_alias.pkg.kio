@@ -1,4 +1,4 @@
-package reflected_converter_alias;
+pkg reflected_converter_alias;
 
 build {
   cache "out/.kio-cache/";

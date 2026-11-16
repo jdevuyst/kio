@@ -1,4 +1,4 @@
-package contextual_binder_name;
+pkg contextual_binder_name;
 
 build {
   target js {

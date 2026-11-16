@@ -1,4 +1,4 @@
-package petri_net_reachability;
+pkg petri_net_reachability;
 
 build {
   target js {

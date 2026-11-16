@@ -1,11 +1,11 @@
 /// Explicit t.I32 annotations retain the exact qualified carrier through
 /// imported host calls and Kio' emission without an unqualified type import.
-module testapi/main;
+mod testapi/main;
 
 import testapi as t;
-import testapi/arith(add_i32);
-import testapi/fmt(int_to_string);
-import testapi/io(print);
+import testapi/arith { fn add_i32 }
+import testapi/fmt { fn int_to_string }
+import testapi/io { fn print }
 
 pub fn wrap(x: t.I32) -> t.I32 { x }
 

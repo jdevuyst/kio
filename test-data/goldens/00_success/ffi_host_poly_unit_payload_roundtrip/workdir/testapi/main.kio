@@ -1,9 +1,9 @@
-module testapi/main;
+mod testapi/main;
 
-import testapi(String);
-import testapi/arith(round_poly_thunk, round_unit_slot);
-import testapi/io(print);
-import testapi/types(Poly_thunk, Unit_slot);
+import testapi { type String }
+import testapi/arith { fn round_poly_thunk; fn round_unit_slot }
+import testapi/io { fn print }
+import testapi/types { type Poly_thunk; type Unit_slot }
 
 fn make_thunk() -> Poly_thunk {
   Poly_thunk.mk(.[A]() -> . { print("zero\n"[String]) })

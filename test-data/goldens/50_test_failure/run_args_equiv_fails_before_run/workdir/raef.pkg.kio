@@ -1,4 +1,4 @@
-package raef;
+pkg raef;
 
 build {
   cache "out/.kio-cache/";

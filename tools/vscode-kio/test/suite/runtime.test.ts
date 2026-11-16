@@ -82,7 +82,7 @@ suite("Kio extension — extension host runtime", () => {
         });
         assert.ok(provider, "bundled WASM registers the highlighting provider");
         const doc = await vscode.workspace.openTextDocument({
-          language: "kio", content: "module example;\n",
+          language: "kio", content: "mod example;\n",
         });
         const cancellation = new vscode.CancellationTokenSource();
         subscriptions.push(cancellation);

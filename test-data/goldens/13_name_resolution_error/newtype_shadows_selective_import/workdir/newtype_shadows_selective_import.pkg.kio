@@ -1,4 +1,4 @@
-package newtype_shadows_selective_import;
+pkg newtype_shadows_selective_import;
 
 build {
   cache "out/.kio-cache/";

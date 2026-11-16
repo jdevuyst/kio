@@ -1,4 +1,4 @@
-module testapi/main;
+mod testapi/main;
 
 pub type { Packed <U>: [A] (U & A) -> U { mk; pub get } }
 

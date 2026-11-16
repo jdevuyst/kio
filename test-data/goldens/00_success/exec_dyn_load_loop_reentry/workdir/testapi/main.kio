@@ -1,30 +1,30 @@
 /// A dyn_load_prime host that loads a guest whose interpreted code calls `loop`.
-module testapi/main;
+mod testapi/main;
 
-import defaults(instantiate_default);
-import loader(Apply, I32_in, I32_out, Lookup, Str_in, Str_out);
-import loader(Diag, Loaded, Surface);
-import loader(Lr_diag, Lr_image, un_load_outcome);
-import loader/scan(load_package);
-import macros/control(macro if);
-import macros/match(macro match);
-import macros/row_macros(macro select);
-import macros/spine_macros(macro widen_sum);
-import testapi(Bool, I32, String);
-import testapi/fmt(int_to_string);
-import testapi/io(print);
-import testapi/text(string_concat, string_eq);
+import defaults { fn instantiate_default }
+import loader { type Apply; type I32_in; type I32_out; type Lookup; type Str_in; type Str_out }
+import loader { type Diag; type Loaded; type Surface }
+import loader { type Lr_diag; type Lr_image; fn un_load_outcome }
+import loader/scan { fn load_package }
+import macros/control { macro if }
+import macros/match { macro match }
+import macros/row_macros { macro select }
+import macros/spine_macros { macro widen_sum }
+import testapi { type Bool; type I32; type String }
+import testapi/fmt { fn int_to_string }
+import testapi/io { fn print }
+import testapi/text { fn string_concat; fn string_eq }
 
 fn guest_image() -> String {
-  "module hostapi;\n\nhost type Bool role(bool);\nhost type I32 role(i32);\n\n"
-  "module hostapi/arith;\n\nimport hostapi(Bool, I32);\nhost fn add_i32(p0: "
+  "mod hostapi;\n\nhost type Bool role(bool);\nhost type I32 role(i32);\n\nmod "
+  "hostapi/arith;\n\nimport hostapi {type Bool; type I32}\nhost fn add_i32(p0: "
   "I32, p1: I32) -> I32;\nhost fn leq_i32(p0: I32, p1: I32) -> Bool;\nhost fn "
   "mul_i32(p0: I32, p1: I32) -> I32;\nhost fn sub_i32(p0: I32, p1: I32) -> "
-  "I32;\n\nmodule hostapi/iter;\n\nhost fn loop[S][R](step: S -> (S | R), "
-  "state: S) -> R;\n\nmodule g;\n\nimport __intrinsics__;\n\nimport hostapi(Bool, "
-  "I32);\nimport hostapi/arith(add_i32, leq_i32, mul_i32, sub_i32);\nimport "
-  "hostapi/iter(loop);\n\npub fn sum_to(n: I32) -> I32 {\n  loop[I32 & "
-  "I32][I32](.(st: I32 & I32) {\n      .(i: I32, acc: I32) {\n        "
+  "I32;\n\nmod hostapi/iter;\n\nhost fn loop[S][R](step: S -> (S | R), state: "
+  "S) -> R;\n\nmod g;\n\nimport __intrinsics__;\n\nimport hostapi {type Bool; "
+  "type I32}\nimport hostapi/arith {fn add_i32; fn leq_i32; fn mul_i32; fn "
+  "sub_i32}\nimport hostapi/iter {fn loop}\n\npub fn sum_to(n: I32) -> I32 {\n  "
+  "loop[I32 & I32][I32](.(st: I32 & I32) {\n      .(i: I32, acc: I32) {\n        "
   "__if_then_else__[Bool][(I32 & I32) | I32](leq_i32(i, 0[I32]), .() { "
   "__right__[I32 & I32][I32](acc) }, .() {\n            __left__[I32 & "
   "I32][I32](__pair__[I32][I32](sub_i32(i, 1[I32]), add_i32(acc, i)))\n          "
@@ -53,7 +53,7 @@ fn guest_image() -> String {
   "__snd__[I32][I32](st)))\n        , "
   "__snd__[I32][I32](__pair__[I32][I32](__fst__[I32][I32](st), "
   "__snd__[I32][I32](st)))\n        )\n    }, __pair__[I32][I32](n, 0[I32]))\n"
-  "}\n\npackage guest;\n\nbridge { hostapi; hostapi/**; g; }\n"
+  "}\n\npkg guest;\n\nbridge { hostapi; hostapi/**; g; }\n"
 }
 
 // Apply an `I32 -> I32` export named `name` to `arg` through the record

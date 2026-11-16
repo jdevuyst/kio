@@ -1,4 +1,4 @@
-package exec_if_elided_target_common_result;
+pkg exec_if_elided_target_common_result;
 
 build {
   cache "out/.kio-cache/";

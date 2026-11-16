@@ -1,4 +1,4 @@
-package computed_call_literal_inference;
+pkg computed_call_literal_inference;
 
 build {
   cache "out/.kio-cache/";

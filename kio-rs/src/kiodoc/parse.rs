@@ -267,7 +267,7 @@ mod tests {
 
     #[test]
     fn hidden_kio_fence() {
-        let src = "<!--kio {harness=main}\npackage tutorial;\n__INSERT_CODE_HERE__\n-->\n";
+        let src = "<!--kio {harness=main}\npkg tutorial;\n__INSERT_CODE_HERE__\n-->\n";
         let fences = scan(src);
         assert_eq!(fences.len(), 1);
         let f = &fences[0];
@@ -317,7 +317,7 @@ mod tests {
 
     #[test]
     fn unterminated_hidden_fence_is_skipped() {
-        let src = "<!--kio {harness=x}\npackage tutorial;\nnever closes\n";
+        let src = "<!--kio {harness=x}\npkg tutorial;\nnever closes\n";
         assert!(scan(src).is_empty());
     }
 

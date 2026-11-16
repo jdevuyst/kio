@@ -387,7 +387,7 @@ mod tests {
 
     #[test]
     fn ordinary_nominal_hover_uses_its_compact_owner() {
-        let source = "module pkg;\n/// The field type.\ntype { Field: .; };\n";
+        let source = "mod pkg;\n/// The field type.\ntype { Field: .; };\n";
         let offset = source.find("Field:").unwrap() as u32;
         let hover = doc_hover_at(source, offset, &LineIndex::new(source)).unwrap();
         let HoverContents::Markup(markup) = hover.contents else {
@@ -404,7 +404,7 @@ mod tests {
     #[test]
     fn alias_hover_uses_its_own_declaration_and_doc() {
         let source = concat!(
-            "module pkg;\nfn field() -> . { () }\n",
+            "mod pkg;\nfn field() -> . { () }\n",
             "/// The field alias.\n",
             "pub type Field = Original;\n",
         );
@@ -424,7 +424,7 @@ mod tests {
 
     #[test]
     fn doc_hover_renders_macro_doc_comment() {
-        let source = "module pkg/macros;\n/// See [`@signature id`].\npub macro id : [A] A -> A { impl id_impl }\nfn id_impl() -> . { () }\n";
+        let source = "mod pkg/macros;\n/// See [`@signature id`].\npub macro id : [A] A -> A { impl id_impl }\nfn id_impl() -> . { () }\n";
         let offset = source.find("id :").unwrap() as u32;
         let line_index = LineIndex::new(source);
         let hover = doc_hover_at(source, offset, &line_index).unwrap();
@@ -437,20 +437,20 @@ mod tests {
 
     #[test]
     fn doc_hover_renders_literal_doc_comment() {
-        let source = "module pkg/main;\n/// Default greeting.\nliteral greeting = \"hi\";\n";
+        let source = "mod pkg/main;\n/// Default greeting.\nlit greeting = \"hi\";\n";
         let offset = source.find("greeting =").unwrap() as u32;
         let line_index = LineIndex::new(source);
         let hover = doc_hover_at(source, offset, &line_index).unwrap();
         let HoverContents::Markup(markup) = hover.contents else {
             panic!("expected markup hover");
         };
-        assert!(markup.value.contains("literal greeting"));
+        assert!(markup.value.contains("lit greeting"));
         assert!(markup.value.contains("Default greeting."));
     }
 
     #[test]
     fn doc_hover_uses_supplied_module_with_imported_operator() {
-        let source = "module pkg/main;\nimport pkg/syntax(op ? _ : _);\n/// Chooses a value with [`@source exercise`].\npub fn choose_value(value: .) -> . { value }\nfn exercise(condition: ., yes: .) -> . { ? condition : yes }\n";
+        let source = "mod pkg/main;\nimport pkg/syntax {op ? _ : _}\n/// Chooses a value with [`@source exercise`].\npub fn choose_value(value: .) -> . { value }\nfn exercise(condition: ., yes: .) -> . { ? condition : yes }\n";
         let module = crate::pass::parser::parse_module_file(source)
             .unwrap()
             .module;

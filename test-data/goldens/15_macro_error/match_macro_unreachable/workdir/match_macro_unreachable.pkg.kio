@@ -1,4 +1,4 @@
-package match_macro_unreachable;
+pkg match_macro_unreachable;
 
 build {
   cache "out/.kio-cache/";

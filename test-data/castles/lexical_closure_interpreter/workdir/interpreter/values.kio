@@ -1,11 +1,11 @@
-module interpreter/values;
+mod interpreter/values;
 
 import interpreter/syntax as ast;
 import list/core as lists;
-import macros/match(macro match);
-import macros/row_macros(macro select);
-import macros/spine_macros(macro widen_sum);
-import testapi(I32, String);
+import macros/match { macro match }
+import macros/row_macros { macro select }
+import macros/spine_macros { macro widen_sum }
+import testapi { type I32; type String }
 import testapi/fmt as fmt;
 import testapi/text as text;
 

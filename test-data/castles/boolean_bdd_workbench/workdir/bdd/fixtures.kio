@@ -1,9 +1,9 @@
-module bdd/fixtures;
+mod bdd/fixtures;
 
 import bdd/expression as expr;
 import list/core as lists;
-import list/list(varop [] as [* *]);
-import testapi(I32, String);
+import list/list { op_var [] as [* *] }
+import testapi { type I32; type String }
 
 pub fn x() -> expr.Expression { expr.variable_expr(0) }
 

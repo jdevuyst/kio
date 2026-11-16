@@ -1,4 +1,4 @@
-package typecheck_atom_target_from_context;
+pkg typecheck_atom_target_from_context;
 
 build {
   cache "out/.kio-cache/";

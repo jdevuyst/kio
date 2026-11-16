@@ -1,4 +1,4 @@
-package ttl;
+pkg ttl;
 
 build {
   cache "out/.kio-cache/";

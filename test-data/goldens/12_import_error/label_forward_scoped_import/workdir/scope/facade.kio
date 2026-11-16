@@ -1,5 +1,5 @@
-module scope/facade;
+mod scope/facade;
 
-import origin(Visible);
+import origin { type Visible }
 
 pub(scope) type View = Visible;

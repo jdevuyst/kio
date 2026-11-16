@@ -1,4 +1,4 @@
-package exec_newtype_projector_value_return;
+pkg exec_newtype_projector_value_return;
 
 build {
   cache "out/.kio-cache/";

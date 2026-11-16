@@ -1,25 +1,25 @@
 /// Loads an emitted Prime image and observes its numeric literal boundary.
-module testapi/main;
+mod testapi/main;
 
-import eval(prime_apply, prime_eval);
-import host_descriptor(Host_type, host_id_local, host_id_module, host_type_id);
-import hostrec(make_lit_default, serve_default, test_bool_default);
-import imageio(read_image_stdin);
-import loader(Image, Lr_diag, Lr_image);
-import loader(diag_message, export_term, un_load_outcome);
-import loader/scan(load_package);
-import macros/control(macro if);
-import macros/match(macro match);
-import macros/spine_macros(macro widen_sum);
-import prime(Term);
-import result(Ev_done, Ev_stuck);
-import testapi(Bool, F64, Scalar, String);
-import testapi/arith(add_f64, sub_f64);
-import testapi/fmt(f64_to_string);
-import testapi/io(print);
-import testapi/scalar(make_scalar, scalar_as_f64);
-import testapi/text(string_concat, string_eq);
-import value(Value, value_to_scalar, vhost, vunit);
+import eval { fn prime_apply; fn prime_eval }
+import host_descriptor { type Host_type; fn host_id_local; fn host_id_module; fn host_type_id }
+import hostrec { fn make_lit_default; fn serve_default; fn test_bool_default }
+import imageio { fn read_image_stdin }
+import loader { fn diag_message; fn export_term; fn un_load_outcome }
+import loader { type Image; type Lr_diag; type Lr_image }
+import loader/scan { fn load_package }
+import macros/control { macro if }
+import macros/match { macro match }
+import macros/spine_macros { macro widen_sum }
+import prime { type Term }
+import result { type Ev_done; type Ev_stuck }
+import testapi { type Bool; type F64; type Scalar; type String }
+import testapi/arith { fn add_f64; fn sub_f64 }
+import testapi/fmt { fn f64_to_string }
+import testapi/io { fn print }
+import testapi/scalar { fn make_scalar; fn scalar_as_f64 }
+import testapi/text { fn string_concat; fn string_eq }
+import value { type Value; fn value_to_scalar; fn vhost; fn vunit }
 
 // The host deliberately carries guest F32 values in its existing F64 scalar.
 // The compiler-selected F32 value is exactly representable in that carrier.

@@ -1,10 +1,10 @@
-module testapi/main;
+mod testapi/main;
 
 import index/analysis as analysis;
 import index/automaton as sam;
 import index/report as report;
 import index/scan as scan;
-import testapi(Array, I32, String);
+import testapi { type Array; type I32; type String }
 import testapi/array as a;
 import testapi/io as io;
 

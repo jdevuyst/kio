@@ -1,6 +1,6 @@
-module right;
+mod right;
 
-import host/b(Value, ping);
+import host/b { type Value; fn ping }
 
 pub type { Box: Value { pub mk; pub get } }
 

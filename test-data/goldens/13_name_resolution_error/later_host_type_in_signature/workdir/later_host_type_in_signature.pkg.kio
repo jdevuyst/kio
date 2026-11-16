@@ -1,4 +1,4 @@
-package later_host_type_in_signature;
+pkg later_host_type_in_signature;
 
 build {
   cache "out/.kio-cache/";

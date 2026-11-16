@@ -1,4 +1,4 @@
-module bdd/report;
+mod bdd/report;
 
 import bdd/apply as engine;
 import bdd/compile as compiler;
@@ -8,14 +8,14 @@ import bdd/query as query;
 import bdd/store as table;
 import list/core as lists;
 import list/list as walk;
-import macros/control(macro if);
-import macros/match(macro match);
-import macros/row_macros(macro select);
-import testapi(Bool, I32, String);
+import macros/control { macro if }
+import macros/match { macro match }
+import macros/row_macros { macro select }
+import testapi { type Bool; type I32; type String }
 import testapi/arith as arith;
 import testapi/fmt as fmt;
 import testapi/io as io;
-import testapi/iter(loop);
+import testapi/iter { fn loop }
 import testapi/text as text;
 
 fn bit(b: Bool) -> String {

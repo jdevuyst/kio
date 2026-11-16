@@ -1,16 +1,16 @@
-module report;
+mod report;
 
 import certificate as certificate;
 import distance as distance;
 import forest as forest;
-import macros/control(macro if);
-import macros/row_macros(macro select);
-import testapi(Array, Bool, I32, String);
+import macros/control { macro if }
+import macros/row_macros { macro select }
+import testapi { type Array; type Bool; type I32; type String }
 import testapi/arith as arith;
 import testapi/array as array;
 import testapi/fmt as fmt;
 import testapi/io as io;
-import testapi/iter(loop);
+import testapi/iter { fn loop }
 import testapi/text as text;
 
 fn line(label: String, value: String) {

@@ -46,9 +46,9 @@ fn assert_clean_analysis(lsp: &mut LspProcess, uri: &str, version: i32) {
 #[test]
 fn lsp_missing_dot_fixes_preserve_literal_spelling_and_refuse_stale_edits() {
     let dir = TempDir::new("literal-dot-fixes");
-    dir.write("app.pkg.kio", "package app; bridge { app; }");
+    dir.write("app.pkg.kio", "pkg app; bridge { app; }");
     let source_for = |literal: &str| {
-        format!("module app; host type Float role(f64); pub fn run() -> Float {{ {literal} }}")
+        format!("mod app; host type Float role(f64); pub fn run() -> Float {{ {literal} }}")
     };
     let initial = source_for("-4_2E-0[Float]");
     let file = dir.write("app.kio", &initial);
@@ -114,10 +114,9 @@ fn lsp_expected_types_select_literal_carriers_without_an_ambient_choice() {
         ("str", "\"hello\""),
     ] {
         let dir = TempDir::new("expected-literal-selection");
-        dir.write("app.pkg.kio", "package app; bridge { app; }");
-        let source = format!(
-            "module app; host type Known role({role}); pub fn run() -> Known {{ {literal} }}"
-        );
+        dir.write("app.pkg.kio", "pkg app; bridge { app; }");
+        let source =
+            format!("mod app; host type Known role({role}); pub fn run() -> Known {{ {literal} }}");
         let uri = path_to_file_uri(&dir.write("app.kio", &source));
         let mut lsp = LspProcess::spawn();
         lsp.initialize(&path_to_file_uri(dir.path()));
@@ -145,9 +144,9 @@ fn lsp_explicit_literal_annotations_are_checked_against_expected_types() {
         ("str", "\"hello\""),
     ] {
         let dir = TempDir::new("annotated-literal-mismatch");
-        dir.write("app.pkg.kio", "package app; bridge { app; }");
+        dir.write("app.pkg.kio", "pkg app; bridge { app; }");
         let source = format!(
-            "module app; host type Known role({role}); host type Other role({role}); pub fn run() -> Known {{ {literal}[Other] }}"
+            "mod app; host type Known role({role}); host type Other role({role}); pub fn run() -> Known {{ {literal}[Other] }}"
         );
         let uri = path_to_file_uri(&dir.write("app.kio", &source));
         let mut lsp = LspProcess::spawn();
@@ -186,9 +185,8 @@ fn lsp_explicit_literal_annotations_are_checked_against_expected_types() {
 #[test]
 fn lsp_unanchored_exponent_keeps_its_literal_annotation_requirement() {
     let dir = TempDir::new("integer-exponent-fix");
-    dir.write("app.pkg.kio", "package app; bridge { app; }");
-    let source =
-        "module app; host type Float role(f64); pub fn run() -> . { let _value = 1e12; () }";
+    dir.write("app.pkg.kio", "pkg app; bridge { app; }");
+    let source = "mod app; host type Float role(f64); pub fn run() -> . { let _value = 1e12; () }";
     let uri = path_to_file_uri(&dir.write("app.kio", source));
     let mut lsp = LspProcess::spawn();
     lsp.initialize(&path_to_file_uri(dir.path()));
@@ -243,9 +241,9 @@ fn lsp_unanchored_exponent_keeps_its_literal_annotation_requirement() {
 #[test]
 fn lsp_literal_annotation_choices_are_explicit_and_source_current() {
     let dir = TempDir::new("literal-type-choices");
-    dir.write("app.pkg.kio", "package app; bridge { app; }");
+    dir.write("app.pkg.kio", "pkg app; bridge { app; }");
     let source = concat!(
-        "module app;\n",
+        "mod app;\n",
         "pub host type Int role(i64);\n",
         "host type Narrow role(i32);\n",
         "pub fn run() -> . { let _value = 42; () }\n",
@@ -293,10 +291,10 @@ fn lsp_literal_annotation_choices_are_explicit_and_source_current() {
 #[test]
 fn lsp_shadowed_literal_type_omits_invalid_annotation_fixes() {
     let dir = TempDir::new("literal-only-type-fix");
-    dir.write("app.pkg.kio", "package app; bridge { app; }");
+    dir.write("app.pkg.kio", "pkg app; bridge { app; }");
     let source_for = |literal: &str| {
         format!(
-            "module app; host type Int role(i64); pub fn run[Int](value: Int) -> . {{ let literal = {literal}; let _pair = (value, literal); () }}"
+            "mod app; host type Int role(i64); pub fn run[Int](value: Int) -> . {{ let literal = {literal}; let _pair = (value, literal); () }}"
         )
     };
     let initial = source_for("42");
@@ -330,16 +328,13 @@ fn lsp_shadowed_literal_type_omits_invalid_annotation_fixes() {
 #[test]
 fn lsp_literal_annotation_fix_uses_an_existing_qualified_import_past_a_type_binder() {
     let dir = TempDir::new("qualified-literal-only-type-fix");
-    dir.write(
-        "app.pkg.kio",
-        "package app; bridge { app; provider; other; }",
-    );
-    let provider = "module provider; host type Int role(i64);";
+    dir.write("app.pkg.kio", "pkg app; bridge { app; provider; other; }");
+    let provider = "mod provider; host type Int role(i64);";
     let provider_uri = path_to_file_uri(&dir.write("provider.kio", provider));
-    dir.write("other.kio", "module other; host type Int role(i32);");
+    dir.write("other.kio", "mod other; host type Int role(i32);");
     let source_for = |literal: &str| {
         format!(
-            "module app; import provider(Int); import other as provider; import provider as numbers; pub fn identity(value: Int) -> Int {{ value }} pub fn other_identity(value: provider.Int) -> provider.Int {{ value }} pub fn run[Int](value: Int) -> . {{ let literal = {literal}; let _pair = (value, literal); () }}"
+            "mod app; import provider {{type Int}} import other as provider; import provider as numbers; pub fn identity(value: Int) -> Int {{ value }} pub fn other_identity(value: provider.Int) -> provider.Int {{ value }} pub fn run[Int](value: Int) -> . {{ let literal = {literal}; let _pair = (value, literal); () }}"
         )
     };
     let initial = source_for("42");
@@ -401,9 +396,9 @@ fn lsp_annotation_fixes_cover_each_noninteger_literal_category() {
         ("Text", "str", "\"hello\"", "string"),
     ] {
         let dir = TempDir::new("literal-category-annotation");
-        dir.write("app.pkg.kio", "package app; bridge { app; }");
+        dir.write("app.pkg.kio", "pkg app; bridge { app; }");
         let source = format!(
-            "module app; host type {name} role({role}); pub fn run() -> . {{ let _value = {literal}; () }}"
+            "mod app; host type {name} role({role}); pub fn run() -> . {{ let _value = {literal}; () }}"
         );
         let uri = path_to_file_uri(&dir.write("app.kio", &source));
         let mut lsp = LspProcess::spawn();
@@ -441,13 +436,13 @@ fn lsp_annotation_fixes_cover_each_noninteger_literal_category() {
 #[test]
 fn lsp_annotation_fix_preserves_import_aliases_and_rechecks_changed_providers() {
     let dir = TempDir::new("literal-type-import");
-    dir.write("app.pkg.kio", "package app; bridge { app; provider; }");
-    let provider = "module provider; host type Int role(i64); host type Alternate role(i32);";
+    dir.write("app.pkg.kio", "pkg app; bridge { app; provider; }");
+    let provider = "mod provider; host type Int role(i64); host type Alternate role(i32);";
     let provider_file = dir.write("provider.kio", provider);
     let provider_uri = path_to_file_uri(&provider_file);
     let source = concat!(
-        "module app; import provider( // import policy\n",
-        " Int as Local, Alternate); pub fn identity(value: Alternate) -> Alternate { value } pub fn run() -> . { let _value = 42; () }",
+        "mod app; import provider { // import policy\n",
+        " type Int as Local; type Alternate} pub fn identity(value: Alternate) -> Alternate { value } pub fn run() -> . { let _value = 42; () }",
     );
     let file = dir.write("app.kio", source);
     let uri = path_to_file_uri(&file);
@@ -498,12 +493,12 @@ fn lsp_annotation_fix_preserves_import_aliases_and_rechecks_changed_providers() 
 #[test]
 fn lsp_alias_missing_dot_fix_expands_only_the_selected_use() {
     let dir = TempDir::new("literal-alias-dot-fix");
-    dir.write("app.pkg.kio", "package app; bridge { app; }");
-    let provider = "module provider; pub literal whole = 4_2;";
+    dir.write("app.pkg.kio", "pkg app; bridge { app; }");
+    let provider = "mod provider; pub lit whole = 4_2;";
     let provider_file = dir.write("provider.kio", provider);
     let provider_uri = path_to_file_uri(&provider_file);
     let source = concat!(
-        "module app; import provider(whole);\n",
+        "mod app; import provider {lit whole}\n",
         "host type Int role(i64); host type Float role(f64);\n",
         "pub fn integer() -> Int { whole }\n",
         "pub fn floating() -> Float { // use policy\n whole[Float] }\n",
@@ -562,8 +557,8 @@ fn lsp_alias_missing_dot_fix_expands_only_the_selected_use() {
 #[test]
 fn lsp_unconstrained_integer_does_not_select_an_available_float() {
     let dir = TempDir::new("literal-category-control");
-    dir.write("app.pkg.kio", "package app; bridge { app; }");
-    let source = "module app; host type Float role(f64); pub fn run() -> . { let _value = 42; () }";
+    dir.write("app.pkg.kio", "pkg app; bridge { app; }");
+    let source = "mod app; host type Float role(f64); pub fn run() -> . { let _value = 42; () }";
     let uri = path_to_file_uri(&dir.write("app.kio", source));
     let mut lsp = LspProcess::spawn();
     lsp.initialize(&path_to_file_uri(dir.path()));
@@ -582,9 +577,9 @@ fn lsp_unconstrained_integer_does_not_select_an_available_float() {
 #[test]
 fn lsp_boolean_intrinsic_uses_its_checked_concrete_type_argument() {
     let dir = TempDir::new("boolean-intrinsic-specialization");
-    dir.write("app.pkg.kio", "package app; bridge { app; }");
+    dir.write("app.pkg.kio", "pkg app; bridge { app; }");
     let source = concat!(
-        "module app; import __intrinsics__; host type Bool role(bool); host type Other role(bool);\n",
+        "mod app; import __intrinsics__; host type Bool role(bool); host type Other role(bool);\n",
         "pub fn run(flag: Bool) -> . { __if_then_else__[Bool][.](flag, .() { () }, .() { () }) }",
     );
     let uri = path_to_file_uri(&dir.write("app.kio", source));
@@ -601,11 +596,11 @@ fn lsp_boolean_intrinsic_uses_its_checked_concrete_type_argument() {
 #[test]
 fn lsp_annotation_fix_uses_an_applied_local_alias() {
     let dir = TempDir::new("applied-alias-literal-fix");
-    dir.write("app.pkg.kio", "package app; bridge { app; provider; }");
-    let provider = "module provider; host type Int role(i64);";
+    dir.write("app.pkg.kio", "pkg app; bridge { app; provider; }");
+    let provider = "mod provider; host type Int role(i64);";
     let provider_file = dir.write("provider.kio", provider);
     let source = concat!(
-        "module app; import provider as numbers;\n",
+        "mod app; import provider as numbers;\n",
         "pub type Identity[A] = A;\n",
         "pub type Selected = Identity[numbers.Int];\n",
         "pub fn run() -> . { let _value = 42; () }\n",
@@ -637,13 +632,13 @@ fn lsp_annotation_fix_uses_an_applied_local_alias() {
 #[test]
 fn lsp_ordinary_import_completion_applies_without_a_default_modifier() {
     let dir = TempDir::new("literal-type-import-completion");
-    dir.write("app.pkg.kio", "package app; bridge { app; provider; }");
+    dir.write("app.pkg.kio", "pkg app; bridge { app; provider; }");
     let provider = concat!(
-        "module provider; host type Int role(i64); host type Float role(f64);\n",
+        "mod provider; host type Int role(i64); host type Float role(f64);\n",
         "pub type Alias = Int; pub fn default() -> . { () }\n",
     );
     let provider_file = dir.write("provider.kio", provider);
-    let valid = "module app; pub fn run() { () }";
+    let valid = "mod app; pub fn run() { () }";
     let uri = path_to_file_uri(&dir.write("app.kio", valid));
     let mut lsp = LspProcess::spawn();
     lsp.initialize(&path_to_file_uri(dir.path()));
@@ -651,11 +646,12 @@ fn lsp_ordinary_import_completion_applies_without_a_default_modifier() {
     open_and_wait_for_analysis(&mut lsp, &uri, valid);
     for (ordinal, tail) in ["In", "// import policy\n In"].into_iter().enumerate() {
         let version = 2 + 2 * ordinal as i32;
-        let source = format!("module app; import provider({tail}); pub fn run() -> Int {{ 42 }}");
+        let source =
+            format!("mod app; import provider {{type {tail}}} pub fn run() -> Int {{ 42 }}");
         send_full_text_change(&mut lsp, &uri, version, &source);
         let published = wait_for_publish_version(&mut lsp, &uri, i64::from(version));
         assert!(!published["diagnostics"].as_array().unwrap().is_empty());
-        let offset = source.find("In);").unwrap() + 2;
+        let offset = source.find("In}").unwrap() + 2;
         let pos = source_position(&source, offset);
         let completion = send_completion(&mut lsp, &uri, pos.0, pos.1);
         let labels = completion_labels(&completion);
@@ -667,7 +663,7 @@ fn lsp_ordinary_import_completion_applies_without_a_default_modifier() {
             .find(|item| item["label"] == "Int")
             .unwrap();
         let applied = apply_lsp_text_edits(&source, &[item["textEdit"].clone()]);
-        assert_eq!(applied, source.replace("In);", "Int);"));
+        assert_eq!(applied, source.replace("In}", "Int}"));
         send_full_text_change(&mut lsp, &uri, version + 1, &applied);
         assert_eq!(
             wait_for_publish_version(&mut lsp, &uri, i64::from(version + 1))["diagnostics"],

@@ -1,11 +1,11 @@
 /// Ordered dictionaries with comparator-explicit updates, direct ascending folds, and comparator-applied literals.
 /// A ready-to-use library module for your own Kio package.
-module dict;
+mod dict;
 
 import __comptime__;
-import macros/control(Bool as Control_bool, checked_sum_dispatch, macro if);
-import macros/match(macro match);
-import macros/spine_macros(macro narrow_sum, macro widen_sum);
+import macros/control { type Bool as Control_bool; fn checked_sum_dispatch; macro if }
+import macros/match { macro match }
+import macros/spine_macros { macro narrow_sum; macro widen_sum }
 
 host type I32 role(i32);
 
@@ -638,7 +638,7 @@ pub fn entry[K][V](key: K, val: V) -> K & V { (key, val) }
 pub op _ => _ { impl entry }
 
 /// A dictionary builder applied to an explicit key comparator.
-pub varop [% %] { foldl insert_entry empty_builder }
+pub op_var [% %] { foldl insert_entry empty_builder }
 
 // ---- Ordering eliminator picks the right arm ----
 equiv ord_select_lt[A](on_lt: A, on_eq: A, on_gt: A) {

@@ -1,8 +1,8 @@
-module consumer;
+mod consumer;
 
 import __intrinsics__;
 
-import macros/control(macro if);
+import macros/control { macro if }
 import other as other;
 import provider as provider;
 

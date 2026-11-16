@@ -1,4 +1,4 @@
-package cdr;
+pkg cdr;
 
 build {
   cache "out/.kio-cache/";

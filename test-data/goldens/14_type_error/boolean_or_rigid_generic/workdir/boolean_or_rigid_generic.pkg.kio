@@ -1,4 +1,4 @@
-package boolean_or_rigid_generic;
+pkg boolean_or_rigid_generic;
 
 build {
   cache "out/.kio-cache/";

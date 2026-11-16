@@ -1,6 +1,6 @@
-module pid/model;
+mod pid/model;
 
-import testapi(F64);
+import testapi { type F64 }
 
 pub type Calibration = { Offset: F64; Scale: F64 };
 

@@ -1,13 +1,13 @@
-module form/report;
+mod form/report;
 
-import macros/control(macro if);
-import macros/row_macros(macro select);
-import option/core(Option, none, option, some);
-import result/result(Result, err, fold, ok);
-import testapi(Bool, I32, String);
-import testapi/arith(add_i32, eq_i32, lt_i32);
-import testapi/fmt(bool_to_string, int_to_string);
-import testapi/text(string_concat);
+import macros/control { macro if }
+import macros/row_macros { macro select }
+import option/core { type Option; fn none; fn option; fn some }
+import result/result { type Result; fn err; fn fold; fn ok }
+import testapi { type Bool; type I32; type String }
+import testapi/arith { fn add_i32; fn eq_i32; fn lt_i32 }
+import testapi/fmt { fn bool_to_string; fn int_to_string }
+import testapi/text { fn string_concat }
 
 type Form = {
   Email: Option[String];

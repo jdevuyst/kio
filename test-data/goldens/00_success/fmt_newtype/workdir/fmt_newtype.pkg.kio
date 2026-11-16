@@ -1,4 +1,4 @@
-package fmt_newtype;
+pkg fmt_newtype;
 
 build {
   cache "out/.kio-cache/";

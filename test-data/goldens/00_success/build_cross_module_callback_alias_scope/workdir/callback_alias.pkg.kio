@@ -1,4 +1,4 @@
-package callback_alias;
+pkg callback_alias;
 
 build {
   cache "out/.kio-cache/";

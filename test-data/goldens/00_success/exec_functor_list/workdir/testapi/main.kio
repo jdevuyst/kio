@@ -1,11 +1,11 @@
-module testapi/main;
+mod testapi/main;
 
-import macros/match(macro match);
-import macros/spine_macros(macro one_sum, macro widen_sum);
-import testapi(String);
-import testapi/io(print);
-import testapi/iter(loop);
-import testapi/text(string_concat);
+import macros/match { macro match }
+import macros/spine_macros { macro one_sum; macro widen_sum }
+import testapi { type String }
+import testapi/io { fn print }
+import testapi/iter { fn loop }
+import testapi/text { fn string_concat }
 
 // A recursive non-canonical brand: payload `. | (A & List(A))`
 // does not equal the bare type-parameter, so the brand-crossing is

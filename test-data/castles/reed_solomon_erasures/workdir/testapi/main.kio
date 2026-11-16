@@ -1,15 +1,15 @@
-module testapi/main;
+mod testapi/main;
 
-import macros/control(macro if);
-import macros/match(macro match);
-import macros/row_macros(macro select);
+import macros/control { macro if }
+import macros/match { macro match }
+import macros/row_macros { macro select }
 import rs/input as input;
 import rs/report as report;
-import testapi(Bool, I32, String);
+import testapi { type Bool; type I32; type String }
 import testapi/arith as a;
 import testapi/fmt as fmt;
 import testapi/io as io;
-import testapi/iter(loop);
+import testapi/iter { fn loop }
 import testapi/text as text;
 
 rec(loop) fn frames(recovered: I32, rejected: I32) {

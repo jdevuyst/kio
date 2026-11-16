@@ -35,7 +35,7 @@ use super::{
 // =========================================================================
 
 /// Type-check a single module with full package context. The
-/// package supplies cross-module value imports — `import pkg/helper(foo);`
+/// package supplies cross-module value imports — `import pkg/helper { fn foo }`
 /// resolves `foo` to its source-module `fn` so the
 /// typer can pull the scheme over.
 ///
@@ -1636,7 +1636,7 @@ mod tests {
 
         for count in [64, 128] {
             let sources = (0..count)
-                .map(|index| format!("module m{index}; pub type T = .;"))
+                .map(|index| format!("mod m{index}; pub type T = .;"))
                 .collect::<Vec<_>>();
             let package = prime_signature_package(&sources);
             take_identity_alias_index_work();
@@ -1657,8 +1657,8 @@ mod tests {
         use crate::pass::resolve::{IdentityAliasIndexWork, take_identity_alias_index_work};
 
         let package = prime_signature_package(&[
-            "module a; pub type T = .;".to_owned(),
-            "module b; pub type T = !;".to_owned(),
+            "mod a; pub type T = .;".to_owned(),
+            "mod b; pub type T = !;".to_owned(),
         ]);
         for _ in 0..2 {
             take_identity_alias_index_work();
@@ -1697,50 +1697,50 @@ mod tests {
         let cases: &[(&[&str], bool)] = &[
             (
                 &[
-                    "module left; host type Token;",
-                    "module right; host type Token;",
-                    "module a; import left(Token); host fn take(value: Token) -> .;",
-                    "module b; import right(Token); host fn take(value: Token) -> .;",
+                    "mod left; host type Token;",
+                    "mod right; host type Token;",
+                    "mod a; import left {type Token} host fn take(value: Token) -> .;",
+                    "mod b; import right {type Token} host fn take(value: Token) -> .;",
                 ],
                 true,
             ),
             (
                 &[
-                    "module left; host type Token; pub type Id[A] = A;",
-                    "module a; import left as dep; pub type { Wrapped: dep.Id[dep.Token] { pub mk; pub get; }; };",
-                    "module b; import a(Wrapped); pub type Copy = Wrapped;",
+                    "mod left; host type Token; pub type Id[A] = A;",
+                    "mod a; import left as dep; pub type { Wrapped: dep.Id[dep.Token] { pub mk; pub get; }; };",
+                    "mod b; import a {type Wrapped} pub type Copy = Wrapped;",
                 ],
                 true,
             ),
             (
                 &[
-                    "module a; pub type Higher[*F] = .;",
-                    "module b; import a(Higher); pub type Bad = Higher[.];",
+                    "mod a; pub type Higher[*F] = .;",
+                    "mod b; import a {type Higher} pub type Bad = Higher[.];",
                 ],
                 false,
             ),
             (
                 &[
-                    "module a; pub type F[A] = A;",
-                    "module b; import a(F); pub type Bad = F[.][ .];",
+                    "mod a; pub type F[A] = A;",
+                    "mod b; import a {type F} pub type Bad = F[.][ .];",
                 ],
                 false,
             ),
             (
                 &[
-                    "module left; pub type F[A] = A;",
-                    "module right; pub type F[A][ B] = B;",
-                    "module a; import left(F); pub type T = F[.];",
-                    "module b; import right(F); pub type T = F[.][ !];",
+                    "mod left; pub type F[A] = A;",
+                    "mod right; pub type F[A][ B] = B;",
+                    "mod a; import left {type F} pub type T = F[.];",
+                    "mod b; import right {type F} pub type T = F[.][ !];",
                 ],
                 true,
             ),
             (
                 &[
-                    "module left; pub type F[A] = A;",
-                    "module right; pub type F[A][ B] = B;",
-                    "module a; import left(F); host fn take(value: F[.]) -> .;",
-                    "module b; import right(F); host fn take(value: F[.]) -> .;",
+                    "mod left; pub type F[A] = A;",
+                    "mod right; pub type F[A][ B] = B;",
+                    "mod a; import left {type F} host fn take(value: F[.]) -> .;",
+                    "mod b; import right {type F} host fn take(value: F[.]) -> .;",
                 ],
                 false,
             ),
@@ -1830,12 +1830,12 @@ mod tests {
         const DECLARATIONS: usize = 64;
         const OCCURRENCES: usize = 48;
 
-        let mut provider = String::from("module provider;");
+        let mut provider = String::from("mod provider;");
         for index in 0..DECLARATIONS {
             provider.push_str(&format!(" pub host type Type{index};"));
         }
         let provider = parse_module(&provider);
-        let consumer = parse_module("module consumer; import provider as p;");
+        let consumer = parse_module("mod consumer; import provider as p;");
         let provider_scope = crate::pass::resolve::TopLevelScope::build(&provider)
             .expect("provider declaration scope");
         let consumer_scope = crate::pass::resolve::TopLevelScope::build(&consumer)
@@ -1903,7 +1903,7 @@ mod tests {
         const DECLARATIONS: usize = 64;
         const PARAMETERS: usize = 8;
 
-        let mut source = String::from("module source;");
+        let mut source = String::from("mod source;");
         for index in 0..DECLARATIONS {
             source.push_str(&format!(" type Unrelated{index} = .;"));
         }
@@ -1943,35 +1943,30 @@ mod tests {
     #[test]
     fn ordinary_function_signatures_do_not_impose_macro_receiver_layouts() {
         check_named_signature(
-            "module main; host type Comptime_bool; \
-             pure fn ordinary(value: Comptime_bool) -> Comptime_bool { value }",
+            "mod main; host type Comptime_bool; pure fn ordinary(value: Comptime_bool) -> Comptime_bool { value }",
             "ordinary",
         )
         .expect("a same-spelled user type is not a compile-time handle");
         check_named_signature(
-            "module main; import __comptime__; \
-             type Proof = __Comptime__; type Fills = __Fill_ctx__; \
-             pure fn valid(ct: Proof, fills: Fills, wrapped: __Type__ | .) -> Fills { fills }",
+            "mod main; import __comptime__; type Proof = __Comptime__; type Fills = __Fill_ctx__; pure fn valid(ct: Proof, fills: Fills, wrapped: __Type__ | .) -> Fills { fills }",
             "valid",
         )
         .expect("transparent aliases preserve exact direct capability identities");
 
         check_named_signature(
-            "module main; import __comptime__; pure fn bad() -> __Type__ { () }",
+            "mod main; import __comptime__; pure fn bad() -> __Type__ { () }",
             "bad",
         )
         .expect("ordinary return types impose no capability receiver");
 
         check_named_signature(
-            "module main; import __comptime__; \
-             pure fn bad(packet: __Comptime__ & .) -> . { () }",
+            "mod main; import __comptime__; pure fn bad(packet: __Comptime__ & .) -> . { () }",
             "bad",
         )
         .expect("ordinary signature checking does not assign a macro ABI");
 
         check_named_signature(
-            "module main; import __comptime__; \
-             pure fn bad(ct: __Comptime__, value: ., fills: __Fill_ctx__) -> __Fill_ctx__ { fills }",
+            "mod main; import __comptime__; pure fn bad(ct: __Comptime__, value: ., fills: __Fill_ctx__) -> __Fill_ctx__ { fills }",
             "bad",
         )
         .expect("a fill-context type does not impose an ordinary parameter position");

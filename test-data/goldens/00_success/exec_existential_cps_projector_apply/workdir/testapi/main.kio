@@ -1,8 +1,8 @@
-module testapi/main;
+mod testapi/main;
 
-import macros/spine_macros(macro one_prod);
-import testapi(String);
-import testapi/io(print);
+import macros/spine_macros { macro one_prod }
+import testapi { type String }
+import testapi/io { fn print }
 
 type { Pack[A] <U>: A & U { mk; get } }
 

@@ -561,7 +561,7 @@ one native name are rejected rather than identified with each other.
 `greeter.pkg.kio`:
 
 ```kio
-package greeter;
+pkg greeter;
 
 build {
   cache "out/.kio-cache/";
@@ -581,7 +581,7 @@ bridge {
 `main`:
 
 ```kio
-module greeter;
+mod greeter;
 
 host type String role(str);
 
@@ -589,9 +589,9 @@ host fn print(p0: String);
 ```
 
 ```kio
-module greeter/main;
+mod greeter/main;
 
-import greeter(String, print);
+import greeter {type String; fn print}
 
 pub fn main() { print("hello from kio\n") }
 ```

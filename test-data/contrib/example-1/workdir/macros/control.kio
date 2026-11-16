@@ -1,5 +1,5 @@
 /// Immediate scoped expressions for this self-contained library case.
-module macros/control;
+mod macros/control;
 
 import __comptime__;
 

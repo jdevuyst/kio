@@ -1,4 +1,4 @@
-package row_select_missing_domain;
+pkg row_select_missing_domain;
 
 build {
   cache "out/.kio-cache/";

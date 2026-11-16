@@ -1,7 +1,7 @@
 ================================================================================
 backend-first named build targets
 ================================================================================
-package app;
+pkg app;
 build {
   target js { out "out/js" };
   target (js, "w" "eb") { out "out/web" };

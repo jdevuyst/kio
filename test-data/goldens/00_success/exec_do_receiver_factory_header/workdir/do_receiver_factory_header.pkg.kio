@@ -1,4 +1,4 @@
-package do_receiver_factory_header;
+pkg do_receiver_factory_header;
 
 build {
   target js {

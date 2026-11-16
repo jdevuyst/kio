@@ -1,4 +1,4 @@
-package match_nested_product_binder;
+pkg match_nested_product_binder;
 
 build {
   cache "out/.kio-cache/";

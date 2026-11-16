@@ -1,4 +1,4 @@
-module hostapi;
+mod hostapi;
 
 host type F32 role(f32);
 

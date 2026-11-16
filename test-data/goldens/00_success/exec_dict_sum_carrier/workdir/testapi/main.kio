@@ -1,9 +1,9 @@
-module testapi/main;
+mod testapi/main;
 
 import __intrinsics__;
 
-import testapi(String);
-import testapi/io(print);
+import testapi { type String }
+import testapi/io { fn print }
 
 // Regression: a polymorphic-function dictionary newtype whose stored
 // function both takes and returns a *sum* slot that mentions the

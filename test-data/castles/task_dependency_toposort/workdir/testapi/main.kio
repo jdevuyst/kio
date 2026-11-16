@@ -1,7 +1,7 @@
-module testapi/main;
+mod testapi/main;
 
-import planner/render(summary);
-import planner/scheduler(plan);
-import testapi/io(print);
+import planner/render { fn summary }
+import planner/scheduler { fn plan }
+import testapi/io { fn print }
 
 pub fn main() { print(summary(plan())) }

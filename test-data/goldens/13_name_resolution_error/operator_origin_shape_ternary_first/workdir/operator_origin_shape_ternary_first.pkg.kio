@@ -1,4 +1,4 @@
-package operator_origin_shape_ternary_first;
+pkg operator_origin_shape_ternary_first;
 
 build {
   target js {

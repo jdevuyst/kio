@@ -1,4 +1,4 @@
-package exec_read_ascii_line_non_ascii_rejected;
+pkg exec_read_ascii_line_non_ascii_rejected;
 
 build {
   cache "out/.kio-cache/";

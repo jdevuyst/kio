@@ -1,4 +1,4 @@
-package literal_alias_duplicate_name;
+pkg literal_alias_duplicate_name;
 
 build {
   cache "out/.kio-cache/";

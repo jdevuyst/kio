@@ -1,6 +1,6 @@
-module errspan/main;
+mod errspan/main;
 
-import errspan(Foo);
+import errspan { type Foo }
 
 fn id(x: Foo) -> Foo { x }
 

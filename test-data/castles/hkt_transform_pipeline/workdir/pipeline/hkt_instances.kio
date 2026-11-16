@@ -1,6 +1,13 @@
-module pipeline/hkt_instances;
+mod pipeline/hkt_instances;
 
-import hkt/testapi/main(Box, Extract, Functor, Identity, Monad, Pure);
+import hkt/testapi/main {
+  type Box;
+  type Extract;
+  type Functor;
+  type Identity;
+  type Monad;
+  type Pure
+}
 
 pub fn box_monad() -> Monad[Box] {
   Monad.mk(.[A][B](m, k) { k(Box.get(m)) })

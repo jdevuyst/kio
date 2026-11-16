@@ -1,4 +1,4 @@
-package opb;
+pkg opb;
 
 build {
   cache "out/.kio-cache/";

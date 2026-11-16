@@ -1,4 +1,4 @@
-package typecheck_cross_module_annotated_lambda_field;
+pkg typecheck_cross_module_annotated_lambda_field;
 
 build {
   cache "out/.kio-cache/";

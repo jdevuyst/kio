@@ -2,9 +2,9 @@
 // literals, operators, macro calls, slots and
 // placeholders. Used by the E2E test as a non-trivial document
 // to exercise the semantic-tokens provider on.
-module fixture;
-import highlight/source(Item, item, Field);
-import highlight/macros(macro outer, macro transform, macro _transform, macro if);
+mod fixture;
+import highlight/source {type Item; fn item; type Field}
+import highlight/macros {macro outer; macro transform; macro _transform; macro if}
 
 host type I32 role(i32);
 host type String role(str);

@@ -388,7 +388,7 @@ fn driver_factory_name(driver_js: &Path) -> Result<String, String> {
 /// whole emitted tree — every module, host modules and the `.pkg.kio`
 /// manifest included — concatenated in path order. This is
 /// `dyn_load_prime`'s `load_package` input contract: the loader scans
-/// the concatenation (each `module` / `package` header delimits a unit),
+/// the concatenation (each `mod` / `pkg` header delimits a unit),
 /// topo-sorts the modules itself, reads host-fn declarations and the
 /// manifest for host awareness, and resolves cross-module references with
 /// open-world per-module scoping — so the runner passes the emit through
@@ -825,12 +825,12 @@ mod tests {
         let dir = ScratchDir::new("whole-tree");
         fs::write(
             dir.path().join("nums.kio"),
-            "module nums;\n\npub fn one() -> . { () }\n",
+            "mod nums;\n\npub fn one() -> . { () }\n",
         )
         .unwrap();
         fs::write(
             dir.path().join("main.kio"),
-            "module main;\n\nuse one from nums;\n\npub fn main() -> . { one() }\n",
+            "mod main;\n\nimport nums { fn one }\n\npub fn main() -> . { one() }\n",
         )
         .unwrap();
         // A module the entry does not import (a vendored compile-time-only
@@ -838,32 +838,32 @@ mod tests {
         // `load_package`'s input and ride through verbatim.
         fs::write(
             dir.path().join("macros.kio"),
-            "module macros;\n\npub fn dead() -> . { () }\n",
+            "mod macros;\n\npub fn dead() -> . { () }\n",
         )
         .unwrap();
         fs::write(
             dir.path().join("hostapi.kio"),
-            "module hostapi;\n\nhost fn print(p0: String) -> .;\n",
+            "mod hostapi;\n\nhost fn print(p0: String) -> .;\n",
         )
         .unwrap();
-        fs::write(dir.path().join("g.pkg.kio"), "package g;\n").unwrap();
+        fs::write(dir.path().join("g.pkg.kio"), "pkg g;\n").unwrap();
         let img = read_guest_image(dir.path()).expect("read tree");
-        assert!(img.contains("module nums;"), "nums included: {img}");
-        assert!(img.contains("module main;"), "main included: {img}");
-        assert!(img.contains("module macros;"), "macro included: {img}");
-        assert!(img.contains("module hostapi;"), "host included: {img}");
-        assert!(img.contains("package g;"), "manifest included: {img}");
+        assert!(img.contains("mod nums;"), "nums included: {img}");
+        assert!(img.contains("mod main;"), "main included: {img}");
+        assert!(img.contains("mod macros;"), "macro included: {img}");
+        assert!(img.contains("mod hostapi;"), "host included: {img}");
+        assert!(img.contains("pkg g;"), "manifest included: {img}");
     }
 
     #[test]
     fn host_record_injects_image_and_canonical_bodies() {
         let s = build_host_record_expression(
-            "module g;\npub fn main() -> . { () }\n",
+            "mod g;\npub fn main() -> . { () }\n",
             RunnerProtocol::TestApiIo,
             "main",
             "testapi/main",
         );
-        assert!(s.contains("readGuestImage: () => \"module g;"));
+        assert!(s.contains("readGuestImage: () => \"mod g;"));
         assert!(s.contains("protocolName: () => \"testapi-io\""));
         assert!(s.contains("protocolExecutionMode: () => \"main\""));
         assert!(s.contains("protocolEntryModule: () => \"testapi/main\""));
@@ -889,7 +889,7 @@ mod tests {
     #[test]
     fn driver_host_uses_exact_public_module_and_member_names() {
         let expression = build_host_record_expression(
-            "module guest_source;",
+            "mod guest_source;",
             RunnerProtocol::TestApiIo,
             "main",
             "testapi/main",
@@ -997,7 +997,7 @@ mod tests {
             }
             let driver: Object<'_> = host.get("driver").unwrap();
             let image: Function<'_> = driver.get("readGuestImage").unwrap();
-            assert_eq!(image.call::<_, String>(()).unwrap(), "module guest_source;");
+            assert_eq!(image.call::<_, String>(()).unwrap(), "mod guest_source;");
             let entry: Function<'_> = driver.get("protocolEntryModule").unwrap();
             assert_eq!(entry.call::<_, String>(()).unwrap(), "testapi/main");
         });

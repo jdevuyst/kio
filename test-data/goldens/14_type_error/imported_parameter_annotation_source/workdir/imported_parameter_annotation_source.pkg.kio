@@ -1,4 +1,4 @@
-package imported_parameter_annotation_source;
+pkg imported_parameter_annotation_source;
 
 build {
   target js {

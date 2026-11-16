@@ -1,8 +1,8 @@
-module testapi/main;
+mod testapi/main;
 
-import macros/match(macro match);
-import testapi(I32, String);
-import testapi/io(print);
+import macros/match { macro match }
+import testapi { type I32; type String }
+import testapi/io { fn print }
 
 pub type { A: I32; B: String }
 

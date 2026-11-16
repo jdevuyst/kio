@@ -1,15 +1,15 @@
-module lab/scenario;
+mod lab/scenario;
 
 import lab/clock as clock;
 import lab/replica as replica;
 import lab/report as report;
 import list/core as core;
 import list/list as lists;
-import list/list(varop [] as [* *]);
-import macros/row_macros(macro select);
-import macros/spine_macros(macro widen_sum);
+import list/list { op_var [] as [* *] }
+import macros/row_macros { macro select }
+import macros/spine_macros { macro widen_sum }
 import result/result as result;
-import testapi(I32, String);
+import testapi { type I32; type String }
 
 fn after_resolution(
 , first: replica.Replica

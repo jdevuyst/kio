@@ -1,6 +1,6 @@
-module internal;
+mod internal;
 
-import hostapi(I32, add_i32);
+import hostapi { type I32; fn add_i32 }
 
 pub type { Hidden: I32 { pub mk; pub get } }
 

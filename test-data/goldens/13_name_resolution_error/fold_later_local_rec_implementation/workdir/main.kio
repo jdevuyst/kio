@@ -1,6 +1,6 @@
-module main;
+mod main;
 
-varop [* *] { foldr push empty }
+op_var [* *] { foldr push empty }
 
 host fn loop[S][R](step: S -> (S | R), state: S) -> R;
 

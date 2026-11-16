@@ -1,11 +1,11 @@
-module testapi/main;
+mod testapi/main;
 
 import __intrinsics__;
 
-import macros/spine_macros(macro widen_prod);
-import testapi(String);
-import testapi/io(print);
-import testapi/text(string_concat);
+import macros/spine_macros { macro widen_prod }
+import testapi { type String }
+import testapi/io { fn print }
+import testapi/text { fn string_concat }
 
 fn widen_pair(p: String & String) -> String & String & String & String { widen_prod(p) }
 

@@ -1,6 +1,6 @@
-module testapi/arith;
+mod testapi/arith;
 
-import testapi/types(Poly_thunk, Unit_slot);
+import testapi/types { type Poly_thunk; type Unit_slot }
 
 host fn round_poly_thunk(thunk: Poly_thunk) -> Poly_thunk;
 

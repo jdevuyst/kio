@@ -1,4 +1,4 @@
-package typecheck_flat_call_packet_boundary;
+pkg typecheck_flat_call_packet_boundary;
 
 build {
   cache "out/.kio-cache/";

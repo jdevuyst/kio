@@ -1,4 +1,4 @@
-module model;
+mod model;
 
 import list/core as list;
 

@@ -1,4 +1,4 @@
-package exec_row_with_compound_tail_reorder;
+pkg exec_row_with_compound_tail_reorder;
 
 build {
   cache "out/.kio-cache/";

@@ -1,11 +1,11 @@
-module testapi/main;
+mod testapi/main;
 
-import macros/control(macro if);
-import macros/spine_macros(macro fit, macro one_prod);
-import testapi(Bool, I32, String);
-import testapi/fmt(int_to_string);
-import testapi/io(print);
-import testapi/text(string_concat);
+import macros/control { macro if }
+import macros/spine_macros { macro fit; macro one_prod }
+import testapi { type Bool; type I32; type String }
+import testapi/fmt { fn int_to_string }
+import testapi/io { fn print }
+import testapi/text { fn string_concat }
 
 // `fit` covers a cross-level reshape no single axis-specific can
 // reach alone. Source spine: `((String & I32) & Bool)` (a 2-slot

@@ -1,17 +1,17 @@
-module testapi/main;
+mod testapi/main;
 
-import regex/matcher(
-, anchored_hi
-, byte_probe_passed
-, c_dot_t
-, colour_optional
-, gray_alternation
-, literal_cat
-);
-import regex/result(Verdict, render);
-import testapi(String);
-import testapi/fmt(bool_to_string);
-import testapi/io(print);
+import regex/matcher {
+  fn anchored_hi;
+  fn byte_probe_passed;
+  fn c_dot_t;
+  fn colour_optional;
+  fn gray_alternation;
+  fn literal_cat
+}
+import regex/result { type Verdict; fn render }
+import testapi { type String }
+import testapi/fmt { fn bool_to_string }
+import testapi/io { fn print }
 
 fn print_case(pattern: String, candidate: String, result: Verdict) {
   print(render(pattern, candidate, result))

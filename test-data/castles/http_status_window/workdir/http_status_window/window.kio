@@ -1,8 +1,8 @@
-module http_status_window/window;
+mod http_status_window/window;
 
-import macros/control(macro if);
-import macros/row_macros(macro record);
-import testapi(Bool, I32, String);
+import macros/control { macro if }
+import macros/row_macros { macro record }
+import testapi { type Bool; type I32; type String }
 import testapi/text as text;
 
 pub type Entry = {

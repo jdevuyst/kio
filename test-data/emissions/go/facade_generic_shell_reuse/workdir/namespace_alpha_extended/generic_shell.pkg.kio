@@ -1,4 +1,4 @@
-package generic_shell;
+pkg generic_shell;
 
 build {
   cache "out/.kio-cache/";

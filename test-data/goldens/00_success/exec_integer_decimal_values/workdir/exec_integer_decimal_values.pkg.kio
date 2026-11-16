@@ -1,4 +1,4 @@
-package exec_integer_decimal_values;
+pkg exec_integer_decimal_values;
 
 build {
   cache "out/.kio-cache/";

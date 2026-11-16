@@ -1,4 +1,4 @@
-package exec_contextual_rich_let;
+pkg exec_contextual_rich_let;
 
 build {
   cache "out/.kio-cache/";

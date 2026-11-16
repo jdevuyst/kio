@@ -1,4 +1,4 @@
-package fnff;
+pkg fnff;
 
 build {
   cache "out/.kio-cache/";

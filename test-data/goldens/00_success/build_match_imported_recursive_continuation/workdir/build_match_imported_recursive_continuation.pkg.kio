@@ -1,4 +1,4 @@
-package build_match_imported_recursive_continuation;
+pkg build_match_imported_recursive_continuation;
 
 build {
   cache "out/.kio-cache/";

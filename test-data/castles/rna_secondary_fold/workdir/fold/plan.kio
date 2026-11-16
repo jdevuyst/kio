@@ -1,7 +1,7 @@
-module fold/plan;
+mod fold/plan;
 
-import macros/spine_macros(macro widen_sum);
-import testapi(Array, I32);
+import macros/spine_macros { macro widen_sum }
+import testapi { type Array; type I32 }
 
 pub type Decision = { Unpaired: . } | { Paired: I32 };
 

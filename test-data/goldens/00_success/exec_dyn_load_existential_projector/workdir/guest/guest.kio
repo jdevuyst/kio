@@ -1,8 +1,8 @@
-module guest;
+mod guest;
 
 import __intrinsics__;
 
-import hostapi(I32, add_i32);
+import hostapi { type I32; fn add_i32 }
 
 pub type { Boxed <U>: I32 & U { pub mk; pub get } }
 

@@ -1,4 +1,4 @@
-package typedcache;
+pkg typedcache;
 
 build {
   cache "out/.kio-cache/";

@@ -1,4 +1,4 @@
-package unknown_target_backend;
+pkg unknown_target_backend;
 
 build {
   cache "out/.kio-cache/";

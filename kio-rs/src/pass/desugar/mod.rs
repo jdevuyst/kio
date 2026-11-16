@@ -117,7 +117,7 @@ pub fn collect_package_literal_aliases(
 
 /// Lower a parsed [`Module<Surface>`] into [`Module<Desugared>`].
 /// Equivalent to [`desugar_module_with_imports`] with an empty
-/// package-literal table; cross-module `literal` references won't
+/// package-literal table; cross-module `lit` references won't
 /// resolve. Used by unit tests and single-module compilation paths
 /// that don't go through `FullPipeline::lower_package`.
 pub fn desugar_module(module: Module<Surface>) -> Result<Module<Desugared>, Error> {
@@ -7254,11 +7254,11 @@ mod tests {
         let modules = vec![
             (
                 std::path::PathBuf::from("pkg/z.kio"),
-                parsed("module pkg/z; literal dup = 1; literal dup = 2;"),
+                parsed("mod pkg/z; lit dup = 1; lit dup = 2;"),
             ),
             (
                 std::path::PathBuf::from("pkg/a.kio"),
-                parsed("module pkg/a; literal dup = 1; literal dup = 2;"),
+                parsed("mod pkg/a; lit dup = 1; lit dup = 2;"),
             ),
         ];
 
@@ -7270,7 +7270,7 @@ mod tests {
 
     #[test]
     fn literal_decl_expands_bare_reference() {
-        let m = d("module x; literal answer = 42; fn main() -> I32 { answer }");
+        let m = d("mod x; lit answer = 42; fn main() -> I32 { answer }");
         assert_eq!(m.items.len(), 1);
         let Item::FnDef(f) = &m.items[0] else {
             panic!("expected fn, got {:?}", m.items[0]);
@@ -7280,8 +7280,7 @@ mod tests {
 
     #[test]
     fn literal_decl_expands_annotation_call() {
-        let m =
-            d(r#"module x; literal greeting = "abc"; fn main() -> String { greeting[String] }"#);
+        let m = d(r#"mod x; lit greeting = "abc"; fn main() -> String { greeting[String] }"#);
         let Item::FnDef(f) = &m.items[0] else {
             panic!("expected fn, got {:?}", m.items[0]);
         };
@@ -7300,9 +7299,9 @@ mod tests {
 
     #[test]
     fn literal_alias_expansions_keep_distinct_use_spans() {
-        let m = d("module x; literal one = 1; \
-             fn one_i32() -> I32 { one[I32] } \
-             fn one_i64() -> I64 { one[I64] }");
+        let m = d(
+            "mod x; lit one = 1; fn one_i32() -> I32 { one[I32] } fn one_i64() -> I64 { one[I64] }",
+        );
         let spans = m
             .items
             .iter()
@@ -7317,7 +7316,7 @@ mod tests {
 
     #[test]
     fn literal_decl_call_requires_one_type_annotation() {
-        let m = parsed("module x; literal answer = 42; fn main() -> I32 { answer() }");
+        let m = parsed("mod x; lit answer = 42; fn main() -> I32 { answer() }");
         let err = desugar_module(m).expect_err("expected annotation arity error");
         let (_, msg) = err.diag();
         assert!(
@@ -7328,7 +7327,7 @@ mod tests {
 
     #[test]
     fn literal_decl_call_rejects_value_argument() {
-        let m = parsed("module x; literal answer = 42; fn main() -> I32 { answer(0) }");
+        let m = parsed("mod x; lit answer = 42; fn main() -> I32 { answer(0) }");
         let err = desugar_module(m).expect_err("expected annotation kind error");
         let (_, msg) = err.diag();
         assert!(
@@ -7339,7 +7338,7 @@ mod tests {
 
     #[test]
     fn literal_decl_respects_local_shadowing() {
-        let m = d("module x; literal answer = 42; fn main(answer: I32) -> I32 { answer }");
+        let m = d("mod x; lit answer = 42; fn main(answer: I32) -> I32 { answer }");
         let Item::FnDef(f) = &m.items[0] else {
             panic!("expected fn, got {:?}", m.items[0]);
         };
@@ -7351,18 +7350,11 @@ mod tests {
         let modules = vec![
             (
                 std::path::PathBuf::from("pkg/util.kio"),
-                parsed(
-                    "module pkg/util; \
-                     pub literal zero = 0;",
-                ),
+                parsed("mod pkg/util; pub lit zero = 0;"),
             ),
             (
                 std::path::PathBuf::from("pkg/main.kio"),
-                parsed(
-                    "module pkg/main; \
-                     import pkg/util(zero); \
-                     fn main() -> I32 { zero[I32] }",
-                ),
+                parsed("mod pkg/main; import pkg/util {fn zero} fn main() -> I32 { zero[I32] }"),
             ),
         ];
         let package_aliases = collect_package_literal_aliases(&modules, None);
@@ -7379,7 +7371,7 @@ mod tests {
     #[test]
     fn no_op_on_kio_prime_module() {
         // A pure-Kio' module passes through unchanged.
-        let m = d("module x; fn id[A](x: A) -> A { x }");
+        let m = d("mod x; fn id[A](x: A) -> A { x }");
         assert!(
             !m.imports
                 .iter()
@@ -7391,7 +7383,7 @@ mod tests {
 
     #[test]
     fn lower_fn_placeholder_avoids_authored_ufcs_callee_name() {
-        let module = d("module x; fn f(p1: . -> .) -> . -> . { .x. { x1.>p1 } }");
+        let module = d("mod x; fn f(p1: . -> .) -> . -> . { .x. { x1.>p1 } }");
         let Expr::FnExpr { sig, body, .. } = desugared_fn_body(&module, "f") else {
             panic!("expected lowered placeholder function")
         };
@@ -7412,7 +7404,7 @@ mod tests {
 
     #[test]
     fn lower_fn_placeholder_avoids_authored_macro_callee_name() {
-        let module = d("module x; import fixture(macro p1); fn f() -> . -> . { .x. { p1(x1) } }");
+        let module = d("mod x; import fixture {macro p1} fn f() -> . -> . { .x. { p1(x1) } }");
         let Expr::FnExpr { sig, body, .. } = desugared_fn_body(&module, "f") else {
             panic!("expected lowered placeholder function")
         };
@@ -7436,10 +7428,9 @@ mod tests {
 
     #[test]
     fn lower_fn_placeholder_retries_past_authored_outer_names() {
-        let module = d("module x; \
-             fn f(p1: ., p1_v2: .) -> . -> . { \
-               .x. { let keep_p1 = p1; let keep_p1_v2 = p1_v2; x1 } \
-             }");
+        let module = d(
+            "mod x; fn f(p1: ., p1_v2: .) -> . -> . { .x. { let keep_p1 = p1; let keep_p1_v2 = p1_v2; x1 } }",
+        );
         let Expr::FnExpr { sig, body, .. } = desugared_fn_body(&module, "f") else {
             panic!("expected lowered placeholder function")
         };
@@ -7485,7 +7476,7 @@ mod tests {
                 .collect::<String>();
             let arguments = "(effect())".repeat(width);
             let source = format!(
-                "module x; rec(loop) fn step(value: .) -> . {{
+                "mod x; rec(loop) fn step(value: .) -> . {{
                 .[A]{parameters}(tail) {{ tail }}[.]{arguments}(recur(cont) step(()))
             }}"
             );
@@ -7537,7 +7528,7 @@ mod tests {
             ("factory()", false),
             ("named[.]", false),
         ] {
-            let module = parsed(&format!("module x; fn witness() {{ {prefix} }}"));
+            let module = parsed(&format!("mod x; fn witness() {{ {prefix} }}"));
             let Item::FnDef(def) = &module.items[0] else {
                 panic!("source function")
             };
@@ -7551,7 +7542,7 @@ mod tests {
 
     #[test]
     fn rec_cps_direct_header_spills_earlier_effects_once_in_source_order() {
-        let module = d("module x; rec(loop) fn step(value: .) -> . {
+        let module = d("mod x; rec(loop) fn step(value: .) -> . {
             .[A](first, second)()(tail) { tail }[.]
                 (effect_first(), effect_second())()(recur(cont) step(()))
         }");
@@ -7625,7 +7616,7 @@ mod tests {
     #[test]
     fn rec_call_stages_preserve_packets_and_interleaved_type_omission() {
         let parts = staged_rec_parts(
-            "module x; rec(loop) fn step[A](x: A, y: A)[B](z: B) -> . { recur step[T](first(), second())(third()) }",
+            "mod x; rec(loop) fn step[A](x: A, y: A)[B](z: B) -> . { recur step[T](first(), second())(third()) }",
         );
         assert_eq!(parts.type_args.len(), 2);
         assert!(
@@ -7647,7 +7638,7 @@ mod tests {
         assert_eq!(parts.result_stage_count, 0);
 
         let whole = staged_rec_parts(
-            "module x; rec(loop) fn step[A](x: A, y: A)[B](z: B) -> . { recur step(make_pair())[U](third()) }",
+            "mod x; rec(loop) fn step[A](x: A, y: A)[B](z: B) -> . { recur step(make_pair())[U](third()) }",
         );
         assert_eq!(whole.packets.len(), 2);
         assert!(matches!(&whole.packets[0], Expr::Call { .. }));
@@ -7662,7 +7653,7 @@ mod tests {
     #[test]
     fn rec_call_stages_reject_one_packet_for_two_function_layers() {
         let error = desugar_module(parsed(
-            "module x; rec(loop) fn step(x: .)(y: .) -> . { recur step(x, y) }",
+            "mod x; rec(loop) fn step(x: .)(y: .) -> . { recur step(x, y) }",
         ))
         .expect_err("one product packet cannot supply two Function layers");
         assert!(
@@ -7677,13 +7668,13 @@ mod tests {
     #[test]
     fn rec_call_stages_keep_callable_result_applications_outside_state() {
         let parts = staged_rec_parts(
-            "module x; rec(loop) fn step(x: .) -> [A] A -> A { recur(cont) step(())[T](value) }",
+            "mod x; rec(loop) fn step(x: .) -> [A] A -> A { recur(cont) step(())[T](value) }",
         );
         assert_eq!(parts.packets.len(), 1);
         assert_eq!(parts.result_stage_count, 2);
         assert!(parts.type_args.is_empty());
         let module = d(
-            "module x; rec(loop) fn step(x: .) -> . -> . { let value = recur(cont) step(x)(()); .() { value } }",
+            "mod x; rec(loop) fn step(x: .) -> . -> . { let value = recur(cont) step(x)(()); .() { value } }",
         );
         assert!(
             module
@@ -7696,9 +7687,9 @@ mod tests {
     #[test]
     fn rec_call_stages_evaluate_effectful_packets_once() {
         for source in [
-            "module x; rec(loop) fn step(x: ., y: .) -> . { recur step(make_pair()) }",
-            "module x; rec(loop) fn step(x: .)(y: .) -> . { let result = recur(cont) step(make_first())(make_second()); result }",
-            "module x; rec(loop) fn step(x: ., y: .) -> . -> . { .() { recur(escape) step(make_pair())(()) } }",
+            "mod x; rec(loop) fn step(x: ., y: .) -> . { recur step(make_pair()) }",
+            "mod x; rec(loop) fn step(x: .)(y: .) -> . { let result = recur(cont) step(make_first())(make_second()); result }",
+            "mod x; rec(loop) fn step(x: ., y: .) -> . -> . { .() { recur(escape) step(make_pair())(()) } }",
         ] {
             let module = d(source);
             for name in ["make_pair", "make_first", "make_second"] {
@@ -7721,12 +7712,9 @@ mod tests {
 
     #[test]
     fn rec_group_lowers_every_member_to_an_ordinary_wrapper_with_its_visibility() {
-        let m = d("module x/sub; \
-             rec(loop) { \
-               fn local(value: .) -> . { value }; \
-               pub(x) fn scoped(value: .) -> . { value }; \
-               pub fn exported(value: .) -> . { value } \
-             }");
+        let m = d(
+            "mod x/sub; rec(loop) { fn local(value: .) -> . { value }; pub(x) fn scoped(value: .) -> . { value }; pub fn exported(value: .) -> . { value } }",
+        );
         let wrappers = m
             .items
             .iter()
@@ -7769,7 +7757,7 @@ mod tests {
                 })
                 .collect::<Vec<_>>()
                 .join("; ");
-            let module = d(&format!("module x; rec(loop) {{ {members} }}"));
+            let module = d(&format!("mod x; rec(loop) {{ {members} }}"));
             let definitions = module
                 .items
                 .iter()
@@ -7808,10 +7796,9 @@ mod tests {
 
     #[test]
     fn mutual_rec_step_owns_only_outer_state_type_parameters() {
-        let module = d("module x; rec(loop) { \
-            fn first[A][B](value: A, extra: B) -> A { recur second[A][B](value, extra) }; \
-            fn second[A][B](value: A, extra: B) -> A { value } \
-        }");
+        let module = d(
+            "mod x; rec(loop) { fn first[A][B](value: A, extra: B) -> A { recur second[A][B](value, extra) }; fn second[A][B](value: A, extra: B) -> A { value } }",
+        );
         let helper = module
             .items
             .iter()
@@ -7851,9 +7838,8 @@ mod tests {
 
     #[test]
     fn single_rec_member_keeps_its_inline_step() {
-        let module = d("module x; rec(loop) fn only(value: .) -> . { \
-            observe(value); recur only(value) \
-        }");
+        let module =
+            d("mod x; rec(loop) fn only(value: .) -> . { observe(value); recur only(value) }");
         let definitions = module
             .items
             .iter()
@@ -7870,9 +7856,8 @@ mod tests {
 
     #[test]
     fn mutual_rec_step_name_avoids_module_and_lexical_names() {
-        let prefix = "module x; rec(loop) { \
-            fn first(value: .) -> . { recur second(value) }; \
-            fn second(value: .) -> . { value } }\n";
+        let prefix = "mod x; rec(loop) { fn first(value: .) -> . { recur second(value) }; fn second(value: .) -> . { value } }
+";
         let parsed = parse(prefix).unwrap();
         let Item::RecGroup(group, _) = &parsed.items[0] else {
             unreachable!()
@@ -7911,10 +7896,10 @@ mod tests {
             );
         }
         for import in [
-            format!("import provider({base});"),
+            format!("import provider {{ fn {base} }}"),
             format!("import provider as {base};"),
         ] {
-            let imported = parse(&format!("module x; {import}")).unwrap();
+            let imported = parse(&format!("mod x; {import}")).unwrap();
             let mut parsed = parse(prefix).unwrap();
             parsed.imports = imported.imports;
             let module = desugar_module(parsed).unwrap();
@@ -8046,7 +8031,7 @@ mod tests {
     }
 
     fn rec_group_start() -> u32 {
-        let module = parsed("module x;\nrec(loop) fn go[A](value: A) -> A { value }");
+        let module = parsed("mod x;\nrec(loop) fn go[A](value: A) -> A { value }");
         let [Item::RecGroup(group, _)] = module.items.as_slice() else {
             panic!("expected one recursive group")
         };
@@ -8056,7 +8041,7 @@ mod tests {
     #[test]
     fn cont_rec_state_types_form_an_explicit_recursive_scope() {
         let source = concat!(
-            "module x;\n",
+            "mod x;\n",
             "host fn loop[S][R](step: S -> (S | R), state: S) -> R;\n",
             "rec(loop) {\n",
             "  fn first(value: .) -> . { let next = recur(cont) second(value); next };\n",
@@ -8119,8 +8104,7 @@ mod tests {
             ),
         ] {
             let module = d(&format!(
-                "module x; rec(loop) {{ fn outer(value: .) -> . {{ {body} }}; \
-                 fn leaf(value: .) -> . {{ value }} }}"
+                "mod x; rec(loop) {{ fn outer(value: .) -> . {{ {body} }}; fn leaf(value: .) -> . {{ value }} }}"
             ));
             let mut schedules = 0;
             let helper = module
@@ -8153,7 +8137,7 @@ mod tests {
             });
             assert_eq!(schedules, expected);
         }
-        let module = d("module x; rec(loop) fn tail(value: .) -> . { recur tail(value) }");
+        let module = d("mod x; rec(loop) fn tail(value: .) -> . { recur tail(value) }");
         assert!(
             !module
                 .items
@@ -8191,9 +8175,10 @@ mod tests {
         let wrapper = format!("Rec_state{group_start}_mghgp");
         let constructor = "mk";
         let module = d(&format!(
-            "module x;\n\
-             rec(loop) fn go[A](value: A) -> A {{ value }}\n\
-             {}\n",
+            "mod x;
+rec(loop) fn go[A](value: A) -> A {{ value }}
+{}
+",
             outside(&wrapper, constructor)
         ));
         let generated = generated_rec_state_newtype(&module);
@@ -8235,15 +8220,16 @@ mod tests {
         let wrapper = format!("Rec_state{group_start}_mghgp");
         let outer = format!("R{group_start}_i0_peb");
         let module = d(&format!(
-            "module x;\n\
-             rec(loop) fn go[A](value: A, nominal: {outer}) -> A {{\n\
-               let next = recur(cont) go(value, nominal);\n\
-               next\n\
-             }}\n\
-             type {wrapper} = .;\n\
-             type {wrapper}_n2 = .;\n\
-             type {outer} = .;\n\
-             type {outer}_n2 = .;\n"
+            "mod x;
+rec(loop) fn go[A](value: A, nominal: {outer}) -> A {{
+let next = recur(cont) go(value, nominal);
+next
+}}
+type {wrapper} = .;
+type {wrapper}_n2 = .;
+type {outer} = .;
+type {outer}_n2 = .;
+"
         ));
         let generated = generated_rec_state_newtype(&module);
 
@@ -8262,12 +8248,10 @@ mod tests {
         use crate::prime::pipeline::PrimePipeline;
         use std::path::{Path, PathBuf};
 
-        let prefix = "module x;\n\
-             host fn loop[S][R](step: S -> (S | R), state: S) -> R;\n\
-             rec(loop) { \
-               fn go[A][B](value: A, extra: B) -> A { recur next[A][B](value, extra) }; \
-               fn next[A][B](value: A, extra: B) -> A { value } \
-             }\n";
+        let prefix = "mod x;
+host fn loop[S][R](step: S -> (S | R), state: S) -> R;
+rec(loop) { fn go[A][B](value: A, extra: B) -> A { recur next[A][B](value, extra) }; fn next[A][B](value: A, extra: B) -> A { value } }
+";
         let parsed_prefix = parse(prefix).expect("parse preceding host and recursive group");
         let group_start = parsed_prefix
             .items
@@ -8356,14 +8340,15 @@ mod tests {
         let outer = format!("R{group_start}_i0_peb");
         let fresh_outer = format!("{outer}_n2");
         let module = d(&format!(
-            "module x;\n\
-             rec(loop) fn go[A](value: A) -> A {{\n\
-               let escaped = .[{outer}](shadow: {outer}) -> A {{\n\
-                 value\n\
-               }};\n\
-               let next = recur(cont) go(value);\n\
-               next\n\
-             }}\n"
+            "mod x;
+rec(loop) fn go[A](value: A) -> A {{
+let escaped = .[{outer}](shadow: {outer}) -> A {{
+value
+}};
+let next = recur(cont) go(value);
+next
+}}
+"
         ));
         let generated = generated_rec_state_newtype(&module);
 
@@ -8400,7 +8385,7 @@ mod tests {
 
     #[test]
     fn tuple_two_lowers_to_mk_pair() {
-        let m = d("module x; fn f() -> . { (.t, .f) }");
+        let m = d("mod x; fn f() -> . { (.t, .f) }");
         // Auto-injected `import __intrinsics__;`.
         assert!(
             m.imports
@@ -8439,7 +8424,7 @@ mod tests {
 
     #[test]
     fn tuple_three_right_folds_to_mk_pair_chain() {
-        let m = d("module x; fn f() -> . { (.t, .f, .t) }");
+        let m = d("mod x; fn f() -> . { (.t, .f, .t) }");
         if let Item::FnDef(d) = &m.items[0] {
             // Outer call: __pair__(_, _, .t, [inner])
             let Expr::Call { args: outer, .. } = &d.body else {
@@ -8457,7 +8442,7 @@ mod tests {
     #[test]
     fn projected_user_call_survives_desugar_with_ordinary_children() {
         let mut module = parsed(
-            "module x; macro invoke : (. -> .) -> . { trailing thunk; impl implementation } fn f() -> . { invoke { (); () } }",
+            "mod x; macro invoke : (. -> .) -> . { trailing thunk; impl implementation } fn f() -> . { invoke { (); () } }",
         );
         let scope = crate::pass::surface_registry::PackageBlockScope::from_modules(&[(
             std::path::PathBuf::from("x.kio"),
@@ -8489,8 +8474,7 @@ mod tests {
     #[test]
     fn match_ufcs_lowers_to_macro_stages() {
         let m = d(
-            "module x; import fixture(macro match); fn f(v: I32 | String) -> . { \
-             v.>match((.(n: I32) { () }, .(s: String) { () }), ()) }",
+            "mod x; import fixture {macro match} fn f(v: I32 | String) -> . { v.>match((.(n: I32) { () }, .(s: String) { () }), ()) }",
         );
         let Expr::UserMacro { name, stages, .. } = desugared_fn_body(&m, "f") else {
             panic!("expected projected macro call")
@@ -8518,16 +8502,14 @@ mod tests {
     #[test]
     fn rec_call_in_match_clause_lowers_in_tail_position() {
         d(
-            "module x; import fixture(macro match); rec(loop) fn go(v: I32 | String) -> I32 { \
-             match(v, (.(n: I32) { n }, .(_s: String) { recur go(__left__[I32][ String]( 0)) })) }",
+            "mod x; import fixture {macro match} rec(loop) fn go(v: I32 | String) -> I32 { match(v, (.(n: I32) { n }, .(_s: String) { recur go(__left__[I32][ String]( 0)) })) }",
         );
     }
 
     #[test]
     fn placeholder_clauses_in_direct_macro_call_remain_deferred_candidates() {
         let module = d(
-            "module x; import fixture(macro choose); rec(loop) fn go(value: .) -> . { \
-             choose((.x. { x1 }, .x. { recur go(x1) })) }",
+            "mod x; import fixture {macro choose} rec(loop) fn go(value: .) -> . { choose((.x. { x1 }, .x. { recur go(x1) })) }",
         );
         assert_one_optional_and_one_required_deferred_tail(desugared_fn_body(&module, "go"));
     }
@@ -8535,8 +8517,7 @@ mod tests {
     #[test]
     fn deferred_tail_rec_lambda_requires_continuation_state() {
         let module = parsed(
-            "module x; import fixture(macro hold); rec(loop) fn go(value: .) -> . { \
-             hold(.(_unit: .) { recur go(value) }) }",
+            "mod x; import fixture {macro hold} rec(loop) fn go(value: .) -> . { hold(.(_unit: .) { recur go(value) }) }",
         );
         let Item::RecGroup(group, _) = &module.items[0] else {
             panic!("expected rec group")
@@ -8546,10 +8527,8 @@ mod tests {
 
     #[test]
     fn placeholder_lambda_rec_requires_continuation_state() {
-        let module = parsed(
-            "module x; rec(loop) fn go(value: .) -> . { \
-             apply(.x. { recur go(x1) }) }",
-        );
+        let module =
+            parsed("mod x; rec(loop) fn go(value: .) -> . { apply(.x. { recur go(x1) }) }");
         let Item::RecGroup(group, _) = &module.items[0] else {
             panic!("expected rec group")
         };
@@ -8559,10 +8538,7 @@ mod tests {
     #[test]
     fn nested_rec_call_argument_requires_continuation_state() {
         let module = parsed(
-            "module x; rec(loop) { \
-             fn outer(value: .) -> . { recur outer(recur(cont) leaf(value)) }; \
-             fn leaf(value: .) -> . { value } \
-             }",
+            "mod x; rec(loop) { fn outer(value: .) -> . { recur outer(recur(cont) leaf(value)) }; fn leaf(value: .) -> . { value } }",
         );
         let Item::RecGroup(group, _) = &module.items[0] else {
             panic!("expected rec group")
@@ -8572,7 +8548,7 @@ mod tests {
 
     #[test]
     fn ordinary_tail_rec_group_does_not_require_continuation_state() {
-        let module = parsed("module x; rec(loop) fn go(value: .) -> . { recur go(value) }");
+        let module = parsed("mod x; rec(loop) fn go(value: .) -> . { recur go(value) }");
         let Item::RecGroup(group, _) = &module.items[0] else {
             panic!("expected rec group")
         };
@@ -8605,7 +8581,7 @@ mod tests {
             "do (bind) { do (bind) { let next <- recur(cont) go(value); next } }",
         ] {
             projected_sequence_desugar(&format!(
-                "module x; import sequence(macro do); rec(loop) fn go(value: .) -> . {{ {body} }}"
+                "mod x; import sequence {{macro do}} rec(loop) fn go(value: .) -> . {{ {body} }}"
             ))
             .expect("desugar");
         }
@@ -8626,7 +8602,7 @@ mod tests {
             ),
         ] {
             let source = format!(
-                "module main; import sequence(macro do);
+                "mod main; import sequence {{macro do}}
                 rec(loop) fn factory[T](value: T) -> [A][B](A & (A -> B)) -> B {{
                     do ({receiver}) {{ .[A][B](value: A, next: A -> B) {{ next(value) }} }}
                 }}"
@@ -8647,7 +8623,7 @@ mod tests {
             "(.x.{ let ignored = recur(cont) go(value); next(x1) })(Box.get(input))",
         ] {
             let source = format!(
-                "module main; import sequence(macro do);
+                "mod main; import sequence {{macro do}}
                 type {{ Box[A] : A {{ mk; get; }}; }};
                 rec(loop) fn go(value: .) -> Box[.] {{
                     let receiver = .[A][B](input: Box[A], next: A -> Box[B]) -> Box[B] {{ {body} }};
@@ -8674,7 +8650,7 @@ mod tests {
             "do (bind) { let next <- .(arg: .) { recur(cont) go(arg) }; value }",
         ] {
             let source = format!(
-                "module x; import sequence(macro do); rec(loop) fn go(value: .) -> . {{ {body} }}"
+                "mod x; import sequence {{macro do}} rec(loop) fn go(value: .) -> . {{ {body} }}"
             );
             let err = projected_sequence_desugar(&source).expect_err("escaping recursive call");
             assert!(
@@ -8688,8 +8664,7 @@ mod tests {
 
     #[test]
     fn monadic_do_first_rhs_recursion_still_requires_cont_annotation() {
-        let source = "module x; import sequence(macro do); rec(loop) fn go(value: .) -> . { \
-            do (bind) { let next <- recur go(value); next } }";
+        let source = "mod x; import sequence {macro do} rec(loop) fn go(value: .) -> . { do (bind) { let next <- recur go(value); next } }";
         let err = projected_sequence_desugar(source).expect_err("non-tail recursive call");
         let (_, message) = err.diag();
         assert!(message.contains("not in tail position"), "{message}");
@@ -8697,14 +8672,9 @@ mod tests {
 
     #[test]
     fn rec_group_clones_refresh_replacement_node_ids() {
-        let module = d("module x; import fixture(macro choose); \
-            host fn loop[S][R](step: S -> (S | R), state: S) -> R; \
-            rec(loop) { \
-              fn first(value: .) -> . { recur second(value) }; \
-              fn second(value: .) -> . { \
-                choose(.(local: .) { choose(value.>identity) }) \
-              } \
-            }");
+        let module = d(
+            "mod x; import fixture {macro choose} host fn loop[S][R](step: S -> (S | R), state: S) -> R; rec(loop) { fn first(value: .) -> . { recur second(value) }; fn second(value: .) -> . { choose(.(local: .) { choose(value.>identity) }) } }",
+        );
         let mut user_ids = Vec::new();
         let mut projected_identity_calls = 0;
         for item in &module.items {
@@ -8783,30 +8753,14 @@ mod tests {
     #[test]
     fn tail_rec_group_clones_refresh_user_macro_node_ids() {
         assert_rec_group_clones_refresh_user_macro_node_ids(
-            "module x; import fixture(macro choose); \
-             host fn loop[S][R](step: S -> (S | R), state: S) -> R; \
-             rec(loop) { \
-               fn first(value: .) -> . { recur second(value) }; \
-               fn second(value: .) -> . { \
-                 let wrapped = choose(value); \
-                 recur first(wrapped) \
-               } \
-             }",
+            "mod x; import fixture {macro choose} host fn loop[S][R](step: S -> (S | R), state: S) -> R; rec(loop) { fn first(value: .) -> . { recur second(value) }; fn second(value: .) -> . { let wrapped = choose(value); recur first(wrapped) } }",
         );
     }
 
     #[test]
     fn continuation_rec_group_clones_refresh_user_macro_node_ids() {
         assert_rec_group_clones_refresh_user_macro_node_ids(
-            "module x; import fixture(macro choose); \
-             host fn loop[S][R](step: S -> (S | R), state: S) -> R; \
-             rec(loop) { \
-               fn first(value: .) -> . { recur second(value) }; \
-               fn second(value: .) -> . { \
-                 let wrapped = choose(recur(cont) first(value)); \
-                 wrapped \
-               } \
-             }",
+            "mod x; import fixture {macro choose} host fn loop[S][R](step: S -> (S | R), state: S) -> R; rec(loop) { fn first(value: .) -> . { recur second(value) }; fn second(value: .) -> . { let wrapped = choose(recur(cont) first(value)); wrapped } }",
         );
     }
 
@@ -8815,16 +8769,14 @@ mod tests {
     #[test]
     fn rec_call_in_match_ufcs_clause_lowers_in_tail_position() {
         d(
-            "module x; import fixture(macro match); rec(loop) fn go(v: I32 | String) -> I32 { \
-             v.>match((.(n: I32) { n }, .(_s: String) { recur go(__left__[I32][ String]( 0)) })) }",
+            "mod x; import fixture {macro match} rec(loop) fn go(v: I32 | String) -> I32 { v.>match((.(n: I32) { n }, .(_s: String) { recur go(__left__[I32][ String]( 0)) })) }",
         );
     }
 
     #[test]
     fn placeholder_clauses_in_ufcs_macro_call_remain_deferred_candidates() {
         let module = d(
-            "module x; import fixture(macro choose); rec(loop) fn go(value: .) -> . { \
-             value.>choose((.x. { x1 }, .x. { recur go(x1) })) }",
+            "mod x; import fixture {macro choose} rec(loop) fn go(value: .) -> . { value.>choose((.x. { x1 }, .x. { recur go(x1) })) }",
         );
         assert_one_optional_and_one_required_deferred_tail(desugared_fn_body(&module, "go"));
     }
@@ -8834,8 +8786,7 @@ mod tests {
     #[test]
     fn rec_cont_call_in_match_clause_lowers() {
         d(
-            "module x; import fixture(macro match); rec(loop) fn go(v: I32 | String) -> I32 { \
-             match(v, (.(n: I32) { n }, .(_s: String) { add(1, recur(cont) go(__left__[I32][ String]( 0))) })) }",
+            "mod x; import fixture {macro match} rec(loop) fn go(v: I32 | String) -> I32 { match(v, (.(n: I32) { n }, .(_s: String) { add(1, recur(cont) go(__left__[I32][ String]( 0))) })) }",
         );
     }
 
@@ -8859,8 +8810,7 @@ mod tests {
             ),
         ] {
             let module = d(&format!(
-                "module x; import fixture(macro choose); rec(loop) fn go(value: (I32 & I32) & I32) -> I32 {{ \
-                 choose(.({pattern}) {{ recur go({recur}) }}) }}"
+                "mod x; import fixture {{macro choose}} rec(loop) fn go(value: (I32 & I32) & I32) -> I32 {{ choose(.({pattern}) {{ recur go({recur}) }}) }}"
             ));
             let mut bound = std::collections::HashSet::new();
             visit_desugared_expr(desugared_fn_body(&module, "go"), &mut |expr| match expr {
@@ -8884,10 +8834,7 @@ mod tests {
     #[test]
     fn deferred_tail_parameter_patterns_do_not_permit_escaping_recursion() {
         let module = parsed(
-            "module x; import fixture(macro choose); rec(loop) fn go(value: I32 & I32) -> I32 { \
-             choose(.((left: I32, right: I32)) { \
-               .() { recur go((left, right)) } \
-             }) }",
+            "mod x; import fixture {macro choose} rec(loop) fn go(value: I32 & I32) -> I32 { choose(.((left: I32, right: I32)) { .() { recur go((left, right)) } }) }",
         );
         let error = desugar_module(module).expect_err("nested closure cannot capture recursion");
         assert!(
@@ -8901,7 +8848,7 @@ mod tests {
 
     #[test]
     fn non_tail_deferred_lambdas_share_one_capture_safe_continuation_shell() {
-        let module = d("module x; import fixture(macro match);
+        let module = d("mod x; import fixture {macro match}
             rec(loop) fn go(outer: I32, step: Many) -> I32 {
               let selected = match(step, (
                 .(outer: Zero) { zero() },
@@ -9006,7 +8953,7 @@ mod tests {
 
     #[test]
     fn non_tail_deferred_ufcs_lambdas_use_the_same_function_shell() {
-        let module = d("module x; import fixture(macro match);
+        let module = d("mod x; import fixture {macro match}
             rec(loop) fn go(outer: I32, step: Left | Right) -> I32 {
               let selected = step.>match((
                 .(_left: Left) { 0 },
@@ -9082,7 +9029,7 @@ mod tests {
             downstream = format!("after({downstream})");
         }
         format!(
-            "module x; import fixture(macro hold); rec(loop) fn go(value: I32) -> I32 {{ {bindings} {downstream} }}"
+            "mod x; import fixture {{macro hold}} rec(loop) fn go(value: I32) -> I32 {{ {bindings} {downstream} }}"
         )
     }
 
@@ -9205,7 +9152,7 @@ mod tests {
             ),
         ] {
             let module = d(&format!(
-                "module x; import fixture(macro hold); rec(loop) fn go(value: .) -> . {{ {body} }}"
+                "mod x; import fixture {{macro hold}} rec(loop) fn go(value: .) -> . {{ {body} }}"
             ));
             let mut pending_bindings = 0;
             let mut copied_shells = 0;
@@ -9299,8 +9246,7 @@ mod tests {
     #[test]
     fn quoted_nested_call_retains_source_order_and_one_recursive_computation() {
         let module = d(
-            "module x; import fixture(macro hold); rec(loop) fn go(value: .) -> . { \
-             hold(take(supply(), recur(cont) go(value))) }",
+            "mod x; import fixture {macro hold} rec(loop) fn go(value: .) -> . { hold(take(supply(), recur(cont) go(value))) }",
         );
         let source = quoted_source_with_one_operand(desugared_fn_body(&module, "go"), "supply");
         let Expr::UserMacro { stages, .. } = source else {
@@ -9331,8 +9277,7 @@ mod tests {
     #[test]
     fn quoted_call_stages_keep_type_only_and_empty_value_groups_distinct() {
         let module = d(
-            "module x; import fixture(macro hold); rec(loop) fn go(value: .) -> . { \
-             hold(take[.](empty(), type_only[.], recur(cont) go(value))) }",
+            "mod x; import fixture {macro hold} rec(loop) fn go(value: .) -> . { hold(take[.](empty(), type_only[.], recur(cont) go(value))) }",
         );
         let source = quoted_source_with_one_operand(desugared_fn_body(&module, "go"), "empty");
         let Expr::UserMacro { stages, .. } = source else {
@@ -9373,7 +9318,7 @@ mod tests {
 
     #[test]
     fn deferred_tail_lifted_flow_respects_authored_return_information() {
-        let module = d("module x; import fixture(macro hold);
+        let module = d("mod x; import fixture {macro hold}
              rec(loop) fn go(value: .) -> . {
                hold((
                  .(_unit: .) { recur go(value) },
@@ -9538,7 +9483,7 @@ mod tests {
 
     #[test]
     fn rec_order_synthesized_value_preserves_the_written_partial_annotation() {
-        let source = "module x;
+        let source = "mod x;
             host type I32;
             host fn loop[S][R](step: S -> (S | R), state: S) -> R;
             type { Box[A] : A { pub mk; pub get; }; };
@@ -9582,8 +9527,7 @@ mod tests {
     #[test]
     fn rec_cps_macro_ufcs_keeps_non_inert_receiver_quoted() {
         let module = d(
-            "module x; import fixture(macro hold); rec(loop) fn go(value: .) -> . { \
-             effect(()).>hold(recur(cont) go(())) }",
+            "mod x; import fixture {macro hold} rec(loop) fn go(value: .) -> . { effect(()).>hold(recur(cont) go(())) }",
         );
         let source = quoted_source_with_one_operand(desugared_fn_body(&module, "go"), "effect");
         let Expr::UserMacro { name, stages, .. } = source else {
@@ -9608,8 +9552,7 @@ mod tests {
     #[test]
     fn rec_cps_macro_ufcs_keeps_non_inert_written_arg_quoted() {
         let module = d(
-            "module x; import fixture(macro hold); rec(loop) fn go(value: .) -> . { \
-             value.>hold(effect(()), recur(cont) go(())) }",
+            "mod x; import fixture {macro hold} rec(loop) fn go(value: .) -> . { value.>hold(effect(()), recur(cont) go(())) }",
         );
         let source = quoted_source_with_one_operand(desugared_fn_body(&module, "go"), "effect");
         let Expr::UserMacro { name, stages, .. } = source else {
@@ -9642,8 +9585,7 @@ mod tests {
     #[test]
     fn rec_call_in_match_scrutinee_is_rejected() {
         let m = parse(
-            "module x; import fixture(macro match); rec(loop) fn go(v: I32 | String) -> I32 { \
-             match(recur go(__left__[I32][ String]( 0)), (.(n: I32) { n }, .(_s: String) { 0 })) }",
+            "mod x; import fixture {macro match} rec(loop) fn go(v: I32 | String) -> I32 { match(recur go(__left__[I32][ String]( 0)), (.(n: I32) { n }, .(_s: String) { 0 })) }",
         )
         .expect("parse");
         let err = desugar_module(m).expect_err("expected non-tail rejection");
@@ -9657,8 +9599,7 @@ mod tests {
     #[test]
     fn derive_ufcs_lowers_to_macro_stages() {
         let m = d(
-            "module x; import fixture(macro derive); fn f() -> Monad[Maybe] { \
-             (maybe_monad.>derive)[Monad[Maybe]] }",
+            "mod x; import fixture {macro derive} fn f() -> Monad[Maybe] { (maybe_monad.>derive)[Monad[Maybe]] }",
         );
         let Expr::UserMacro { name, stages, .. } = desugared_fn_body(&m, "f") else {
             panic!("expected derive macro stages")
@@ -9686,7 +9627,7 @@ mod tests {
         // catch-all `.()` clause exercises the smallest surface
         // shape that triggers the injection.
         let m =
-            d("module x; import fixture(macro match); fn f[A](v: A) -> . { match(v, .() { () }) }");
+            d("mod x; import fixture {macro match} fn f[A](v: A) -> . { match(v, .() { () }) }");
         assert!(
             m.imports
                 .iter()
@@ -9698,7 +9639,7 @@ mod tests {
     fn lift_triggers_intrinsics_injection() {
         // `into` / `onto` may elaborate to identity, but the
         // injection is conservative (an unused import is harmless).
-        let m = d("module x; import fixture(macro into); fn f() -> . { into(()) }");
+        let m = d("mod x; import fixture {macro into} fn f() -> . { into(()) }");
         assert!(
             m.imports
                 .iter()
@@ -9709,7 +9650,7 @@ mod tests {
     #[test]
     fn tuple_value_triggers_intrinsics_injection() {
         // Tuple lowering emits the intrinsic pair constructor.
-        let m = d("module x; fn f() -> . & . { ((), ()) }");
+        let m = d("mod x; fn f() -> . & . { ((), ()) }");
         assert!(
             m.imports
                 .iter()
@@ -9720,7 +9661,7 @@ mod tests {
     #[test]
     fn nominal_constructor_does_not_trigger_intrinsics_injection() {
         // An ordinary nominal constructor call is not an intrinsic.
-        let m = d("module x; type { Foo: . { mk; get; }; }; fn f() -> Foo { Foo.mk(()) }");
+        let m = d("mod x; type { Foo: . { mk; get; }; }; fn f() -> Foo { Foo.mk(()) }");
         assert!(
             !m.imports
                 .iter()

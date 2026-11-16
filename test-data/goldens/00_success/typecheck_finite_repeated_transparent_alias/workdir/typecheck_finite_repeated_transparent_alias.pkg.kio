@@ -1,4 +1,4 @@
-package typecheck_finite_repeated_transparent_alias;
+pkg typecheck_finite_repeated_transparent_alias;
 
 build {
   cache "out/.kio-cache/";

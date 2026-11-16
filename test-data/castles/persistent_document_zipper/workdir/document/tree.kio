@@ -1,12 +1,12 @@
-module document/tree;
+mod document/tree;
 
 import list/core as lists;
 import list/list as traversal;
-import macros/match(macro match);
-import testapi(I32, String);
+import macros/match { macro match }
+import testapi { type I32; type String }
 import testapi/arith as arith;
 import testapi/io as io;
-import testapi/iter(loop);
+import testapi/iter { fn loop }
 import testapi/text as text;
 
 pub rec type { Node: String & lists.List[Node] { mk; get } }

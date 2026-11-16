@@ -1,4 +1,4 @@
-package float_literal_scale_cancellation;
+pkg float_literal_scale_cancellation;
 
 build {
   target js {

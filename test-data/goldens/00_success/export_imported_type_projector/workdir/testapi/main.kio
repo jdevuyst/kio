@@ -1,6 +1,6 @@
-module testapi/main;
+mod testapi/main;
 
-import testapi(String);
-import testapi/opt(Opt, show, some);
+import testapi { type String }
+import testapi/opt { type Opt; fn show; fn some }
 
 pub fn main() { show(some("hi").>Opt.get) }

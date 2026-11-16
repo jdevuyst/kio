@@ -1,4 +1,4 @@
-module fmt_monadic_label_receiver;
+mod fmt_monadic_label_receiver;
 
 fn subject() {
   do(record { Field.mk(value) }) { final_value }

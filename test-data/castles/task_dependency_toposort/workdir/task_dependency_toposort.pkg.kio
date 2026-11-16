@@ -1,4 +1,4 @@
-package task_dependency_toposort;
+pkg task_dependency_toposort;
 
 build {
   cache "out/.kio-cache/";

@@ -1,4 +1,4 @@
-module main;
+mod main;
 
 // Per specs/formal/elaboration.md § 6 E-Let: "A polymorphic RHS
 // yields a polymorphic local only when the RHS itself synthesizes

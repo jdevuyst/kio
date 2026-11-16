@@ -1,6 +1,6 @@
-module build_reassoc_function_slots/main;
+mod build_reassoc_function_slots/main;
 
-import build_reassoc_function_slots(I32);
+import build_reassoc_function_slots { type I32 }
 
 // A product of two functions whose parameters and results are themselves
 // products: one reassociates three values to the right, and the other restores

@@ -6,10 +6,10 @@ demo:
   pub fn empty
   pub op _ + _
   pub(demo) op _ ++ _
-  pub varop [* *]
-  pub(demo) varop [! !]
+  pub op_var [* *]
+  pub(demo) op_var [! !]
   op _ - _
-  varop [% %]
+  op_var [% %]
 (… :ls -v for full signatures)
 scope of demo:
   declared:
@@ -17,11 +17,11 @@ scope of demo:
     pub fn empty
     pub op _ + _
     pub(demo) op _ ++ _
-    pub varop [* *]
-    pub(demo) varop [! !]
+    pub op_var [* *]
+    pub(demo) op_var [! !]
     op _ - _
-    varop [% %]
-  operators: op _ + _, op _ ++ _, varop [* *], varop [! !], op _ - _, varop [% %]
+    op_var [% %]
+  operators: op _ + _, op _ ++ _, op_var [* *], op_var [! !], op _ - _, op_var [% %]
   intrinsics: not in scope
   comptime: not in scope
 (… :ls -v for full signatures)

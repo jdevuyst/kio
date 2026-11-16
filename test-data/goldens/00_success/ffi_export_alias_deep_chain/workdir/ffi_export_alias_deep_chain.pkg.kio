@@ -1,4 +1,4 @@
-package ffi_export_alias_deep_chain;
+pkg ffi_export_alias_deep_chain;
 
 build {
   cache "out/.kio-cache/";

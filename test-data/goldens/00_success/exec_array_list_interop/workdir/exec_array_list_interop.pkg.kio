@@ -1,4 +1,4 @@
-package exec_array_list_interop;
+pkg exec_array_list_interop;
 
 build {
   cache "out/.kio-cache/";

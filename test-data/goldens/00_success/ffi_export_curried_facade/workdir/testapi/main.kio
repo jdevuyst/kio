@@ -1,6 +1,6 @@
-module testapi/main;
+mod testapi/main;
 
-import testapi(I32, Str);
+import testapi { type I32; type Str }
 
 pub fn pick(a: Str)(b: Str) -> Str { a }
 

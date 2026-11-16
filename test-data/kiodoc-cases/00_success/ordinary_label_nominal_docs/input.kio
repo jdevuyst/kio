@@ -3,7 +3,7 @@
 /// The ordinary nominal: [`@signature Foo`].
 ///
 /// [`@source Bar`]
-module pkg;
+mod pkg;
 
 type { Foo: .; };
 pub type Row = { Bar: .; };

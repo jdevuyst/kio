@@ -1,12 +1,12 @@
-module testapi/main;
+mod testapi/main;
 
 import list/core as lists;
-import macros/match(macro match);
+import macros/match { macro match }
 import signal/codec as codec;
 import signal/decode as decode;
 import signal/input as input;
 import signal/report as report;
-import testapi(I32, String);
+import testapi { type I32; type String }
 import testapi/io as io;
 
 pub fn main() {

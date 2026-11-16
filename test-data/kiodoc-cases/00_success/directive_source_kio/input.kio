@@ -4,7 +4,7 @@
 /// Source for type alias: [`@source Count`].
 /// Source for a compact type: [`@source Color`].
 /// Source for op: [`@source add`].
-module src/main;
+mod src/main;
 
 /// Computes a result.
 ///

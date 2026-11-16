@@ -1,7 +1,7 @@
 ================================================================================
 ordinary default identifiers in imports and value declarations
 ================================================================================
-import types(default as ordinary);
+import types {fn default as ordinary}
 fn default(default: .) { default }
 --------------------------------------------------------------------------------
 
@@ -10,13 +10,13 @@ fn default(default: .) { default }
     (keyword_import)
     (module_path
       (entity_name_module))
-    (bracket_lparen)
+    (bracket_lbrace)
     (import_named_item
+      (keyword_fn)
       (identifier)
       (keyword_declaration)
       (identifier))
-    (bracket_rparen)
-    (separator_semicolon))
+    (bracket_rbrace))
   (function_definition
     (fn_decl_head
       (keyword_fn)

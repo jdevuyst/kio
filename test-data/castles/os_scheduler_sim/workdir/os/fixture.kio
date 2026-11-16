@@ -4,11 +4,11 @@
 /// they name nine distinct pages for four frames, every process revisits a
 /// page it touched earlier, and the arrivals are staggered so the ready queue
 /// fills while the first arrivals are away servicing their faults.
-module os/fixture;
+mod os/fixture;
 
 import os/proc as proc;
-import testapi(Array, I32);
-import testapi/array(array_make_empty, array_push);
+import testapi { type Array; type I32 }
+import testapi/array { fn array_make_empty; fn array_push }
 
 pub fn arrivals() -> Array[I32] {
   let a = array_make_empty[I32](());

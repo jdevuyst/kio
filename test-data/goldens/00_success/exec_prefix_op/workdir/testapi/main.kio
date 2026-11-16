@@ -1,9 +1,9 @@
-module testapi/main;
+mod testapi/main;
 
-import testapi(I32, String);
-import testapi/arith(add_i32, sub_i32);
-import testapi/fmt(i32_to_string);
-import testapi/io(print);
+import testapi { type I32; type String }
+import testapi/arith { fn add_i32; fn sub_i32 }
+import testapi/fmt { fn i32_to_string }
+import testapi/io { fn print }
 
 // Unary negation as a user-defined prefix operator. `op - __ { impl neg; };`
 // registers `-` in the prefix keyspace (see `specs/language.md` §

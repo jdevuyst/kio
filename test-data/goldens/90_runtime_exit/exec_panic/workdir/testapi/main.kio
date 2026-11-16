@@ -1,9 +1,9 @@
-module testapi/main;
+mod testapi/main;
 
 import __intrinsics__;
 
-import testapi(I32, String);
-import testapi/io(eprint, exit);
+import testapi { type I32; type String }
+import testapi/io { fn eprint; fn exit }
 
 fn panic[A](msg: String) -> A { let warned = eprint(msg); __absurd__[A](exit(90[I32])) }
 

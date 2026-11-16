@@ -1,4 +1,4 @@
-package typecheck_user_macro_target_placeholder;
+pkg typecheck_user_macro_target_placeholder;
 
 build {
   cache "out/.kio-cache/";

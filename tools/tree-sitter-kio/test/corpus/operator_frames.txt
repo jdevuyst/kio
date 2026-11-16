@@ -1,7 +1,7 @@
 ================================================================================
 structural closed_operator_results_accept_native_suffixes
 ================================================================================
-module m; import ops(op <| _ |>, op _ < _ >); fn run() { <|x|>.>keep; row<key>(arg) }
+mod m; import ops {op <| _ |>; op _ < _ >} fn run() { <|x|>.>keep; row<key>(arg) }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -14,21 +14,20 @@ module m; import ops(op <| _ |>, op _ < _ >); fn run() { <|x|>.>keep; row<key>(a
     (keyword_import)
     (module_path
       (entity_name_module))
-    (bracket_lparen)
+    (bracket_lbrace)
     (import_operator_item
       (keyword_op)
       (operator_run)
       (slot)
       (operator_run))
-    (separator_comma)
+    (separator_semicolon)
     (import_operator_item
       (keyword_op)
       (slot)
       (operator_run)
       (slot)
       (operator_run))
-    (bracket_rparen)
-    (separator_semicolon))
+    (bracket_rbrace))
   (function_definition
     (fn_decl_head
       (keyword_fn)
@@ -69,7 +68,7 @@ module m; import ops(op <| _ |>, op _ < _ >); fn run() { <|x|>.>keep; row<key>(a
 ================================================================================
 structural structural_compact_frames_and_minus
 ================================================================================
-module m; import ops(varop [], varop [* *], varop [** **]); fn run() { [*[**]*]; [****]; []-1; [-1]; [*(-1)*] }
+mod m; import ops {op_var []; op_var [* *]; op_var [** **]} fn run() { [*[**]*]; [****]; []-1; [-1]; [*(-1)*] }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -82,21 +81,13 @@ module m; import ops(varop [], varop [* *], varop [** **]); fn run() { [*[**]*];
     (keyword_import)
     (module_path
       (entity_name_module))
-    (bracket_lparen)
+    (bracket_lbrace)
     (import_operator_item
       (keyword_varop)
       (variadic_head
         (bracket_lbracket)
         (bracket_rbracket)))
-    (separator_comma)
-    (import_operator_item
-      (keyword_varop)
-      (variadic_head
-        (bracket_lbracket)
-        (operator_run)
-        (operator_run)
-        (bracket_rbracket)))
-    (separator_comma)
+    (separator_semicolon)
     (import_operator_item
       (keyword_varop)
       (variadic_head
@@ -104,8 +95,15 @@ module m; import ops(varop [], varop [* *], varop [** **]); fn run() { [*[**]*];
         (operator_run)
         (operator_run)
         (bracket_rbracket)))
-    (bracket_rparen)
-    (separator_semicolon))
+    (separator_semicolon)
+    (import_operator_item
+      (keyword_varop)
+      (variadic_head
+        (bracket_lbracket)
+        (operator_run)
+        (operator_run)
+        (bracket_rbracket)))
+    (bracket_rbrace))
   (function_definition
     (fn_decl_head
       (keyword_fn)
@@ -177,8 +175,8 @@ module m; import ops(varop [], varop [* *], varop [** **]); fn run() { [*[**]*];
 ================================================================================
 single symbol words retain token quotation
 ================================================================================
-module m;
-import syntax(op _ (=) _, op (?) _ as (!) _);
+mod m;
+import syntax {op _ (=) _; op (?) _ as (!) _}
 op _ (=) _ { impl equality }
 --------------------------------------------------------------------------------
 
@@ -192,7 +190,7 @@ op _ (=) _ { impl equality }
     (keyword_import)
     (module_path
       (entity_name_module))
-    (bracket_lparen)
+    (bracket_lbrace)
     (import_operator_item
       (keyword_op)
       (slot)
@@ -201,7 +199,7 @@ op _ (=) _ { impl equality }
         (operator_builtin)
         (bracket_rparen))
       (slot))
-    (separator_comma)
+    (separator_semicolon)
     (import_operator_item
       (keyword_op)
       (import_pattern_group
@@ -215,8 +213,7 @@ op _ (=) _ { impl equality }
         (operator_builtin)
         (bracket_rparen))
       (slot))
-    (bracket_rparen)
-    (separator_semicolon))
+    (bracket_rbrace))
   (op_decl
     (keyword_op)
     (slot)
@@ -235,10 +232,10 @@ op _ (=) _ { impl equality }
 ================================================================================
 macro operator declarations, selective aliases, and incomplete recovery
 ================================================================================
-module m;
-import ops(op macro _ && .__ as _ %% .__);
-op macro _ && .__ { impl controls.and; }
-op macro _ || .
+mod m;
+import ops {op_macro _ && .__ as _ %% .__}
+op_macro _ && .__ { impl controls.and; }
+op_macro _ || .
 fn after(value: .) -> . { value }
 --------------------------------------------------------------------------------
 
@@ -252,10 +249,9 @@ fn after(value: .) -> . { value }
     (keyword_import)
     (module_path
       (entity_name_module))
-    (bracket_lparen)
+    (bracket_lbrace)
     (import_operator_item
-      (keyword_op)
-      (keyword_declaration)
+      (keyword_op_macro)
       (slot)
       (operator_run)
       (delayed_slot
@@ -267,11 +263,9 @@ fn after(value: .) -> . { value }
       (delayed_slot
         (separator_dot)
         (slot)))
-    (bracket_rparen)
-    (separator_semicolon))
+    (bracket_rbrace))
   (op_decl
-    (keyword_op)
-    (keyword_declaration)
+    (keyword_op_macro)
     (slot)
     (operator_run)
     (delayed_slot
@@ -287,8 +281,7 @@ fn after(value: .) -> . { value }
       (separator_semicolon)
       (bracket_rbrace)))
   (incomplete_op_decl
-    (keyword_op)
-    (keyword_declaration)
+    (keyword_op_macro)
     (slot)
     (operator_run)
     (separator_dot))
@@ -316,9 +309,9 @@ fn after(value: .) -> . { value }
 ================================================================================
 delayed slots preserve extent and trivia
 ================================================================================
-module m;
-import ops(op macro ._ ? . __ : .___ as ._ ?? . __ :: .___);
-op macro ._ ? . __ : .___ { impl controls.choose; }
+mod m;
+import ops {op_macro ._ ? . __ : .___ as ._ ?? . __ :: .___}
+op_macro ._ ? . __ : .___ { impl controls.choose; }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -331,10 +324,9 @@ op macro ._ ? . __ : .___ { impl controls.choose; }
     (keyword_import)
     (module_path
       (entity_name_module))
-    (bracket_lparen)
+    (bracket_lbrace)
     (import_operator_item
-      (keyword_op)
-      (keyword_declaration)
+      (keyword_op_macro)
       (delayed_slot
         (separator_dot)
         (slot))
@@ -358,11 +350,9 @@ op macro ._ ? . __ : .___ { impl controls.choose; }
       (delayed_slot
         (separator_dot)
         (slot)))
-    (bracket_rparen)
-    (separator_semicolon))
+    (bracket_rbrace))
   (op_decl
-    (keyword_op)
-    (keyword_declaration)
+    (keyword_op_macro)
     (delayed_slot
       (separator_dot)
       (slot))

@@ -1,4 +1,4 @@
-package exec_host_fn_value_product_slot;
+pkg exec_host_fn_value_product_slot;
 
 build {
   cache "out/.kio-cache/";

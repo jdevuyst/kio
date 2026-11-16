@@ -1,7 +1,7 @@
-module testapi/main;
+mod testapi/main;
 
-import helpers(macro block, macro let, macro recur);
-import testapi/io(print);
+import helpers { macro block; macro let; macro recur }
+import testapi/io { fn print }
 
 fn check(value: .) {
   let(value) { () };

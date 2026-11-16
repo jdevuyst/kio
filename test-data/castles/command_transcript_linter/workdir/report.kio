@@ -1,9 +1,9 @@
-module report;
+mod report;
 
-import macros/control(macro if);
+import macros/control { macro if }
 import rules as rules;
 import scanner as scan;
-import testapi(Bool, String);
+import testapi { type Bool; type String }
 import testapi/fmt as fmt;
 import testapi/text as text;
 

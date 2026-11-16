@@ -1,4 +1,4 @@
-package exec_functor_dictionary;
+pkg exec_functor_dictionary;
 
 build {
   cache "out/.kio-cache/";

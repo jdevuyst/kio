@@ -1,38 +1,38 @@
-module testapi/main;
+mod testapi/main;
 
-import library/core(List, head, nil, singleton, tail);
-import library/list(
-, append
-, at
-, drop
-, elem
-, filter
-, find
-, foldl
-, foldr
-, index_of
-, iterate
-, last
-, length
-, map
-, null
-, op _ ++ _
-, op _ +: __
-, op _ <| _ |>
-, op _ |> _
-, replicate
-, reverse
-, take
-, to_string
-, varop [] as [* *]
-);
-import library/macros/match(macro match);
-import library/macros/spine_macros(macro widen_sum);
-import testapi(Bool, I32, String);
-import testapi/arith(add_i32, eq_i32, leq_i32, lt_i32, mul_i32, sub_i32);
-import testapi/fmt(bool_to_string, int_to_string);
-import testapi/io(print);
-import testapi/text(string_concat);
+import library/core { type List; fn head; fn nil; fn singleton; fn tail }
+import library/list {
+  fn append;
+  fn at;
+  fn drop;
+  fn elem;
+  fn filter;
+  fn find;
+  fn foldl;
+  fn foldr;
+  fn index_of;
+  fn iterate;
+  fn last;
+  fn length;
+  fn map;
+  fn null;
+  fn replicate;
+  fn reverse;
+  fn take;
+  fn to_string;
+  op _ ++ _;
+  op _ +: __;
+  op _ <| _ |>;
+  op _ |> _;
+  op_var [] as [* *]
+}
+import library/macros/match { macro match }
+import library/macros/spine_macros { macro widen_sum }
+import testapi { type Bool; type I32; type String }
+import testapi/arith { fn add_i32; fn eq_i32; fn leq_i32; fn lt_i32; fn mul_i32; fn sub_i32 }
+import testapi/fmt { fn bool_to_string; fn int_to_string }
+import testapi/io { fn print }
+import testapi/text { fn string_concat }
 
 fn show(label: String, value: String) {
   print(value.>string_concat("\n").>>string_concat(" = ").>>string_concat(label))

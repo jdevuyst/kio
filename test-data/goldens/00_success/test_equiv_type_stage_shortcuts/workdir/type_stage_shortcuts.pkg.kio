@@ -1,4 +1,4 @@
-package type_stage_shortcuts;
+pkg type_stage_shortcuts;
 
 build {
   cache "out/.kio-cache/";

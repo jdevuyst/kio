@@ -1,4 +1,4 @@
-module demo;
+mod demo;
 
 pub fn helper() { () }
 

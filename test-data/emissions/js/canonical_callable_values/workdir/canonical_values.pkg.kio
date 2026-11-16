@@ -1,4 +1,4 @@
-package canonical_values;
+pkg canonical_values;
 
 build {
   target js {

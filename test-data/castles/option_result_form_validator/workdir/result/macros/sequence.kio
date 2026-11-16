@@ -1,5 +1,5 @@
 /// Sequencing through an explicitly supplied bind function.
-module result/macros/sequence;
+mod result/macros/sequence;
 
 import __comptime__;
 

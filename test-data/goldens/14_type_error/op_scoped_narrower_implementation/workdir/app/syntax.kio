@@ -1,4 +1,4 @@
-module app/syntax;
+mod app/syntax;
 
 pub(app/syntax) fn add(left: ., _right: .) { left }
 

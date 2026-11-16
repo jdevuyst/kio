@@ -1,12 +1,12 @@
-module testapi/main;
+mod testapi/main;
 
-import macros/row_macros(macro record, macro record_, macro select, macro with);
-import testapi(I32, String);
-import testapi/fmt(int_to_string);
-import testapi/io(print);
+import macros/row_macros { macro record; macro record_; macro select; macro with }
+import testapi { type I32; type String }
+import testapi/fmt { fn int_to_string }
+import testapi/io { fn print }
 import testapi/labels as ql;
-import testapi/labels(Tag);
-import testapi/text(string_concat);
+import testapi/labels { type Tag }
+import testapi/text { fn string_concat }
 
 type { Foo: I32 { mk; get }; Bar: String { mk; get }; Ready: . { mk; get } }
 

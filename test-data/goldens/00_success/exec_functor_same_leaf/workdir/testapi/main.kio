@@ -1,8 +1,8 @@
-module testapi/main;
+mod testapi/main;
 
-import testapi/a(run_a);
-import testapi/b(run_b);
-import testapi/io(print);
-import testapi/text(string_concat);
+import testapi/a { fn run_a }
+import testapi/b { fn run_b }
+import testapi/io { fn print }
+import testapi/text { fn string_concat }
 
 pub fn main() { print(string_concat(run_a(), run_b())) }

@@ -1,4 +1,4 @@
-package tpe;
+pkg tpe;
 
 build {
   cache "out/.kio-cache/";

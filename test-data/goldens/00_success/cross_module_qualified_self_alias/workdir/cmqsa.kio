@@ -1,4 +1,4 @@
-module cmqsa;
+mod cmqsa;
 
 // The root declares the real type `A` and a host fn over it.
 host type A role(str);

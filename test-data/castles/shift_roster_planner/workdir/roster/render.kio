@@ -1,31 +1,31 @@
-module roster/render;
+mod roster/render;
 
-import macros/control(macro if);
-import macros/row_macros(macro select);
+import macros/control { macro if }
+import macros/row_macros { macro select }
 import roster/scenario as scenario;
 import roster/scoring as scoring;
-import roster/types(
-, Day
-, Demand
-, Fairness_penalty
-, Preference
-, Preference_penalty
-, Rest_conflicts
-, Same_day_conflicts
-, Scorecard
-, Shift
-, Skill
-, Skill_shortfalls
-, Slot
-, Total_score
-, Worker
-);
-import testapi(Bool, I32, String);
-import testapi/arith(add_i32, lt_i32);
-import testapi/fmt(bool_to_string, int_to_string);
-import testapi/io(print);
-import testapi/iter(loop);
-import testapi/text(string_concat);
+import roster/types {
+  type Day;
+  type Demand;
+  type Fairness_penalty;
+  type Preference;
+  type Preference_penalty;
+  type Rest_conflicts;
+  type Same_day_conflicts;
+  type Scorecard;
+  type Shift;
+  type Skill;
+  type Skill_shortfalls;
+  type Slot;
+  type Total_score;
+  type Worker
+}
+import testapi { type Bool; type I32; type String }
+import testapi/arith { fn add_i32; fn lt_i32 }
+import testapi/fmt { fn bool_to_string; fn int_to_string }
+import testapi/io { fn print }
+import testapi/iter { fn loop }
+import testapi/text { fn string_concat }
 
 fn cat3(a: String, b: String, c: String) -> String { string_concat(a, string_concat(b, c)) }
 

@@ -1,4 +1,4 @@
-package egraph_equality_saturation;
+pkg egraph_equality_saturation;
 
 build {
   cache "out/.kio-cache/";

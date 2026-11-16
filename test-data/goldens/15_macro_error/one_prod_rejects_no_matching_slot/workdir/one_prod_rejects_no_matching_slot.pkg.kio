@@ -1,4 +1,4 @@
-package one_prod_rejects_no_matching_slot;
+pkg one_prod_rejects_no_matching_slot;
 
 build {
   cache "out/.kio-cache/";

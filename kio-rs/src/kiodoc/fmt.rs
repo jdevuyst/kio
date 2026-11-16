@@ -494,7 +494,7 @@ mod tests {
 
     #[test]
     fn formats_harnessed_module_snippet() {
-        let source = "```kio {harness=main placeholder=\"__INSERT__\"}\nbridge {\n  kiodoc;\n}\n\nmodule kiodoc;\n\nhost type S role(str);\nhost fn print(p0: S) -> .;\n\n__INSERT__\n```\n\n```kio {@main}\npub fn greet()->.{print(\"hi\\n\")}\n```\n";
+        let source = "```kio {harness=main placeholder=\"__INSERT__\"}\nbridge {\n  kiodoc;\n}\n\nmod kiodoc;\n\nhost type S role(str);\nhost fn print(p0: S) -> .;\n\n__INSERT__\n```\n\n```kio {@main}\npub fn greet()->.{print(\"hi\\n\")}\n```\n";
         let out = format_md(source).expect("format document");
         assert!(out.contains("pub fn greet() { print(\"hi\\n\") }"));
     }
@@ -502,14 +502,14 @@ mod tests {
     #[test]
     fn rejects_harnessed_import_loss() {
         let source = r#"<!--kio {harness=consumer file placeholder="__SNIPPET__"}
-module consumer;
+mod consumer;
 
 __SNIPPET__
 -->
 
 ```kio {@consumer}
-import names(Name);
-import host(String);
+import names { type Name }
+import host { type String }
 
 fn show(value: Name) -> String { value }
 ```
@@ -525,20 +525,20 @@ fn show(value: Name) -> String { value }
     #[test]
     fn formats_canonical_import_boundaries() {
         let source = r#"<!--kio {harness=consumer file placeholder="__SNIPPET__"}
-module consumer;
+mod consumer;
 
 __SNIPPET__
 -->
 
 ```kio {@consumer}
-import host(String);
-import names(Name);
+import host { type String }
+import names { type Name }
 
 fn show(value: Name)->String{value}
 ```
 "#;
         let out = format_md(source).expect("format sorted imports and their body");
-        assert!(out.contains("import host(String);\nimport names(Name);"));
+        assert!(out.contains("import host { type String }\nimport names { type Name }"));
         assert!(out.contains("fn show(value: Name) -> String { value }"));
         assert_eq!(format_md(&out).expect("format again"), out);
     }
@@ -546,14 +546,14 @@ fn show(value: Name)->String{value}
     #[test]
     fn formats_accumulating_module_snippets() {
         let source = r#"<!--kio {harness=consumer placeholder="__SNIPPET__" accumulate}
-module consumer;
+mod consumer;
 
 __SNIPPET__
 -->
 
 ```kio {@consumer}
-import host(String);
-import names(Name);
+import host { type String }
+import names { type Name }
 ```
 
 ```kio {@consumer}
@@ -561,14 +561,14 @@ fn show(value: Name)->String{value}
 ```
 "#;
         let out = format_md(source).expect("map each accumulating contribution");
-        assert!(out.contains("import host(String);\nimport names(Name);\n```"));
+        assert!(out.contains("import host { type String }\nimport names { type Name }\n```"));
         assert!(out.contains("fn show(value: Name) -> String { value }\n```"));
         assert_eq!(format_md(&out).expect("format again"), out);
     }
 
     #[test]
     fn formats_variant_package_snippet() {
-        let source = "```kio {variant=package}\npackage pkg;\nbridge{pkg;}\n```\n";
+        let source = "```kio {variant=package}\npkg pkg;\nbridge{pkg;}\n```\n";
         let out = format_md(source).expect("format document");
         assert!(out.contains("bridge {\n  pkg\n}"));
     }
@@ -585,12 +585,12 @@ fn show(value: Name)->String{value}
         for (name, source) in [
             (
                 "direct",
-                "```kio {}\nmodule sample;\nfn value(x: ()) { x }\n```\n",
+                "```kio {}\nmod sample;\nfn value(x: ()) { x }\n```\n",
             ),
             (
                 "harness",
                 r#"<!--kio {harness=sample placeholder="__INSERT__"}
-module sample;
+mod sample;
 __INSERT__
 -->
 ```kio {@sample}
@@ -601,7 +601,7 @@ fn value(x: ()) { x }
             (
                 "accumulate",
                 r#"<!--kio {harness=sample placeholder="__INSERT__" accumulate}
-module sample;
+mod sample;
 __INSERT__
 -->
 ```kio {@sample}
@@ -615,11 +615,11 @@ fn value(x: ()) { x }
             (
                 "file_backed",
                 r#"<!--kio {file}
-module broken;
+mod broken;
 fn value(x: ()) { x }
 -->
 <!--kio {harness=sample file placeholder="__INSERT__"}
-module sample;
+mod sample;
 __INSERT__
 -->
 ```kio {@sample}
@@ -630,7 +630,7 @@ fn ready( ) {()}
             (
                 "placeholder",
                 r#"```kio {placeholder={"INVALID":"()"}}
-module sample;
+mod sample;
 fn value(x: INVALID) { x }
 ```
 "#,
@@ -638,11 +638,11 @@ fn value(x: INVALID) { x }
             (
                 "variant",
                 r#"```kio {variant=signature}
-signature sample v(1);
+sig sample v(1);
 v(1) {
   nonbreaking {
     add {
-      module api {
+      mod api {
         pub fn value(x: ())
       }
     }
@@ -691,7 +691,7 @@ v(1) {
     #[test]
     fn marker_induced_parse_errors_do_not_blame_valid_virtual_source() {
         let source = r#"<!--kio {harness=sample placeholder="__INSERT__"}
-module sample;
+mod sample;
 fn __INSERT__() { () }
 -->
 ```kio {@sample}
@@ -745,12 +745,12 @@ value
 
     #[test]
     fn deletion_placeholders_preserve_visible_prelude_without_trailing_blanks() {
-        let source = "```kio {harness=main placeholder=\"__INSERT__\"}\nbridge {\n  kiodoc;\n}\n\nmodule kiodoc;\n\nhost type S role(str);\nhost fn print(p0: S) -> .;\n\n__INSERT__\n```\n\n```kio {@main placeholder={\"module kiodoc;\":\"\",\"import kiodoc(S, print);\":\"\"}}\nmodule kiodoc;\n\nimport kiodoc(S, print);\n\npub fn greet()->.{print(\"hi\\n\")}\n```\n";
+        let source = "```kio {harness=main placeholder=\"__INSERT__\"}\nbridge {\n  kiodoc;\n}\n\nmod kiodoc;\n\nhost type S role(str);\nhost fn print(p0: S) -> .;\n\n__INSERT__\n```\n\n```kio {@main placeholder={\"mod kiodoc;\":\"\",\"import kiodoc { type S; fn print }\":\"\"}}\nmod kiodoc;\n\nimport kiodoc { type S; fn print }\n\npub fn greet()->.{print(\"hi\\n\")}\n```\n";
         let out = format_md(source).expect("format document");
         let again = format_md(&out).expect("format document again");
         assert_eq!(again, out);
-        assert!(
-            out.contains("import kiodoc(S, print);\n\npub fn greet() { print(\"hi\\n\") }\n```")
-        );
+        assert!(out.contains(
+            "import kiodoc { type S; fn print }\n\npub fn greet() { print(\"hi\\n\") }\n```"
+        ));
     }
 }

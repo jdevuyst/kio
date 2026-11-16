@@ -1,4 +1,4 @@
-package retained_macro_closed_abi;
+pkg retained_macro_closed_abi;
 
 build {
   cache "out/.kio-cache/";

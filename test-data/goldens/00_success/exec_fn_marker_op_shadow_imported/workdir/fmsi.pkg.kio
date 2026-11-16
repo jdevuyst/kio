@@ -1,4 +1,4 @@
-package fmsi;
+pkg fmsi;
 
 build {
   cache "out/.kio-cache/";

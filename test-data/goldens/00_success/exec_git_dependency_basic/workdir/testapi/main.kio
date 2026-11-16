@@ -1,8 +1,8 @@
-module testapi/main;
+mod testapi/main;
 
-import greetlib/greet(first);
-import testapi(String);
-import testapi/io(print);
+import greetlib/greet { fn first }
+import testapi { type String }
+import testapi/io { fn print }
 
 // Thread a host `String` through the host-free `greetlib` dependency,
 // pulled in by a git `source { git; ref }` dependency in

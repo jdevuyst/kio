@@ -1,4 +1,4 @@
-package queue_backlog_sim;
+pkg queue_backlog_sim;
 
 build {
   cache "out/.kio-cache/";

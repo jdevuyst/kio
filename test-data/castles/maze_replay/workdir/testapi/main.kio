@@ -9,18 +9,28 @@
 /// prints a compact transcript summary — dimensions, the seed read from
 /// the fixture, a seed-derived checksum, the final position, the score,
 /// the ledger, and whether the player escaped.
-module testapi/main;
+mod testapi/main;
 
-import macros/control(macro if);
-import macros/match(macro match);
-import maze/replay(Ledger, bumps, escaped, moves, px, py, score, start_player, step);
-import maze/world(checksum, goal_x, goal_y);
-import testapi(Bool, I32, String);
-import testapi/arith(leq_i32, sub_i32);
-import testapi/fmt(int_to_string, string_to_int);
-import testapi/io(print, read_ascii_line);
-import testapi/iter(loop);
-import testapi/text(string_concat);
+import macros/control { macro if }
+import macros/match { macro match }
+import maze/replay {
+  type Ledger;
+  fn bumps;
+  fn escaped;
+  fn moves;
+  fn px;
+  fn py;
+  fn score;
+  fn start_player;
+  fn step
+}
+import maze/world { fn checksum; fn goal_x; fn goal_y }
+import testapi { type Bool; type I32; type String }
+import testapi/arith { fn leq_i32; fn sub_i32 }
+import testapi/fmt { fn int_to_string; fn string_to_int }
+import testapi/io { fn print; fn read_ascii_line }
+import testapi/iter { fn loop }
+import testapi/text { fn string_concat }
 
 fn cat(a: String, b: String) -> String { string_concat(a, b) }
 

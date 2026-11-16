@@ -58,7 +58,7 @@ fn named_entry_permutations_preserve_canonical_output() {
         Permutations {
             name: "build fields",
             kind: Kind::Package,
-            prefix: "package app; build { ".into(),
+            prefix: "pkg app; build { ".into(),
             entries: vec![
                 "cache \"cache-dir\";",
                 "docs { md \"docs\"; support \"first\"; support \"second\"; };",
@@ -69,14 +69,14 @@ fn named_entry_permutations_preserve_canonical_output() {
         Permutations {
             name: "package sections",
             kind: Kind::Package,
-            prefix: "package app; ".into(),
+            prefix: "pkg app; ".into(),
             entries: vec!["build { cache (); }", "bridge { app; }"],
             suffix: "",
         },
         Permutations {
             name: "dependency sections",
             kind: Kind::Dependency,
-            prefix: "dependency lib; ".into(),
+            prefix: "dep lib; ".into(),
             entries: vec![
                 "source { path \"lib.pkg.kio\"; }",
                 "rehost lib/io to app/io;",
@@ -87,17 +87,17 @@ fn named_entry_permutations_preserve_canonical_output() {
         Permutations {
             name: "macro fields",
             kind: Kind::Module,
-            prefix: "module app; macro make: . { ".into(),
+            prefix: "mod app; macro make: . { ".into(),
             entries: vec!["captures (first, second);", "impl(fills) run;"],
             suffix: " };",
         },
         Permutations {
             name: "signature version sections",
             kind: Kind::Signature,
-            prefix: "signature app v(1); v(1) { ".into(),
+            prefix: "sig app v(1); v(1) { ".into(),
             entries: vec![
-                "with { module api { pub rec type { A : . | A { pub mk; pub get; }; }; } };",
-                "breaking { add { module api { host type H; } } };",
+                "with { mod api { pub rec type { A : . | A { pub mk; pub get; }; }; } };",
+                "breaking { add { mod api { host type H; } } };",
                 "nonbreaking { add { api.A; } };",
             ],
             suffix: " }",
@@ -105,11 +105,11 @@ fn named_entry_permutations_preserve_canonical_output() {
         Permutations {
             name: "signature change buckets",
             kind: Kind::Signature,
-            prefix: "signature app v(2); v(1) { nonbreaking { add { module api { pub type Old = .; pub type Gone = .; } } } } v(2) { nonbreaking { ".into(),
+            prefix: "sig app v(2); v(1) { nonbreaking { add { mod api { pub type Old = .; pub type Gone = .; } } } } v(2) { nonbreaking { ".into(),
             entries: vec![
-                "add { module api { pub type Fresh = .; } };",
-                "modify { module api { pub type Old = !; } };",
-                "remove { module api { Gone; } };",
+                "add { mod api { pub type Fresh = .; } };",
+                "modify { mod api { pub type Old = !; } };",
+                "remove {  api.Gone;  };",
             ],
             suffix: " } }",
         },
@@ -117,14 +117,14 @@ fn named_entry_permutations_preserve_canonical_output() {
         Permutations {
             name: "source fields",
             kind: Kind::Dependency,
-            prefix: "dependency lib; source { ".into(),
+            prefix: "dep lib; source { ".into(),
             entries: vec!["git \"https://example.invalid/lib\";", "ref \"main\";"],
             suffix: " }",
         },
         Permutations {
             name: "newtype members",
             kind: Kind::Module,
-            prefix: "module app; type { Box : . { ".into(),
+            prefix: "mod app; type { Box : . { ".into(),
             entries: vec!["pub mk;", "get;"],
             suffix: " }; };",
         },
@@ -140,7 +140,7 @@ fn named_entry_permutations_preserve_canonical_output() {
         groups.push(Permutations {
             name: mode,
             kind: Kind::Module,
-            prefix: "module app; varop [* *] { ".into(),
+            prefix: "mod app; op_var [* *] { ".into(),
             entries: vec![primary, "finalize finish;"],
             suffix: " };",
         });
@@ -201,7 +201,7 @@ fn reordered_build_fields_preserve_repeated_entries_comments_and_spans() {
     let mut visited = 0;
     let expected = format_source(
         Kind::Package,
-        &format!("package app; build {{\n{}\n}}", entries.join("\n")),
+        &format!("pkg app; build {{\n{}\n}}", entries.join("\n")),
     );
     for order in orders(&entries) {
         if order.iter().position(|entry| entry.contains("target rust"))
@@ -211,7 +211,7 @@ fn reordered_build_fields_preserve_repeated_entries_comments_and_spans() {
         }
         visited += 1;
         let body = order.join("\n");
-        let source = format!("package app; build {{\n{body}\n}}");
+        let source = format!("pkg app; build {{\n{body}\n}}");
         let check: Result<(), String> = (|| {
             let build = parse_build_block_body(&body).map_err(|error| format!("{error:?}"))?;
             let child_end = body
@@ -281,14 +281,14 @@ fn reordered_build_fields_preserve_repeated_entries_comments_and_spans() {
 
 #[test]
 fn reordered_signature_sections_preserve_semantic_replay() {
-    let header = "signature app v(2); v(1) { nonbreaking { add { module api { pub type Old = .; pub type Gone = .; } } } } v(2) {";
+    let header = "sig app v(2); v(1) { nonbreaking { add { mod api { pub type Old = .; pub type Gone = .; } } } } v(2) {";
     let buckets = [
         "add { api.Fresh; };",
-        "modify { module api { pub type Old = !; } };",
-        "remove { module api { Gone; } };",
+        "modify { mod api { pub type Old = !; } };",
+        "remove {  api.Gone;  };",
     ];
-    let with = "with { module api { pub rec type { Fresh : . | Fresh { pub mk; pub get; }; }; } };";
-    let breaking = "breaking { add { module api { host type H; } } };";
+    let with = "with { mod api { pub rec type { Fresh : . | Fresh { pub mk; pub get; }; }; } };";
+    let breaking = "breaking { add { mod api { host type H; } } };";
     let canonical = format!(
         "{header} {with} {breaking} nonbreaking {{ {} }} }}",
         buckets.join(" ")
@@ -339,69 +339,57 @@ fn reordered_signature_sections_preserve_semantic_replay() {
 
 #[test]
 fn unordered_entries_still_require_unique_compatible_fields() {
-    format_source(Kind::Module, "module app; type { Box: . { get; mk; }; };")
+    format_source(Kind::Module, "mod app; type { Box: . { get; mk; }; };")
         .expect("complete nominal member body");
     let cases = [
-        (Kind::Module, "module app; op ~ _ {} ;"),
+        (Kind::Module, "mod app; op ~ _ {} ;"),
+        (Kind::Module, "mod app; op ~ _ { impl run; impl other; };"),
+        (Kind::Module, "mod app; op_var [* *] { finalize finish; };"),
         (
             Kind::Module,
-            "module app; op ~ _ { impl run; impl other; };",
+            "mod app; op_var [* *] { foldl step base; foldr step base; };",
         ),
         (
             Kind::Module,
-            "module app; varop [* *] { finalize finish; };",
+            "mod app; op_var [* *] { foldl step base; finalize finish; finalize other; };",
         ),
         (
             Kind::Module,
-            "module app; varop [* *] { foldl step base; foldr step base; };",
+            "mod app; macro make: . { captures (first); };",
         ),
         (
             Kind::Module,
-            "module app; varop [* *] { foldl step base; finalize finish; finalize other; };",
+            "mod app; macro make: . { captures (first); captures (second); impl run; };",
         ),
         (
             Kind::Module,
-            "module app; macro make: . { captures (first); };",
+            "mod app; macro make: . { impl run; impl(fills) other; };",
         ),
+        (Kind::Module, "mod app; type { Box: . { get; }; };"),
+        (Kind::Module, "mod app; type { Box: . { get; mk; get; }; };"),
         (
-            Kind::Module,
-            "module app; macro make: . { captures (first); captures (second); impl run; };",
-        ),
-        (
-            Kind::Module,
-            "module app; macro make: . { impl run; impl(fills) other; };",
-        ),
-        (Kind::Module, "module app; type { Box: . { get; }; };"),
-        (
-            Kind::Module,
-            "module app; type { Box: . { get; mk; get; }; };",
+            Kind::Package,
+            "pkg app; build { cache (); cache \"other\"; }",
         ),
         (
             Kind::Package,
-            "package app; build { cache (); cache \"other\"; }",
+            "pkg app; build { docs { md \"one\"; } docs { md \"two\"; } }",
         ),
-        (
-            Kind::Package,
-            "package app; build { docs { md \"one\"; } docs { md \"two\"; } }",
-        ),
-        (Kind::Package, "package app; build {} build {}"),
-        (Kind::Package, "package app; bridge {} bridge {}"),
-        (
-            Kind::Package,
-            "package app; build { docs { html \"out\"; } }",
-        ),
-        (Kind::Dependency, "dependency lib; rehost lib/io to app/io;"),
+        (Kind::Package, "pkg app; build {} build {}"),
+        (Kind::Package, "pkg app; bridge {} bridge {}"),
+        (Kind::Package, "pkg app; build { docs { html \"out\"; } }"),
+        (Kind::Dependency, "dep lib; rehost lib/io to app/io;"),
         (
             Kind::Dependency,
-            "dependency lib; source { path \"one.pkg.kio\"; } source { path \"two.pkg.kio\"; }",
+            "dep lib; source { path \"one.pkg.kio\"; } source { path \"two.pkg.kio\"; }",
         ),
         (
             Kind::Dependency,
-            "dependency lib; source { ref \"main\"; path \"lib.pkg.kio\"; }",
+            "dep lib; source { ref \"main\"; path \"lib.pkg.kio\"; }",
         ),
         (
             Kind::Dependency,
-            "dependency lib; source { ref \"main\"; git \"url\"; ref \"other\"; }",
+            "dep lib; source { ref \"main\"; git \"url\"; ref \"other\"; }",
         ),
         (
             Kind::Lock,
@@ -409,15 +397,15 @@ fn unordered_entries_still_require_unique_compatible_fields() {
         ),
         (
             Kind::Signature,
-            "signature app v(1); v(1) { with { module api { pub type A = .; } } }",
+            "sig app v(1); v(1) { with { mod api { pub type A = .; } } }",
         ),
         (
             Kind::Signature,
-            "signature app v(1); v(1) { nonbreaking { add { module api { pub type A = .; } } } nonbreaking { add { module api { pub type B = .; } } } }",
+            "sig app v(1); v(1) { nonbreaking { add { mod api { pub type A = .; } } } nonbreaking { add { mod api { pub type B = .; } } } }",
         ),
         (
             Kind::Signature,
-            "signature app v(1); v(1) { nonbreaking { add { module api { pub type A = .; } } add { module api { pub type B = .; } } } }",
+            "sig app v(1); v(1) { nonbreaking { add { mod api { pub type A = .; } } add { mod api { pub type B = .; } } } }",
         ),
     ];
     let mut failures = Vec::new();

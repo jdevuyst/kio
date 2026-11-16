@@ -1,4 +1,4 @@
-package boolean_control;
+pkg boolean_control;
 
 build {
   cache "out/cache";

@@ -1,4 +1,4 @@
-package hbs;
+pkg hbs;
 
 build {
   cache "out/.kio-cache/";

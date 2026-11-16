@@ -1,7 +1,7 @@
-module m;
+mod m;
 
-import alias_provider(Shape);
-import helper_provider(exposed);
+import alias_provider { type Shape }
+import helper_provider { fn exposed }
 import qualified_provider as q;
 
 fn a() { () }

@@ -1,4 +1,4 @@
-package exec_dyn_load_type_only_application;
+pkg exec_dyn_load_type_only_application;
 
 build {
   cache "out/.kio-cache/";

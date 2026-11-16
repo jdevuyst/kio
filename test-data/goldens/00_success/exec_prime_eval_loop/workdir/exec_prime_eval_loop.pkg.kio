@@ -1,4 +1,4 @@
-package exec_prime_eval_loop;
+pkg exec_prime_eval_loop;
 
 build {
   cache "out/.kio-cache/";

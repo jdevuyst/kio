@@ -1,4 +1,4 @@
-package expression_direct_fqn_requires_import;
+pkg expression_direct_fqn_requires_import;
 
 build {
   cache "out/.kio-cache/";

@@ -1,6 +1,6 @@
-module testapi/b;
+mod testapi/b;
 
-import testapi(String);
+import testapi { type String }
 
 pub type { Box[A]: A { pub mk; pub get } }
 

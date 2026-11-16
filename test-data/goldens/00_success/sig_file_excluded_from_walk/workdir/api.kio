@@ -1,5 +1,5 @@
 /// The package's host-facing module.
-module api;
+mod api;
 
 host type Handle role(i32);
 

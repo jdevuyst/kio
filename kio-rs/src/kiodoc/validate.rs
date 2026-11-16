@@ -257,7 +257,7 @@ pub fn validate_aggregate(
     let program = substitute_into_harness(&harness.body, &harness.placeholder, &concatenated);
     let (package_body, module_body) = split_package_and_module(&program);
     let package_name = synthesize_pkg_name(harness.fence_index);
-    let module_header = format!("module {package_name}/main;\n");
+    let module_header = format!("mod {package_name}/main;\n");
     let needs_header = !body_declares_module(&module_body);
     let module_file = if needs_header {
         format!("{module_header}\n{module_body}")
@@ -294,22 +294,24 @@ pub fn validate_aggregate(
                     });
                 }
             };
-            let (exit, diagnostic) =
-                match run_kio_check_aggregate(&scratch, &assembled, &support_files) {
-                    Ok(x) => x,
-                    Err(e) => {
-                        return Err(ValidationError {
-                            span: harness.span,
-                            message: format!(
-                                "internal error setting up aggregate scratch package for \
-                                 harness `{}`: {e}",
-                                harness.name
-                            ),
-                            assembled: Some(assembled),
-                            diagnostic: None,
-                        });
-                    }
-                };
+            let (exit, diagnostic) = match run_kio_check_aggregate(
+                &scratch,
+                &assembled,
+                &support_files,
+            ) {
+                Ok(x) => x,
+                Err(e) => {
+                    return Err(ValidationError {
+                        span: harness.span,
+                        message: format!(
+                            "internal error setting up aggregate scratch package for harness `{}`: {e}",
+                            harness.name
+                        ),
+                        assembled: Some(assembled),
+                        diagnostic: None,
+                    });
+                }
+            };
             let _ = fs::remove_dir_all(&scratch);
             let exit_i32 = exit.as_i32();
             cache.store(
@@ -520,7 +522,7 @@ fn select_package_support_files(
     }
     let mut selected = BTreeSet::new();
     while let Some(module) = queue.pop_front() {
-        if assembled_roots.contains(module.split('/').next().expect("module path")) {
+        if assembled_roots.contains(module.split('/').next().expect("mod path")) {
             continue;
         }
         let Some(file) = support_by_module.get(module.as_str()) else {
@@ -719,7 +721,7 @@ pub(super) fn assemble_with_snippet_body(
 
     // Step 3: ensure the module file starts with `module <pkg>/main;`.
     let package_name = synthesize_pkg_name(snippet.open_line);
-    let module_header = format!("module {package_name}/main;\n");
+    let module_header = format!("mod {package_name}/main;\n");
     let needs_header = !body_declares_module(&module_body);
     let module_file = if needs_header {
         format!("{module_header}\n{module_body}")
@@ -783,7 +785,7 @@ fn assembled_implicit_package(
     if module_path != root_path {
         files.push(AssembledFile {
             path: root_path,
-            body: format!("module {package_name};\n"),
+            body: format!("mod {package_name};\n"),
         });
     }
     files.push(AssembledFile {
@@ -796,7 +798,7 @@ fn assembled_implicit_package(
 fn module_file_path_for_source(module_file: &str, package_name: &str) -> String {
     for line in module_file.lines() {
         let line = line.trim_start();
-        let Some(rest) = line.strip_prefix("module ") else {
+        let Some(rest) = line.strip_prefix("mod ") else {
             continue;
         };
         let Some(end) = rest.find(';') else {
@@ -858,7 +860,7 @@ fn synthesize_missing_package_files(
         let root_path = format!("{package}.kio");
         files
             .entry(root_path)
-            .or_insert_with(|| format!("module {package};\n"));
+            .or_insert_with(|| format!("mod {package};\n"));
     }
 }
 
@@ -946,7 +948,7 @@ fn split_package_and_module(program: &str) -> (String, String) {
         let line = &rest[..line_len];
         let trimmed = line.trim();
         let is_passthrough = trimmed.is_empty() || trimmed.starts_with("//");
-        let is_module_line = trimmed.starts_with("module ");
+        let is_module_line = trimmed.starts_with("mod ");
         if is_module_line {
             module_start_byte = idx;
             break;
@@ -996,27 +998,27 @@ fn package_body_with_root_bridge(package_name: &str, package_body: &str) -> Stri
     package_file_with_inserted_glob(package_body, package_name)
 }
 
-/// True if `source` begins with a `module` header line once leading
+/// True if `source` begins with a `mod` header line once leading
 /// blank lines and `//` line comments are skipped. A `variant=module`
 /// snippet that opens with a `// filename.kio` provenance comment still
 /// carries its own header — the same way the token-based `{file}` path
 /// (which lexes comments away before reading the header keyword) treats
 /// it. Without skipping the comment, such a snippet gets a synthetic
-/// `module …/main;` prepended and fails with a duplicate-`module` error.
+/// `mod …/main;` prepended and fails with a duplicate-`mod` error.
 pub(super) fn body_declares_module(source: &str) -> bool {
     source
         .lines()
         .map(str::trim_start)
         .find(|line| !line.is_empty() && !line.starts_with("//"))
-        .is_some_and(|line| line.starts_with("module "))
+        .is_some_and(|line| line.starts_with("mod "))
 }
 
 fn synthesize_package_file(package_name: &str, package_body: &str, _module_file: &str) -> String {
     let body = package_body_with_root_bridge(package_name, package_body);
     if body.trim().is_empty() {
-        format!("package {package_name};\n")
+        format!("pkg {package_name};\n")
     } else {
-        format!("package {package_name};\n\n{body}")
+        format!("pkg {package_name};\n\n{body}")
     }
 }
 
@@ -1177,51 +1179,41 @@ mod tests {
     fn file_backed_assembly_keeps_one_package_across_module_namespaces() {
         for (support, harness_header, expected_packages, expected_roots) in [
             (
-                "module utils/list_ops;",
-                "module app/main;",
+                "mod utils/list_ops;",
+                "mod app/main;",
                 &["app"][..],
                 &["app"][..],
             ),
             (
-                "module utils;",
-                "module consumer;",
+                "mod utils;",
+                "mod consumer;",
                 &["kiodoc"],
                 &["kiodoc", "utils", "consumer"],
             ),
             (
-                "module utils/list_ops;",
-                "module consumer;",
+                "mod utils/list_ops;",
+                "mod consumer;",
                 &["utils"],
                 &["utils", "consumer"],
             ),
+            ("sig app;", "mod consumer;", &["app"], &["app", "consumer"]),
+            ("sig app;", "mod other/main;", &["app"], &["app"]),
             (
-                "signature app;",
-                "module consumer;",
-                &["app"],
-                &["app", "consumer"],
-            ),
-            ("signature app;", "module other/main;", &["app"], &["app"]),
-            (
-                "package app; bridge { app; }",
-                "module app/main;",
+                "pkg app; bridge { app; }",
+                "mod app/main;",
                 &["app"],
                 &["app"],
             ),
+            ("pkg example;", "mod app/main;", &["example"], &["example"]),
             (
-                "package example;",
-                "module app/main;",
+                "mod utils/list_ops;",
+                "pkg example;",
                 &["example"],
                 &["example"],
             ),
             (
-                "module utils/list_ops;",
-                "package example;",
-                &["example"],
-                &["example"],
-            ),
-            (
-                "package first;",
-                "package second;",
+                "pkg first;",
+                "pkg second;",
                 &["first", "second"],
                 &["first", "second"],
             ),
@@ -1256,7 +1248,7 @@ mod tests {
                 .filter(|path| !path.contains(['/', '.']))
                 .collect();
             assert_eq!(roots, expected_roots.iter().copied().collect(), "{source}");
-            if support.starts_with("package ") {
+            if support.starts_with("pkg ") {
                 let header = &document.files.values().next().unwrap().header;
                 assert_eq!(
                     assembled
@@ -1274,31 +1266,31 @@ mod tests {
 
     #[test]
     fn split_no_package_sections() {
-        let (e, m) = split_package_and_module("module x/main;\nlet x = 1;\n");
+        let (e, m) = split_package_and_module("mod x/main;\nlet x = 1;\n");
         assert!(e.is_empty());
-        assert!(m.contains("module x/main"));
+        assert!(m.contains("mod x/main"));
     }
 
     #[test]
     fn split_package_sections_extracted() {
         // A leading `bridge { … }` package section moves to the package
-        // file; the module body starts at the first `module` line. (Host
+        // file; the module body starts at the first `mod` line. (Host
         // items live in modules now, so `env` is no longer a package
         // section — see `is_package_section_start`.)
-        let prog = "bridge {\n  x/main;\n}\n\nmodule x/main;\nlet x = 1;\n";
+        let prog = "bridge {\n  x/main;\n}\n\nmod x/main;\nlet x = 1;\n";
         let (e, m) = split_package_and_module(prog);
         assert!(e.contains("bridge {"));
         assert!(e.contains("x/main;"));
-        assert!(m.starts_with("module x/main"));
+        assert!(m.starts_with("mod x/main"));
         assert!(!m.contains("bridge {"));
     }
 
     #[test]
     fn substitute_into_harness_inserts_at_marker() {
-        let h = "package x\n__INSERT_CODE_HERE__\nend";
+        let h = "pkg x\n__INSERT_CODE_HERE__\nend";
         let out = substitute_into_harness(h, "__INSERT_CODE_HERE__", "let x = 1");
         assert!(out.contains("let x = 1"));
-        assert!(out.contains("package x"));
+        assert!(out.contains("pkg x"));
         assert!(out.contains("end"));
     }
 
@@ -1364,10 +1356,7 @@ mod tests {
 
     #[test]
     fn module_import_paths_use_complete_grammar_and_defer_bodies() {
-        let source = "module c; import helpers/a(op _ (=) _); \
-            import helpers/b(varop [% %]); \
-            import helpers/c as c; import __intrinsics__; \
-            fn broken() -> . { let x = ; () }";
+        let source = "mod c; import helpers/a {op _ (=) _} import helpers/b {op_var [% %]} import helpers/c as c; import __intrinsics__; fn broken() -> . { let x = ; () }";
         crate::pass::parser::parse_module_file_lazy(source)
             .expect("valid complete import headers with a deferred function body");
         let body_error = crate::pass::parser::parse_module_file(source)
@@ -1408,10 +1397,10 @@ mod tests {
             ("bridge {; pkg }\n", "bridge {; pkg;\n  support;\n}\n"),
             ("", "\n\nbridge {\n  support;\n}\n"),
         ] {
-            for prefix in ["", "package pkg; ", "package pkg;\n"] {
+            for prefix in ["", "pkg pkg; ", "pkg pkg;\n"] {
                 let source = format!("{prefix}{body}");
                 let original =
-                    crate::pass::parser::parse_package_file(&format!("package pkg;\n{body}"), None)
+                    crate::pass::parser::parse_package_file(&format!("pkg pkg;\n{body}"), None)
                         .unwrap();
                 let output = package_file_with_inserted_glob(&source, "support");
                 let expected = if body.is_empty() {
@@ -1421,7 +1410,7 @@ mod tests {
                 };
                 assert_eq!(output, expected, "source: {source:?}");
                 let parsed_source = if prefix.is_empty() {
-                    format!("package pkg;\n{output}")
+                    format!("pkg pkg;\n{output}")
                 } else {
                     output
                 };
@@ -1452,12 +1441,12 @@ mod tests {
         let assembled = AssembledProgram {
             files: vec![AssembledFile {
                 path: "kiodoc.pkg.kio".to_owned(),
-                body: "package kiodoc;\n\nbridge {\n  kiodoc;\n}\n".to_owned(),
+                body: "pkg kiodoc;\n\nbridge {\n  kiodoc;\n}\n".to_owned(),
             }],
         };
         let support_files = vec![AssembledFile {
             path: "show.kio".to_owned(),
-            body: "module show;\nhost type String role(str);\nhost fn print(s: String) -> .;\n"
+            body: "mod show;\nhost type String role(str);\nhost fn print(s: String) -> .;\n"
                 .to_owned(),
         }];
 
@@ -1475,12 +1464,12 @@ mod tests {
         let assembled = AssembledProgram {
             files: vec![AssembledFile {
                 path: "kiodoc.pkg.kio".to_owned(),
-                body: "package kiodoc;\n\nbridge {\n  kiodoc;\n}\n".to_owned(),
+                body: "pkg kiodoc;\n\nbridge {\n  kiodoc;\n}\n".to_owned(),
             }],
         };
         let support_files = vec![AssembledFile {
             path: "match.kio".to_owned(),
-            body: "module match;\nfn id[A](x: A) -> A { x }\n".to_owned(),
+            body: "mod match;\nfn id[A](x: A) -> A { x }\n".to_owned(),
         }];
 
         let assembled = assembled_with_support_bridges(assembled, &support_files);
@@ -1493,13 +1482,14 @@ mod tests {
             files: vec![
                 AssembledFile {
                     path: "pkg.pkg.kio".to_owned(),
-                    body: "package pkg;\n\nbridge {\n  pkg;\n}\n".to_owned(),
+                    body: "pkg pkg;\n\nbridge {\n  pkg;\n}\n".to_owned(),
                 },
                 AssembledFile {
                     path: "utils.kio".to_owned(),
-                    body: "module utils;\n\
-                           pub fn id[A](x: A) -> A { x }\n"
-                        .to_owned(),
+                    body: "mod utils;
+pub fn id[A](x: A) -> A { x }
+"
+                    .to_owned(),
                 },
             ],
         };
@@ -1513,21 +1503,21 @@ mod tests {
         let assembled = AssembledProgram {
             files: vec![AssembledFile {
                 path: "kiodoc/main.kio".to_owned(),
-                body: "module kiodoc/main;\nimport match(match);\n".to_owned(),
+                body: "mod kiodoc/main;\nimport match {fn match}\n".to_owned(),
             }],
         };
         let support_files = vec![
             AssembledFile {
                 path: "match.kio".to_owned(),
-                body: "module match;\nimport spine(fit);\n".to_owned(),
+                body: "mod match;\nimport spine {fn fit}\n".to_owned(),
             },
             AssembledFile {
                 path: "show.kio".to_owned(),
-                body: "module show;\n".to_owned(),
+                body: "mod show;\n".to_owned(),
             },
             AssembledFile {
                 path: "spine.kio".to_owned(),
-                body: "module spine;\n".to_owned(),
+                body: "mod spine;\n".to_owned(),
             },
         ];
         let selected = select_package_support_files(&assembled, &support_files);
@@ -1541,26 +1531,26 @@ mod tests {
             files: vec![
                 AssembledFile {
                     path: "kiodoc/main.kio".to_owned(),
-                    body: "module kiodoc/main;\nimport utils/list_ops(fold);\n".to_owned(),
+                    body: "mod kiodoc/main;\nimport utils/list_ops {fn fold}\n".to_owned(),
                 },
                 AssembledFile {
                     path: "utils.kio".to_owned(),
-                    body: "module utils;\nimport helper(helper);\n".to_owned(),
+                    body: "mod utils;\nimport helper {fn helper}\n".to_owned(),
                 },
             ],
         };
         let support_files = vec![
             AssembledFile {
                 path: "helper.kio".to_owned(),
-                body: "module helper;\n".to_owned(),
+                body: "mod helper;\n".to_owned(),
             },
             AssembledFile {
                 path: "utils.kio".to_owned(),
-                body: "module utils;\nimport stale(stale);\n".to_owned(),
+                body: "mod utils;\nimport stale {fn stale}\n".to_owned(),
             },
             AssembledFile {
                 path: "stale.kio".to_owned(),
-                body: "module stale;\n".to_owned(),
+                body: "mod stale;\n".to_owned(),
             },
         ];
         let selected = select_package_support_files(&assembled, &support_files);
@@ -1573,20 +1563,14 @@ mod tests {
         let assembled = AssembledProgram {
             files: vec![AssembledFile {
                 path: "guide/main.kio".to_owned(),
-                body: "module guide/main; import helpers/a as a; import helpers/b as b;".to_owned(),
+                body: "mod guide/main; import helpers/a as a; import helpers/b as b;".to_owned(),
             }],
         };
         let support_files = [
-            (
-                "helpers/a.kio",
-                "module helpers/a; import left/item as item;",
-            ),
-            (
-                "helpers/b.kio",
-                "module helpers/b; import right/item as item;",
-            ),
-            ("left/item.kio", "module left/item;"),
-            ("right/item.kio", "module right/item;"),
+            ("helpers/a.kio", "mod helpers/a; import left/item as item;"),
+            ("helpers/b.kio", "mod helpers/b; import right/item as item;"),
+            ("left/item.kio", "mod left/item;"),
+            ("right/item.kio", "mod right/item;"),
             ("helpers/unselected.kio", "not a valid module"),
             ("unrelated.kio", "not a valid module"),
         ]
@@ -1615,12 +1599,12 @@ mod tests {
             let assembled = AssembledProgram {
                 files: vec![AssembledFile {
                     path: "pkg.pkg.kio".to_owned(),
-                    body: format!("package pkg;\nbridge {{\n  {existing};\n}}\n"),
+                    body: format!("pkg pkg;\nbridge {{\n  {existing};\n}}\n"),
                 }],
             };
             let support_files = vec![AssembledFile {
                 path: "helpers/a.kio".to_owned(),
-                body: "module helpers/a;".to_owned(),
+                body: "mod helpers/a;".to_owned(),
             }];
             let result = assembled_with_support_bridges(assembled, &support_files);
             let body = &result.files[0].body;

@@ -1,6 +1,6 @@
-module operator_type_syntax/main;
+mod operator_type_syntax/main;
 
-import operator_type_syntax(String);
+import operator_type_syntax {type String}
 
 fn id[A](x: A) -> A { x }
 

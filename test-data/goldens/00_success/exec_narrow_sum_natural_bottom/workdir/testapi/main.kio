@@ -1,10 +1,10 @@
-module testapi/main;
+mod testapi/main;
 
 import __intrinsics__;
 
-import macros/spine_macros(macro narrow_sum_);
-import testapi(String);
-import testapi/io(print);
+import macros/spine_macros { macro narrow_sum_ }
+import testapi { type String }
+import testapi/io { fn print }
 
 fn drop_right_bottom[A](value: A) -> A {
   let narrowed = narrow_sum_(__left__[A][!](value));

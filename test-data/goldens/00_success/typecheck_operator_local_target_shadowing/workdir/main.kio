@@ -1,4 +1,4 @@
-module main;
+mod main;
 
 fn apply(_left: ., _right: .) { () }
 

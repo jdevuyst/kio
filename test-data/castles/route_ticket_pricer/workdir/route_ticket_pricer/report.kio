@@ -1,11 +1,11 @@
-module route_ticket_pricer/report;
+mod route_ticket_pricer/report;
 
 import route_ticket_pricer/audit as audit;
 import route_ticket_pricer/bulk as bulk;
 import route_ticket_pricer/fares as fares;
-import testapi(I128, I64, String, U64);
-import testapi/fmt(i128_to_string, i64_to_string, u64_to_string);
-import testapi/io(print);
+import testapi { type I128; type I64; type String; type U64 }
+import testapi/fmt { fn i128_to_string; fn i64_to_string; fn u64_to_string }
+import testapi/io { fn print }
 
 fn print_i64_line(value: I64) { print(i64_to_string(value)); print("\n") }
 

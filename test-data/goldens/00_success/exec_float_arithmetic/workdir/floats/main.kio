@@ -1,7 +1,7 @@
-module floats/main;
+mod floats/main;
 
-import floats(F32, F64, String);
-import floats(add_f32, add_f64, f32_to_string, f64_to_string, mul_f64, print);
+import floats { fn add_f32; fn add_f64; fn f32_to_string; fn f64_to_string; fn mul_f64; fn print }
+import floats { type F32; type F64; type String }
 
 fn print_f32(n: F32) { let s = f32_to_string(n); let l = print(s); print("\n"[String]) }
 

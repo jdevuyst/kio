@@ -1,6 +1,6 @@
-module testapi/arith;
+mod testapi/arith;
 
-import testapi/types(Box, Functor);
+import testapi/types { type Box; type Functor }
 
 // The host receives a fully-built `Functor(Box)` dictionary as an
 // ordinary value and hands one back. The dictionary crosses the

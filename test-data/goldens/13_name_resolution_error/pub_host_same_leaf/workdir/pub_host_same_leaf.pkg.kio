@@ -1,4 +1,4 @@
-package pub_host_same_leaf;
+pkg pub_host_same_leaf;
 
 build {
   cache "out/.kio-cache/";

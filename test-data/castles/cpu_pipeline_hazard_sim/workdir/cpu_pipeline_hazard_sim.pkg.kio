@@ -1,4 +1,4 @@
-package cpu_pipeline_hazard_sim;
+pkg cpu_pipeline_hazard_sim;
 
 build {
   cache "out/.kio-cache/";

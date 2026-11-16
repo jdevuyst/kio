@@ -1,19 +1,19 @@
-module minesweeper_frontier/counts;
+mod minesweeper_frontier/counts;
 
-import macros/control(macro if);
-import minesweeper_frontier/model(
-, bool_to_i32
-, cell_count
-, cell_index
-, height
-, last_index
-, mine_at
-, width
-);
-import testapi(Array, Bool, I32);
+import macros/control { macro if }
+import minesweeper_frontier/model {
+  fn bool_to_i32;
+  fn cell_count;
+  fn cell_index;
+  fn height;
+  fn last_index;
+  fn mine_at;
+  fn width
+}
+import testapi { type Array; type Bool; type I32 }
 import testapi/arith as arith;
 import testapi/array as array;
-import testapi/iter(loop);
+import testapi/iter { fn loop }
 
 fn neighbor_count(mines: Array[Bool], row: I32, col: I32) -> I32 {
   let north = arith.sub_i32(row, 1);

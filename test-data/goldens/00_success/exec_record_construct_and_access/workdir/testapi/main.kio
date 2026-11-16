@@ -1,10 +1,10 @@
-module testapi/main;
+mod testapi/main;
 
-import macros/match(macro match);
-import macros/row_macros(macro select);
-import testapi(Int, String);
-import testapi/fmt(int_to_string);
-import testapi/io(print);
+import macros/match { macro match }
+import macros/row_macros { macro select }
+import testapi { type Int; type String }
+import testapi/fmt { fn int_to_string }
+import testapi/io { fn print }
 
 // Construction and selection preserve each field's nominal boundary.
 type { Hed: Int; Mid: String; Tal: Int }

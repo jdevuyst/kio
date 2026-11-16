@@ -1,4 +1,4 @@
-package if_wrapped_field_defaults_conflict;
+pkg if_wrapped_field_defaults_conflict;
 
 build {
   target js {

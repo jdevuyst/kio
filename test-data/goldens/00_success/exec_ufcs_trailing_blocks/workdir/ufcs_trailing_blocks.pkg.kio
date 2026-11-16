@@ -1,4 +1,4 @@
-package ufcs_trailing_blocks;
+pkg ufcs_trailing_blocks;
 
 build {
   cache "out/.kio-cache/";

@@ -1,4 +1,4 @@
-module app;
+mod app;
 
 import cap as cap;
 

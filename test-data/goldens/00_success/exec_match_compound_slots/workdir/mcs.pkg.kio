@@ -1,4 +1,4 @@
-package mcs;
+pkg mcs;
 
 build {
   cache "out/.kio-cache/";

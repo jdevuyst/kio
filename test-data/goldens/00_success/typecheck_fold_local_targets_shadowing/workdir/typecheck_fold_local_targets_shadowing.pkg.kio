@@ -1,4 +1,4 @@
-package typecheck_fold_local_targets_shadowing;
+pkg typecheck_fold_local_targets_shadowing;
 
 build {
   cache "out/.kio-cache/";

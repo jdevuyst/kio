@@ -1,4 +1,4 @@
-package comptime_literal_requires_text_carrier;
+pkg comptime_literal_requires_text_carrier;
 
 build {
   target js {

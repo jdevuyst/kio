@@ -1,5 +1,5 @@
 /// A fn the dependency owns, taking the dependency's own `String`.
-module text;
+mod text;
 
 host type String role(str);
 

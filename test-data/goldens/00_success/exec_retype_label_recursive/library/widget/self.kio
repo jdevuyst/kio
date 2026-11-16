@@ -1,4 +1,4 @@
-module self;
+mod self;
 
 rec {
   pub type { Link[A]: (Chain[A] -> A) -> A { pub mk; pub get } };

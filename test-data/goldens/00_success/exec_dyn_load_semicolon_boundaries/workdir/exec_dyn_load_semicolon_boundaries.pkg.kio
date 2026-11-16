@@ -1,4 +1,4 @@
-package exec_dyn_load_semicolon_boundaries;
+pkg exec_dyn_load_semicolon_boundaries;
 
 build {
   cache "out/.kio-cache/";

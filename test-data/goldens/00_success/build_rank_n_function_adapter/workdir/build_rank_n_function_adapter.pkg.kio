@@ -1,4 +1,4 @@
-package build_rank_n_function_adapter;
+pkg build_rank_n_function_adapter;
 
 build {
   cache "out/.kio-cache/";

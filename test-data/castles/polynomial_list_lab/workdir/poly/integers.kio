@@ -1,12 +1,12 @@
 /// Exact-division helpers for the fixed host-arithmetic fixtures.
-module poly/integers;
+mod poly/integers;
 
-import macros/control(macro if);
-import macros/match(macro match);
-import macros/spine_macros(macro widen_sum);
-import testapi(Bool, I32);
-import testapi/arith(add_i32, eq_i32, lt_i32, sub_i32);
-import testapi/iter(loop);
+import macros/control { macro if }
+import macros/match { macro match }
+import macros/spine_macros { macro widen_sum }
+import testapi { type Bool; type I32 }
+import testapi/arith { fn add_i32; fn eq_i32; fn lt_i32; fn sub_i32 }
+import testapi/iter { fn loop }
 
 fn negate(a: I32) -> I32 { sub_i32(0, a) }
 

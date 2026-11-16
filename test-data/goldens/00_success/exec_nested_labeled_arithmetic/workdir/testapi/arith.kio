@@ -1,5 +1,5 @@
-module testapi/arith;
+mod testapi/arith;
 
-import testapi(I32);
+import testapi { type I32 }
 
 host fn sub_i32(p0: I32, p1: I32) -> I32;

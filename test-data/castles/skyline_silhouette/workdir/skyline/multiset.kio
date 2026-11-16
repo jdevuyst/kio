@@ -10,15 +10,15 @@
 /// equal heights into one entry is the classic way to get this algorithm wrong:
 /// whichever of two equally tall buildings ended first would take the other
 /// one's roof down with it.
-module skyline/multiset;
+mod skyline/multiset;
 
-import macros/control(macro if);
-import macros/match(macro match);
+import macros/control { macro if }
+import macros/match { macro match }
 import skyline/list as lst;
 import skyline/logic as logic;
-import testapi(Bool, I32);
-import testapi/arith(leq_i32);
-import testapi/iter(loop);
+import testapi { type Bool; type I32 }
+import testapi/arith { fn leq_i32 }
+import testapi/iter { fn loop }
 
 pub type Active = lst.List[I32];
 

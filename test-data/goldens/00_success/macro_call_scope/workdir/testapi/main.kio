@@ -1,8 +1,8 @@
-module testapi/main;
+mod testapi/main;
 
-import helpers(macro block, macro keep, macro keep as keep1);
-import testapi(String);
-import testapi/io(print);
+import helpers { macro block; macro keep; macro keep as keep1 }
+import testapi { type String }
+import testapi/io { fn print }
 
 fn ordinary(_value: String) -> String { "ordinary\n" }
 

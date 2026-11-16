@@ -1,9 +1,9 @@
-module testapi/main;
+mod testapi/main;
 
 import dict/dict as d;
-import dict/dict(op _ => _, varop [% %]);
-import macros/control(macro if);
-import testapi(Bool, I32, String);
+import dict/dict { op _ => _; op_var [% %] }
+import macros/control { macro if }
+import testapi { type Bool; type I32; type String }
 import testapi/arith as arith;
 import testapi/fmt as fmt;
 import testapi/io as io;

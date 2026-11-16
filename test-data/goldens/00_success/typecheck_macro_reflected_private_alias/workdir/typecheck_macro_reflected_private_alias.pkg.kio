@@ -1,4 +1,4 @@
-package typecheck_macro_reflected_private_alias;
+pkg typecheck_macro_reflected_private_alias;
 
 build {
   target js {

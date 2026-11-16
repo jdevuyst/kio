@@ -388,7 +388,7 @@ A type parameter is introduced by writing **`[name]`** — Kio's surface syntax 
 
 Only those two structural positions interpret `[Name]` as a forall binder.
 Fixed operators cannot contain square brackets. A variadic value expression
-instead uses bare brackets or a marked square frame such as `[* *]`, with its `varop`
+instead uses bare brackets or a marked square frame such as `[* *]`, with its `op_var`
 binding locally declared or selectively imported. Type parameters follow the
 **type-name rule** (an optional single underscore followed by an uppercase
 initial), not the value-name rule — see [Naming conventions](#naming-conventions).
@@ -589,7 +589,7 @@ This partial-application rule does not permit a transparent alias reference to o
 Every macro is an ordinary module item resolved through scoped imports — there is no built-in coercion, no ambient dispatch, and no language-level palette of named forms. An ordinary call writes `name(...)`; a macro with trailing-block descriptors also admits `name(args) { … }` or zero-prefix `name { … }`. Transparent parentheses may group the direct head, including `(name)(args) { body }`. Parsing recognizes either shape without consulting provider declarations; ordinary lexical ownership selects the macro (see [`grammar.md` § Surface item additions](grammar.md#surface-item-additions)). The reference `macros` library supplies `if`, `scope`, `do`, `match`, `derive`, an **algebraic** coercion palette (`iso`, `into`, `onto`, `align`, `ease`, `atom`), and a **spine** palette (`reorder_sum`, `reorder_prod`, `narrow_sum`, `narrow_prod`, `widen_sum`, `widen_prod`, `flatten_sum`, `flatten_prod`, `one_sum`, `one_prod`, `fit`, with natural-result variants `narrow_sum_`, `one_sum_`, and `one_prod_`). These are ordinary Kio declarations, imported explicitly. Their per-form algorithms are documented with the executable library in [`docs/poc/macros.md`](../docs/poc/macros.md); [`docs/poc/optics.md`](../docs/poc/optics.md) demonstrates the spine palette and `match`.
 
 **Explicit selection and lexical ownership.** External macros require a tagged
-selector such as `import library(macro build as make);`. The selected export
+selector such as `import library {macro build as make}`. The selected export
 must be a visible macro; an ordinary named import or module alias does not
 introduce macro authority. Kind and visibility checks apply even when no body
 uses the import. Macros and ordinary values share the value-introduction
@@ -1063,26 +1063,26 @@ nominal slot and its payload through ordinary functions or imported macros.
 
 A **module** is a namespace and typechecking unit. Modules are addressed by their filesystem path inside the current package, with directory separators written as `/` — so a module path reads like its on-disk location (`utils/string` → `utils/string.kio`).
 
-**Every module file begins with a `module` declaration.** A module file starts with `module <path>;`. The `<path>` is the module's location relative to the package root: any subdirectory segments, ending with the module's filename without `.kio`. The package name is not prepended at the declaration site or in `import` paths.
+**Every module file begins with a `mod` declaration.** A module file starts with `mod <path>;`. The `<path>` is the module's location relative to the package root: any subdirectory segments, ending with the module's filename without `.kio`. The package name is not prepended at the declaration site or in `import` paths.
 
 ```kio
 // hello/main.kio
-module main;
+mod main;
 
 pub fn run() { print("hi") }
 ```
 
 The package root is the directory containing `<name>.pkg.kio`. The file stem is the package name, and regular module paths are checked relative to that root. The declared segments must equal the file's path relative to the package root (`.kio` stripped); mismatch is a parse error (exit code `11`). A module belongs to exactly one package.
 
-A root `.kio` file may declare `host type` / `host fn` items after its `module` declaration and `import` clauses, like any other module. Host declarations are ordinary module items under ordinary lexical scoping: a host item's signature names types brought in by `import`, and another module reaches a host item through a plain `import`. There is no env block.
+A root `.kio` file may declare `host type` / `host fn` items after its `mod` declaration and `import` clauses, like any other module. Host declarations are ordinary module items under ordinary lexical scoping: a host item's signature names types brought in by `import`, and another module reaches a host item through a plain `import`. There is no env block.
 
 A `host type` is either roleless and optionally parameterized by ordinary kind-`*` parameters (`host type Array[A];`), or role-bearing and nullary (`host type Int role(i32);`). Higher-kinded binders are not admitted on a host type: `host type Wrapper[*F];` is a type error. The roleless and role-bearing forms are disjoint, so combining any type parameters with `role(...)` is also a type error. A role identifies the literal or conditional syntax the nullary type receives; it cannot describe a family of such atomic types.
 
-**Subdirectories organize the module path.** A module at `utils/string.kio` declares `module utils/string;` and is reached by consumers as `utils/string`. Each `/`-segment in the declaration is a subdirectory, and the final segment is the module's filename. Nesting is unlimited; intermediate directories are path segments only, holding no declarations of their own.
+**Subdirectories organize the module path.** A module at `utils/string.kio` declares `mod utils/string;` and is reached by consumers as `utils/string`. Each `/`-segment in the declaration is a subdirectory, and the final segment is the module's filename. Nesting is unlimited; intermediate directories are path segments only, holding no declarations of their own.
 
 **Paths are absolute inside the current package.** Every `import` path names a module path in the current package, never a file location or a relative point in the module tree. Naming a sibling module is written `import utils/string as s`. There is no relative-path form and no `crate::`/`super::`/`self::`-style prefix.
 
-**Dependency roots.** A package may declare a cross-package dependency in a `<local>.dep.kio` file at its root (see [`package.md` § Dependency files](package.md#dependency-files)). The dependency's module tree is **re-rooted** under its local name: the dependency's `module app;` becomes reachable as `<local>/app`, and its `pub` items are importable with the ordinary `import` forms (`import <local>/app(greet);`). An `import` path's first segment names a declared dependency's local name or one of the consumer's own modules: a first segment that matches a declared dependency resolves in that dependency's re-rooted tree, otherwise in the consumer's own modules. A dependency's local name may not equal the first path segment of any of the consumer's own modules, which keeps that choice unambiguous (see § Open-world design).
+**Dependency roots.** A package may declare a cross-package dependency in a `<local>.dep.kio` file at its root (see [`package.md` § Dependency files](package.md#dependency-files)). The dependency's module tree is **re-rooted** under its local name: the dependency's `mod app;` becomes reachable as `<local>/app`, and its `pub` items are importable with the ordinary `import` forms (`import <local>/app { fn greet }`). An `import` path's first segment names a declared dependency's local name or one of the consumer's own modules: a first segment that matches a declared dependency resolves in that dependency's re-rooted tree, otherwise in the consumer's own modules. A dependency's local name may not equal the first path segment of any of the consumer's own modules, which keeps that choice unambiguous (see § Open-world design).
 
 **Visibility.** Every definition is private by default. The **`pub`** contextual keyword on a definition makes it exported. `pub` is only recognized in declaration-leading position (top-level, or at member positions inside a nominal member body or braced `rec` group); elsewhere it is an ordinary identifier.
 
@@ -1110,7 +1110,7 @@ parameters and local binders are not declaration dependencies.
 pub pure fn id[A](x: A) -> A { x }
 ```
 
-`pub` and `pure` may appear in either order in source; `kio fmt` emits `pub pure fn`. There is no `impure` keyword. `pure` is admitted only on ordinary `fn` declarations, in both Kio and Kio'. It is not admitted on `type`, `macro`, `op`, `literal`, `equiv`, `host` declarations, or any `rec(loop)` group/member.
+`pub` and `pure` may appear in either order in source; `kio fmt` emits `pub pure fn`. There is no `impure` keyword. `pure` is admitted only on ordinary `fn` declarations, in both Kio and Kio'. It is not admitted on `type`, `macro`, `op`, `lit`, `equiv`, `host` declarations, or any `rec(loop)` group/member.
 
 A `host fn` cannot carry `pure`: its body is opaque to Kio, leaving no body whose executable references the checker could validate. A `rec(loop)` member is excluded because its execution requires the group's declared `loop` function. Both exclusions are categorical rather than inferred from a particular implementation.
 
@@ -1120,36 +1120,32 @@ Purity is transitive and declaration-based. In a pure body, executable value pat
 
 This is a restriction on declaration references, not an effect qualifier on function types. A pure function may invoke a callback supplied through a local binder, including a host callback supplied by an unrestricted caller. A call to a pure function is effect-free when argument evaluation and all invoked callbacks are effect-free, including callbacks carried in data or captured by closures; the `pure` marker alone does not establish that condition.
 
-**`import` statements.** `import` statements appear only at the top of a module region, and each is terminated by a semicolon. Two forms are available:
-
-- **Selective** — `import path/to/module(Type, name, op _ + __);`
-  brings each listed binding into scope directly. Bare names select ordinary
-  values/types, and an `op` tag followed by a
-  complete grammar selects an operator.
-- **Qualified** — `import path/to/module as m;`, accessed as `m.name`. The `as` clause is **required**.
-
-Neither form carries a modifier. The selective list is always parenthesized
-and nonempty, including for one item. In canonical formatting, its opener
-immediately follows the module path on the introducing line; multiline lists
-follow the ordinary leading-comma
-layout. `as` is contextual in qualified imports and selective aliases. Within a selection, standalone
-`op` and `varop` are ordinary names. An `op` tag followed by a complete fixed
-pattern or a `varop` tag followed by its delimiter pair selects operator syntax. A complete `macro name` selector selects a macro, optionally followed by
-`as local`; an untagged name cannot select a macro. A standalone `macro`
-or `macro as local` selects an ordinary identifier named `macro`, whereas
-`macro as` selects a macro named `as`. Provider contents never choose between
-these forms. Builtin block imports use their separate fixed forms below.
+**`import` statements.** Imports appear at the top of a module region.
+A selective import uses a nonempty semicolon-separated braced list, for example
+`import path/to/module { type Type; fn name; op _ + __ }`. Each selector
+starts with its explicit kind: `fn`, `type`, `lit`, `macro`, `op`, `op_macro`,
+or `op_var`. The kind and name or complete operator grammar are parsed from
+the written tokens without consulting the provider. A qualified import has the
+form `import path/to/module as m;`. Expression references through `m` expose
+functions and types, including nominal members; macros and literal aliases
+require selective imports. A provider may export macros or literals without
+invalidating its qualified imports. Builtin block imports have separate fixed
+forms. Selective lists admit semicolon runs at either edge and between
+selectors; a braced import accepts at most one redundant outer semicolon.
+Canonical formatting keeps the opening brace on the introducing line, uses
+single separators, and omits the outer semicolon. Qualified imports retain
+their required terminator.
 
 ```kio
-import runtime(panic);
-import result(Result);
-import people(Name);
+import runtime { fn panic }
+import result { type Result }
+import people { type Name }
 import logger as lg;
-import utils/list_ops(fold);
+import utils/list_ops { fn fold }
 ```
 
-An ordinary selection may give its local spelling with `as`, for example
-`import runtime(panic as fail, Handle as Resource);`. The destination preserves
+A named selection may give its local spelling with `as`, for example
+`import runtime {fn panic as fail; type Handle as Resource}`. The destination preserves
 the source identifier class: value names remain value names and type names
 remain type names. This applies to ordinary functions, host functions, host
 types, transparent aliases, nominal types, and literal aliases. A macro instead
@@ -1163,15 +1159,15 @@ declaration, or re-export.
 
 Distinct local aliases of one declaration are allowed, as are distinct module
 aliases of one module. Each local spelling is nevertheless introduced once:
-`import m(f as first, f as second);` is valid, while
-`import m(f as first, f as first);` and `import m(f as first, g as first);`
+`import m {fn f as first; fn f as second}` is valid, while
+`import m {fn f as first; fn f as first}` and `import m {fn f as first; fn g as first}`
 conflict. The same rule applies across clauses and against local declarations,
 regardless of whether the selected declarations ultimately share a nominal
 identity or implementation callable.
 
-Deliberately absent: wildcard imports, hiding forms, and exports. Each ordinary post-lowering value, type, or module-alias name may be introduced once. Repeating a selective local name within one clause or across clauses is a name-resolution error, even when both occurrences select the same declaration. Repeating a qualified alias is likewise an error even when both imports name the same module. An import also conflicts with a local declaration of the same name. This rule applies uniformly to functions, host items, `type` declarations and the ordinary bindings produced when imported operators are lowered. The fixed compiler-block imports `import __intrinsics__;` and `import __comptime__;` are idempotent sets; repeating a block adds no introduction. Surface-only declaration registries such as `literal` and `op` are consumed before this environment exists and retain the resolution rules in their own sections.
+Deliberately absent: wildcard imports, hiding forms, and exports. Each ordinary post-lowering value, type, or module-alias name may be introduced once. Repeating a selective local name within one clause or across clauses is a name-resolution error, even when both occurrences select the same declaration. Repeating a qualified alias is likewise an error even when both imports name the same module. An import also conflicts with a local declaration of the same name. This rule applies uniformly to functions, host items, `type` declarations and the ordinary bindings produced when imported operators are lowered. The fixed compiler-block imports `import __intrinsics__;` and `import __comptime__;` are idempotent sets; repeating a block adds no introduction. Surface-only declaration registries such as `lit` and `op` are consumed before this environment exists and retain the resolution rules in their own sections.
 
-An identity-only transparent alias is still a local introduction. Thus `import origin(T); import origin as source; pub type T = source.T;` is an error: the selective import and alias both introduce `T`. Omitting the selective import gives a valid re-export through the qualified provider. Alias chains and positional generic forwarding preserve their existing type identity and constructor/projector rules, but do not merge written introductions. Binding checks consume a validated `import` environment; this prerequisite does not establish diagnostic precedence when independent import and binding errors coexist.
+An identity-only transparent alias is still a local introduction. Thus `import origin {type T} import origin as source; pub type T = source.T;` is an error: the selective import and alias both introduce `T`. Omitting the selective import gives a valid re-export through the qualified provider. Alias chains and positional generic forwarding preserve their existing type identity and constructor/projector rules, but do not merge written introductions. Binding checks consume a validated `import` environment; this prerequisite does not establish diagnostic precedence when independent import and binding errors coexist.
 
 The origin set is determined only by declarations and imports written in the consumer module (including bindings produced directly from operator imports). A selective import selects the triple `(source module, syntactically selected namespace, source spelling)` and separately introduces its local destination: `item` and `Item` never infer or widen one another. The compiler never scans an imported module for additional, unwritten candidates. Adding a declaration to a provider in another namespace therefore cannot introduce a new origin or change the meaning of an existing consumer import; only editing the consumer's own declaration or `import` list can do so.
 
@@ -1199,7 +1195,7 @@ Macro type diagnostics may display the semantic expansion of a transparent
 alias. Nominal types retain their names and identities. Diagnostic text is
 opaque presentation; type comparisons use `__type_equal__`.
 
-**Module cycles.** Value-level cycles between `.kio` module files are disallowed: if module A imports from module B, then B may not transitively import from A. Every **explicit `import`** counts as an edge — there is no type-only exemption: `import m(X);` always contributes the same `→ m` edge, including an `import` that brings a `host type` or `host fn` into scope. The package file's `bridge` block does not participate in this graph because it targets the contract surface rather than module bodies.
+**Module cycles.** Value-level cycles between `.kio` module files are disallowed: if module A imports from module B, then B may not transitively import from A. Every **explicit `import`** counts as an edge — there is no type-only exemption: `import m {type X}` always contributes the same `→ m` edge, including an `import` that brings a `host type` or `host fn` into scope. The package file's `bridge` block does not participate in this graph because it targets the contract surface rather than module bodies.
 
 A consequence: **mutual cross-module type recursion is not expressible.** Two modules that reference each other's types with no runtime dependency (the `Expr`/`Stmt` split) would each `import` the other, forming a cycle, and are rejected. A type that must be mutually recursive across a module boundary has to be moved into a single module (where intra-module mutual recursion is fine).
 
@@ -1248,7 +1244,7 @@ A module declares what it needs from the host with **`host type`** and **`host f
 
 ```kio
 // app.kio
-module app;
+mod app;
 
 host type String role(str);
 host fn print(s: String);
@@ -1256,9 +1252,9 @@ host fn print(s: String);
 
 ```kio
 // app/main.kio
-module app/main;
+mod app/main;
 
-import app(String, print);
+import app {type String; fn print}
 
 pub fn main() { print("hello\n"[String]) }
 ```
@@ -1268,7 +1264,7 @@ pub fn main() { print("hello\n"[String]) }
 The package file names, with module-path globs, which modules form the host boundary:
 
 ```kio
-package app;
+pkg app;
 
 bridge {
   app;
@@ -1353,21 +1349,20 @@ What "contextual" buys: adding a new keyword later cannot break existing user co
 
 Per-keyword semantics are documented at the declaration sites; this is the consolidated reference.
 
-- **Item-leading words** (recognized at module-level item position, after declaration modifiers where admitted): `fn`, `rec`, `type`, `literal`, `equiv`, `macro`, `op`, `varop`. (`equiv` is not allowed after `pub`; `rec` is allowed after `pub` in the singleton forms `pub rec type` and `pub rec(loop) fn`; either braced `rec` group takes no leading visibility, so `pub` goes on each member; only an ordinary `fn` is allowed after `pure`.) Outside these positions, ordinary identifiers.
-- **Module-header words** (recognized at the start of a `*.kio` module file): `module` for a module declaration.
+- **Item-leading words** (recognized at module-level item position, after declaration modifiers where admitted): `fn`, `rec`, `type`, `lit`, `equiv`, `macro`, `op`, `op_macro`, `op_var`. (`equiv` is not allowed after `pub`; `rec` is allowed after `pub` in the singleton forms `pub rec type` and `pub rec(loop) fn`; either braced `rec` group takes no leading visibility, so `pub` goes on each member; only an ordinary `fn` is allowed after `pure`.) Outside these positions, ordinary identifiers.
+- **Module-header words** (recognized at the start of a `*.kio` module file): `mod` for a module declaration.
 - **Recursive-call introducer**: `recur` introduces a recursive callee, with optional call annotations before that callee: `recur step(x)` or `recur(cont) step(x)`. Without a following callee, a bare `recur` reference or an ordinary call such as `recur(x)` uses the ordinary identifier. Both `rec` and `recur` remain ordinary names outside their grammatical positions; `fn id(rec: .) { rec }` is an ordinary function.
 - **Statement-leading word**: `let` introduces a binding only when the following tokens prove the binding form. Macro names such as `if`, `do`, `scope`, and `match` are ordinary identifiers; their direct calls become macro calls only through ordinary lexical ownership of an explicit macro binding. Continuation labels such as `else` are ordinary value-shaped names in the block-call grammar. Dot-lambdas use punctuation-led forms (`.(...) { ... }` and `.stem. { ... }`).
 - **Inside macro declarations**: `impl`, `captures`, and `trailing` introduce entries; `product`, `thunk`, and `sequence` select the descriptor after `trailing`.
 - **Import-leading and import-context words**: `import` begins a module's
-  leading import clause; `as` introduces a module alias. Inside a selective
-  list, `op` tags a fixed operator grammar and `varop` tags a variadic delimiter
-  pair, while `macro` tags a named macro selection once the complete selector
-  is known.
-  These spellings remain ordinary names elsewhere.
-- **Inside operator declarations**: a `varop` body contains exactly one of
+  leading import clause; `as` introduces a module or selective alias. Inside a
+  selective list, `fn`, `type`, `lit`, `macro`, `op`, `op_macro`, and `op_var`
+  identify the kind of each selection. These spellings remain ordinary names
+  elsewhere.
+- **Inside operator declarations**: a `op_var` body contains exactly one of
   `foldl`, `foldr`, `foldl1`, or `foldr1` and optionally `finalize`, in either
   order; a fixed operator body contains exactly one `impl` entry.
-- **At the start of a package file**: `package <name>;` declares the package identity.
+- **At the start of a package file**: `pkg <name>;` declares the package identity.
 - **Inside a package file** (`<name>.pkg.kio`): `bridge` leads the package's module-glob block.
 - **Inside a `build { ... }` block** (in `<name>.pkg.kio`): `build` opens the block; `cache`, `docs`, and `target` lead its declarations. A target opens with `target <backend> { … }` or `target (<backend>, "<name>") { … }`; the backend is a bare identifier and the explicit target name is a string. See [Build target files](package.md#build-target-files).
 - **Inside a nominal member body**: `mk` and `get` at item positions.
@@ -1385,7 +1380,7 @@ This list is exhaustive: every reserved word or name recognized by the compiler 
 
 ### Comma-separated lists and operator chains
 
-Every comma-separated production in Kio's grammar — value-parameter groups, tuple literals, value-call argument lists, and selective `import` name lists — accepts **any number of commas in any position**: leading runs (before the first item), interior runs (between items, beyond the single separator), and trailing runs (after the last item). Equivalent framing: items are separated by *one or more* commas, with optional comma runs at either edge. All shapes collapse to the same AST as the canonical one-comma-per-separator layout. Type-binder and type-supply brackets are not comma lists: each contains exactly one entry, so `[A, B]`, `f[A, B]`, and their edge-comma variants are rejected. `(,,, a ,,, b ,,,)` and `(a, b)` parse to the same tuple literal; `(, a ,)` parses as grouping around `a`, not as a unary tuple; `(,,,)` parses as `()`. `fn three( , x: A , y: B , z: C , )` and `fn three(x: A, y: B, z: C)` parse to the same value group. Function-type value groups are not comma-separated: write `(A & B) -> C`, not `(A, B) -> C`. The formatter relies on the comma rule for the leading-comma multi-line layout where commas are part of the canonical production.
+Every comma-separated production in Kio's grammar — value-parameter groups, tuple literals, and value-call argument lists — accepts **any number of commas in any position**: leading runs (before the first item), interior runs (between items, beyond the single separator), and trailing runs (after the last item). Equivalent framing: items are separated by *one or more* commas, with optional comma runs at either edge. All shapes collapse to the same AST as the canonical one-comma-per-separator layout. Type-binder and type-supply brackets are not comma lists: each contains exactly one entry, so `[A, B]`, `f[A, B]`, and their edge-comma variants are rejected. `(,,, a ,,, b ,,,)` and `(a, b)` parse to the same tuple literal; `(, a ,)` parses as grouping around `a`, not as a unary tuple; `(,,,)` parses as `()`. `fn three( , x: A , y: B , z: C , )` and `fn three(x: A, y: B, z: C)` parse to the same value group. Function-type value groups are not comma-separated: write `(A & B) -> C`, not `(A, B) -> C`. The formatter relies on the comma rule for the leading-comma multi-line layout where commas are part of the canonical production.
 
 Block-like clause bodies use the same semicolon separator rule: repeated semicolons do not create empty clauses, and a final semicolon after the final expression is ignored. This applies to expression blocks, neutral macro blocks, and keyed/member blocks such as nominal members, `build`, `target`, and `docs`. A resolved descriptor determines a neutral block's meaning: empty product and thunk blocks produce unit and a unit-returning thunk respectively; a sequence requires an explicit final expression.
 
@@ -1425,10 +1420,10 @@ and the reserved `//…` operator family it backs.
 
 **Attachment points.** A doc-comment attaches to the immediately
 following top-level declaration in a module body (`fn`, `type`,
-`literal`, `macro`, `op`, `host type`, `host fn`) —
+`lit`, `macro`, `op`, `host type`, `host fn`) —
 every named, documentable declaration. A
 doc-comment placed at the very beginning of a module file — before the
-`module` line, with no declarations in between — attaches to the module
+`mod` line, with no declarations in between — attaches to the module
 itself. `equiv` (a test-claim with no public-API surface) and a package
 file's `bridge` globs are **not** declaration attachment points; a
 `///` immediately preceding one carries no documentation (the comment is
@@ -1452,9 +1447,9 @@ The top level of a module supports these declaration forms:
 - **`fn`** — function bindings.
 - **`rec(loop)`** — surface-only recursive function groups that lower to an ordinary loop function (see [Recursive functions](#recursive-functions)).
 - **`type`** — transparent type aliases (see [Type and literal aliases](#type-and-literal-aliases)).
-- **`literal`** — literal aliases, a surface-only way to name bare literal tokens (see [Type and literal aliases](#type-and-literal-aliases)).
+- **`lit`** — literal aliases, a surface-only way to name bare literal tokens (see [Type and literal aliases](#type-and-literal-aliases)).
 - **`macro`** — user-defined macros selected explicitly and called by local name (see [User-defined macros](#user-defined-macros)).
-- **`op` and `varop`** — user-defined fixed and variadic operator bindings (see [Operators](#operators)).
+- **`op` and `op_var`** — user-defined fixed and variadic operator bindings (see [Operators](#operators)).
 - **`equiv`** — compile-time equivalence checks consumed by `kio test` (see [Equivalence claims](#equivalence-claims-equiv)).
 
 Top-level value bindings use the declaration forms above; arbitrary top-level value expressions are not Kio items.
@@ -1483,7 +1478,7 @@ A direct consequence: an ordinary **`fn` cannot refer to itself**, because its o
 Kio has two transparent alias forms:
 
 - **`type`** names a structural type expression.
-- **`literal`** names one bare literal token for reuse in expression position.
+- **`lit`** names one bare literal token for reuse in expression position.
 
 Both forms end with a semicolon and are private by default; prefix with **`pub`** to export.
 
@@ -1522,8 +1517,8 @@ alias does not mint a new member or change reduction.
 A **literal alias** binds a lowercase name to one bare literal token. A bare reference expands to the stored literal; `name[Type]` expands to the stored literal carrying the written literal-call annotation. Expansion happens at the Surface → Desugared boundary, before Kio' reaches the resolver or typer.
 
 ```kio
-literal max_size = 100;
-literal greeting = "hello";
+lit max_size = 100;
+lit greeting = "hello";
 
 fn cap(n: I32) -> I32 { min_i32(n, max_size[I32]) }
 fn hello() -> String { greeting[String] }
@@ -1537,18 +1532,18 @@ preselected carrier.
 
 - The declaration name follows the value-name rule.
 - The right-hand side is exactly one literal token: string, integer, float, or bool.
-- Adjacent string-literal folding does not apply in a `literal` declaration body; write the complete string in one token.
+- Adjacent string-literal folding does not apply in a `lit` declaration body; write the complete string in one token.
 - A literal alias is referenced bare or with one singleton carrier annotation,
   `x[T]`. Value calls `x()` and `x(y)` are errors. Empty `x[]` and comma-list
   `x[A, B]` brackets are rejected, and a second bracket does not add another
   carrier annotation or make the literal polymorphic.
-- Item-leading position only. There is no block-local `literal`; `let x = expr;` covers block-local naming.
+- Item-leading position only. There is no block-local `lit`; `let x = expr;` covers block-local naming.
 
-**Visibility.** A literal alias is private by default; `pub literal name = …;` exports it for cross-module use via the ordinary `import package/module(name);` selective form. Two literal aliases in the same module can't share a name (same duplicate-name rule as any other top-level declaration).
+**Visibility.** A literal alias is private by default; `pub lit name = …;` exports it for cross-module use via the ordinary `import package/module { lit name }` selective form. Two literal aliases in the same module can't share a name (same duplicate-name rule as any other top-level declaration).
 
 **Binding origin.** A consumer-visible literal-alias name denotes exactly one
 declaration identity, and each explicit literal-alias import may be written
-once. Repeating `import source(name);` is a name-resolution error even when
+once. Repeating `import source { lit name }` is a name-resolution error even when
 both imports name the same exported literal. Importing that spelling from
 distinct modules, or combining an import with a same-named local declaration,
 is likewise a name-resolution error; declaration and import order never select
@@ -2260,7 +2255,7 @@ therefore cannot replace the reference library's host `Bool` with `Comptime_bool
 ordinary imported block macro:
 
 ```kio
-import macros/control(Bool, macro if);
+import macros/control {type Bool; macro if}
 
 if(cond) { a } else { b }
 ```
@@ -2305,7 +2300,7 @@ behavior by their spelling.
 *Surface only; desugars to Kio'.* Pattern matching is the `match` dispatch macro, imported like any other macro (see [§ Macros are imported, not ambient](#macros-are-imported-not-ambient)). It is a macro because compile-time code synthesizes branch-selection glue at the call site; it is not a source-to-target coercion. The Kio' form `let`-binds the combined scrutinee and clauses once, projects them, discriminates the scrutinee's sums with nested `__either__` calls, and projects products with `__fst__` / `__snd__` / projector-member calls — see § Desugaring below.
 
 ```kio
-import macros/match(macro match);
+import macros/match {macro match}
 
 match(<value>) {
   .(<param-list>) { <body> };
@@ -2419,7 +2414,7 @@ alter dispatch.
 `match` takes an explicit scrutinee/domain value, checks coverage and reachability against that scrutinee's DNF, binds polymorphic clause type parameters from each concrete branch, and returns the common selected-clause result type. It is imported explicitly like any other macro (see [§ Macros are imported, not ambient](#macros-are-imported-not-ambient)).
 
 ```kio
-import macros/match(macro match);
+import macros/match {macro match}
 
 match(r) {
   .(v: Ok[I32]) { handler_ok(Ok.get(v)) };
@@ -2458,7 +2453,7 @@ dispatch-pattern parameters.
 `derive` constructs a value of a requested **target type** by composing a caller-supplied set of **rule functions**, threading their outputs into one another's parameters until the target is produced. It is imported explicitly like any other macro (see [§ Macros are imported, not ambient](#macros-are-imported-not-ambient)). The motivating use case is building typeclass-like *instances* — most importantly deriving a `Monad` / `Applicative` / `Functor` instance for a composite type constructor (a monad-transformer stack) from base instances plus per-transformer rules — but the form is type-constructor-agnostic: any family of `fn`s whose signatures read as inference rules participates.
 
 ```kio
-import derive(macro derive);        // imported like any macro
+import derive {macro derive}        // imported like any macro
 
 derive((
   , <candidate1>
@@ -2534,7 +2529,7 @@ body returns unit. Import it explicitly to put a scoped computation in an
 expression position, such as an `equiv` arm:
 
 ```kio
-import macros/control(macro scope);
+import macros/control {macro scope}
 
 equiv id_unfolds[A](x: A) {
   scope {
@@ -2661,7 +2656,7 @@ no additional recursive tail positions.
 **Worked example.**
 
 ```kio
-import macros/sequence(macro do);
+import macros/sequence {macro do}
 
 type { Box[A]: A; }
 
@@ -2770,7 +2765,7 @@ after all declared blocks are supplied.
 - "callee `<path>` is not callable: its type is not a function" — the resolved value isn't a function.
 - "callee `<path>`'s type parameter `[A]` could not be resolved" — the receiver and arguments don't pin every type parameter.
 
-**No projector fallback.** A name `f` that isn't a free value in scope cannot be reached by UFCS — even when it's a member of a nominal type `F` that is in scope. To call a projector-shaped member receiver-style, bring it in as a free value (`import m(f);`) or use the nominal-member spelling (`F.get(r)`).
+**No projector fallback.** A name `f` that isn't a free value in scope cannot be reached by UFCS — even when it's a member of a nominal type `F` that is in scope. To call a projector-shaped member receiver-style, bring it in as a free value (`import m {fn f}`) or use the nominal-member spelling (`F.get(r)`).
 
 **Worked examples.**
 
@@ -2904,7 +2899,7 @@ and `r.>f() { B }` reject; omit the list for no extra prefix value, or write
 *Surface only; desugars to Kio'.*
 
 Kio supports function-backed fixed operators via top-level `op` declarations,
-macro-backed fixed operators via `op macro`, and variadic operators via `varop`.
+macro-backed fixed operators via `op_macro`, and variadic operators via `op_var`.
 Parsing records an operator expression under its explicit grammar; operator
 lowering replaces it with a call to the explicitly selected function or macro:
 
@@ -2924,19 +2919,19 @@ constructor/projector on a local or imported nominal type, directly or through a
 identity alias. It is not an arbitrary expression and does not admit a
 slash-qualified package FQN.
 
-An `op macro` target is an earlier same-module macro or an explicitly imported
+An `op_macro` target is an earlier same-module macro or an explicitly imported
 macro. The kind is part of the declaration and import contract: an ordinary
-`op` cannot select a macro, and `op macro` cannot select a function. Macro
+`op` cannot select a macro, and `op_macro` cannot select a function. Macro
 operators expand through the ordinary macro-call rules and introduce no
 compiler privilege for a particular library or operation name.
 
 These callable fields use ordinary path-expression source-order classes. A
 same-module ordinary or host `fn`, `rec` member, nominal head, or identity-alias
-head must precede the `op` or `varop`. Self-qualification and selective self-imports
+head must precede the `op` or `op_var`. Self-qualification and selective self-imports
 do not bypass the declaration-order rule.
 
 Operator syntax is source ordered too: an expression may use an exactly
-imported operator or a local `op` or `varop` declared before its enclosing item.
+imported operator or a local `op` or `op_var` declared before its enclosing item.
 Function bodies and recursive-group members do not see operators declared
 later in the module. Deferring a body's parsing does not change that scope.
 
@@ -2965,7 +2960,7 @@ Runs of four or more underscores are reserved.
 
 **Delayed operands.** Prefixing a slot with a dot (`._`, `.__`, or `.___`)
 preserves its parsing permission and wraps the entire parsed operand in an
-ordinary Unit-argument lambda. For example, `op macro _ && .__ { impl and; };`
+ordinary Unit-argument lambda. For example, `op_macro _ && .__ { impl and; };`
 makes `a && b && c` call `and(a, .() { and(b, .() { c }) })`. The same
 markers work with function-backed operators. All transformed operands form
 one ordinary product argument in written order; a delayed slot does not add
@@ -3020,13 +3015,13 @@ Bounded interior chain slots do not conflict merely by being multiple.
 Parentheses in a pattern quote one operator word, such as `(=)`; they do not
 change a slot's permission. Pattern groups containing slots are rejected.
 
-**Variadic operators.** `varop` declares delimited collection syntax. Its head
+**Variadic operators.** `op_var` declares delimited collection syntax. Its head
 is a structural square frame, either bare `[]` or marked by a symbol word
 inside each square edge:
 
 ```kio
-varop [* *] { foldr cons nil; };
-varop [! !] { foldl insert_entry empty_builder; };
+op_var [* *] { foldr cons nil; };
+op_var [! !] { foldl insert_entry empty_builder; };
 ```
 
 For a marker `M`, OPEN is `[` followed by `M` and CLOSE is the reversed `M`
@@ -3126,7 +3121,7 @@ and visibility are the same as for fixed operators.
 Variadic square frames are distinct from fixed-operator words, which contain
 neither dots nor brackets. Their nesting and comma-separated expression boundaries
 are determined by the written source, without consulting operator declarations
-or imports. A literal still requires its `varop` binding to be in scope for
+or imports. A literal still requires its `op_var` binding to be in scope for
 resolution and lowering.
 
 {:#operator-grammar}
@@ -3140,11 +3135,11 @@ the callable body. For example:
 | Declaration | Import selection |
 |---|---|
 | `op _ + __ { impl add; };` | `op _ + __` |
-| `op macro _ && .__ { impl and; };` | `op macro _ && .__` |
+| `op_macro _ && .__ { impl and; };` | `op_macro _ && .__` |
 | `op _ ? _ : ___ { impl cond; };` | `op _ ? _ : ___` |
 | `op _ <\| ___ \|> { impl index; };` | `op _ <\| ___ \|>` |
-| `varop [* *] { foldr cons nil; };` | `varop [* *]` |
-| `varop [! !] { foldl insert empty; };` | `varop [! !]` |
+| `op_var [* *] { foldr cons nil; };` | `op_var [* *]` |
+| `op_var [! !] { foldl insert empty; };` | `op_var [! !]` |
 
 Canonical rendering retains distinctions between complete grammars, including
 slot kinds, whole-word boundaries, and required contextual operator-token
@@ -3176,7 +3171,7 @@ member each cover the referring operator's visibility.
 operator alongside ordinary names:
 
 ```kio
-import syntax(Mytype, my_function, op _ + __, varop [* *]);
+import syntax {type Mytype; fn my_function; op _ + __; op_var [* *]}
 ```
 
 The consumer restates the complete grammar. Its parser installs the written
@@ -3184,9 +3179,8 @@ pattern without loading any provider declaration, then parses bodies using
 those imports and preceding local declarations. Consequently `kio fmt`, the
 REPL parser, and syntax-only language-server requests can parse operator-bearing
 text without a provider file, package, cache, or declaration catalogue. A
-standalone `op` or `varop` selection is an ordinary value name; the following
-pattern or delimiter pair identifies an operator tag. A `varop` import has no
-internal comma, so a following comma belongs to the surrounding selection list.
+the explicit kind identifies the operator category, and the following pattern
+or delimiter pair identifies its grammar.
 
 Semantic resolution then checks the exact explicitly named provider's exported
 record and compares the whole grammar. An unavailable export or a mismatching
@@ -3202,12 +3196,12 @@ callable field reaches another module only through an ordinary selective import
 or explicit module alias, never by a slash-qualified implementation field.
 Visibility is checked on every directly named callable as described above.
 
-**Import aliases.** `import arithmetic(op _ + __ as _ ++ __);` selects the
+**Import aliases.** `import arithmetic {op _ + __ as _ ++ __}` selects the
 complete source grammar and installs only the complete destination grammar.
 The function/macro kind, every token/slot position, slot kind, delay marker, and word boundary
 is preserved. Literal tokens may change by a consistent injective substitution:
 each repeated token keeps one replacement and distinct tokens stay distinct.
-`import collections(varop [] as [* *]);` similarly changes only the admitted
+`import collections {op_var [] as [* *]}` similarly changes only the admitted
 mirrored delimiter pair, preserving fold direction, initializer, step and
 finalizer. Reserved syntax and structural pattern checks, including `__`
 usefulness, apply to the local grammar. An alias never changes the callable's
@@ -3322,7 +3316,7 @@ Variadic keys are the structurally selected markers, including the empty
 marker for bare brackets. No provider census or successful trial parse chooses
 a key.
 
-**Lowering.** The operator-fold pass replaces fixed-operator applications and variadic literals with ordinary calls using the consumer's explicit operator scope. Fixed and variadic declaration records and tagged import selections are consumed before Kio'. Kio' shares the symbol-word lexer and structural delimiters but has no `op` or `varop` declaration, operator import, or user-operator expression production.
+**Lowering.** The operator-fold pass replaces fixed-operator applications and variadic literals with ordinary calls using the consumer's explicit operator scope. Fixed and variadic declaration records and tagged import selections are consumed before Kio'. Kio' shares the symbol-word lexer and structural delimiters but has no `op` or `op_var` declaration, operator import, or user-operator expression production.
 
 **Out of scope.** Bare-operator-as-value (`map(+, xs)`) is not supported.
 

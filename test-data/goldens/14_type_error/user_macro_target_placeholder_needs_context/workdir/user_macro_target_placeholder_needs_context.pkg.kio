@@ -1,4 +1,4 @@
-package user_macro_target_placeholder_needs_context;
+pkg user_macro_target_placeholder_needs_context;
 
 build {
   cache "out/.kio-cache/";

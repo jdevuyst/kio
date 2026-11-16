@@ -1,4 +1,4 @@
-module api;
+mod api;
 
 import a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a as deep;
 import api/api as repeated;

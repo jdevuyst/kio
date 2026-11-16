@@ -1,4 +1,4 @@
-package warehouse_pick_route;
+pkg warehouse_pick_route;
 
 build {
   cache "out/.kio-cache/";

@@ -130,7 +130,7 @@ mod tests {
 
     #[test]
     fn empty_module_yields_no_ranges() {
-        assert!(ranges_for("module pkg/main;\n").is_empty());
+        assert!(ranges_for("mod pkg/main;\n").is_empty());
     }
 
     #[test]
@@ -143,7 +143,7 @@ mod tests {
     #[test]
     fn single_fn_body_yields_one_range() {
         let source = concat!(
-            "module pkg/main;\n",
+            "mod pkg/main;\n",
             "pub fn run() -> . {\n",
             "    ()\n",
             "}\n",
@@ -160,7 +160,7 @@ mod tests {
     fn nested_braces_yield_multiple_ranges() {
         // A function body with an inner conditional brace.
         let source = concat!(
-            "module pkg/main;\n",
+            "mod pkg/main;\n",
             "pub fn f(x: Bool) -> . {\n",
             "    let r = if(true) {\n",
             "        ()\n",
@@ -182,7 +182,7 @@ mod tests {
     #[test]
     fn single_line_brace_not_emitted() {
         // A one-line fn body `{ () }` doesn't fold usefully.
-        let source = "module pkg/main;\npub fn run() -> . { () }\n";
+        let source = "mod pkg/main;\npub fn run() -> . { () }\n";
         let ranges = ranges_for(source);
         assert!(
             ranges.is_empty(),
@@ -196,7 +196,7 @@ mod tests {
         // Unclosed brace: `{` with no matching `}`. The skeleton
         // recovers it, synthesizing a close at EOF. If the content
         // spans multiple lines the range must still appear.
-        let source = "module pkg/main;\npub fn run() -> . {\n    ()\n";
+        let source = "mod pkg/main;\npub fn run() -> . {\n    ()\n";
         let ranges = ranges_for(source);
         // Recovered brace: skeleton marks it but we still emit the
         // range because the start and end lines differ.

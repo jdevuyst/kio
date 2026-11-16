@@ -1,4 +1,4 @@
-module main;
+mod main;
 
 // `<U>` is only legal in a parameter list (declaration or function-
 // type expression), never as a standalone type. A type-alias body

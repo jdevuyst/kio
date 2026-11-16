@@ -14,7 +14,7 @@ bridge {
   kiodoc;
 }
 
-module kiodoc;
+mod kiodoc;
 
 host type S role(str);
 host type I role(i32);

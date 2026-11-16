@@ -1,4 +1,4 @@
-package teu;
+pkg teu;
 
 build {
   cache "out/.kio-cache/";

@@ -1,4 +1,4 @@
-package lazy_fallback_wrong_type;
+pkg lazy_fallback_wrong_type;
 
 build {
   cache "out/.kio-cache/";

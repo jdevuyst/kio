@@ -153,10 +153,7 @@ section; it is *derived by replaying* the blocks in version order.
 Properties:
 
 - **Backend-independent.** The recorded signatures are typed Kio' signatures.
-  The source-compatible `{ owned }` block on a `host type`, and any other
-  non-contract annotation, is **rejected**: the block selects no alternate
-  facade and does not belong in the changelog's backend-independent contract
-  surface. Each backend reads the same changelog and applies its own
+  Non-contract annotations are excluded from the changelog’s backend-independent contract surface. Each backend reads the same changelog and applies its own
   deprecation policy to that contract, never to source-only annotations.
 - **History-bearing.** The changelog remembers what was removed: a `remove`
   block names an item, and the item's signature lives in the earlier
@@ -229,10 +226,10 @@ The file begins with a header naming the package and its current contract
 generation:
 
 ```text
-signature app v(3);
+sig app v(3);
 ```
 
-`signature` is a file-shape keyword, a sibling of `package` and `module`.
+`sig` is a file-shape keyword, a sibling of `pkg` and `mod`.
 `v(N)` is the current generation — the number `kio sig commit` increments. The
 generation is **author, CI, and changelog bookkeeping only**: neither the
 loader nor the compatibility check ever reads it (both are structural). There
@@ -260,12 +257,12 @@ Canonical formatting prints `with`, then `breaking`, then `nonbreaking`,
 omitting empty sections:
 
 ```text
-signature app v(2);
+sig app v(2);
 
 v(1) {
   nonbreaking {
     add {
-      module app {
+      mod app {
         host type Str role(str);
         host fn print(p0: Str);
       }
@@ -276,7 +273,7 @@ v(1) {
 v(2) {
   nonbreaking {
     add {
-      module app {
+      mod app {
         pub fn greet(p0: Str);
       }
     }
@@ -299,13 +296,12 @@ NonbreakingBlock   ::= 'nonbreaking' '{' SemiEntries<SigOperation> '}'
 SigOperation       ::= ('add' | 'modify') '{' SemiEntries<SigOperationEntry> '}'
                      | 'remove' '{' SemiEntries<SigRemoveEntry> '}'
 SigOperationEntry  ::= SigItemRef | SigModuleSection
-SigRemoveEntry     ::= SigItemRef | LegacyRemoveSection
+SigRemoveEntry     ::= SigItemRef
 SigItemRef         ::= ModulePath '.' IDENT
-SigModuleSection   ::= 'module' ModulePath '{' SemiEntries<SigModuleEntry> '}'
+SigModuleSection   ::= 'mod' ModulePath '{' SemiEntries<SigModuleEntry> '}'
 SigModuleEntry     ::= ImportEntry | DocBlock? SigDeclaration
 SigDeclaration    ::= TypeAliasBody | Newtype | RecursiveNewtype | TypeRecGroup
                      | HostTypeBody | HostFnBody | SigExportFn
-LegacyRemoveSection ::= 'module' ModulePath '{' SemiEntries<IDENT> '}'
 ```
 
 `SemiEntries` and the declaration/import bodies are defined in
@@ -337,7 +333,7 @@ the author recorded when sealing it with `kio sig commit -m "..."`:
 /// Add the `greet` export; drop the unused `debug` host hook.
 v(2) {
   nonbreaking {
-    add { module app { pub fn greet(p0: Str); } }
+    add { mod app { pub fn greet(p0: Str); } }
   }
 }
 ```
@@ -365,7 +361,7 @@ section:
 
 ```text
 add {
-  module util/io {
+  mod util/io {
     host type Str role(str);
     host fn write(p0: Str);
   }
@@ -388,7 +384,7 @@ exact FQN and never repeat the declarations or module scaffolding:
 ```text
 v(1) {
   with {
-    module api {
+    mod api {
       rec {
         pub type Tree = Branch;
         pub type { Branch: Tree { pub mk; pub get; }; };
@@ -474,7 +470,7 @@ A nominal type records an explicit singleton declaration with its fixed members:
 
 ```text
 add {
-  module app {
+  mod app {
     pub type { Old_type: Str { pub mk; pub get; }; };
   }
 }
@@ -507,9 +503,7 @@ remove {
 ```
 
 Canonical output uses exact `ModulePath.IDENT` references for every removal.
-The legacy `module app { old_fn; }` spelling remains accepted when reading an
-existing changelog but formats to `app.old_fn;`; new output never writes the
-nested form. A bare name remains side-ambiguous on its own — a value-shaped name
+A bare name remains side-ambiguous on its own — a value-shaped name
 could be a host fn or an exported fn, and a type-shaped name a `host type` or an exported
 nominal type or alias — so the changelog verifier **replays the history to the
 item's introducing `add` / `modify` operation** to recover its side (which

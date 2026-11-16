@@ -1,6 +1,6 @@
-module main;
+mod main;
 
-import macros/algebraic_macros(macro onto);
+import macros/algebraic_macros { macro onto }
 
 // Identity-`onto` on `A | A` (two identical DNF branches). The
 // source's two arms are routed to distinct target arms by the

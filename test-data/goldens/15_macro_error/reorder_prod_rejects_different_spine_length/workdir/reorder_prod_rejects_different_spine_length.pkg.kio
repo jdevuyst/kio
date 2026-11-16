@@ -1,4 +1,4 @@
-package reorder_prod_rejects_different_spine_length;
+pkg reorder_prod_rejects_different_spine_length;
 
 build {
   cache "out/.kio-cache/";

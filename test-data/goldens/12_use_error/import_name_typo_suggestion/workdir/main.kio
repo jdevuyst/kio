@@ -1,5 +1,5 @@
-module main;
+mod main;
 
-import support(hepler);
+import support { fn hepler }
 
 pub fn main() { helper() }

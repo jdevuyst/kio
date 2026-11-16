@@ -1,10 +1,10 @@
-module testapi/main;
+mod testapi/main;
 
-import origin(Item, Pack);
-import testapi(String);
-import testapi/io(print);
+import origin { type Item; type Pack }
+import testapi { type String }
+import testapi/io { fn print }
 import view as field;
-import view(Entry);
+import view { type Entry }
 
 fn make_item[A](value: A) -> Item[A] { Entry.mk(value) }
 

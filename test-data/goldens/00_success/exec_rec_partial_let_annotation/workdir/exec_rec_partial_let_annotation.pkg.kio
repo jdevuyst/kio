@@ -1,4 +1,4 @@
-package exec_rec_partial_let_annotation;
+pkg exec_rec_partial_let_annotation;
 
 build {
   cache "out/.kio-cache/";

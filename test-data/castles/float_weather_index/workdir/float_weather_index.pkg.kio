@@ -1,4 +1,4 @@
-package float_weather_index;
+pkg float_weather_index;
 
 build {
   cache "out/.kio-cache/";

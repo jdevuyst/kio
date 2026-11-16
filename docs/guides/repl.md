@@ -37,7 +37,7 @@ bridge {
   kiodoc;
 }
 
-module kiodoc;
+mod kiodoc;
 
 __INSERT_CODE_HERE__
 -->
@@ -127,9 +127,9 @@ Most commands have a short and a long spelling. Both are first-class — use whi
 
 `:signature` (`:sig`), `:source` (`:src`), `:doc`, `:which`, and `:refs`
 accept an ordinary declaration name, a nominal member such as `Name.mk` or
-`Name.get`, or an operator selector written with its complete `op` / `varop`
+`Name.get`, or an operator selector written with its complete `op` / `op_var`
 grammar.
-For an operator, include its slots and the `op` or `varop` keyword; a symbol
+For an operator, include its slots and the `op` or `op_var` keyword; a symbol
 such as `+` alone does not identify its declaration.
 
 ```text
@@ -139,7 +139,7 @@ such as `+` alone does not identify its declaration.
 :sig Name.get
 :sig op _ + _
 :sig math/arith.(op _ + _)
-:sig collections.(varop [* *])
+:sig collections.(op_var [* *])
 :sig math/arith.(op _ (=) _)
 ```
 
@@ -208,7 +208,7 @@ formatting preserves source digits; normalization shows the semantic value.
 
 Host calls remain visible even when their `()` result is discarded, so an extra `print(...)` still changes the residual form. A call to an opaque generic value also keeps its type arguments, for example `callee[T](arg)[U]`; the brackets show type-application stages that could not reduce. A function result is summarized by where it came from and which parameter groups remain, for example `<closure provider.wrap(x)(y)>`. This is an explanation, not Kio code: the REPL does not repeat the function body or its captured values, and two matching closure summaries are not proof that the functions are equivalent. If reduction leaves a nominal constructor or projector from a dependency in any other result that the current module cannot identify clearly, the REPL prints ordinary qualified `import` lines that distinguish the declarations, then a blank line and the reduced expression. Those lines explain which declarations the answer means; they do not change the loaded module's scope or promise that copying the output produces a complete program. Private declarations and missing surrounding type information can still keep such a copy from type-checking. The REPL omits the extra lines when the current module already has an unshadowed name for every declaration. Reduction uses the same rules as `equiv` proofs (Kio's mechanism for asserting two expressions are equivalent; see [`specs/formal/equiv.md`](../../specs/formal/equiv.md)); the informational closure summary is only a display of that internal result.
 
-`:t` reports just the synthesized type — the same line a bare expression already prints first — and accepts either a name/FQN or an expression. These remain distinct input categories: a spelling that resolves as a declared name or exact item FQN, such as `my_package/examples.example_fn1`, or names a loaded module uses the name branch. Otherwise, a path-shaped spelling that parses in the current module uses the expression branch. That includes an alias-qualified value path such as `value.item`, and a slash-operator expression with either a bare or dotted right operand when `/` is imported. Once that expression parses, any type error is reported as an expression error; if the expression parse also fails, the name-resolution error is reported. Asked of a type-level name (a nominal type or alias), `:t` reports a kind error: a type-level name binds no value, so it has no type to print (use `:signature` for its declaration header). Asked of a `literal` alias, `:t` asks for an annotated expression such as `name[Type]`, because the literal gets its concrete type from the use site.
+`:t` reports just the synthesized type — the same line a bare expression already prints first — and accepts either a name/FQN or an expression. These remain distinct input categories: a spelling that resolves as a declared name or exact item FQN, such as `my_package/examples.example_fn1`, or names a loaded module uses the name branch. Otherwise, a path-shaped spelling that parses in the current module uses the expression branch. That includes an alias-qualified value path such as `value.item`, and a slash-operator expression with either a bare or dotted right operand when `/` is imported. Once that expression parses, any type error is reported as an expression error; if the expression parse also fails, the name-resolution error is reported. Asked of a type-level name (a nominal type or alias), `:t` reports a kind error: a type-level name binds no value, so it has no type to print (use `:signature` for its declaration header). Asked of a `lit` alias, `:t` asks for an annotated expression such as `name[Type]`, because the literal gets its concrete type from the use site.
 
 `:pure` accepts the same two categories and prints either `pure` or `impure`. For a declaration name or exact FQN, it reads the declaration contract: a `pure fn` is pure, while an unmarked `fn` or a `host fn` is impure. Other declaration kinds receive a kind-aware error because they are not executable value bindings. For an expression, the REPL asks whether the compiler would admit that expression as the body of an ordinary `pure fn`. If only an unrestricted function admits it, the answer is `impure`; if neither context admits it, the REPL shows the underlying syntax or type error instead. This is a compile-time query and does not evaluate the expression. The pure context includes nested lambda bodies, so a lambda that refers to a host function is impure even when the query only constructs the lambda and never calls it.
 

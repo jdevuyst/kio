@@ -1,4 +1,4 @@
-package signature_visibility_recursive_function;
+pkg signature_visibility_recursive_function;
 
 build {
   cache "out/.kio-cache/";

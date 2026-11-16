@@ -146,11 +146,11 @@ pub fn files(probe: &ControlProbe) -> Vec<(String, String)> {
         }
         runtime.push_str(" () }\n");
         *runtime = runtime.replace(
-            "import testapi(String);",
+            "import testapi { type String }",
             if selective_alias {
-                "import testapi(String);\nimport kio_gen_types(transform as selected_transform);"
+                "import testapi { type String }\nimport kio_gen_types { fn transform as selected_transform }"
             } else {
-                "import testapi(String);\nimport kio_gen_types as type_probe;"
+                "import testapi { type String }\nimport kio_gen_types as type_probe;"
             },
         );
         files.push(("workdir/kio_gen_types.kio".into(), type_probe(types)));
@@ -161,8 +161,8 @@ pub fn files(probe: &ControlProbe) -> Vec<(String, String)> {
                 .unwrap()
                 .1;
             *runtime = runtime.replace(
-                "import testapi(String);",
-                "import testapi(String);\nimport kio_gen_rows as row_probe;",
+                "import testapi { type String }",
+                "import testapi { type String }\nimport kio_gen_rows as row_probe;",
             );
             files.push(("workdir/kio_gen_rows.kio".into(), row_probe(probe)));
         }
@@ -173,19 +173,19 @@ pub fn files(probe: &ControlProbe) -> Vec<(String, String)> {
                 .unwrap()
                 .1;
             *runtime = runtime.replace(
-                "import testapi(String);",
-                "import testapi(String);\nimport kio_gen_recursion as recursion_probe;",
+                "import testapi { type String }",
+                "import testapi { type String }\nimport kio_gen_recursion as recursion_probe;",
             );
             files.push((
                 "workdir/kio_gen_recursion.kio".into(),
                 recursion_probe(probe),
             ));
-            files.push(("workdir/testapi/iter.kio".into(), "module testapi/iter;\nhost fn loop[S][R](step: S -> (S | R), state: S) -> R;\nhost fn loop_reentry[S][R](step: ((S -> R) & S) -> (S | R), state: S) -> R;\n".into()));
+            files.push(("workdir/testapi/iter.kio".into(), "mod testapi/iter;\nhost fn loop[S][R](step: S -> (S | R), state: S) -> R;\nhost fn loop_reentry[S][R](step: ((S -> R) & S) -> (S | R), state: S) -> R;\n".into()));
         }
         return files;
     }
     let mut declarations = String::from(
-        r#"module kio_gen_control_blocks;
+        r#"mod kio_gen_control_blocks;
 import __comptime__;
 
 pure fn apply(ct: __Comptime__, fills: __Fill_ctx__, left_type: __Type__, right_type: __Type__, arguments: __Checked_term__) -> __Checked_term__ & __Fill_ctx__ {
@@ -203,11 +203,11 @@ pure fn apply(ct: __Comptime__, fills: __Fill_ctx__, left_type: __Type__, right_
 "#,
     );
     let mut runtime = String::from(
-        r#"module kio_gen_control;
-import testapi(String);
+        r#"mod kio_gen_control;
+import testapi { type String }
 import testapi/io as io;
-import sequence(Bind, macro do);
-import kio_gen_control_blocks(macro probe, macro nested_probe);
+import sequence { type Bind; macro do }
+import kio_gen_control_blocks { macro probe; macro nested_probe }
 
 type { Box[A]: A; }
 type { Receiver: Bind[Box]; }
@@ -289,7 +289,8 @@ fn nested_consumer(first: . -> String)(second: . -> String) { io.print("consumer
         ),
         (
             "workdir/testapi/io.kio".into(),
-            "module testapi/io;\nimport testapi(String);\nhost fn print(s: String) -> .;\n".into(),
+            "mod testapi/io;\nimport testapi { type String }\nhost fn print(s: String) -> .;\n"
+                .into(),
         ),
     ]
 }
@@ -297,7 +298,7 @@ fn nested_consumer(first: . -> String)(second: . -> String) { io.print("consumer
 fn row_probe(probe: &RowProbe) -> String {
     let types = ["First", "Middle", "Last"];
     let mut out = String::from(
-        "module kio_gen_rows;\nimport testapi(String);\nimport testapi/io as io;\nimport row_macros(macro record, macro with, macro select);\ntype { First: String; Middle: String; Last: String; }\n",
+        "mod kio_gen_rows;\nimport testapi { type String }\nimport testapi/io as io;\nimport row_macros { macro record; macro with; macro select }\ntype { First: String; Middle: String; Last: String; }\n",
     );
     out.push_str(&format!(
         "type Row = {};\nfn source() -> Row {{ io.print(\"row-source\\n\"); record {{ {} }} }}\n",
@@ -369,7 +370,7 @@ fn row_probe(probe: &RowProbe) -> String {
 
 fn type_probe(probe: &TypeProbe) -> String {
     let mut out = String::from(
-        "module kio_gen_types;\nimport __intrinsics__;\nimport testapi(String);\nimport testapi/io as io;\n\n",
+        "mod kio_gen_types;\nimport __intrinsics__;\nimport testapi { type String }\nimport testapi/io as io;\n\n",
     );
     match probe {
         TypeProbe::Staged {
@@ -450,7 +451,7 @@ fn type_probe(probe: &TypeProbe) -> String {
 
 fn recursion_probe(probe: &RecursionProbe) -> String {
     let mut out = String::from(
-        "module kio_gen_recursion;\nimport __intrinsics__;\nimport match(macro match);\nimport testapi(String);\nimport testapi/io as io;\nimport testapi/iter as iter;\n\nrec type { Counter: . | Counter; }\nfn identity(value: String) -> String { value }\n",
+        "mod kio_gen_recursion;\nimport __intrinsics__;\nimport match { macro match }\nimport testapi { type String }\nimport testapi/io as io;\nimport testapi/iter as iter;\n\nrec type { Counter: . | Counter; }\nfn identity(value: String) -> String { value }\n",
     );
     let poly = matches!(
         probe.mode,

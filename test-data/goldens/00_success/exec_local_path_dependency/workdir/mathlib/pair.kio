@@ -1,4 +1,4 @@
-module mathlib/pair;
+mod mathlib/pair;
 
 pub type Pair[A] = A & A;
 

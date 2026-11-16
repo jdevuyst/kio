@@ -1,4 +1,4 @@
-module api;
+mod api;
 
 pub type { Vault[A]: A { mk; get } }
 

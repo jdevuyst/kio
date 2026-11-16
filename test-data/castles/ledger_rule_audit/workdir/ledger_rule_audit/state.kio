@@ -1,7 +1,7 @@
-module ledger_rule_audit/state;
+mod ledger_rule_audit/state;
 
-import macros/row_macros(macro record, macro select, macro with);
-import testapi(I32);
+import macros/row_macros { macro record; macro select; macro with }
+import testapi { type I32 }
 import testapi/arith as arith;
 
 pub type Ledger = {

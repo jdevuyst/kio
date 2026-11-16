@@ -1,4 +1,4 @@
-module caller;
+mod caller;
 
 import __intrinsics__;
 

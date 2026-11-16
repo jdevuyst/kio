@@ -1,14 +1,14 @@
-module flow/certificate;
+mod flow/certificate;
 
 import flow/math as math;
 import flow/network as net;
 import flow/search as search;
-import macros/control(macro if);
-import macros/row_macros(macro select);
-import testapi(Array, Bool, I32);
+import macros/control { macro if }
+import macros/row_macros { macro select }
+import testapi { type Array; type Bool; type I32 }
 import testapi/arith as a;
 import testapi/array as ar;
-import testapi/iter(loop);
+import testapi/iter { fn loop }
 
 pub type Certificate = {
   Capacity_ok: Bool;

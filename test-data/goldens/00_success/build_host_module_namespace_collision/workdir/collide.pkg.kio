@@ -1,4 +1,4 @@
-package collide;
+pkg collide;
 
 build {
   cache "out/.kio-cache/";

@@ -1,4 +1,4 @@
-package exec_gcd_euclid;
+pkg exec_gcd_euclid;
 
 build {
   cache "out/.kio-cache/";

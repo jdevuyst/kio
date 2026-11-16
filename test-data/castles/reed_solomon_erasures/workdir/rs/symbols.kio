@@ -1,10 +1,10 @@
-module rs/symbols;
+mod rs/symbols;
 
 import list/core as c;
 import list/list as l;
-import macros/row_macros(macro select);
+import macros/row_macros { macro select }
 import rs/polynomial as p;
-import testapi(Bool, I32, String);
+import testapi { type Bool; type I32; type String }
 import testapi/fmt as fmt;
 import testapi/text as text;
 

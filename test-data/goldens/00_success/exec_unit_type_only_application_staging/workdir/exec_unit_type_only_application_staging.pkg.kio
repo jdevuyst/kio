@@ -1,4 +1,4 @@
-package exec_unit_type_only_application_staging;
+pkg exec_unit_type_only_application_staging;
 
 build {
   cache "out/.kio-cache/";

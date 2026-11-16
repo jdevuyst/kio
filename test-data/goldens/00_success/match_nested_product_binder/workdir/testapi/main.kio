@@ -1,11 +1,11 @@
-module testapi/main;
+mod testapi/main;
 
-import macros/match(macro match);
-import macros/spine_macros(macro widen_sum);
-import testapi(I32, String);
-import testapi/fmt(int_to_string);
-import testapi/io(print);
-import testapi/text(string_concat);
+import macros/match { macro match }
+import macros/spine_macros { macro widen_sum }
+import testapi { type I32; type String }
+import testapi/fmt { fn int_to_string }
+import testapi/io { fn print }
+import testapi/text { fn string_concat }
 
 // A cons-list whose head is itself a **nested product**:
 // `((I32 & a) & I32)` — a `(key-value, sibling-key)` frame. The

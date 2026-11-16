@@ -212,8 +212,7 @@ use crate::pipeline::Pipeline;
 #[cfg(feature = "prime")]
 use crate::prime::pipeline::PrimePipeline;
 
-const HELP_TEMPLATE: &str = "\
-Usage: kio check [<module>...]
+const HELP_TEMPLATE: &str = "Usage: kio check [<module>...]
 
 Typecheck the current package.
 
@@ -3591,8 +3590,8 @@ mod tests {
         let directory = tempfile::tempdir().unwrap();
         let root = std::fs::canonicalize(directory.path()).unwrap();
         std::fs::create_dir(root.join("nested")).unwrap();
-        std::fs::write(root.join("probe.pkg.kio"), "package probe;").unwrap();
-        std::fs::write(root.join("main.kio"), "module main;").unwrap();
+        std::fs::write(root.join("probe.pkg.kio"), "pkg probe;").unwrap();
+        std::fs::write(root.join("main.kio"), "mod main;").unwrap();
         let provider = root.join("nested/provider.kio");
         for (declared, expected) in [
             ("provider", None),
@@ -3600,7 +3599,7 @@ mod tests {
         ] {
             std::fs::write(
                 &provider,
-                format!("module {declared}; pub fn chosen() {{ missing }}"),
+                format!("mod {declared}; pub fn chosen() {{ missing }}"),
             )
             .unwrap();
             let mut declarations = None;
@@ -3668,7 +3667,7 @@ mod tests {
     #[test]
     fn scheduled_package_assembly_reestablishes_alpha_normalization() {
         let parsed = crate::pass::parser::parse(
-            "module main;
+            "mod main;
              fn outer[A](seed: A) -> . {
                  let inner = .[A](value: A) { value };
                  ()
@@ -3722,7 +3721,7 @@ mod tests {
     #[test]
     fn scheduled_typed_module_entry_indexes_the_transformed_module() {
         let parsed =
-            crate::pass::parser::parse("module main; fn keep() -> . { () }").expect("parse module");
+            crate::pass::parser::parse("mod main; fn keep() -> . { () }").expect("parse module");
         let module = crate::prime::lower::lower_module(parsed).expect("lower Kio'");
         let package = Package::build(
             Path::new(""),
@@ -3770,28 +3769,16 @@ mod tests {
     #[test]
     fn scheduled_package_assembly_indexes_generated_prime_imports() {
         let temp = tempfile::tempdir().expect("temporary package");
-        std::fs::write(temp.path().join("root.pkg.kio"), "package root;")
-            .expect("write package file");
+        std::fs::write(temp.path().join("root.pkg.kio"), "pkg root;").expect("write package file");
         std::fs::create_dir(temp.path().join("pkg")).expect("create module directory");
         std::fs::write(
             temp.path().join("pkg/refl.kio"),
-            "module pkg/refl; \
-             import __comptime__; \
-             pub pure fn make_rep_impl(ct: __Comptime__, _rep_type: __Type__, ctor: __Checked_term__, _source: __Type__, _unit: __Checked_term__) -> __Checked_term__ { \
-               __term_call__(ct, __term_type__(ct, ctor), ctor, __term_unit__(ct)) \
-             } \
-             pub type Rep_payload = .; \
-             pub type { Rep: Rep_payload { pub mk; pub get; }; }; \
-             pub macro make_rep : [T] . -> Rep { captures (Rep, Rep.mk); impl make_rep_impl; }; \
-             fn keep() -> . { () }",
+            "mod pkg/refl; import __comptime__; pub pure fn make_rep_impl(ct: __Comptime__, _rep_type: __Type__, ctor: __Checked_term__, _source: __Type__, _unit: __Checked_term__) -> __Checked_term__ { __term_call__(ct, __term_type__(ct, ctor), ctor, __term_unit__(ct)) } pub type Rep_payload = .; pub type { Rep: Rep_payload { pub mk; pub get; }; }; pub macro make_rep : [T] . -> Rep { captures (Rep, Rep.mk); impl make_rep_impl; }; fn keep() -> . { () }",
         )
         .expect("write macro module");
         std::fs::write(
             temp.path().join("pkg/main.kio"),
-            "module pkg/main; \
-             import pkg/refl(Rep); \
-             import pkg/refl(macro make_rep); \
-             fn main() -> Rep { make_rep[.](()) }",
+            "mod pkg/main; import pkg/refl {type Rep} import pkg/refl {macro make_rep} fn main() -> Rep { make_rep[.](()) }",
         )
         .expect("write consumer module");
 
@@ -3862,7 +3849,7 @@ mod tests {
         assert_eq!(error_if_no_kio_files(empty.path()), Err(ExitCode::Usage));
 
         let nonempty = tempfile::tempdir().expect("tempdir");
-        std::fs::write(nonempty.path().join("a.kio"), "module a;\n").expect("write module");
+        std::fs::write(nonempty.path().join("a.kio"), "mod a;\n").expect("write module");
         assert_eq!(error_if_no_kio_files(nonempty.path()), Ok(()));
     }
 
@@ -3888,7 +3875,7 @@ mod tests {
         let modules = if materialized {
             vec![(
                 root_dir.join("foo/lib.kio"),
-                crate::pass::parser::parse("module foo/lib;\n").expect("parse module"),
+                crate::pass::parser::parse("mod foo/lib;\n").expect("parse module"),
             )]
         } else {
             Vec::new()
@@ -3938,13 +3925,13 @@ mod tests {
     pub(super) fn analyze_lsp_fixture(source: &str) -> (tempfile::TempDir, LspAnalysis, PathBuf) {
         let dir = tempfile::tempdir().expect("tempdir");
         std::fs::create_dir_all(dir.path().join("pkg")).expect("create package dir");
-        std::fs::write(dir.path().join("pkg.kio"), "module pkg;\n").expect("write root module");
+        std::fs::write(dir.path().join("pkg.kio"), "mod pkg;\n").expect("write root module");
         std::fs::write(
             dir.path().join("pkg.pkg.kio"),
-            "package pkg;\n\nbridge {\n  pkg;\n  pkg/**;\n}\n",
+            "pkg pkg;\n\nbridge {\n  pkg;\n  pkg/**;\n}\n",
         )
         .expect("write package file");
-        if source.contains("import sequence(macro do)") {
+        if source.contains("import sequence {macro do}") {
             std::fs::write(
                 dir.path().join("sequence.kio"),
                 include_str!("../../../test-data/poc/macros/workdir/sequence.kio"),
@@ -3964,7 +3951,7 @@ mod tests {
 
     #[cfg(all(feature = "surface", feature = "lsp"))]
     const COPIED_RECEIVER_SOURCE: &str = concat!(
-        "module pkg/main; import sequence(macro do);\n",
+        "mod pkg/main; import sequence {macro do}\n",
         "type { Left: . { mk; get; }; };\n",
         "type { Right: . { mk; get; }; };\n",
         "type { Box[A]: A { mk; get; }; };\n",
@@ -4078,7 +4065,7 @@ mod tests {
         use crate::lsp::positions::LineIndex;
         use lsp_types::{InlayHintLabel, Position, Range};
         let source = concat!(
-            "module pkg/main;\n",
+            "mod pkg/main;\n",
             "fn pair[X][Y](x: X, y: Y) -> X { x }\n",
             "fn id[X](x: X) -> X { x }\n",
             "fn choose[X](left: X, right: X) -> X { left }\n",
@@ -4131,7 +4118,7 @@ mod tests {
         use crate::lsp::positions::LineIndex;
         use lsp_types::{InlayHintLabel, Position, Range};
         let source = concat!(
-            "module pkg/main; import sequence(macro do);\n",
+            "mod pkg/main; import sequence {macro do}\n",
             "type { Box[A]: A { mk; get; }; };\n",
             "fn pure[A](value: A) -> Box[A] { Box.mk(value) }\n",
             "fn factory[X](value: X) -> [A][B](Box[A] & (A -> Box[B])) -> Box[B] {\n",
@@ -4186,14 +4173,14 @@ mod tests {
         std::fs::create_dir_all(dir.path().join("pkg")).expect("create package dir");
         std::fs::write(
             dir.path().join("pkg.pkg.kio"),
-            "package pkg;\n\nbridge {\n  pkg;\n  pkg/**;\n}\n",
+            "pkg pkg;\n\nbridge {\n  pkg;\n  pkg/**;\n}\n",
         )
         .expect("write package file");
-        std::fs::write(dir.path().join("pkg.kio"), "module pkg;\n").expect("write root module");
+        std::fs::write(dir.path().join("pkg.kio"), "mod pkg;\n").expect("write root module");
         std::fs::write(
             dir.path().join("pkg/provider.kio"),
             concat!(
-                "module pkg/provider;\n",
+                "mod pkg/provider;\n",
                 "\n",
                 "import __comptime__;\n",
                 "\n",
@@ -4208,7 +4195,7 @@ mod tests {
         )
         .expect("write provider module");
         let role_source = concat!(
-            "module pkg/roles;\n",
+            "mod pkg/roles;\n",
             "\n",
             "import __intrinsics__;\n",
             "\n",
@@ -4221,7 +4208,7 @@ mod tests {
         std::fs::write(dir.path().join("pkg/roles.kio"), role_source)
             .expect("write role-order module");
         let source = concat!(
-            "module pkg/main;\n",
+            "mod pkg/main;\n",
             "\n",
             "import pkg/provider as helper;\n",
             "import __intrinsics__;\n",
@@ -4230,11 +4217,11 @@ mod tests {
             "op _ + _ { impl helper.combine; };\n",
             "op _ - _ { impl helper.combine; };\n",
             "op _ ** _ { impl __pair__; };\n",
-            "varop [* *] {\n",
+            "op_var [* *] {\n",
             "  foldr helper.push helper.empty;\n",
             "  finalize helper.finish;\n",
             "};\n",
-            "varop [+ +] {\n",
+            "op_var [+ +] {\n",
             "  foldr __term_call__ __term_unit__;\n",
             "  finalize __term_type__;\n",
             "};\n",
@@ -4436,15 +4423,15 @@ mod tests {
     fn lsp_macro_operator_target_retains_public_type_and_exact_macro_identity() {
         use crate::pass::typecheck_full::ResolvedBinder;
         let dir = tempfile::tempdir().unwrap();
-        std::fs::write(dir.path().join("example.pkg.kio"), "package example;\n").unwrap();
-        let provider = "module provider; import __comptime__;
+        std::fs::write(dir.path().join("example.pkg.kio"), "pkg example;\n").unwrap();
+        let provider = "mod provider; import __comptime__;
             pure fn keep(_ct: __Comptime__, _type: __Type__, value: __Checked_term__) -> __Checked_term__ { value }
             pub macro echo : [A] A -> A { impl keep; }";
         std::fs::write(dir.path().join("provider.kio"), provider).unwrap();
         let path = dir.path().join("main.kio");
         for invocation in ["", " fn run() { (# ())() }"] {
             let source = format!(
-                "module main; import provider as helper; op macro # ._ {{ impl helper.echo; }}{invocation}"
+                "mod main; import provider {{ macro echo }} op_macro # ._ {{ impl echo; }}{invocation}"
             );
             std::fs::write(&path, &source).unwrap();
             let analysis = analyze_workspace_at_with_overlay_lsp(
@@ -4468,7 +4455,7 @@ mod tests {
                     "focused navigation retains remote targets without provider occurrences"
                 );
             }
-            let start = source.find("helper.echo").unwrap() + "helper.".len();
+            let start = source.find("impl echo").unwrap() + "impl ".len();
             let span = crate::span::Span::new(start as u32, (start + "echo".len()) as u32);
             let declaration_start = provider.find("macro echo").unwrap() + "macro ".len();
             let declaration_span = crate::span::Span::new(
@@ -4512,12 +4499,12 @@ mod tests {
         std::fs::create_dir_all(dir.path().join("pkg")).expect("create package dir");
         std::fs::write(
             dir.path().join("pkg.pkg.kio"),
-            "package pkg;\n\nbridge { pkg; pkg/**; }\n",
+            "pkg pkg;\n\nbridge { pkg; pkg/**; }\n",
         )
         .expect("write package file");
-        std::fs::write(dir.path().join("pkg.kio"), "module pkg;\n").expect("write root module");
+        std::fs::write(dir.path().join("pkg.kio"), "mod pkg;\n").expect("write root module");
         let provider = concat!(
-            "module pkg/provider;\n",
+            "mod pkg/provider;\n",
             "rec {\n",
             "  pub type { Tag: . | Peer { pub mk; pub get; }; };\n",
             "  pub type { Peer: . | Tag { pub mk; pub get; }; };\n",
@@ -4526,11 +4513,11 @@ mod tests {
         let provider_path = dir.path().join("pkg/provider.kio");
         std::fs::write(&provider_path, provider).expect("write provider");
         let source = concat!(
-            "module pkg/main;\n",
+            "mod pkg/main;\n",
             "import pkg/provider as imported;\n",
             "type Tag = imported.Tag;\n",
             "op _ + _ { impl Tag.mk; };\n",
-            "varop [* *] { foldr Tag.get Tag.mk; };\n",
+            "op_var [* *] { foldr Tag.get Tag.mk; };\n",
         );
         let source_path = dir.path().join("pkg/main.kio");
         std::fs::write(&source_path, source).expect("write source");
@@ -4722,11 +4709,11 @@ mod tests {
         let dir = tempfile::tempdir().expect("tempdir");
         std::fs::write(
             dir.path().join("pkg.pkg.kio"),
-            "package pkg;\n\nbridge { provider; consumer; }\n",
+            "pkg pkg;\n\nbridge { provider; consumer; }\n",
         )
         .expect("write package file");
         let provider = concat!(
-            "module provider;\n",
+            "mod provider;\n",
             "\n",
             "host fn loop[S][R](step: S -> (S | R), state: S) -> R;\n",
             "host fn supplied(value: .) -> .;\n",
@@ -4749,9 +4736,9 @@ mod tests {
         let provider_path = dir.path().join("provider.kio");
         std::fs::write(&provider_path, provider).expect("write provider");
         let consumer = concat!(
-            "module consumer;\n",
+            "mod consumer;\n",
             "\n",
-            "import provider(combine, first, Wrap, supplied);\n",
+            "import provider {fn combine; fn first; type Wrap; fn supplied}\n",
             "op _ + _ { impl combine; };\n",
             "\n",
             "pub fn call() -> . { combine((), ()) }\n",
@@ -4762,7 +4749,7 @@ mod tests {
             let module = format!("noise{index:02}");
             std::fs::write(
                 dir.path().join(format!("{module}.kio")),
-                format!("module {module};\n\nfn keep() -> . {{ () }}\n"),
+                format!("mod {module};\n\nfn keep() -> . {{ () }}\n"),
             )
             .expect("write unrelated provider-index control");
         }
@@ -5127,9 +5114,9 @@ mod tests {
         );
 
         let import_start = consumer
-            .find("import provider(combine")
+            .find("import provider {fn combine")
             .expect("selective import")
-            + "import provider(".len();
+            + "import provider {fn ".len();
         let imported = [
             (
                 "combine",
@@ -5263,11 +5250,11 @@ mod tests {
         let dir = tempfile::tempdir().expect("tempdir");
         std::fs::write(
             dir.path().join("pkg.pkg.kio"),
-            "package pkg;\n\nbridge { provider; consumer; }\n",
+            "pkg pkg;\n\nbridge { provider; consumer; }\n",
         )
         .expect("write package file");
         let provider = concat!(
-            "module provider;\n",
+            "mod provider;\n",
             "\n",
             "pub fn combine(left: ., right: .) -> . { left }\n",
             "pub type { Wrap: . { pub mk; pub get; }; };\n",
@@ -5277,9 +5264,9 @@ mod tests {
         let provider_path = dir.path().join("provider.kio");
         std::fs::write(&provider_path, provider).expect("write provider");
         let consumer = concat!(
-            "module consumer;\n",
+            "mod consumer;\n",
             "\n",
-            "import provider(combine, Wrap);\n",
+            "import provider {fn combine; type Wrap}\n",
             "pub fn call() -> . { combine((), ()) }\n",
             "pub fn call_again() -> . { combine((), ()) }\n",
             "pub fn make_wrap() -> Wrap { Wrap.mk(()) }\n",
@@ -5403,16 +5390,16 @@ mod tests {
         let dir = tempfile::tempdir().expect("tempdir");
         std::fs::write(
             dir.path().join("pkg.pkg.kio"),
-            "package pkg;\n\nbridge { as; first; second; }\n",
+            "pkg pkg;\n\nbridge { as; first; second; }\n",
         )
         .expect("write package file");
         std::fs::write(
             dir.path().join("as.kio"),
-            "module as;\n\npub fn keep(value: .) -> . { value }\n",
+            "mod as;\n\npub fn keep(value: .) -> . { value }\n",
         )
         .expect("write provider");
         let first = concat!(
-            "module first;\n",
+            "mod first;\n",
             "\n",
             "import as as as;\n",
             "fn one() -> . { as.keep(()) }\n",
@@ -5421,7 +5408,7 @@ mod tests {
         let first_path = dir.path().join("first.kio");
         std::fs::write(&first_path, first).expect("write first consumer");
         let second = concat!(
-            "module second;\n",
+            "mod second;\n",
             "\n",
             "import as as model;\n",
             "fn unrelated() -> . { model.keep(()) }\n",
@@ -5570,17 +5557,17 @@ mod tests {
         let dir = tempfile::tempdir().expect("tempdir");
         std::fs::write(
             dir.path().join("pkg.pkg.kio"),
-            "package pkg;\n\nbridge { provider; consumer; }\n",
+            "pkg pkg;\n\nbridge { provider; consumer; }\n",
         )
         .expect("write package file");
-        let provider = "module provider;\n\npub type { Item: .; };\n";
+        let provider = "mod provider;\n\npub type { Item: .; };\n";
         let provider_path = dir.path().join("provider.kio");
         std::fs::write(&provider_path, provider).expect("write provider");
         let consumer = concat!(
-            "module consumer;\n",
+            "mod consumer;\n",
             "\n",
             "import provider as p;\n",
-            "import provider(Item);\n",
+            "import provider {type Item}\n",
             "op + _ { impl p.Item.mk; };\n",
             "op - _ { impl Item.get; };\n",
         );
@@ -5652,9 +5639,9 @@ mod tests {
             ),
         ];
         let selective_import_start = consumer
-            .find("import provider(Item)")
+            .find("import provider {type Item}")
             .expect("selective import")
-            + "import provider(".len();
+            + "import provider {type ".len();
         let selective_start = consumer.find("Item.get").expect("selective target");
         let selective_head = ResolvedBinder::Newtype {
             module_path: "provider".to_owned(),
@@ -5815,7 +5802,7 @@ mod tests {
         use lsp_types::{GotoDefinitionResponse, Position, Range};
 
         let source = concat!(
-            "module pkg/main;\n",
+            "mod pkg/main;\n",
             "pub rec type { Item: Item; }\n",
             "pub rec type Tree = { Branch: Tree; };\n",
             "pub type { Named: . { pub mk; pub get; }; Other: .; }\n",
@@ -5991,7 +5978,7 @@ mod tests {
         use lsp_types::{Position, Range};
 
         let source = concat!(
-            "module pkg/main;\n",
+            "mod pkg/main;\n",
             "fn apply[A][*F](f: F[A], value: A) -> A { value }\n",
             "type { Pack[A] <E>: A & E { mk; get; }; };\n",
         );
@@ -6086,7 +6073,7 @@ mod tests {
         use lsp_types::{HoverContents, PrepareRenameResponse, Range};
 
         let source = concat!(
-            "module pkg/main;\n",
+            "mod pkg/main;\n",
             "host fn loop[S][R](step: S -> (S | R), state: S) -> R;\n",
             "rec(loop) {\n",
             "  fn first(value: .) -> . { recur second(value) };\n",
@@ -6189,7 +6176,7 @@ mod tests {
         use crate::pass::typecheck_full::ResolvedBinder;
 
         let source = concat!(
-            "module pkg/main;\n",
+            "mod pkg/main;\n",
             "host fn loop[S][R](step: S -> (S | R), state: S) -> R;\n",
             "fn choose(left: ., right: .) -> . { left }\n",
             "op _ + _ { impl choose; };\n",
@@ -6226,11 +6213,11 @@ mod tests {
         let mut files = BTreeMap::new();
         files.insert(
             root.join("demo.pkg.kio"),
-            "package demo;\n\nbridge { main; }\n".to_owned(),
+            "pkg demo;\n\nbridge { main; }\n".to_owned(),
         );
         files.insert(
             root.join("main.kio"),
-            "module main;\n\npub fn run() -> . { () }\n".to_owned(),
+            "mod main;\n\npub fn run() -> . { () }\n".to_owned(),
         );
         let overlay = package_collection::SourceOverlay::complete(root.clone(), files);
 
@@ -6253,15 +6240,15 @@ mod tests {
         let dir = tempfile::tempdir().expect("tempdir");
         std::fs::write(
             dir.path().join("pkg.pkg.kio"),
-            "package pkg;\n\nbridge { origin; consumer; }\n",
+            "pkg pkg;\n\nbridge { origin; consumer; }\n",
         )
         .expect("write package file");
-        let origin = "module origin;\n\npub type { Item: .; };\n";
+        let origin = "mod origin;\n\npub type { Item: .; };\n";
         let origin_file = dir.path().join("origin.kio");
         std::fs::write(&origin_file, origin).expect("write origin");
         let consumer = concat!(
-            "module consumer;\n\n",
-            "import origin(Item);\n\n",
+            "mod consumer;\n\n",
+            "import origin {type Item}\n\n",
             "pub fn make() -> Item { Item.mk(()) }\n",
             "pub fn unwrap(value: Item) -> . { Item.get(value) }\n",
         );
@@ -6272,7 +6259,7 @@ mod tests {
             &package_collection::SourceOverlay::empty(),
         )
         .expect("analysis succeeds");
-        let import_start = consumer.find("Item);").expect("nominal import");
+        let import_start = consumer.find("Item}").expect("nominal import");
         let import_span = crate::span::Span::new(import_start as u32, import_start as u32 + 4);
         assert!(
             analysis
@@ -6396,23 +6383,23 @@ mod tests {
         let dir = tempfile::tempdir().expect("tempdir");
         std::fs::write(
             dir.path().join("pkg.pkg.kio"),
-            "package pkg;\n\nbridge { imported; qualified; consumer; }\n",
+            "pkg pkg;\n\nbridge { imported; qualified; consumer; }\n",
         )
         .expect("write package file");
         std::fs::write(
             dir.path().join("imported.kio"),
-            "module imported;\n\npub type { Item: .; };\n",
+            "mod imported;\n\npub type { Item: .; };\n",
         )
         .expect("write imported provider");
         std::fs::write(
             dir.path().join("qualified.kio"),
-            "module qualified;\n\npub type { Item: .; };\n",
+            "mod qualified;\n\npub type { Item: .; };\n",
         )
         .expect("write qualified provider");
         let consumer = concat!(
-            "module consumer;\n",
+            "mod consumer;\n",
             "\n",
-            "import imported(Item);\n",
+            "import imported {type Item}\n",
             "import qualified as item;\n",
             "\n",
             "pub fn make() -> item.Item { item. // keep qualification through trivia\n",
@@ -6470,7 +6457,7 @@ mod tests {
     #[test]
     fn lsp_unused_warning_uses_decl_span_for_shadowed_lets() {
         let source = concat!(
-            "module pkg/main;\n",
+            "mod pkg/main;\n",
             "\n",
             "pub fn run() -> . {\n",
             "  let x = ();\n",
@@ -6500,7 +6487,7 @@ mod tests {
     #[test]
     fn lsp_unused_parameter_warning_has_only_prefix_fix() {
         let source = concat!(
-            "module pkg/main;\n",
+            "mod pkg/main;\n",
             "\n",
             "pub fn run(x: .) -> . {\n",
             "  ()\n",
@@ -6520,7 +6507,7 @@ mod tests {
     #[test]
     fn lsp_unused_parameter_warning_covers_rec_group_member() {
         let source = concat!(
-            "module pkg/main;\n",
+            "mod pkg/main;\n",
             "\n",
             "host fn loop[S][R](step: S -> (S | R), state: S) -> R;\n",
             "\n",
@@ -6596,12 +6583,12 @@ mod tests {
         std::fs::create_dir_all(dir.path().join("pkg")).expect("create module dir");
         std::fs::write(
             dir.path().join("pkg.pkg.kio"),
-            "package pkg;\n\nbridge { main; }\n",
+            "pkg pkg;\n\nbridge { main; }\n",
         )
         .expect("write package file");
         std::fs::write(
             dir.path().join("main.kio"),
-            "module main;\n\npub fn a() -> . { 1 }\n\npub fn b() -> . { 2 }\n",
+            "mod main;\n\npub fn a() -> . { 1 }\n\npub fn b() -> . { 2 }\n",
         )
         .expect("write module");
 
@@ -6626,12 +6613,12 @@ mod tests {
         std::fs::create_dir_all(dir.path().join("pkg")).expect("create module dir");
         std::fs::write(
             dir.path().join("pkg.pkg.kio"),
-            "package pkg;\n\nbridge { main; }\n",
+            "pkg pkg;\n\nbridge { main; }\n",
         )
         .expect("write package file");
         std::fs::write(
             dir.path().join("main.kio"),
-            "module main;\n\npub fn a() -> . { 1 }\n\npub fn b() -> . { 2 }\n",
+            "mod main;\n\npub fn a() -> . { 1 }\n\npub fn b() -> . { 2 }\n",
         )
         .expect("write module");
 
@@ -6657,37 +6644,51 @@ mod tests {
         std::fs::create_dir_all(dir.join("pkg")).expect("create module dir");
         std::fs::write(
             dir.join("pkg.pkg.kio"),
-            "package pkg;\n\n\
-             bridge { main; bad; macros; }\n",
+            "pkg pkg;
+
+bridge { main; bad; macros; }
+",
         )
         .expect("write package file");
         std::fs::write(
             dir.join("macros.kio"),
-            "module macros;\n\n\
-             import __comptime__;\n\n\
-             pub pure fn id_impl(ct: __Comptime__, _source: __Type__, value: __Checked_term__, _target: __Type__) -> __Checked_term__ {\n\
-               value\n\
-             }\n\n\
-             pub pure fn fail_impl(ct: __Comptime__, _source: __Type__, _value: __Checked_term__, _target: .) -> __Checked_term__ {\n\
-               __macro_error__(ct, __\"bad macro ran\"__(ct))\n\
-             }\n\n\
-             pub macro id_user : [Source] Source -> [Target] Target { impl id_impl; };\n\n\
-             pub macro fail_user : [Source] Source -> [Target] Target { impl fail_impl; };\n",
+            "mod macros;
+
+import __comptime__;
+
+pub pure fn id_impl(ct: __Comptime__, _source: __Type__, value: __Checked_term__, _target: __Type__) -> __Checked_term__ {
+value
+}
+
+pub pure fn fail_impl(ct: __Comptime__, _source: __Type__, _value: __Checked_term__, _target: .) -> __Checked_term__ {
+__macro_error__(ct, __\"bad macro ran\"__(ct))
+}
+
+pub macro id_user : [Source] Source -> [Target] Target { impl id_impl; };
+
+pub macro fail_user : [Source] Source -> [Target] Target { impl fail_impl; };
+",
         )
         .expect("write macro package");
         let main_path = dir.join("main.kio");
         std::fs::write(
             &main_path,
-            "module main;\n\n\
-             import macros(macro id_user);\n\n\
-             pub fn run() -> . { id_user[.](()) }\n",
+            "mod main;
+
+import macros {macro id_user}
+
+pub fn run() -> . { id_user[.](()) }
+",
         )
         .expect("write main");
         std::fs::write(
             dir.join("bad.kio"),
-            "module bad;\n\n\
-             import macros(macro fail_user);\n\n\
-             pub fn bad() -> . { fail_user[.](()) }\n",
+            "mod bad;
+
+import macros {macro fail_user}
+
+pub fn bad() -> . { fail_user[.](()) }
+",
         )
         .expect("write bad");
         main_path
@@ -6839,26 +6840,30 @@ mod tests {
         std::fs::create_dir_all(dir.path().join("pkg")).expect("create module dir");
         std::fs::write(
             dir.path().join("pkg.pkg.kio"),
-            "package pkg;\n\nbridge { main; alpha; beta; }\n",
+            "pkg pkg;\n\nbridge { main; alpha; beta; }\n",
         )
         .expect("write package file");
         std::fs::write(
             dir.path().join("alpha.kio"),
-            "module alpha;\n\npub fn alpha_value() -> . { missing_alpha }\n",
+            "mod alpha;\n\npub fn alpha_value() -> . { missing_alpha }\n",
         )
         .expect("write alpha module");
         std::fs::write(
             dir.path().join("beta.kio"),
-            "module beta;\n\npub fn beta_value() -> . { missing_beta }\n",
+            "mod beta;\n\npub fn beta_value() -> . { missing_beta }\n",
         )
         .expect("write beta module");
         let main_path = dir.path().join("main.kio");
         std::fs::write(
             &main_path,
-            "module main;\n\n\
-             import beta(beta_value);\n\n\
-             import alpha(alpha_value);\n\n\
-             pub fn run() -> . { alpha_value() }\n",
+            "mod main;
+
+import beta {fn beta_value}
+
+import alpha {fn alpha_value}
+
+pub fn run() -> . { alpha_value() }
+",
         )
         .expect("write main module");
 
@@ -6887,16 +6892,16 @@ mod tests {
     fn lsp_repeated_alpha_equal_macro_callers_keep_written_names() {
         for reverse in [false, true] {
             let dir = tempfile::tempdir().expect("tempdir");
-            std::fs::write(dir.path().join("pkg.pkg.kio"), "package pkg;\n")
-                .expect("write package");
+            std::fs::write(dir.path().join("pkg.pkg.kio"), "pkg pkg;\n").expect("write package");
             std::fs::write(
                 dir.path().join("macros.kio"),
-                "module macros; import __comptime__;\n\
-                 pure fn keep(_ct: __Comptime__, _type: __Type__, value: __Checked_term__) -> __Checked_term__ { value }\n\
-                 pub macro echo : [T] T -> T { impl keep; };\n",
+                "mod macros; import __comptime__;
+pure fn keep(_ct: __Comptime__, _type: __Type__, value: __Checked_term__) -> __Checked_term__ { value }
+pub macro echo : [T] T -> T { impl keep; };
+",
             )
             .expect("write macro");
-            let mut source = String::from("module main; import macros(macro echo);\n");
+            let mut source = String::from("mod main; import macros {macro echo}\n");
             for number in 0..8 {
                 source.push_str(&format!(
                     "fn make{number}[Name{number}](value: Name{number}) -> [Name{number}] Name{number} -> Name{number} {{ .[Item](x: Item) -> Item {{ x }} }}\n"
@@ -7008,7 +7013,7 @@ mod tests {
         write_lsp_user_macro_package(dir.path());
         std::fs::write(
             dir.path().join("bad.kio"),
-            "module bad;\n\npub fn bad() -> . { () }\n",
+            "mod bad;\n\npub fn bad() -> . { () }\n",
         )
         .expect("replace failing sibling");
         let missing_focus = dir.path().join("missing.kio");
@@ -7115,17 +7120,17 @@ mod tests {
         let baseline = package_collection::ParsedPackageCollection {
             root: a.clone(),
             packages: BTreeMap::from([
-                (a.clone(), package("a/main.kio", "module a/main;\n")),
-                (b.clone(), package("b/main.kio", "module b/main;\n")),
+                (a.clone(), package("a/main.kio", "mod a/main;\n")),
+                (b.clone(), package("b/main.kio", "mod b/main;\n")),
             ]),
         };
         let edited_b = package_collection::ParsedPackageCollection {
             root: a.clone(),
             packages: BTreeMap::from([
-                (a.clone(), package("a/main.kio", "module a/main;\n")),
+                (a.clone(), package("a/main.kio", "mod a/main;\n")),
                 (
                     b.clone(),
-                    package("b/main.kio", "module b/main;\n\nfn x() -> . { () }\n"),
+                    package("b/main.kio", "mod b/main;\n\nfn x() -> . { () }\n"),
                 ),
             ]),
         };
@@ -8472,8 +8477,8 @@ mod typed_cache_dependency_fingerprint_tests {
         } else {
             "cache ();"
         };
-        let package_source = format!("package pkg; build {{ {cache} }} bridge {{ main; }}");
-        let module_source = "module main; pub fn run() -> . { () }";
+        let package_source = format!("pkg pkg; build {{ {cache} }} bridge {{ main; }}");
+        let module_source = "mod main; pub fn run() -> . { () }";
         let package_file = crate::pass::parser::parse_package_file(&package_source, Some("pkg"))
             .expect("package source parses");
         let module = crate::pass::parser::parse(module_source).expect("module source parses");
@@ -8633,20 +8638,18 @@ mod typed_cache_dependency_fingerprint_tests {
     #[cfg(feature = "surface")]
     #[test]
     fn alias_surface_fingerprint_tracks_target_and_visibility() {
-        let baseline = surface_fingerprint("module provider; pub type Field = origin.First;");
+        let baseline = surface_fingerprint("mod provider; pub type Field = origin.First;");
         assert_ne!(
             baseline,
-            surface_fingerprint("module provider; pub type Field = origin.Second;")
+            surface_fingerprint("mod provider; pub type Field = origin.Second;")
         );
         assert_ne!(
             baseline,
-            surface_fingerprint("module provider; pub(provider) type Field = origin.First;")
+            surface_fingerprint("mod provider; pub(provider) type Field = origin.First;")
         );
         assert_eq!(
             baseline,
-            surface_fingerprint(
-                "module provider;\n/// A type alias.\npub type Field = origin.First;"
-            )
+            surface_fingerprint("mod provider;\n/// A type alias.\npub type Field = origin.First;")
         );
     }
 
@@ -8654,19 +8657,13 @@ mod typed_cache_dependency_fingerprint_tests {
     #[test]
     fn ordinary_function_bodies_do_not_change_the_public_surface_fingerprint() {
         let baseline = surface_fingerprint(
-            "module provider; \
-             fn helper() -> . { () } \
-             pub fn run() -> . { helper() }",
+            "mod provider; fn helper() -> . { () } pub fn run() -> . { helper() }",
         );
         let body_edit = surface_fingerprint(
-            "module provider; \
-             fn helper() -> . { let ignored = (); ignored } \
-             pub fn run() -> . { let ignored = (); helper() }",
+            "mod provider; fn helper() -> . { let ignored = (); ignored } pub fn run() -> . { let ignored = (); helper() }",
         );
         let signature_edit = surface_fingerprint(
-            "module provider; \
-             fn helper() -> . { () } \
-             pub fn run(value: .) -> . { value }",
+            "mod provider; fn helper() -> . { () } pub fn run(value: .) -> . { value }",
         );
 
         assert_eq!(baseline, body_edit);
@@ -8676,18 +8673,11 @@ mod typed_cache_dependency_fingerprint_tests {
     #[cfg(feature = "surface")]
     #[test]
     fn fold_public_surface_fingerprint_tracks_shape_and_callables() {
-        let baseline = surface_fingerprint(
-            "module provider; \
-             pub varop [% %] { foldr add zero; };",
-        );
-        let changed_shape = surface_fingerprint(
-            "module provider; \
-             pub varop [! !] { foldr add zero; };",
-        );
-        let changed_callable = surface_fingerprint(
-            "module provider; \
-             pub varop [% %] { foldr sub zero; };",
-        );
+        let baseline = surface_fingerprint("mod provider; pub op_var [% %] { foldr add zero; };");
+        let changed_shape =
+            surface_fingerprint("mod provider; pub op_var [! !] { foldr add zero; };");
+        let changed_callable =
+            surface_fingerprint("mod provider; pub op_var [% %] { foldr sub zero; };");
 
         assert_ne!(baseline, changed_shape);
         assert_ne!(baseline, changed_callable);
@@ -8697,20 +8687,20 @@ mod typed_cache_dependency_fingerprint_tests {
     #[test]
     fn callable_segment_spans_do_not_enter_public_surface_fingerprints() {
         let compact = surface_fingerprint(
-            "module provider; \
-             pub op _ + _ { impl helpers.add; }; \
-             pub varop [* *] { \
-               foldr helpers.push helpers.empty; finalize helpers.finish; \
-             };",
+            "mod provider; pub op _ + _ { impl helpers.add; }; pub op_var [* *] { foldr helpers.push helpers.empty; finalize helpers.finish; };",
         );
         let shifted = surface_fingerprint(
-            "module provider;\n\n\
-             pub op _ + _ {\n  impl helpers.add;\n};\n\n\
-             pub varop [* *] {\n\
-               foldr helpers.push\n\
-                 helpers.empty;\n\
-               finalize helpers.finish;\n\
-             };",
+            "mod provider;
+
+pub op _ + _ {
+  impl helpers.add;
+};
+
+pub op_var [* *] {
+foldr helpers.push
+helpers.empty;
+finalize helpers.finish;
+};",
         );
 
         assert_eq!(compact, shifted);
@@ -8737,11 +8727,11 @@ mod typed_cache_dependency_fingerprint_tests {
         // Padding the shorter mode keywords keeps all declaration and callable
         // spans equal. Fingerprint differences therefore isolate the mode.
         let (left, left_spans) =
-            fold_fingerprint_and_spans("module provider; pub varop [* *] { foldl  push seed; };");
+            fold_fingerprint_and_spans("mod provider; pub op_var [* *] { foldl  push seed; };");
         let (right, right_spans) =
-            fold_fingerprint_and_spans("module provider; pub varop [* *] { foldr  push seed; };");
+            fold_fingerprint_and_spans("mod provider; pub op_var [* *] { foldr  push seed; };");
         let (right_one, right_one_spans) =
-            fold_fingerprint_and_spans("module provider; pub varop [* *] { foldr1 push seed; };");
+            fold_fingerprint_and_spans("mod provider; pub op_var [* *] { foldr1 push seed; };");
         assert_eq!(left_spans, right_one_spans);
         assert_eq!(right_spans, right_one_spans);
 
@@ -8776,17 +8766,7 @@ mod typed_cache_dependency_fingerprint_tests {
     #[test]
     fn same_package_dependencies_come_only_from_import_clauses() {
         let module = crate::pass::parser::parse(
-            "module owner; \
-             import ops/core as ops; \
-             import bases as bases; \
-             import steps/push as steps; \
-             import finishes as finishes; \
-             import unused as unused; \
-             op _ + _ { impl ops.apply; }; \
-             varop [* *] { \
-               foldr steps.apply bases.empty; \
-               finalize finishes.done; \
-             };",
+            "mod owner; import ops/core as ops; import bases as bases; import steps/push as steps; import finishes as finishes; import unused as unused; op _ + _ { impl ops.apply; }; op_var [* *] { foldr steps.apply bases.empty; finalize finishes.done; };",
         )
         .expect("fixed and variadic operator declarations parse");
         let known_modules = ["bases", "finishes", "ops/core", "steps/push", "unused"]
@@ -8807,10 +8787,7 @@ mod typed_cache_dependency_fingerprint_tests {
     #[test]
     fn macro_module_retains_every_qualified_import_as_an_impl_dependency() {
         let module = crate::pass::parser::parse(
-            "module owner; \
-             import helpers/used as used; \
-             import helpers/unused as unused; \
-             macro demo : . -> . { impl used.build; };",
+            "mod owner; import helpers/used as used; import helpers/unused as unused; macro demo : . -> . { impl used.build; };",
         )
         .expect("qualified implementation target parses");
         let known_modules = ["helpers/used", "helpers/unused"]
@@ -8830,10 +8807,7 @@ mod typed_cache_dependency_fingerprint_tests {
     #[test]
     fn module_without_macros_does_not_retain_qualified_impl_dependencies() {
         let module = crate::pass::parser::parse(
-            "module owner; \
-             import helpers/selected(helper); \
-             import helpers/qualified as qualified; \
-             pure fn local(value: .) -> . { helper(value) }",
+            "mod owner; import helpers/selected {fn helper} import helpers/qualified as qualified; pure fn local(value: .) -> . { helper(value) }",
         )
         .expect("ordinary helper module parses");
         let known_modules = ["helpers/selected", "helpers/qualified"]
@@ -8850,10 +8824,10 @@ mod typed_cache_dependency_fingerprint_tests {
     #[test]
     fn macro_operator_retains_its_qualified_target_as_an_impl_dependency() {
         let module = crate::pass::parser::parse(
-            "module owner;
+            "mod owner;
             import helpers/selected as selected;
             import helpers/unrelated as unrelated;
-            op macro # ._ { impl selected.echo; }",
+            op_macro # ._ { impl selected.echo; }",
         )
         .unwrap();
         let known = ["helpers/selected", "helpers/unrelated"]
@@ -8955,17 +8929,17 @@ mod typed_cache_dependency_fingerprint_tests {
     fn parsed_mixed_cycle_moves_downstream_fingerprints_after_member_edit() {
         fn package(b_source: &str) -> ParsedPackage {
             let sources = [
-                ("a.kio", "module a; import b(run); pub fn run() -> . { () }"),
+                ("a.kio", "mod a; import b {fn run} pub fn run() -> . { () }"),
                 ("b.kio", b_source),
                 (
                     "c.kio",
-                    "module c; import a(run); pub fn step(left: ., right: .) -> . { left }",
+                    "mod c; import a {fn run} pub fn step(left: ., right: .) -> . { left }",
                 ),
                 (
                     "d.kio",
-                    "module d; import c(step); pub fn run() -> . { () }",
+                    "mod d; import c {fn step} pub fn run() -> . { () }",
                 ),
-                ("e.kio", "module e; pub fn run() -> . { () }"),
+                ("e.kio", "mod e; pub fn run() -> . { () }"),
             ];
             let mut modules = Vec::new();
             let mut source_map = BTreeMap::new();
@@ -8988,10 +8962,10 @@ mod typed_cache_dependency_fingerprint_tests {
         }
 
         let baseline = same_package_public_surfaces(&package(
-            "module b; import c as c; pub op _ + _ { impl c.step; }; pub fn run() -> . { () }",
+            "mod b; import c as c; pub op _ + _ { impl c.step; }; pub fn run() -> . { () }",
         ));
         let changed = same_package_public_surfaces(&package(
-            "module b; import c as c; pub op _ + _ { impl c.step; }; pub fn run(value: .) -> . { value }",
+            "mod b; import c as c; pub op _ + _ { impl c.step; }; pub fn run(value: .) -> . { value }",
         ));
 
         for module in ["a", "b", "c", "d"] {
@@ -9035,21 +9009,25 @@ mod typed_cache_dependency_fingerprint_tests {
             }
         }
 
-        let macro_source = "module macros;\n\
-            import macro_util(helper);\n\
-            pub macro poc : [A] A -> [B] B { impl helper; };\n";
-        let helper_source = "module macro_util;\n\
-            pub pure fn helper[A](value: A)[B] -> B { value }\n";
+        let macro_source = "mod macros;
+import macro_util {fn helper}
+pub macro poc : [A] A -> [B] B { impl helper; };
+";
+        let helper_source = "mod macro_util;
+pub pure fn helper[A](value: A)[B] -> B { value }
+";
         let baseline = same_package_macro_impl_surfaces(&package(macro_source, helper_source));
         let changed_helper = same_package_macro_impl_surfaces(&package(
             macro_source,
-            "module macro_util;\n\
-             pub pure fn helper[A](value: A)[B] -> B { helper[A](value)[B] }\n",
+            "mod macro_util;
+pub pure fn helper[A](value: A)[B] -> B { helper[A](value)[B] }
+",
         ));
         let changed_declaration = same_package_macro_impl_surfaces(&package(
-            "module macros;\n\
-             import macro_util(helper);\n\
-             pub macro poc : [A] A -> [B] B { captures helper; impl helper; };\n",
+            "mod macros;
+import macro_util {fn helper}
+pub macro poc : [A] A -> [B] B { captures helper; impl helper; };
+",
             helper_source,
         ));
 
@@ -9057,15 +9035,17 @@ mod typed_cache_dependency_fingerprint_tests {
         assert_ne!(baseline.get(&macros), changed_helper.get(&macros));
         assert_ne!(baseline.get(&macros), changed_declaration.get(&macros));
 
-        let qualified_macro_source = "module macros;\n\
-            import macro_util as util;\n\
-            pub macro poc : [A] A -> [B] B { impl util.helper; };\n";
+        let qualified_macro_source = "mod macros;
+import macro_util as util;
+pub macro poc : [A] A -> [B] B { impl util.helper; };
+";
         let qualified_baseline =
             same_package_macro_impl_surfaces(&package(qualified_macro_source, helper_source));
         let qualified_changed_helper = same_package_macro_impl_surfaces(&package(
             qualified_macro_source,
-            "module macro_util;\n\
-             pub pure fn helper[A](value: A)[B] -> B { helper[A](value)[B] }\n",
+            "mod macro_util;
+pub pure fn helper[A](value: A)[B] -> B { helper[A](value)[B] }
+",
         ));
         assert_ne!(
             qualified_baseline.get(&macros),
@@ -9092,16 +9072,19 @@ mod typed_cache_dependency_fingerprint_tests {
         }
 
         let late = package(
-            "module macros;\n\
-             pub macro poc : [A] A -> [B] B { impl helper; };\n",
+            "mod macros;
+pub macro poc : [A] A -> [B] B { impl helper; };
+",
         );
         let fills = package(
-            "module macros;\n\
-             pub macro poc : [A] A -> [B] B { impl(fills) helper; };\n",
+            "mod macros;
+pub macro poc : [A] A -> [B] B { impl(fills) helper; };
+",
         );
         let retargeted = package(
-            "module macros;\n\
-             pub macro poc : [A] A -> [B] B { impl other_helper; };\n",
+            "mod macros;
+pub macro poc : [A] A -> [B] B { impl other_helper; };
+",
         );
         let module = module_key("macros");
         let late_public = same_package_public_surfaces(&late);
@@ -9138,7 +9121,7 @@ mod typed_cache_dependency_fingerprint_tests {
     fn trailing_descriptors_participate_in_lazy_public_surface_fingerprints() {
         fn surface(entries: &str) -> BTreeMap<PackageModuleKey, SurfaceFingerprint> {
             let source = format!(
-                "module macros; pub macro choose : [R] (. -> R) -> (. -> R) -> R {{ {entries} impl helper; }}"
+                "mod macros; pub macro choose : [R] (. -> R) -> (. -> R) -> R {{ {entries} impl helper; }}"
             );
             let path = PathBuf::from("macros.kio");
             let parsed = crate::pass::parser::parse_module_file_lazy(&source).unwrap();
@@ -9724,8 +9707,8 @@ fn normalize_projected_signature_patterns(signature: &mut crate::ast::Signature<
 /// - Host types, host fns, and type aliases carry the contract directly.
 ///   Public newtypes are reduced to the same four-state host surface recorded
 ///   in a signature file; private newtypes pass through for visibility checks.
-/// - The surface-only auxiliary declarations (`equiv`, `op`, `varop`,
-///   `literal`, `macro`) contribute no contract entry (see
+/// - The surface-only auxiliary declarations (`equiv`, `op`, `op_var`,
+///   `lit`, `macro`) contribute no contract entry (see
 ///   `sig::surface::item_is_exported`), and `kio-prime`'s lowering rejects
 ///   them, so they are dropped: the result is the same contract on both
 ///   binaries.
@@ -10155,12 +10138,8 @@ mod prime_only_contract_surface_tests {
 
     fn prime_contract(source: &str) -> Result<crate::sig::ContractSnapshot, LocatedError> {
         let tmp = tempfile::tempdir().unwrap();
-        std::fs::write(
-            tmp.path().join("dep.pkg.kio"),
-            "package dep; bridge { **; }",
-        )
-        .unwrap();
-        std::fs::write(tmp.path().join("api.kio"), format!("module api; {source}")).unwrap();
+        std::fs::write(tmp.path().join("dep.pkg.kio"), "pkg dep; bridge { **; }").unwrap();
+        std::fs::write(tmp.path().join("api.kio"), format!("mod api; {source}")).unwrap();
         let parsed = crate::package_collection::walk(tmp.path()).expect("parse dependency");
         let dep = parsed.packages.get(&parsed.root).unwrap();
         contract_snapshot_via_lower::<crate::prime::pipeline::PrimePipeline>(dep)
@@ -10233,11 +10212,7 @@ mod prime_only_contract_surface_tests {
     #[test]
     fn projected_recursive_group_repartitions_without_surface_frontend() {
         let mut module = crate::pass::parser::parse(
-            "module api; \
-             rec { \
-               pub type { Public : Private { mk; get; }; }; \
-               type { Private : Public { mk; get; }; }; \
-             }",
+            "mod api; rec { pub type { Public : Private { mk; get; }; }; type { Private : Public { mk; get; }; }; }",
         )
         .expect("parse Kio'-shaped module");
         select_contract_declarations(&mut module)
@@ -10282,14 +10257,10 @@ mod contract_surface_tests {
             "pub rec type { Token: . { mk; get; }; }",
         ] {
             let tmp = tempfile::tempdir().unwrap();
-            std::fs::write(
-                tmp.path().join("dep.pkg.kio"),
-                "package dep; bridge { **; }",
-            )
-            .unwrap();
+            std::fs::write(tmp.path().join("dep.pkg.kio"), "pkg dep; bridge { **; }").unwrap();
             std::fs::write(
                 tmp.path().join("api.kio"),
-                format!("module api; {declaration}"),
+                format!("mod api; {declaration}"),
             )
             .unwrap();
             let parsed = crate::package_collection::walk(tmp.path()).expect("parse dependency");
@@ -10315,14 +10286,10 @@ mod contract_surface_tests {
     #[test]
     fn public_nominal_contract_checks_exposed_payload_names() {
         let tmp = tempfile::tempdir().unwrap();
-        std::fs::write(
-            tmp.path().join("dep.pkg.kio"),
-            "package dep; bridge { **; }",
-        )
-        .unwrap();
+        std::fs::write(tmp.path().join("dep.pkg.kio"), "pkg dep; bridge { **; }").unwrap();
         std::fs::write(
             tmp.path().join("api.kio"),
-            "module api; pub type { Token: Missing { pub mk; pub get; }; }",
+            "mod api; pub type { Token: Missing { pub mk; pub get; }; }",
         )
         .unwrap();
         let parsed = crate::package_collection::walk(tmp.path()).expect("parse dependency");
@@ -10362,8 +10329,8 @@ mod contract_surface_tests {
                 "pub rec type { Token: . { mk; get; }; } pub type Owner = Token;",
             ),
         ] {
-            let compact_source = format!("module api; {compact}");
-            let explicit_source = format!("module api; {explicit}");
+            let compact_source = format!("mod api; {compact}");
+            let explicit_source = format!("mod api; {explicit}");
             let compact = projected_contracts_for_modules(&[("api.kio", &compact_source)]);
             let explicit = projected_contracts_for_modules(&[("api.kio", &explicit_source)]);
             let expected = explicit[0].as_ref().expect("explicit full contract");
@@ -10377,20 +10344,15 @@ mod contract_surface_tests {
     fn compact_nominal_unsealed_contract_matches_explicit_public_roles() {
         let snapshot = |declaration: &str| {
             let tmp = tempfile::tempdir().unwrap();
-            std::fs::write(
-                tmp.path().join("dep.pkg.kio"),
-                "package dep; bridge { **; }",
-            )
-            .unwrap();
+            std::fs::write(tmp.path().join("dep.pkg.kio"), "pkg dep; bridge { **; }").unwrap();
             std::fs::write(
                 tmp.path().join("fields.kio"),
-                format!("module fields; {declaration}"),
+                format!("mod fields; {declaration}"),
             )
             .unwrap();
             std::fs::write(
                 tmp.path().join("api.kio"),
-                "module api; import fields(Field); pub type Export = Field[.]; \
-                 pub fn roundtrip(value: Export) -> Export { discarded_body }",
+                "mod api; import fields {type Field} pub type Export = Field[.]; pub fn roundtrip(value: Export) -> Export { discarded_body }",
             )
             .unwrap();
             let parsed = crate::package_collection::walk(tmp.path()).expect("parse dependency");
@@ -10441,7 +10403,7 @@ mod contract_surface_tests {
                 0,
             ),
         ] {
-            let mut module = crate::pass::parser::parse(&format!("module api; {declarations}"))
+            let mut module = crate::pass::parser::parse(&format!("mod api; {declarations}"))
                 .expect("parse the written projection subject");
             select_contract_declarations(&mut module).expect("select declaration headers");
             let module = PrimePipeline::lower_contract_module(module)
@@ -10481,10 +10443,7 @@ mod contract_surface_tests {
     fn live_producer_keeps_real_function_headers_without_bodies() {
         fn check<P: Pipeline>() {
             let mut module = crate::pass::parser::parse(
-                "module api; \
-                 pure fn private_identity[A](value: A) -> A { missing } \
-                 pub pure fn expose[A][B](left: A, right: B) -> A { (left, right, left) } \
-                 rec(loop) { pub fn recursive[A](value: A) -> A { missing } }",
+                "mod api; pure fn private_identity[A](value: A) -> A { missing } pub pure fn expose[A][B](left: A, right: B) -> A { (left, right, left) } rec(loop) { pub fn recursive[A](value: A) -> A { missing } }",
             )
             .unwrap();
             normalize_projected_parameter_patterns(&mut module);
@@ -10520,9 +10479,9 @@ mod contract_surface_tests {
     #[test]
     fn live_contract_observation_is_independent_of_invalid_and_surface_bodies() {
         let cases = [
-            "module api; pub pure fn expose[A](value: A) -> A { value }",
-            "module api; pub pure fn expose[A](value: A) -> A { missing }",
-            "module api; pub pure fn expose[A](value: A) -> A { (value, value, value) }",
+            "mod api; pub pure fn expose[A](value: A) -> A { value }",
+            "mod api; pub pure fn expose[A](value: A) -> A { missing }",
+            "mod api; pub pure fn expose[A](value: A) -> A { (value, value, value) }",
         ];
         let mut expected = None;
         for source in cases {
@@ -10542,15 +10501,11 @@ mod contract_surface_tests {
     fn projected_precheck_errors_are_stable_under_module_permutations() {
         fn check<P: Pipeline>(declarations: &str) {
             let tmp = tempfile::tempdir().unwrap();
-            std::fs::write(
-                tmp.path().join("dep.pkg.kio"),
-                "package dep; bridge { **; }",
-            )
-            .unwrap();
+            std::fs::write(tmp.path().join("dep.pkg.kio"), "pkg dep; bridge { **; }").unwrap();
             for name in ["a", "z"] {
                 std::fs::write(
                     tmp.path().join(format!("{name}.kio")),
-                    format!("module {name}; {declarations}"),
+                    format!("mod {name}; {declarations}"),
                 )
                 .unwrap();
             }
@@ -10577,7 +10532,7 @@ mod contract_surface_tests {
         let tmp = tempfile::tempdir().unwrap();
         std::fs::write(
             tmp.path().join("dep.pkg.kio"),
-            "package dep;\n\nbridge {\n  api;\n}\n",
+            "pkg dep;\n\nbridge {\n  api;\n}\n",
         )
         .unwrap();
         std::fs::write(tmp.path().join("api.kio"), module_src).unwrap();
@@ -10595,7 +10550,7 @@ mod contract_surface_tests {
         let tmp = tempfile::tempdir().unwrap();
         std::fs::write(
             tmp.path().join("dep.pkg.kio"),
-            format!("package dep;\n\nbridge {{\n{bridge}\n}}\n"),
+            format!("pkg dep;\n\nbridge {{\n{bridge}\n}}\n"),
         )
         .unwrap();
         for (file, source) in modules {
@@ -10617,7 +10572,7 @@ mod contract_surface_tests {
         let tmp = tempfile::tempdir().unwrap();
         std::fs::write(
             tmp.path().join("dep.pkg.kio"),
-            "package dep;\n\nbridge {\n  **;\n}\n",
+            "pkg dep;\n\nbridge {\n  **;\n}\n",
         )
         .unwrap();
         for (file, source) in modules {
@@ -10650,14 +10605,15 @@ mod contract_surface_tests {
         let tmp = tempfile::tempdir().unwrap();
         std::fs::write(
             tmp.path().join("dep.pkg.kio"),
-            "package dep;\n\nbridge {\n  api;\n}\n",
+            "pkg dep;\n\nbridge {\n  api;\n}\n",
         )
         .unwrap();
         std::fs::write(
             tmp.path().join("api.kio"),
-            "module api;\n\
-             host type String role(str);\n\
-             pub pure fn identity(value: String) -> String { value }\n",
+            "mod api;
+host type String role(str);
+pub pure fn identity(value: String) -> String { value }
+",
         )
         .unwrap();
         let parsed = crate::package_collection::walk(tmp.path()).expect("walk dep package");
@@ -10675,9 +10631,10 @@ mod contract_surface_tests {
     #[test]
     fn projected_contract_validates_kind_and_arity() {
         let error = projected_contract_error(
-            "module api;\n\
-             pub type Box[A] = A;\n\
-             pub fn bad(value: Box[.][ .]) -> . { () }\n",
+            "mod api;
+pub type Box[A] = A;
+pub fn bad(value: Box[.][ .]) -> . { () }
+",
         );
         assert!(
             matches!(error, Error::Type(_)),
@@ -10690,44 +10647,37 @@ mod contract_surface_tests {
         let cases = [
             (
                 "literal",
-                "module provider; pub literal zero = 0;",
-                "import provider(zero);",
+                "mod provider; pub lit zero = 0;",
+                "import provider {lit zero}",
             ),
             (
                 "operator",
-                "module provider; pub fn add(left: ., right: .) -> . { () } pub op _ + _ { impl add; };",
-                "import provider(op _ + _);",
+                "mod provider; pub fn add(left: ., right: .) -> . { () } pub op _ + _ { impl add; };",
+                "import provider {op _ + _}",
             ),
             (
                 "variadic operator",
-                "module provider; pub fn nil() -> . { () } pub fn cons(head: ., tail: .) -> . { () } pub varop [* *] { foldr cons nil; };",
-                "import provider(varop [* *]);",
+                "mod provider; pub fn nil() -> . { () } pub fn cons(head: ., tail: .) -> . { () } pub op_var [* *] { foldr cons nil; };",
+                "import provider {op_var [* *]}",
             ),
             (
                 "compact nominals",
-                "module provider; pub type Choice = { Tag: .; } | { Other: .; };",
-                "import provider(Tag, Choice);",
+                "mod provider; pub type Choice = { Tag: .; } | { Other: .; };",
+                "import provider {type Tag; type Choice}",
             ),
             (
                 "ordinary alias",
-                "module provider; pub type { Original: .; }; pub type Tag = Original;",
-                "import provider(Tag);",
+                "mod provider; pub type { Original: .; }; pub type Tag = Original;",
+                "import provider {type Tag}",
             ),
             (
                 "macro",
-                "module provider; \
-                 import __comptime__; \
-                 pub pure fn identity_impl( \
-                   _ct: __Comptime__, \
-                   _source: __Type__, \
-                   value: __Checked_term__ \
-                 ) -> __Checked_term__ { value } \
-                 pub macro identity : [A] A -> A { impl identity_impl; };",
-                "import provider(macro identity);",
+                "mod provider; import __comptime__; pub pure fn identity_impl( _ct: __Comptime__, _source: __Type__, value: __Checked_term__ ) -> __Checked_term__ { value } pub macro identity : [A] A -> A { impl identity_impl; };",
+                "import provider {macro identity}",
             ),
         ];
         for (_, provider, import) in cases {
-            let api = format!("module api; {import} pub fn expose[A](value: A) -> A {{ value }}");
+            let api = format!("mod api; {import} pub fn expose[A](value: A) -> A {{ value }}");
             assert_projected_contracts_match(&[
                 ("provider.kio", provider),
                 ("api.kio", api.as_str()),
@@ -10740,19 +10690,11 @@ mod contract_surface_tests {
         assert_projected_contracts_match(&[
             (
                 "provider.kio",
-                "module provider; \
-                 host type Host; \
-                 host fn host_id(value: Host) -> Host; \
-                 pub type Payload = .; \
-                 pub type { Wrapped : Payload { pub mk; pub get; }; }; \
-                 pub fn identity(value: Payload) -> Payload { value } \
-                 pub literal zero = 0;",
+                "mod provider; host type Host; host fn host_id(value: Host) -> Host; pub type Payload = .; pub type { Wrapped : Payload { pub mk; pub get; }; }; pub fn identity(value: Payload) -> Payload { value } pub lit zero = 0;",
             ),
             (
                 "api.kio",
-                "module api; \
-                 import provider(Host, host_id, identity, Payload, Wrapped, zero); \
-                 pub fn expose(value: Payload) -> Payload { value }",
+                "mod api; import provider {type Host; fn host_id; fn identity; type Payload; type Wrapped; lit zero} pub fn expose(value: Payload) -> Payload { value }",
             ),
         ]);
     }
@@ -10760,10 +10702,10 @@ mod contract_surface_tests {
     #[test]
     fn projected_nominal_import_can_be_shadowed_by_signature_binder() {
         assert_projected_contracts_match(&[
-            ("provider.kio", "module provider; pub type { Tag: .; };"),
+            ("provider.kio", "mod provider; pub type { Tag: .; };"),
             (
                 "api.kio",
-                "module api; import provider(Tag); pub fn expose[Tag](value: Tag) -> Tag { value }",
+                "mod api; import provider {type Tag} pub fn expose[Tag](value: Tag) -> Tag { value }",
             ),
         ]);
     }
@@ -10771,10 +10713,10 @@ mod contract_surface_tests {
     #[test]
     fn projected_compact_identity_is_retained_in_unsealed_contract() {
         let [full, prime] = projected_contracts_for_modules(&[
-            ("provider.kio", "module provider; pub type { Tag: .; };"),
+            ("provider.kio", "mod provider; pub type { Tag: .; };"),
             (
                 "api.kio",
-                "module api; import provider(Tag); pub fn expose(value: Tag) -> Tag { value }",
+                "mod api; import provider {type Tag} pub fn expose(value: Tag) -> Tag { value }",
             ),
         ]);
         let full = full.expect("ordinary compact identities belong to the live contract");
@@ -10788,9 +10730,7 @@ mod contract_surface_tests {
     fn projected_opaque_nominal_does_not_retain_private_compact_payload() {
         let [full, prime] = projected_contracts_for_modules(&[(
             "api.kio",
-            "module api; \
-             type { Hidden: .; }; \
-             pub type { Token : Hidden { mk; get; }; };",
+            "mod api; type { Hidden: .; }; pub type { Token : Hidden { mk; get; }; };",
         )]);
         let full = full.expect("full projection hides an opaque newtype payload");
         let prime = prime.expect("Prime projection hides an opaque newtype payload");
@@ -10821,11 +10761,7 @@ mod contract_surface_tests {
     fn projected_opaque_newtype_recomputes_its_recursive_group_partition() {
         let [full, prime] = projected_contracts_for_modules(&[(
             "api.kio",
-            "module api; \
-             rec { \
-               pub type { Public : Private { mk; get; }; }; \
-               type { Private : Public { mk; get; }; }; \
-             }",
+            "mod api; rec { pub type { Public : Private { mk; get; }; }; type { Private : Public { mk; get; }; }; }",
         )]);
         let full = full.expect("full projection repartitions the now-acyclic group");
         let prime = prime.expect("Prime projection repartitions the now-acyclic group");
@@ -10850,8 +10786,7 @@ mod contract_surface_tests {
     fn projected_opaque_singleton_newtype_drops_redundant_recursion() {
         let [full, prime] = projected_contracts_for_modules(&[(
             "api.kio",
-            "module api; \
-             pub rec type { Loop : Loop { mk; get; }; };",
+            "mod api; pub rec type { Loop : Loop { mk; get; }; };",
         )]);
         let full = full.expect("full projection drops the now-redundant singleton marker");
         let prime = prime.expect("Prime projection drops the now-redundant singleton marker");
@@ -10870,16 +10805,16 @@ mod contract_surface_tests {
                 "missing",
                 vec![(
                     "api.kio",
-                    "module api; import missing(absent); pub fn expose() -> . { () }",
+                    "mod api; import missing {fn absent} pub fn expose() -> . { () }",
                 )],
             ),
             (
                 "private",
                 vec![
-                    ("provider.kio", "module provider; literal hidden = 0;"),
+                    ("provider.kio", "mod provider; lit hidden = 0;"),
                     (
                         "api.kio",
-                        "module api; import provider(hidden); pub fn expose() -> . { () }",
+                        "mod api; import provider {fn hidden} pub fn expose() -> . { () }",
                     ),
                 ],
             ),
@@ -10888,11 +10823,11 @@ mod contract_surface_tests {
                 vec![
                     (
                         "a.kio",
-                        "module a; import b(b_marker); pub literal a_marker = 0; pub fn expose() -> . { () }",
+                        "mod a; import b {fn b_marker} pub lit a_marker = 0; pub fn expose() -> . { () }",
                     ),
                     (
                         "b.kio",
-                        "module b; import a(a_marker); pub literal b_marker = 0;",
+                        "mod b; import a {fn a_marker} pub lit b_marker = 0;",
                     ),
                 ],
             ),
@@ -10908,11 +10843,12 @@ mod contract_surface_tests {
     #[test]
     fn projected_contract_validates_recursive_headers() {
         let error = projected_contract_error(
-            "module api;\n\
-             rec(loop) {\n\
-               pub fn left[A](value: A) -> A { recur right[A](value) };\n\
-               pub fn right[A][ B](value: A) -> A { recur left[A](value) }\n\
-             }\n",
+            "mod api;
+rec(loop) {
+pub fn left[A](value: A) -> A { recur right[A](value) };
+pub fn right[A][ B](value: A) -> A { recur left[A](value) }
+}
+",
         );
         assert!(
             matches!(error, Error::Parse(_)),
@@ -10922,11 +10858,12 @@ mod contract_surface_tests {
 
     #[test]
     fn projected_independent_header_errors_are_deterministic() {
-        let source = "module api;\n\
-             rec(loop) {\n\
-               pub fn same[*F](value: .) -> . { value };\n\
-               pub fn same[A][ B](value: .) -> . { value }\n\
-             }\n";
+        let source = "mod api;
+rec(loop) {
+pub fn same[*F](value: .) -> . { value };
+pub fn same[A][ B](value: .) -> . { value }
+}
+";
         let first = projected_contract_error(source);
         assert!(
             matches!(first, Error::Parse(_) | Error::NameRes(_) | Error::Type(_)),
@@ -10940,10 +10877,11 @@ mod contract_surface_tests {
     #[test]
     fn projected_rec_header_rejects_higher_kinded_parameter() {
         let error = projected_contract_error(
-            "module api;\n\
-             rec(loop) {\n\
-               pub fn later[*F](value: .) -> . { value }\n\
-             }\n",
+            "mod api;
+rec(loop) {
+pub fn later[*F](value: .) -> . { value }
+}
+",
         );
         let diagnostic = error.diagnostic();
         assert!(
@@ -10956,9 +10894,10 @@ mod contract_surface_tests {
     #[test]
     fn projected_contract_rejects_forward_type_reference() {
         let error = projected_contract_error(
-            "module api;\n\
-             pub fn expose(value: Hidden) -> Hidden { value }\n\
-             pub type Hidden = .;\n",
+            "mod api;
+pub fn expose(value: Hidden) -> Hidden { value }
+pub type Hidden = .;
+",
         );
         assert!(
             matches!(error, Error::NameRes(_)),
@@ -10969,9 +10908,10 @@ mod contract_surface_tests {
     #[test]
     fn projected_contract_rejects_missing_import() {
         let error = projected_contract_error(
-            "module api;\n\
-             import absent(Missing);\n\
-             pub fn expose() { () }\n",
+            "mod api;
+import absent {type Missing}
+pub fn expose() { () }
+",
         );
         assert!(
             matches!(error, Error::Import(_)),
@@ -10982,10 +10922,11 @@ mod contract_surface_tests {
     #[test]
     fn projected_contract_rejects_duplicate_declaration() {
         let error = projected_contract_error(
-            "module api;\n\
-             type Duplicate = .;\n\
-             type Duplicate = .;\n\
-             pub fn expose() { () }\n",
+            "mod api;
+type Duplicate = .;
+type Duplicate = .;
+pub fn expose() { () }
+",
         );
         assert!(
             matches!(error, Error::NameRes(_)),
@@ -10998,21 +10939,23 @@ mod contract_surface_tests {
         let tmp = tempfile::tempdir().unwrap();
         std::fs::write(
             tmp.path().join("dep.pkg.kio"),
-            "package dep;\n\nbridge {\n  a;\n}\n",
+            "pkg dep;\n\nbridge {\n  a;\n}\n",
         )
         .unwrap();
         std::fs::write(
             tmp.path().join("a.kio"),
-            "module a;\n\
-             import b as b;\n\
-             pub fn expose() { () }\n",
+            "mod a;
+import b as b;
+pub fn expose() { () }
+",
         )
         .unwrap();
         std::fs::write(
             tmp.path().join("b.kio"),
-            "module b;\n\
-             import a as a;\n\
-             pub type Present = .;\n",
+            "mod b;
+import a as a;
+pub type Present = .;
+",
         )
         .unwrap();
         let parsed = crate::package_collection::walk(tmp.path()).expect("walk dep package");
@@ -11031,14 +10974,15 @@ mod contract_surface_tests {
         let tmp = tempfile::tempdir().unwrap();
         std::fs::write(
             tmp.path().join("dep.pkg.kio"),
-            "package dep;\n\nbridge {\n  api;\n}\n",
+            "pkg dep;\n\nbridge {\n  api;\n}\n",
         )
         .unwrap();
         std::fs::write(
             tmp.path().join("api.kio"),
-            "module api;\n\
-             host type String role(str);\n\
-             pub pure fn bad((text: String, _: .)) -> . { () }\n",
+            "mod api;
+host type String role(str);
+pub pure fn bad((text: String, _: .)) -> . { () }
+",
         )
         .unwrap();
         let parsed = crate::package_collection::walk(tmp.path()).expect("walk dep package");
@@ -11059,13 +11003,14 @@ mod contract_surface_tests {
         let tmp = tempfile::tempdir().unwrap();
         std::fs::write(
             tmp.path().join("dep.pkg.kio"),
-            "package dep;\n\nbridge {\n  api;\n}\n",
+            "pkg dep;\n\nbridge {\n  api;\n}\n",
         )
         .unwrap();
         std::fs::write(
             tmp.path().join("api.kio"),
-            "module api;\n\
-             rec(loop) { pub fn first[A]((value: A, _: A)) -> A { value } }\n",
+            "mod api;
+rec(loop) { pub fn first[A]((value: A, _: A)) -> A { value } }
+",
         )
         .unwrap();
         let parsed = crate::package_collection::walk(tmp.path()).expect("walk dep package");
@@ -11083,9 +11028,10 @@ mod contract_surface_tests {
     #[test]
     fn projected_contract_rejects_wrong_alias_arity() {
         let error = projected_contract_error(
-            "module api;\n\
-             type Box[A] = A;\n\
-             pub fn expose(value: Box[.][ .]) { () }\n",
+            "mod api;
+type Box[A] = A;
+pub fn expose(value: Box[.][ .]) { () }
+",
         );
         assert!(
             matches!(error, Error::Type(_)),
@@ -11095,9 +11041,10 @@ mod contract_surface_tests {
 
     #[test]
     fn projected_contract_rejects_private_reachable_type() {
-        let source = "module api;\n\
-                      type Hidden = .;\n\
-                      pub fn expose(value: Hidden) -> Hidden { value }\n";
+        let source = "mod api;
+type Hidden = .;
+pub fn expose(value: Hidden) -> Hidden { value }
+";
         let located = projected_contract_located_error(source);
         let Error::Type(error) = &located.error else {
             panic!(
@@ -11131,7 +11078,7 @@ mod contract_surface_tests {
             let tmp = tempfile::tempdir().unwrap();
             std::fs::write(
                 tmp.path().join("dep.pkg.kio"),
-                "package dep;\n\nbridge {\n  api;\n}\n",
+                "pkg dep;\n\nbridge {\n  api;\n}\n",
             )
             .unwrap();
             std::fs::write(tmp.path().join("api.kio"), module_src).unwrap();
@@ -11140,15 +11087,17 @@ mod contract_surface_tests {
             contract_snapshot_via_lower::<FullPipeline>(dep).expect("valid projected contract")
         };
         let before = snapshot(
-            "module api;\n\
-             pub fn id[A](value: A) -> A { value }\n\
-             pub type Identity[A] = A;\n",
+            "mod api;
+pub fn id[A](value: A) -> A { value }
+pub type Identity[A] = A;
+",
         );
         let after = snapshot(
-            "module api;\n\
-             pub fn id[A](value: A) -> A { value }\n\
-             pub type Identity[A] = A;\n\
-             type A = .;\n",
+            "mod api;
+pub fn id[A](value: A) -> A { value }
+pub type Identity[A] = A;
+type A = .;
+",
         );
         assert_eq!(
             crate::sig::contract_digest(&before),
@@ -11162,17 +11111,19 @@ mod contract_surface_tests {
         let tmp = tempfile::tempdir().unwrap();
         std::fs::write(
             tmp.path().join("dep.pkg.kio"),
-            "package dep;\n\nbridge {\n  api;\n}\n",
+            "pkg dep;\n\nbridge {\n  api;\n}\n",
         )
         .unwrap();
-        let api_source = "module api;\n\
-                          import types(Hidden);\n\
-                          pub fn expose(value: Hidden) -> Hidden { value }\n";
+        let api_source = "mod api;
+import types {type Hidden}
+pub fn expose(value: Hidden) -> Hidden { value }
+";
         std::fs::write(tmp.path().join("api.kio"), api_source).unwrap();
         std::fs::write(
             tmp.path().join("types.kio"),
-            "module types;\n\
-             pub type Hidden = .;\n",
+            "mod types;
+pub type Hidden = .;
+",
         )
         .unwrap();
         let parsed = crate::package_collection::walk(tmp.path()).expect("walk dep package");
@@ -11199,18 +11150,19 @@ mod contract_surface_tests {
         let root = tmp.path();
         std::fs::write(
             root.join("dep.pkg.kio"),
-            "package dep;\n\nbridge {\n  api;\n}\n",
+            "pkg dep;\n\nbridge {\n  api;\n}\n",
         )
         .unwrap();
         // `api` exports a `pub fn` whose body is a surface `if`/`else` — the
         // exact shape `kio-prime`'s lowering rejects in a full compile.
         std::fs::write(
             root.join("api.kio"),
-            "module api;\n\
-             host type Bool role(bool);\n\
-             host type I32 role(i32);\n\
-             pub fn pick(b: Bool, x: I32, y: I32) -> I32 { if (b) { x } else { y } }\n\
-             pub fn first[A][B]((value: A, _: B)) -> A { value }\n",
+            "mod api;
+host type Bool role(bool);
+host type I32 role(i32);
+pub fn pick(b: Bool, x: I32, y: I32) -> I32 { if (b) { x } else { y } }
+pub fn first[A][B]((value: A, _: B)) -> A { value }
+",
         )
         .unwrap();
 
@@ -11254,14 +11206,14 @@ mod contract_surface_tests {
         let root = tmp.path();
         std::fs::write(
             root.join("dep.pkg.kio"),
-            "package dep;\n\nbridge {\n  first;\n  second;\n  api;\n}\n",
+            "pkg dep;\n\nbridge {\n  first;\n  second;\n  api;\n}\n",
         )
         .unwrap();
-        std::fs::write(root.join("first.kio"), "module first; pub type T = .;\n").unwrap();
-        std::fs::write(root.join("second.kio"), "module second; pub type T = .;\n").unwrap();
+        std::fs::write(root.join("first.kio"), "mod first; pub type T = .;\n").unwrap();
+        std::fs::write(root.join("second.kio"), "mod second; pub type T = .;\n").unwrap();
         std::fs::write(
             root.join("api.kio"),
-            "module api;\nimport first(T);\nimport second(T);\npub fn expose(value: T) -> T { value }\n",
+            "mod api;\nimport first {type T}\nimport second {type T}\npub fn expose(value: T) -> T { value }\n",
         )
         .unwrap();
 
@@ -11286,22 +11238,14 @@ mod contract_surface_tests {
         let root = tmp.path();
         std::fs::write(
             root.join("dep.pkg.kio"),
-            "package dep;\n\nbridge {\n  first;\n  second;\n  api;\n}\n",
+            "pkg dep;\n\nbridge {\n  first;\n  second;\n  api;\n}\n",
         )
         .unwrap();
-        std::fs::write(
-            root.join("first.kio"),
-            "module first; pub literal pick = 1;\n",
-        )
-        .unwrap();
-        std::fs::write(
-            root.join("second.kio"),
-            "module second; pub literal pick = 2;\n",
-        )
-        .unwrap();
+        std::fs::write(root.join("first.kio"), "mod first; pub lit pick = 1;\n").unwrap();
+        std::fs::write(root.join("second.kio"), "mod second; pub lit pick = 2;\n").unwrap();
         std::fs::write(
             root.join("api.kio"),
-            "module api;\nimport first(pick);\nimport second(pick);\npub fn expose() -> . { () }\n",
+            "mod api;\nimport first {lit pick}\nimport second {lit pick}\npub fn expose() -> . { () }\n",
         )
         .unwrap();
 
@@ -11327,21 +11271,21 @@ mod contract_surface_tests {
             "pub macro same : [Source] Source -> [Target] Target { impl implementation; };";
         for (first_item, first_selector, second_item) in [
             (macro_def, "macro same", macro_def),
-            ("pub fn same() -> . { () }", "same", macro_def),
+            ("pub fn same() -> . { () }", "fn same", macro_def),
         ] {
             for api in [
                 format!(
-                    "module api; import first({first_selector}); import second(macro same); pub fn expose() -> . {{ () }}"
+                    "mod api; import first {{{first_selector}}} import second {{macro same}} pub fn expose() -> . {{ () }}"
                 ),
                 format!(
-                    "module api; import second(macro same); import first({first_selector}); pub fn expose() -> . {{ () }}"
+                    "mod api; import second {{macro same}} import first {{{first_selector}}} pub fn expose() -> . {{ () }}"
                 ),
             ] {
                 for error in projected_errors_for_modules(
                     "  api;",
                     &[
-                        ("first.kio", &format!("module first; {first_item}")),
-                        ("second.kio", &format!("module second; {second_item}")),
+                        ("first.kio", &format!("mod first; {first_item}")),
+                        ("second.kio", &format!("mod second; {second_item}")),
                         ("api.kio", &api),
                     ],
                 ) {
@@ -11359,14 +11303,14 @@ mod contract_surface_tests {
     #[test]
     fn projected_nominal_collisions_match_across_pipelines_and_orders() {
         for api in [
-            "module api; import labels(Item); import types(Item); pub fn expose() -> . { () }",
-            "module api; import types(Item); import labels(Item); pub fn expose() -> . { () }",
+            "mod api; import labels {type Item} import types {type Item} pub fn expose() -> . { () }",
+            "mod api; import types {type Item} import labels {type Item} pub fn expose() -> . { () }",
         ] {
             for error in projected_errors_for_modules(
                 "  api;",
                 &[
-                    ("labels.kio", "module labels; pub type { Item: .; };"),
-                    ("types.kio", "module types; pub type Item = .;"),
+                    ("labels.kio", "mod labels; pub type { Item: .; };"),
+                    ("types.kio", "mod types; pub type Item = .;"),
                     ("api.kio", api),
                 ],
             ) {
@@ -11380,8 +11324,8 @@ mod contract_surface_tests {
         }
 
         for api in [
-            "module api; pub type Item = .; pub type { Item: .; };",
-            "module api; pub type { Item: .; }; pub type Item = .;",
+            "mod api; pub type Item = .; pub type { Item: .; };",
+            "mod api; pub type { Item: .; }; pub type Item = .;",
         ] {
             for error in projected_errors_for_modules("  api;", &[("api.kio", api)]) {
                 assert!(
@@ -11405,11 +11349,11 @@ mod contract_surface_tests {
         for error in projected_errors_for_modules(
             "  api;",
             &[
-                ("first.kio", &format!("module first; {macro_def}")),
-                ("second.kio", &format!("module second; {macro_def}")),
+                ("first.kio", &format!("mod first; {macro_def}")),
+                ("second.kio", &format!("mod second; {macro_def}")),
                 (
                     "api.kio",
-                    "module api; import first as first; import second as second; import missing(absent); pub fn expose() -> . { () }",
+                    "mod api; import first as first; import second as second; import missing {fn absent} pub fn expose() -> . { () }",
                 ),
             ],
         ) {
@@ -11428,13 +11372,13 @@ mod contract_surface_tests {
         for error in projected_errors_for_modules(
             "  api;",
             &[
-                ("first.kio", &format!("module first; {macro_def}")),
-                ("second.kio", &format!("module second; {macro_def}")),
+                ("first.kio", &format!("mod first; {macro_def}")),
+                ("second.kio", &format!("mod second; {macro_def}")),
                 (
                     "api.kio",
-                    "module api; import cycle as cycle; import first as first; import second as second; pub fn expose() -> . { () }",
+                    "mod api; import cycle as cycle; import first as first; import second as second; pub fn expose() -> . { () }",
                 ),
-                ("cycle.kio", "module cycle; import api as api;"),
+                ("cycle.kio", "mod cycle; import api as api;"),
             ],
         ) {
             assert!(
@@ -11455,17 +11399,18 @@ mod contract_surface_tests {
         let root = tmp.path();
         std::fs::write(
             root.join("dep.pkg.kio"),
-            "package dep;\n\nbridge {\n  api;\n}\n",
+            "pkg dep;\n\nbridge {\n  api;\n}\n",
         )
         .unwrap();
         std::fs::write(
             root.join("api.kio"),
-            "module api;\n\
-             host type I32 role(i32);\n\
-             rec(loop) {\n\
-               pub fn ping(n: I32) -> I32 { recur pong(n) };\n\
-               pub fn pong(n: I32) -> I32 { recur ping(n) }\n\
-             }\n",
+            "mod api;
+host type I32 role(i32);
+rec(loop) {
+pub fn ping(n: I32) -> I32 { recur pong(n) };
+pub fn pong(n: I32) -> I32 { recur ping(n) }
+}
+",
         )
         .unwrap();
 

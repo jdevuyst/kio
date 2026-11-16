@@ -1,4 +1,4 @@
-package rust_structural_surface;
+pkg rust_structural_surface;
 
 build {
   cache "out/.kio-cache/";

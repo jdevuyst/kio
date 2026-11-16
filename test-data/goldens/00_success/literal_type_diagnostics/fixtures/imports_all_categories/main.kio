@@ -1,6 +1,6 @@
-module main;
+mod main;
 
-import numbers(Bool, Float, Int, String);
+import numbers { type Bool; type Float; type Int; type String }
 
 pure fn integer() -> Int { let value = 42[Int]; value }
 

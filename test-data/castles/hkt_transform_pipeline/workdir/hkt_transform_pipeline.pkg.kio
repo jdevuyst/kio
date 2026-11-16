@@ -1,4 +1,4 @@
-package hkt_transform_pipeline;
+pkg hkt_transform_pipeline;
 
 build {
   cache "out/.kio-cache/";

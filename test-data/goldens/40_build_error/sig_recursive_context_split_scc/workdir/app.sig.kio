@@ -1,8 +1,8 @@
-signature app v(2);
+sig app v(2);
 
 v(1) {
   with {
-    module api {
+    mod api {
       pub rec type { A: A | B { pub mk; pub get } };
       pub rec type { B: B | A { pub mk; pub get } }
     }

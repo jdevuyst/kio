@@ -5,12 +5,12 @@
 ///
 /// The sixth and seventh are transmissions received without their original
 /// payloads: one canonical, one damaged.
-module base32/packets;
+mod base32/packets;
 
 import base32/alphabet as alphabet;
 import base32/list as list;
-import macros/spine_macros(macro widen_sum);
-import testapi(I32, String);
+import macros/spine_macros { macro widen_sum }
+import testapi { type I32; type String }
 
 /// A fixture is either a payload to round-trip or a transmission to
 /// decode as received.

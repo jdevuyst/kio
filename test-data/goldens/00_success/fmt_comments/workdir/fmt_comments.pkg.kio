@@ -1,4 +1,4 @@
-package fmt_comments;
+pkg fmt_comments;
 
 build {
   cache "out/.kio-cache/";

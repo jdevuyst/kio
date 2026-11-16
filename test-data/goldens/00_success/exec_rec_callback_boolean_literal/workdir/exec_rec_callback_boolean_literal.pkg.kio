@@ -1,4 +1,4 @@
-package exec_rec_callback_boolean_literal;
+pkg exec_rec_callback_boolean_literal;
 
 build {
   cache "out/.kio-cache/";

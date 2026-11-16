@@ -1,4 +1,4 @@
-package typecheck_zero_value_later_sibling;
+pkg typecheck_zero_value_later_sibling;
 
 build {
   cache "out/.kio-cache/";

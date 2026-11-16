@@ -1,4 +1,4 @@
-module vec;
+mod vec;
 
 pub type Vec2[A] = A & A;
 

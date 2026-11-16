@@ -1,4 +1,4 @@
-package exec_do_block_pure_let;
+pkg exec_do_block_pure_let;
 
 build {
   cache "out/.kio-cache/";

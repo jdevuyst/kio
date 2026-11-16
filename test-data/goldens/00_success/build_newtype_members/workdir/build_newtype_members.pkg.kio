@@ -1,4 +1,4 @@
-package build_newtype_members;
+pkg build_newtype_members;
 
 build {
   cache "out/.kio-cache/";

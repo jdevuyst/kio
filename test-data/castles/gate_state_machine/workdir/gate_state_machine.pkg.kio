@@ -1,4 +1,4 @@
-package gate_state_machine;
+pkg gate_state_machine;
 
 build {
   cache "out/.kio-cache/";

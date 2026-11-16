@@ -1,8 +1,8 @@
-module testapi/main;
+mod testapi/main;
 
-import macros/row_macros(macro select);
-import testapi(String);
-import testapi/io(print);
+import macros/row_macros { macro select }
+import testapi { type String }
+import testapi/io { fn print }
 import testapi/labs1 as l1;
 import testapi/two as t2;
 

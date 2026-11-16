@@ -1,4 +1,4 @@
-package pure_modifier_on_newtype;
+pkg pure_modifier_on_newtype;
 
 build {
   cache "out/.kio-cache/";

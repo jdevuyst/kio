@@ -1,4 +1,4 @@
-module word_api;
+mod word_api;
 
 import word_api/other_nodes as other_nodes;
 import word_api/word_nodes as word_nodes;

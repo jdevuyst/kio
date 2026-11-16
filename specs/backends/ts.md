@@ -577,7 +577,7 @@ Given a package `greeter` with:
 
 ```kio
 // greeter.pkg.kio
-package greeter;
+pkg greeter;
 
 build {
   cache "out/.kio-cache/";
@@ -595,7 +595,7 @@ bridge {
 
 ```kio
 // greeter.kio
-module greeter;
+mod greeter;
 
 host type String role(str);
 host fn print(s: String);
@@ -603,9 +603,9 @@ host fn print(s: String);
 
 ```kio
 // greeter/main.kio
-module greeter/main;
+mod greeter/main;
 
-import greeter(String, print);
+import greeter {type String; fn print}
 
 pub fn main() { print("hello from kio\n"[String]) }
 ```
@@ -662,10 +662,10 @@ values directly as typed objects:
 
 ```kio
 // pair_swap/main.kio
-module pair_swap/main;
+mod pair_swap/main;
 
 import __intrinsics__;
-import pair_swap(I32, String);
+import pair_swap {type I32; type String}
 
 pub fn pair_swap(p: (I32 & String)) -> (String & I32) {
   __pair__[String][I32](__snd__[I32][String](p), __fst__[I32][String](p))

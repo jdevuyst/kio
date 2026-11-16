@@ -302,8 +302,7 @@ Kio type cannot change Rust representation according to occurrence.
 
 The host may borrow that owned value inside its method implementation or write
 its own local adapter around the generated method. No borrowing wrapper is
-part of the generated Kio ABI. Because the canonical ABI is already owned, a
-source `{ owned }` annotation does not select another Rust facade.
+part of the generated Kio ABI.
 
 The trait's current obligations are exactly the live declarations selected by
 the package bridge — one exact facade type per nullary `host type`, one exact
@@ -1285,7 +1284,7 @@ name.
 
 ```kio
 // hello.pkg.kio
-package hello;
+pkg hello;
 
 build { target rust { out "out/rust/"; } }
 
@@ -1297,7 +1296,7 @@ bridge {
 
 ```kio
 // hello.kio
-module hello;
+mod hello;
 
 host type I32 role(i32);
 host type String role(str);
@@ -1308,9 +1307,9 @@ host fn int_to_string(p0: I32) -> String;
 
 ```kio
 // hello/main.kio
-module hello/main;
+mod hello/main;
 
-import hello(I32, String, print, int_to_string);
+import hello {type I32; type String; fn print; fn int_to_string}
 
 pub type { Hed: I32; Mid: String; }
 

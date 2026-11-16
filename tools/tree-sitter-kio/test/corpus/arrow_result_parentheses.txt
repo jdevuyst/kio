@@ -1,7 +1,7 @@
 ================================================================================
 arrow result chains use grouped types while signature results retain chains
 ================================================================================
-module m;
+mod m;
 type Product = A -> (B & C);
 type Sum = A -> (B | C);
 type Arrows = A -> B -> C;
@@ -17,7 +17,7 @@ fn lambda_nested() { .() -> A -> (B | C) { value } }
 ================================================================================
 bare product arrow result rejects and the following declaration recovers
 ================================================================================
-module m;
+mod m;
 type Bad = A -> B & C;
 fn after() { () }
 --------------------------------------------------------------------------------
@@ -27,7 +27,7 @@ fn after() { () }
 ================================================================================
 bare sum nested arrow result rejects and the following declaration recovers
 ================================================================================
-module m;
+mod m;
 fn bad() -> A -> B | C { value }
 fn after() { () }
 --------------------------------------------------------------------------------

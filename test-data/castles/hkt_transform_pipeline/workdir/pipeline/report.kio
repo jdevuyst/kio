@@ -1,18 +1,18 @@
-module pipeline/report;
+mod pipeline/report;
 
-import macros/row_macros(macro select);
-import pipeline/domain(
-, Approvals
-, First_sample
-, Pipeline_summary
-, Report_name
-, Score_total
-, Second_sample
-, Third_sample
-);
-import testapi(String);
-import testapi/fmt(int_to_string);
-import testapi/text(string_concat);
+import macros/row_macros { macro select }
+import pipeline/domain {
+  type Approvals;
+  type First_sample;
+  type Pipeline_summary;
+  type Report_name;
+  type Score_total;
+  type Second_sample;
+  type Third_sample
+}
+import testapi { type String }
+import testapi/fmt { fn int_to_string }
+import testapi/text { fn string_concat }
 
 fn append(left: String, right: String) -> String { string_concat(left, right) }
 

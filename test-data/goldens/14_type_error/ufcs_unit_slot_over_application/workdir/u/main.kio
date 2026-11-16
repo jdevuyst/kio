@@ -1,4 +1,4 @@
-module u/main;
+mod u/main;
 
 fn accepts_unit[A]() { () }
 

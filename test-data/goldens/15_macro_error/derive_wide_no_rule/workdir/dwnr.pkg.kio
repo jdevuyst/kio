@@ -1,4 +1,4 @@
-package dwnr;
+pkg dwnr;
 
 build {
   cache "out/.kio-cache/";

@@ -1,4 +1,4 @@
-package wide_large;
+pkg wide_large;
 
 build {
   cache "out/.kio-cache/";

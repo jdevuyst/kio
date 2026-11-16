@@ -1,4 +1,4 @@
-package exec_functor_maybe;
+pkg exec_functor_maybe;
 
 build {
   cache "out/.kio-cache/";

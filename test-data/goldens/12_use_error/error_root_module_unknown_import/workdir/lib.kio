@@ -1,6 +1,6 @@
-module lib;
+mod lib;
 
 // `other_pkg` is not a local module root.
-import other_pkg(something);
+import other_pkg { fn something }
 
 pub fn identity[A](x: A) -> A { x }

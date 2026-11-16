@@ -1,4 +1,4 @@
-package macro_scoped_narrower_capture;
+pkg macro_scoped_narrower_capture;
 
 build {
   cache "out/.kio-cache/";

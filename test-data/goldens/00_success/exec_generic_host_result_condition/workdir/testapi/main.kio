@@ -1,9 +1,9 @@
-module testapi/main;
+mod testapi/main;
 
-import macros/control(macro if);
-import testapi(Bool, I32, String);
-import testapi/array(array_get, array_make_filled);
-import testapi/io(print);
+import macros/control { macro if }
+import testapi { type Bool; type I32; type String }
+import testapi/array { fn array_get; fn array_make_filled }
+import testapi/io { fn print }
 
 pub fn main() {
   let flags = array_make_filled(1, .t[Bool]);

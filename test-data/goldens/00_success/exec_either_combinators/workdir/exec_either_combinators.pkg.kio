@@ -1,4 +1,4 @@
-package exec_either_combinators;
+pkg exec_either_combinators;
 
 build {
   cache "out/.kio-cache/";

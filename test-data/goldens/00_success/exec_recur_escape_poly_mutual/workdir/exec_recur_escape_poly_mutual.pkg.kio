@@ -1,4 +1,4 @@
-package exec_recur_escape_poly_mutual;
+pkg exec_recur_escape_poly_mutual;
 
 build {
   cache "out/.kio-cache/";

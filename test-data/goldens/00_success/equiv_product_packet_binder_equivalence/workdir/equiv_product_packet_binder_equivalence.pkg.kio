@@ -1,4 +1,4 @@
-package equiv_product_packet_binder_equivalence;
+pkg equiv_product_packet_binder_equivalence;
 
 build {
   cache "out/.kio-cache/";

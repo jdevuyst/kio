@@ -1,13 +1,19 @@
-module fold/report;
+mod fold/report;
 
 import fold/bases as bases;
 import fold/numbers as numbers;
 import fold/reconstruct as reconstruct;
 import fold/solver as solver;
 import fold/validate as validate;
-import fold/validate(Brackets, Legal, Noncrossing, Score_matches, Symmetric);
-import macros/row_macros(macro select);
-import testapi(Array, Bool, I32, String);
+import fold/validate {
+  type Brackets;
+  type Legal;
+  type Noncrossing;
+  type Score_matches;
+  type Symmetric
+}
+import macros/row_macros { macro select }
+import testapi { type Array; type Bool; type I32; type String }
 import testapi/array as array;
 import testapi/fmt as fmt;
 import testapi/io as io;

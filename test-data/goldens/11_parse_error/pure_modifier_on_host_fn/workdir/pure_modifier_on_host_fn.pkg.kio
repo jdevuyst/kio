@@ -1,4 +1,4 @@
-package pure_modifier_on_host_fn;
+pkg pure_modifier_on_host_fn;
 
 build {
   cache "out/.kio-cache/";

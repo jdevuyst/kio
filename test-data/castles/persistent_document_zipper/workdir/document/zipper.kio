@@ -1,12 +1,12 @@
-module document/zipper;
+mod document/zipper;
 
 import document/tree as tree;
 import list/core as lists;
 import list/list as traversal;
-import macros/match(macro match);
-import macros/spine_macros(macro widen_sum);
-import testapi(String);
-import testapi/iter(loop);
+import macros/match { macro match }
+import macros/spine_macros { macro widen_sum }
+import testapi { type String }
+import testapi/iter { fn loop }
 import testapi/text as text;
 
 type { Crumb: String & lists.List[tree.Node] & lists.List[tree.Node] { mk; get } }

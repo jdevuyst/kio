@@ -1,4 +1,4 @@
-package msd;
+pkg msd;
 
 build {
   cache "out/.kio-cache/";

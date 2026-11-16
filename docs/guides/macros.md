@@ -45,7 +45,7 @@ context. The implementation returns the source term, and the compiler checks
 that it has the requested result type:
 
 <!--kio {file}
-package guide;
+pkg guide;
 
 bridge {
   guide/**;
@@ -54,11 +54,11 @@ bridge {
 -->
 
 <!--kio {file}
-module library;
+mod library;
 -->
 
 ```kio {file}
-module library/identity;
+mod library/identity;
 
 import __comptime__;
 
@@ -80,9 +80,9 @@ pub macro identity_block : [Source] Source -> [Target] Target {
 The consumer is a separate module, so it selects the macro explicitly:
 
 <!--kio {harness=identity_consumer file placeholder="__INSERT_CODE_HERE__"}
-module guide/main;
+mod guide/main;
 
-import library/identity(macro identity, macro identity_block);
+import library/identity {macro identity; macro identity_block}
 
 __INSERT_CODE_HERE__
 -->
@@ -94,7 +94,7 @@ pure fn keep_unit(value: .) { identity(value)[.] }
 For a generic consumer, the same import and trailing target slot look like:
 
 <!--kio {harness=generic_consumer file placeholder="__INSERT_CODE_HERE__"}
-module guide/generic;
+mod guide/generic;
 
 __INSERT_CODE_HERE__
 
@@ -102,7 +102,7 @@ fn check_keep() { keep(()) }
 -->
 
 ```kio {@generic_consumer}
-import library/identity(macro identity);
+import library/identity { macro identity }
 
 fn keep[A](value: A) -> A { identity(value)[A] }
 ```
@@ -172,7 +172,7 @@ generated code can choose whether to invoke it.
 
 An operator can also target a macro. A dotted operand slot wraps the whole
 parsed operand in a unit-domain thunk, independently of these block descriptors.
-For example, the control library's `op macro _ && .__ { impl and }` makes
+For example, the control library's `op_macro _ && .__ { impl and }` makes
 `a && b` supply the same product as `and(a) { b }`. See
 [delayed operator operands](operators.md#delay-an-operand) for imports,
 grouping, and evaluation.
@@ -515,7 +515,7 @@ bridge {
   kiodoc;
 }
 
-module kiodoc;
+mod kiodoc;
 
 import __comptime__;
 
@@ -595,7 +595,7 @@ List each declaration whose reflected type or checked runtime term the
 implementation needs:
 
 <!--kio {harness=captures placeholder="__INSERT_CODE_HERE__"}
-module guide/captures;
+mod guide/captures;
 
 import __comptime__;
 

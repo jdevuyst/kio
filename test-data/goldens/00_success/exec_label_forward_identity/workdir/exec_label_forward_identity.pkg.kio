@@ -1,4 +1,4 @@
-package exec_label_forward_identity;
+pkg exec_label_forward_identity;
 
 build {
   cache "out/.kio-cache/";

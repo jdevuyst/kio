@@ -2,7 +2,7 @@
 set -eu
 
 formatted=$("$KIO_BIN" fmt - <<'KIO'
-module fmt_type_path_bracket_comments;
+mod fmt_type_path_bracket_comments;
 type Single = Box // between head and bracket
 [// first argument
 A // argument trailing

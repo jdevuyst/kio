@@ -1,4 +1,4 @@
-package exec_if_computed_field_condition;
+pkg exec_if_computed_field_condition;
 
 build {
   cache "out/.kio-cache/";

@@ -1,10 +1,10 @@
-module packet_frame_decoder/report;
+mod packet_frame_decoder/report;
 
 import packet_frame_decoder/checksum as checksum;
 import packet_frame_decoder/data as data;
 import packet_frame_decoder/frame as frame;
 import packet_frame_decoder/text as s;
-import testapi(String);
+import testapi { type String }
 
 fn render_packet(label: String, packet: String) -> String {
   s.cat5(

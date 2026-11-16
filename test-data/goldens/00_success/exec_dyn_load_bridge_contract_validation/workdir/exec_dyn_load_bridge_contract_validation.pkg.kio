@@ -1,4 +1,4 @@
-package exec_dyn_load_bridge_contract_validation;
+pkg exec_dyn_load_bridge_contract_validation;
 
 build {
   cache "out/.kio-cache/";

@@ -1,10 +1,10 @@
-module fmt_canonical/main;
+mod fmt_canonical/main;
 
 import __intrinsics__;
 
 import a/b as q;
-import a/b(T);
-import g_pkg(g);
+import a/b { type T }
+import g_pkg { fn g }
 
 type { Box[A]: A { pub mk; pub get } }
 
@@ -45,13 +45,13 @@ fn dotted_callee() { Box.mk[String]("hi"[String]) }
 fn mixed_args() { id[String]("hi"[String]) }
 
 fn literals() { let s = "hi"[String]; let n = 42[I32]; let f = 3.14[F64]; let b = .t[Bool]; () }
-module fmt_canonical/main;
+mod fmt_canonical/main;
 
 import __intrinsics__;
 
 import a/b as q;
-import a/b(T);
-import g_pkg(g);
+import a/b { type T }
+import g_pkg { fn g }
 
 type { Box[A]: A { pub mk; pub get } }
 

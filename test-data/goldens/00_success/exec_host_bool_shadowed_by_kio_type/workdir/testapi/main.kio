@@ -1,10 +1,10 @@
-module testapi/main;
+mod testapi/main;
 
-import flag(Bool, bool_to, no, yes);
-import testapi(String);
-import testapi/fmt(bool_to_string);
-import testapi/io(print);
-import testapi/text(string_concat, string_eq);
+import flag { type Bool; fn bool_to; fn no; fn yes }
+import testapi { type String }
+import testapi/fmt { fn bool_to_string }
+import testapi/io { fn print }
+import testapi/text { fn string_concat; fn string_eq }
 
 // `flag`'s `Bool` is imported *bare* (the structural sum). A reference
 // to it here means that sum — `show_flag_bool` eliminates it with the

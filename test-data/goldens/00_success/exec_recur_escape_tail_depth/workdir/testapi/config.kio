@@ -1,5 +1,5 @@
-module testapi/config;
+mod testapi/config;
 
-import testapi(I32);
+import testapi { type I32 }
 
 pub fn depth() -> I32 { 100000 }

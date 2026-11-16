@@ -524,7 +524,7 @@ fn validate_operator_imports_for_module(
                     file_path: module.file_path.clone(),
                     error: Error::import(span, format!(
                         "imported operator grammar does not match module `{source}`: `{rendered}`"
-                    )).with_help(format!("import {}({});", source, decl.grammar.render())),
+                    )).with_help(format!("import {} {{ {} }}", source, decl.grammar.render())),
                 });
             }
             if !is_visible(&decl.vis, &module.path) {
@@ -578,58 +578,57 @@ fn validate_ordinary_namespace_selection(index: &RegistryIndex) -> Result<(), Lo
                 let ImportItem::Name {
                     name,
                     span,
-                    macro_span,
+                    kind,
+                    kind_span,
                     ..
                 } = item
                 else {
                     continue;
                 };
                 if let Some(declarations) = target.named_exports.get(name) {
-                    let actual_macro = declarations
-                        .iter()
-                        .any(|decl| decl.kind == NamedKind::Macro);
-                    if actual_macro != macro_span.is_some() {
-                        let error = if actual_macro {
-                            Error::import(
-                                *span,
-                                format!("`{name}` in module `{source}` is a macro"),
-                            )
-                            .with_help(format!(
-                                "select its kind explicitly: `import {source}(macro {name});`"
-                            ))
-                            .with_fix(
-                                crate::error::Fix::machine_applicable(
-                                    "Select the macro declaration",
-                                    vec![crate::error::FixEdit::new(
-                                        Span::new(span.start, span.start),
-                                        "macro ",
-                                    )],
-                                ),
-                            )
-                        } else {
-                            Error::import(
-                                *span,
-                                format!("`{name}` in module `{source}` is not a macro"),
-                            )
-                            .with_help(format!(
-                                "import the ordinary declaration with `import {source}({name});`"
-                            ))
-                            .with_fix(
-                                crate::error::Fix::machine_applicable(
-                                    "Select the ordinary declaration",
-                                    vec![crate::error::FixEdit::new(
-                                        macro_span.expect("written macro selection"),
-                                        "",
-                                    )],
-                                ),
-                            )
-                        };
+                    let expected = match kind {
+                        crate::ast::ImportNameKind::Function | crate::ast::ImportNameKind::Type => {
+                            NamedKind::Ordinary
+                        }
+                        crate::ast::ImportNameKind::Literal => NamedKind::Literal,
+                        crate::ast::ImportNameKind::Macro => NamedKind::Macro,
+                    };
+                    if !declarations.iter().any(|decl| decl.kind == expected) {
+                        let mut error = Error::import(
+                            *span,
+                            format!("`{name}` in module `{source}` is not a {}", kind.spelling()),
+                        );
+                        let candidates = declarations
+                            .iter()
+                            .filter(|decl| is_visible(&decl.vis, &module.path))
+                            .map(|decl| match decl.kind {
+                                NamedKind::Macro => crate::ast::ImportNameKind::Macro,
+                                NamedKind::Literal => crate::ast::ImportNameKind::Literal,
+                                NamedKind::Ordinary if crate::naming::is_type_name(name) => {
+                                    crate::ast::ImportNameKind::Type
+                                }
+                                NamedKind::Ordinary => crate::ast::ImportNameKind::Function,
+                            })
+                            .collect::<Vec<_>>();
+                        if let Some(actual) = candidates.first().copied()
+                            && candidates.iter().all(|candidate| *candidate == actual)
+                            && let Some(tag) = kind_span
+                        {
+                            error = error
+                                .with_help(format!(
+                                    "select this declaration with `{}`",
+                                    actual.spelling()
+                                ))
+                                .with_fix(crate::error::Fix::machine_applicable(
+                                    format!("Select the {} declaration", actual.spelling()),
+                                    vec![crate::error::FixEdit::new(*tag, actual.spelling())],
+                                ));
+                        }
                         return Err(LocatedError {
                             file_path: module.file_path.clone(),
                             error,
                         });
                     }
-                    continue;
                 }
             }
         }
@@ -1288,14 +1287,92 @@ pub(crate) fn inferred_package_root(modules: &[(PathBuf, Module<Surface>)]) -> P
 mod tests {
 
     #[test]
+    fn wrong_named_kind_fix_replaces_only_the_written_tag() {
+        use crate::pass::parser::parse;
+        for (provider, source, replacement) in [
+            (
+                "mod provider; pub macro identity : . -> . { impl implementation; }",
+                "mod consumer; import provider { fn // keep\n identity as local }",
+                "macro",
+            ),
+            (
+                "mod provider; pub fn ordinary() -> . { () }",
+                "mod consumer; import provider { macro ordinary as local }",
+                "fn",
+            ),
+            (
+                "mod provider; pub lit answer = 1;",
+                "mod consumer; import provider { fn answer as local }",
+                "lit",
+            ),
+        ] {
+            let consumer = parse(source).expect("consumer");
+            let provider = parse(provider).expect("provider");
+            let (_, index) = super::operator_context_index(
+                &consumer,
+                &[(PathBuf::from("provider.kio"), provider)],
+            );
+            let error = super::validate_ordinary_namespace_selection(&index)
+                .expect_err("kind mismatch")
+                .error;
+            let [fix] = error.diagnostic().fixes() else {
+                panic!("one authenticated kind fix")
+            };
+            let [edit] = fix.edits.as_slice() else {
+                panic!("one edit")
+            };
+            assert_eq!(edit.replacement, replacement);
+            let mut corrected = source.to_owned();
+            corrected.replace_range(
+                edit.span.start as usize..edit.span.end as usize,
+                &edit.replacement,
+            );
+            assert!(corrected.contains("as local"));
+            if source.contains("// keep") {
+                assert!(corrected.contains("// keep"));
+            }
+            let consumer = parse(&corrected).expect("corrected selection");
+            let provider = parse(provider_source_for_test(replacement)).expect("provider");
+            let (_, index) = super::operator_context_index(
+                &consumer,
+                &[(PathBuf::from("provider.kio"), provider)],
+            );
+            super::validate_ordinary_namespace_selection(&index).expect("correct kind");
+        }
+    }
+
+    #[test]
+    fn wrong_named_kind_fix_requires_a_visible_provider() {
+        use crate::pass::parser::parse;
+        let consumer = parse("mod consumer; import provider { fn identity }").unwrap();
+        let provider =
+            parse("mod provider; macro identity : . -> . { impl implementation; }").unwrap();
+        let (_, index) =
+            super::operator_context_index(&consumer, &[(PathBuf::from("provider.kio"), provider)]);
+        let error = super::validate_ordinary_namespace_selection(&index)
+            .unwrap_err()
+            .error;
+        assert!(error.diagnostic().fixes().is_empty());
+    }
+
+    fn provider_source_for_test(kind: &str) -> &'static str {
+        match kind {
+            "macro" => "mod provider; pub macro identity : . -> . { impl implementation; }",
+            "fn" => "mod provider; pub fn ordinary() -> . { () }",
+            "lit" => "mod provider; pub lit answer = 1;",
+            _ => unreachable!(),
+        }
+    }
+
+    #[test]
     fn import_grammar_exact_import_match_after_parse() {
         use crate::pass::parser::parse;
-        let source = "module consumer; import provider(op _ ? _ : _); fn run(a: ., b: ., c: .) -> . { a ? b : c }";
+        let source = "mod consumer; import provider {op _ ? _ : _} fn run(a: ., b: ., c: .) -> . { a ? b : c }";
         let consumer = parse(source).expect("provider-free syntax");
         let syntax_before = crate::pretty::pretty_module(&consumer);
-        let correct = "module provider; pub fn choose(a: ., b: ., c: .) -> . { a } pub op _ ? _ : _ { impl choose; };";
+        let correct = "mod provider; pub fn choose(a: ., b: ., c: .) -> . { a } pub op _ ? _ : _ { impl choose; };";
         let mismatch =
-            "module provider; pub fn choose(a: ., b: .) -> . { a } pub op _ ? _ { impl choose; };";
+            "mod provider; pub fn choose(a: ., b: .) -> . { a } pub op _ ? _ { impl choose; };";
         let modules =
             |provider: &str| vec![(PathBuf::from("provider.kio"), parse(provider).unwrap())];
         validate_operator_context(&consumer, &modules(correct)).expect("exact provider");
@@ -1319,11 +1396,11 @@ mod tests {
         validate_operator_context(&consumer, &modules(&unrelated))
             .expect("unrelated export preserves binding");
         let variadic = parse(
-            "module consumer; import provider(varop [% %]); fn run(a: .) -> . { [% (a, a) %] }",
+            "mod consumer; import provider {op_var [% %]} fn run(a: .) -> . { [% (a, a) %] }",
         )
         .unwrap();
         for (head, accepted) in [("[% %]", true), ("[* *]", false)] {
-            let provider = format!("module provider; pub varop {head} {{ foldl step base; }};");
+            let provider = format!("mod provider; pub op_var {head} {{ foldl step base; }};");
             let result = validate_operator_context(&variadic, &modules(&provider));
             assert_eq!(result.is_ok(), accepted, "{result:?}");
         }
@@ -1333,14 +1410,14 @@ mod tests {
     fn import_grammar_provider_body_preserves_projection() {
         use crate::pass::parser::parse;
         let consumer = parse(
-            "module consumer; import provider(varop [% %]); fn run(a: .) -> . { [% (a, a) %] }",
+            "mod consumer; import provider {op_var [% %]} fn run(a: .) -> . { [% (a, a) %] }",
         )
         .unwrap();
         let mut prior = None;
         for mode in ["foldl", "foldr", "foldl1", "foldr1"] {
             for suffix in ["", " finalize finish;"] {
                 let source = format!(
-                    "module provider; pub varop [% %] {{ {mode} different_step different_base;{suffix} }};"
+                    "mod provider; pub op_var [% %] {{ {mode} different_step different_base;{suffix} }};"
                 );
                 let provider = parse(&source).unwrap();
                 let Item::VariadicOperator(declaration, _) = &provider.items[0] else {
@@ -1468,11 +1545,11 @@ mod tests {
     fn distinct_imported_literal_origins_conflict() {
         expect_name_error(
             &[
-                ("first.kio", "module first; pub literal pick = 1;"),
-                ("second.kio", "module second; pub literal pick = 2;"),
+                ("first.kio", "mod first; pub lit pick = 1;"),
+                ("second.kio", "mod second; pub lit pick = 2;"),
                 (
                     "main.kio",
-                    "module main; import first(pick); import second(pick);",
+                    "mod main; import first {lit pick} import second {lit pick}",
                 ),
             ],
             "literal alias `pick` has more than one source",
@@ -1483,10 +1560,10 @@ mod tests {
     fn repeated_import_of_one_literal_origin_is_a_duplicate() {
         expect_duplicate_import_error(
             &[
-                ("origin.kio", "module origin; pub literal pick = 1;"),
+                ("origin.kio", "mod origin; pub lit pick = 1;"),
                 (
                     "main.kio",
-                    "module main; import origin(pick); import origin(pick);",
+                    "mod main; import origin {lit pick} import origin {lit pick}",
                 ),
             ],
             "duplicate literal alias import `pick`",
@@ -1497,10 +1574,10 @@ mod tests {
     fn imported_and_local_literal_origins_conflict() {
         expect_name_error(
             &[
-                ("origin.kio", "module origin; pub literal pick = 1;"),
+                ("origin.kio", "mod origin; pub lit pick = 1;"),
                 (
                     "main.kio",
-                    "module main; import origin(pick); literal pick = 2;",
+                    "mod main; import origin {lit pick} lit pick = 2;",
                 ),
             ],
             "literal alias `pick` has more than one source",
@@ -1511,10 +1588,10 @@ mod tests {
     fn newtype_members_do_not_occupy_free_top_level_names() {
         validate(&[(
             "main.kio",
-            "module main;
+            "mod main;
              type { Box: . { pub mk; pub get; }; }
-             literal mk = 1;
-             literal get = 2;",
+             lit mk = 1;
+             lit get = 2;",
         )])
         .expect("newtype members are selected through their type, not as free bindings");
     }
@@ -1522,8 +1599,8 @@ mod tests {
     #[test]
     fn compact_nominal_type_uses_the_ordinary_selective_import_name() {
         validate(&[
-            ("origin.kio", "module origin; pub type { Item: .; }"),
-            ("main.kio", "module main; import origin(Item);"),
+            ("origin.kio", "mod origin; pub type { Item: .; }"),
+            ("main.kio", "mod main; import origin {type Item}"),
         ])
         .expect("compact nominal entries export their exact ordinary type name");
     }
@@ -1532,9 +1609,7 @@ mod tests {
     fn nominal_registry_uses_one_ordinary_identity_per_written_declaration() {
         let modules = parsed_headers(&[(
             "api.kio",
-            "module api; pub type { Explicit: . { pub mk; get; }; } \
-             pub type Bundle = { Compact: . { pub(api) mk; get; }; Other: .; }; \
-             type Reused = Other;",
+            "mod api; pub type { Explicit: . { pub mk; get; }; } pub type Bundle = { Compact: . { pub(api) mk; get; }; Other: .; }; type Reused = Other;",
         )]);
         let projection = project_module(&modules[0].0, &modules[0].1);
         let declarations = &projection.registry.local_named;
@@ -1564,10 +1639,10 @@ mod tests {
     fn identity_alias_and_imported_compact_nominal_conflict() {
         expect_ordinary_origin_error(
             &[
-                ("origin.kio", "module origin; pub type { Item: .; };"),
+                ("origin.kio", "mod origin; pub type { Item: .; };"),
                 (
                     "main.kio",
-                    "module main; import origin(Item); import origin as source; type Item = source.Item;",
+                    "mod main; import origin {type Item} import origin as source; type Item = source.Item;",
                 ),
             ],
             "binding `Item` has more than one source",
@@ -1578,10 +1653,10 @@ mod tests {
     fn generic_identity_alias_and_imported_compact_nominal_conflict() {
         expect_ordinary_origin_error(
             &[
-                ("origin.kio", "module origin; pub type { Wrap[A]: A; };"),
+                ("origin.kio", "mod origin; pub type { Wrap[A]: A; };"),
                 (
                     "main.kio",
-                    "module main; import origin(Wrap); import origin as source; type Wrap[A] = source.Wrap[A];",
+                    "mod main; import origin {type Wrap} import origin as source; type Wrap[A] = source.Wrap[A];",
                 ),
             ],
             "binding `Wrap` has more than one source",
@@ -1592,9 +1667,7 @@ mod tests {
     fn named_compact_aliases_keep_distinct_declaration_origins() {
         let modules = parsed_headers(&[(
             "origin.kio",
-            "module origin; \
-             type Exact[A][B] = { Item[A][B]: A & B; }; \
-             type Forward[A][B] = Item[A][ B];",
+            "mod origin; type Exact[A][B] = { Item[A][B]: A & B; }; type Forward[A][B] = Item[A][ B];",
         )]);
         let projection = project_module(&modules[0].0, &modules[0].1);
         let declarations = &projection.registry.local_named;
@@ -1614,11 +1687,11 @@ mod tests {
     fn distinct_imported_nominal_origins_conflict() {
         expect_ordinary_origin_error(
             &[
-                ("first.kio", "module first; pub type { Item: .; };"),
-                ("second.kio", "module second; pub type { Item: .; };"),
+                ("first.kio", "mod first; pub type { Item: .; };"),
+                ("second.kio", "mod second; pub type { Item: .; };"),
                 (
                     "main.kio",
-                    "module main; import first(Item); import second(Item);",
+                    "mod main; import first {type Item} import second {type Item}",
                 ),
             ],
             "binding `Item` has more than one source",
@@ -1629,10 +1702,10 @@ mod tests {
     fn repeated_import_of_one_nominal_origin_is_a_duplicate() {
         expect_ordinary_origin_error(
             &[
-                ("origin.kio", "module origin; pub type { Item: .; };"),
+                ("origin.kio", "mod origin; pub type { Item: .; };"),
                 (
                     "main.kio",
-                    "module main; import origin(Item); import origin(Item);",
+                    "mod main; import origin {type Item} import origin {type Item}",
                 ),
             ],
             "binding `Item` is introduced more than once",
@@ -1643,10 +1716,10 @@ mod tests {
     fn imported_and_local_nominal_origins_conflict() {
         expect_ordinary_origin_error(
             &[
-                ("origin.kio", "module origin; pub type { Item: .; };"),
+                ("origin.kio", "mod origin; pub type { Item: .; };"),
                 (
                     "main.kio",
-                    "module main; import origin(Item); type { Item: .; };",
+                    "mod main; import origin {type Item} type { Item: .; };",
                 ),
             ],
             "binding `Item` has more than one source",
@@ -1658,15 +1731,15 @@ mod tests {
         validate(&[
             (
                 "first.kio",
-                "module first; type { Item: .; }; pub fn item() -> . { () }",
+                "mod first; type { Item: .; }; pub fn item() -> . { () }",
             ),
             (
                 "second.kio",
-                "module second; fn item() -> . { () } pub type { Item: .; };",
+                "mod second; fn item() -> . { () } pub type { Item: .; };",
             ),
             (
                 "main.kio",
-                "module main; import first(item); import second(Item);",
+                "mod main; import first {fn item} import second {type Item}",
             ),
         ])
         .expect("each exact type/value spelling selects its written provider");
@@ -1674,21 +1747,18 @@ mod tests {
 
     #[test]
     fn local_nominal_and_literal_alias_names_are_case_distinct() {
-        validate(&[(
-            "main.kio",
-            "module main; literal item = 1; type { Item: .; };",
-        )])
-        .expect("ordinary type and value spellings are distinct");
+        validate(&[("main.kio", "mod main; lit item = 1; type { Item: .; };")])
+            .expect("ordinary type and value spellings are distinct");
     }
 
     #[test]
     fn imported_nominal_and_literal_alias_names_are_case_distinct() {
         validate(&[
-            ("labels.kio", "module labels; pub type { Item: .; };"),
-            ("literals.kio", "module literals; pub literal item = 1;"),
+            ("labels.kio", "mod labels; pub type { Item: .; };"),
+            ("literals.kio", "mod literals; pub lit item = 1;"),
             (
                 "main.kio",
-                "module main; import labels(Item); import literals(item);",
+                "mod main; import labels {type Item} import literals {lit item}",
             ),
         ])
         .expect("distinct ordinary spellings do not create one binding origin");
@@ -1697,8 +1767,8 @@ mod tests {
     #[test]
     fn ordinary_import_does_not_infer_a_different_case_spelling() {
         let error = validate(&[
-            ("origin.kio", "module origin; pub type { Item: .; };"),
-            ("main.kio", "module main; import origin(item);"),
+            ("origin.kio", "mod origin; pub type { Item: .; };"),
+            ("main.kio", "mod main; import origin {fn item}"),
         ])
         .expect_err("a value-shaped import cannot infer a type-shaped declaration");
         let Error::Import(diagnostic) = error.error else {
@@ -1709,11 +1779,11 @@ mod tests {
 
     #[test]
     fn distinct_imported_macro_origins_conflict_in_either_import_order() {
-        let first = "module first; pub macro same : [Source] Source -> [Target] Target { impl implementation; };";
-        let second = "module second; pub macro same : [Source] Source -> [Target] Target { impl implementation; };";
+        let first = "mod first; pub macro same : [Source] Source -> [Target] Target { impl implementation; };";
+        let second = "mod second; pub macro same : [Source] Source -> [Target] Target { impl implementation; };";
         for main in [
-            "module main; import first(macro same); import second(macro same);",
-            "module main; import second(macro same); import first(macro same);",
+            "mod main; import first {macro same} import second {macro same}",
+            "mod main; import second {macro same} import first {macro same}",
         ] {
             expect_name_error(
                 &[
@@ -1729,8 +1799,8 @@ mod tests {
     #[test]
     fn macro_and_function_conflict_in_either_declaration_order() {
         for source in [
-            "module main; fn same() -> . { () } macro same : [Source] Source -> [Target] Target { impl implementation; };",
-            "module main; macro same : [Source] Source -> [Target] Target { impl implementation; }; fn same() -> . { () }",
+            "mod main; fn same() -> . { () } macro same : [Source] Source -> [Target] Target { impl implementation; };",
+            "mod main; macro same : [Source] Source -> [Target] Target { impl implementation; }; fn same() -> . { () }",
         ] {
             expect_name_error(
                 &[("main.kio", source)],
@@ -1743,8 +1813,8 @@ mod tests {
     #[cfg(feature = "surface")]
     fn compact_nominal_and_type_conflict_in_either_declaration_order() {
         for source in [
-            "module main; type Item = .; type { Item: .; };",
-            "module main; type { Item: .; }; type Item = .;",
+            "mod main; type Item = .; type { Item: .; };",
+            "mod main; type { Item: .; }; type Item = .;",
         ] {
             let error = <crate::pass::full::FullPipeline as crate::pipeline::Pipeline>::lower_package_named(
                 parsed_modules(&[("main.kio", source)]), None, None,
@@ -1769,7 +1839,7 @@ mod tests {
     fn missing_import_with_local_literal() {
         let error = validate(&[(
             "main.kio",
-            "module main; import missing(absent); literal value = 1; fn distinct() -> . { () }",
+            "mod main; import missing {fn absent} lit value = 1; fn distinct() -> . { () }",
         )])
         .expect_err("the missing module must be reported");
         assert!(
@@ -1784,17 +1854,17 @@ mod tests {
         let error = validate(&[
             (
                 "first.kio",
-                "module first; pub macro same : [Source] Source -> [Target] Target { impl implementation; };",
+                "mod first; pub macro same : [Source] Source -> [Target] Target { impl implementation; };",
             ),
             (
                 "second.kio",
-                "module second; pub macro same : [Source] Source -> [Target] Target { impl implementation; };",
+                "mod second; pub macro same : [Source] Source -> [Target] Target { impl implementation; };",
             ),
             (
                 "main.kio",
-                "module main; import cycle as cycle; import first as first; import second as second;",
+                "mod main; import cycle as cycle; import first as first; import second as second;",
             ),
-            ("cycle.kio", "module cycle; import main as main;"),
+            ("cycle.kio", "mod cycle; import main as main;"),
         ])
         .expect_err("the value-import cycle must be reported");
         assert!(
@@ -1810,15 +1880,15 @@ mod tests {
             &[
                 (
                     "first.kio",
-                    "module first; pub fn f() -> . { () } pub op + _ { impl f; };",
+                    "mod first; pub fn f() -> . { () } pub op + _ { impl f; };",
                 ),
                 (
                     "second.kio",
-                    "module second; pub fn f() -> . { () } pub op + _ { impl f; };",
+                    "mod second; pub fn f() -> . { () } pub op + _ { impl f; };",
                 ),
                 (
                     "main.kio",
-                    "module main; import first(op + _); import second(op + _);",
+                    "mod main; import first {op + _} import second {op + _}",
                 ),
             ],
             "operator `op + _` has more than one source",
@@ -1830,31 +1900,31 @@ mod tests {
         let providers = [
             (
                 "binary.kio",
-                "module binary;
+                "mod binary;
                  pub fn choose(a: ., b: .) -> . { a }
                  pub op _ ? _ { impl choose; };",
             ),
             (
                 "ternary.kio",
-                "module ternary;
+                "mod ternary;
                  pub fn choose(a: ., b: ., c: .) -> . { a }
                  pub op _ ? _ : _ { impl choose; };",
             ),
         ];
         for (imports, body, incoming) in [
             (
-                "import binary(op _ ? _); import ternary(op _ ? _ : _);",
+                "import binary {op _ ? _} import ternary {op _ ? _ : _}",
                 "a ? b : c",
                 "op _ ? _ : _",
             ),
             (
-                "import ternary(op _ ? _ : _); import binary(op _ ? _);",
+                "import ternary {op _ ? _ : _} import binary {op _ ? _}",
                 "a ? b",
                 "op _ ? _",
             ),
         ] {
             let consumer =
-                format!("module main; {imports} fn run(a: ., b: ., c: .) -> . {{ {body} }}");
+                format!("mod main; {imports} fn run(a: ., b: ., c: .) -> . {{ {body} }}");
             expect_name_error(
                 &[providers[0], providers[1], ("main.kio", consumer.as_str())],
                 &format!("operator `{incoming}` has more than one source"),
@@ -1867,18 +1937,18 @@ mod tests {
         let error = validate(&[
             (
                 "first.kio",
-                "module first; pub fn f() -> . { () } pub op + _ { impl f; };",
+                "mod first; pub fn f() -> . { () } pub op + _ { impl f; };",
             ),
             (
                 "second.kio",
-                "module second; pub fn f() -> . { () } pub op + _ { impl f; };",
+                "mod second; pub fn f() -> . { () } pub op + _ { impl f; };",
             ),
             (
                 "main.kio",
-                "module main;
-                 import first(op + _);
-                 import second(op + _);
-                 import missing(absent);",
+                "mod main;
+                 import first {op + _}
+                 import second {op + _}
+                 import missing {fn absent}",
             ),
         ])
         .expect_err("the unrelated missing module must be reported first");
@@ -1894,14 +1964,11 @@ mod tests {
         let error = validate(&[
             (
                 "scope/provider.kio",
-                "module scope/provider;
+                "mod scope/provider;
                  pub(scope) fn f() -> . { () }
                  pub(scope) op + _ { impl f; };",
             ),
-            (
-                "outside.kio",
-                "module outside; import scope/provider(op + _);",
-            ),
+            ("outside.kio", "mod outside; import scope/provider {op + _}"),
         ])
         .expect_err("an outside module cannot import a scoped operator");
         assert!(
@@ -1925,7 +1992,7 @@ mod tests {
                     "rec {{ pub type {{ Tag: Peer {{ {members} }}; }}; type {{ Peer: Tag; }}; }}"
                 ),
             ] {
-                let source = format!("module deep/sub; {declaration}");
+                let source = format!("mod deep/sub; {declaration}");
                 let error = validate(&[("deep/sub.kio", source.as_str())])
                     .expect_err("a non-prefix member visibility must be rejected");
                 assert!(matches!(error.error, Error::Import(_)));
@@ -1944,11 +2011,11 @@ mod tests {
             &[
                 (
                     "origin.kio",
-                    "module origin; pub fn f() -> . { () } pub op + _ { impl f; };",
+                    "mod origin; pub fn f() -> . { () } pub op + _ { impl f; };",
                 ),
                 (
                     "main.kio",
-                    "module main; import origin(op + _); import origin(op + _);",
+                    "mod main; import origin {op + _} import origin {op + _}",
                 ),
             ],
             "duplicate operator import `op + _`",
@@ -1961,14 +2028,14 @@ mod tests {
             &[
                 (
                     "origin.kio",
-                    "module origin; pub varop [* *] { foldr cons nil; };",
+                    "mod origin; pub op_var [* *] { foldr cons nil; };",
                 ),
                 (
                     "main.kio",
-                    "module main; import origin(varop [* *]); import origin(varop [* *]);",
+                    "mod main; import origin {op_var [* *]} import origin {op_var [* *]}",
                 ),
             ],
-            "duplicate operator import `varop [* *]`",
+            "duplicate operator import `op_var [* *]`",
         );
     }
 
@@ -1976,8 +2043,8 @@ mod tests {
     fn repeated_nominal_items_in_one_import_are_duplicates() {
         expect_ordinary_origin_error(
             &[
-                ("origin.kio", "module origin; pub type { Item: .; };"),
-                ("main.kio", "module main; import origin(Item, Item);"),
+                ("origin.kio", "mod origin; pub type { Item: .; };"),
+                ("main.kio", "mod main; import origin {type Item; type Item}"),
             ],
             "binding `Item` is introduced more than once",
         );
@@ -1987,19 +2054,19 @@ mod tests {
     fn repeated_consumed_imports_in_one_import_are_duplicates() {
         for (provider, consumer, expected) in [
             (
-                "module origin; pub literal pick = 1;",
-                "module main; import origin(pick, pick);",
+                "mod origin; pub lit pick = 1;",
+                "mod main; import origin {lit pick; lit pick}",
                 "duplicate literal alias import `pick`",
             ),
             (
-                "module origin; pub fn f() -> . { () } pub op + _ { impl f; };",
-                "module main; import origin(op + _, op + _);",
+                "mod origin; pub fn f() -> . { () } pub op + _ { impl f; };",
+                "mod main; import origin {op + _; op + _}",
                 "duplicate operator import `op + _`",
             ),
             (
-                "module origin; pub varop [* *] { foldr cons nil; };",
-                "module main; import origin(varop [* *], varop [* *]);",
-                "duplicate operator import `varop [* *]`",
+                "mod origin; pub op_var [* *] { foldr cons nil; };",
+                "mod main; import origin {op_var [* *]; op_var [* *]}",
+                "duplicate operator import `op_var [* *]`",
             ),
         ] {
             expect_duplicate_import_error(
@@ -2014,19 +2081,19 @@ mod tests {
         let error = validate(&[
             (
                 "origin.kio",
-                "module origin;
-                 pub literal pick = 1;
+                "mod origin;
+                 pub lit pick = 1;
                  pub type { Item: .; };
                  pub fn f() -> . { () }
                  pub op + _ { impl f; };
-                 pub varop [* *] { foldr cons nil; };",
+                 pub op_var [* *] { foldr cons nil; };",
             ),
             (
                 "main.kio",
-                "module main;
-                 import origin(pick, Item, op + _, varop [* *]);
-                 import origin(pick, Item, op + _, varop [* *]);
-                 import missing(absent);",
+                "mod main;
+                 import origin {lit pick; type Item; op + _; op_var [* *]}
+                 import origin {lit pick; type Item; op + _; op_var [* *]}
+                 import missing {fn absent}",
             ),
         ])
         .expect_err("the unrelated missing module must be reported first");
@@ -2043,11 +2110,11 @@ mod tests {
             &[
                 (
                     "origin.kio",
-                    "module origin; pub fn f() -> . { () } pub op + _ { impl f; };",
+                    "mod origin; pub fn f() -> . { () } pub op + _ { impl f; };",
                 ),
                 (
                     "main.kio",
-                    "module main; import origin(op + _); fn g() -> . { () } op + _ { impl g; };",
+                    "mod main; import origin {op + _} fn g() -> . { () } op + _ { impl g; };",
                 ),
             ],
             "operator `op + _` has more than one source",
@@ -2060,14 +2127,14 @@ mod tests {
             &[
                 (
                     "origin.kio",
-                    "module origin;
+                    "mod origin;
                      pub fn choose(a: ., b: .) -> . { a }
                      pub op _ ? _ { impl choose; };",
                 ),
                 (
                     "main.kio",
-                    "module main;
-                     import origin(op _ ? _);
+                    "mod main;
+                     import origin {op _ ? _}
                      fn choose(a: ., b: ., c: .) -> . { a }
                      op _ ? _ : _ { impl choose; };
                      fn run(a: ., b: ., c: .) -> . { a ? b : c }",
@@ -2083,18 +2150,18 @@ mod tests {
             &[
                 (
                     "first.kio",
-                    "module first; pub varop [* *] { foldr cons nil; };",
+                    "mod first; pub op_var [* *] { foldr cons nil; };",
                 ),
                 (
                     "second.kio",
-                    "module second; pub varop [* *] { foldr cons nil; };",
+                    "mod second; pub op_var [* *] { foldr cons nil; };",
                 ),
                 (
                     "main.kio",
-                    "module main; import first(varop [* *]); import second(varop [* *]);",
+                    "mod main; import first {op_var [* *]} import second {op_var [* *]}",
                 ),
             ],
-            "operator `varop [* *]` has more than one source",
+            "operator `op_var [* *]` has more than one source",
         );
     }
 
@@ -2104,16 +2171,16 @@ mod tests {
             &[
                 (
                     "origin.kio",
-                    "module origin; pub varop [* *] { foldr cons nil; };",
+                    "mod origin; pub op_var [* *] { foldr cons nil; };",
                 ),
                 (
                     "main.kio",
-                    "module main;
-                     import origin(varop [* *]);
-                     varop [* *] { foldr local_cons local_nil; };",
+                    "mod main;
+                     import origin {op_var [* *]}
+                     op_var [* *] { foldr local_cons local_nil; };",
                 ),
             ],
-            "operator `varop [* *]` has more than one source",
+            "operator `op_var [* *]` has more than one source",
         );
     }
 
@@ -2123,19 +2190,19 @@ mod tests {
         let modules = parsed_modules(&[
             (
                 "origin.kio",
-                "module origin;
-                 pub literal one = 1;
+                "mod origin;
+                 pub lit one = 1;
                  pub fn id(x: .) -> . { x }
                  pub op + _ { impl id; };
                  pub fn nil() -> . { () }
                  pub fn cons(x: ., xs: .) -> . { x }
-                 pub varop [* *] { foldr cons nil; };
+                 pub op_var [* *] { foldr cons nil; };
                  pub type { Item: .; };",
             ),
             (
                 "main.kio",
-                "module main;
-                 import origin(one, Item, op + _, varop [* *]);
+                "mod main;
+                 import origin {lit one; type Item; op + _; op_var [* *]}
                  fn unary() -> . { + () }
                  fn list() -> . { [* (), () *] }
                  fn nominal() -> Item { Item.mk(()) }",
@@ -2152,11 +2219,11 @@ mod tests {
     #[cfg(feature = "surface")]
     fn direct_full_pipeline_lowering_validates_registry_origins() {
         let modules = parsed_modules(&[
-            ("first.kio", "module first; pub literal pick = 1;"),
-            ("second.kio", "module second; pub literal pick = 2;"),
+            ("first.kio", "mod first; pub lit pick = 1;"),
+            ("second.kio", "mod second; pub lit pick = 2;"),
             (
                 "main.kio",
-                "module main; import first(pick); import second(pick);",
+                "mod main; import first {lit pick} import second {lit pick}",
             ),
         ]);
         let error = <crate::pass::full::FullPipeline as crate::pipeline::Pipeline>::lower_package(
@@ -2186,11 +2253,11 @@ mod macro_import_tests {
 
     #[test]
     fn qualified_alias_and_macro_binding_conflict_without_body_uses() {
-        let provider = "module provider; pub macro selected: . -> . { impl helper; }";
+        let provider = "mod provider; pub macro selected: . -> . { impl helper; }";
         for consumer in [
-            "module consumer; import provider as selected; import provider(macro selected);",
-            "module consumer; import provider(macro selected); import provider as selected;",
-            "module consumer; import provider as selected; macro selected: . -> . { impl helper; }",
+            "mod consumer; import provider as selected; import provider {macro selected}",
+            "mod consumer; import provider {macro selected} import provider as selected;",
+            "mod consumer; import provider as selected; macro selected: . -> . { impl helper; }",
         ] {
             let error =
                 validate(&[("provider.kio", provider), ("consumer.kio", consumer)]).unwrap_err();
@@ -2209,16 +2276,16 @@ mod macro_import_tests {
     #[test]
     fn macro_kind_is_validated_even_without_calls() {
         let provider =
-            "module provider; pub macro selected: . -> . { impl helper; } pub fn ordinary() { () }";
-        for consumer in [
-            "module consumer; import provider(selected);",
-            "module consumer; import provider(macro ordinary);",
+            "mod provider; pub macro selected: . -> . { impl helper; } pub fn ordinary() { () }";
+        for (consumer, actual_kind) in [
+            ("mod consumer; import provider {fn selected}", "macro"),
+            ("mod consumer; import provider {macro ordinary}", "fn"),
         ] {
             let error =
                 validate(&[("provider.kio", provider), ("consumer.kio", consumer)]).unwrap_err();
             assert!(matches!(error.error, Error::Import(_)), "{error:?}");
             assert!(
-                error.error.diagnostic().message.contains("macro"),
+                error.error.diagnostic().fixes()[0].edits[0].replacement == actual_kind,
                 "{error:?}"
             );
         }
@@ -2226,7 +2293,7 @@ mod macro_import_tests {
             ("provider.kio", provider),
             (
                 "consumer.kio",
-                "module consumer; import provider(macro selected as use_selected, ordinary);",
+                "mod consumer; import provider {macro selected as use_selected; fn ordinary}",
             ),
         ])
         .unwrap();

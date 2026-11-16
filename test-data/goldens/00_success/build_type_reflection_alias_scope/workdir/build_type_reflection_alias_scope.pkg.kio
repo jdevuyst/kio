@@ -1,4 +1,4 @@
-package build_type_reflection_alias_scope;
+pkg build_type_reflection_alias_scope;
 
 build {
   cache "out/.kio-cache/";

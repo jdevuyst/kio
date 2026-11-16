@@ -1,4 +1,4 @@
-package exec_bifunctor_either;
+pkg exec_bifunctor_either;
 
 build {
   cache "out/.kio-cache/";

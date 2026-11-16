@@ -1,6 +1,6 @@
 # Variadic operators
 
-`varop` defines a delimited expression containing any number of comma-separated
+`op_var` defines a delimited expression containing any number of comma-separated
 elements. It names ordinary functions that combine those elements from the
 left or right. This guide builds on [functions](../tutorials/language.md),
 [nominal types](declarations.md#nominal-types), and [fixed operators](operators.md).
@@ -10,9 +10,9 @@ bridge {
   kiodoc;
 }
 
-module kiodoc;
+mod kiodoc;
 
-import spine_macros(macro widen_sum);
+import spine_macros {macro widen_sum}
 
 host type I32 role(i32);
 host fn add(a: I32, b: I32) -> I32;
@@ -26,7 +26,7 @@ Here `nil()` constructs an empty list and `cons(head, tail)` prepends an
 element. The host supplies `I32` with `role(i32)` for the integer literals.
 The `widen_sum` macro constructs the sum payloads; follow the
 [macro-library setup](using-libraries.md#the-macro-library) and
-import it with `import macros/spine_macros(macro widen_sum);` when the dependency
+import it with `import macros/spine_macros {macro widen_sum}` when the dependency
 is named `macros`:
 
 ```kio {@collections}
@@ -38,7 +38,7 @@ fn cons[A](head: A, tail: List[A]) -> List[A] {
   List.mk(widen_sum((head, tail))[. | (A & List[A])])
 }
 
-varop [* *] { foldr cons nil }
+op_var [* *] { foldr cons nil }
 
 fn empty_list() -> List[I32] { [* *] }
 
@@ -50,7 +50,7 @@ with Unit. A type-only constructor `fn nil[A] -> List[A]` has a different
 type and is not that base; wrap it in a function with a written `()` when
 using it here. See [Type-only values](../tutorials/language.md#type-only-values).
 
-`varop [* *]` declares the opening delimiter `[*` and closing delimiter `*]`.
+`op_var [* *]` declares the opening delimiter `[*` and closing delimiter `*]`.
 The clause `foldr cons nil` combines elements from the right:
 
 ```text
@@ -72,7 +72,7 @@ Markers inside the square edges use these ASCII characters:
 + - * / % ^ ~ ? @ # $ \ ' ` < > = ! & | :
 ```
 
-A frame is one square pair. Bare `varop []` supplies ordinary `[a, b]`
+A frame is one square pair. Bare `op_var []` supplies ordinary `[a, b]`
 collection syntax. A marked frame places one whole symbol word after `[` and
 its character reversal before `]`: `[* *]`, `[** **]`, and `[!? ?!]`.
 Dots, nested bracket pairs, letters, digits, and Unicode symbols cannot be
@@ -82,7 +82,7 @@ The same list helpers from above can expose bare brackets alongside the marked
 spelling:
 
 ```kio {@collections}
-varop [] { foldr cons nil }
+op_var [] { foldr cons nil }
 
 fn plain_items() -> List[I32] { [1, 2, 3] }
 ```
@@ -144,7 +144,7 @@ fn accumulate_entry((keys: I32, values: I32), (key: I32, value: I32)) -> I32 & I
 
 fn finish_entries(totals: I32 & I32) -> Entry_totals { Entry_totals.mk(totals) }
 
-varop [% %] { foldl1 accumulate_entry seed_entry; finalize finish_entries }
+op_var [% %] { foldl1 accumulate_entry seed_entry; finalize finish_entries }
 
 fn totals() -> Entry_totals { [% 1 => 10, 2 => 20 %] }
 ```
@@ -166,18 +166,18 @@ or nominal-member path, such as `helpers.cons`. Parentheses may group any of
 these references repeatedly. `finalize ()` means no finalizer, like omitting
 the field; formatting preserves either spelling.
 Put calls, lambdas, or argument
-adaptation in a named helper. Declare local targets before the `varop`, and the
-`varop` before functions using its syntax.
+adaptation in a named helper. Declare local targets before the `op_var`, and the
+`op_var` before functions using its syntax.
 
-Use `pub varop` to export the syntax. Its directly named targets must be at
+Use `pub op_var` to export the syntax. Its directly named targets must be at
 least as visible as the operator; for a nominal member, this includes both the
 type or identity alias and the member. Import the delimiter pair without the
-body: `import list(varop [* *]);`. Canonical marked spacing stays; commas are
+body: `import list {op_var [* *]}`. Canonical marked spacing stays; commas are
 implicit and do not appear in the pair. Importing a helper alone does not
 import the syntax. Write each import once; two variadic operators in the same
 scope cannot share an opener.
 
-Use `import list(varop [* *] as [% %]);` to choose a different delimiter pair.
+Use `import list {op_var [* *] as [% %]}` to choose a different delimiter pair.
 Both complete pairs are written, and the destination follows the same mirrored
 delimiter rules as a declaration. Only that local pair is installed; the fold,
 step, initializer, and finalizer still come from the selected source operator.
@@ -190,12 +190,12 @@ exports both a pair-building `=>` and a `[% %]` variadic operator:
 Inside the dictionary package, imports name its local `dict` module, as
 below. In a consumer package, add it as a dependency named `dict` using the
 linked setup, then use
-`import dict/dict(Compare, Dict, op _ => _, varop [% %]);` instead.
+`import dict/dict {type Compare; type Dict; op _ => _; op_var [% %]}` instead.
 
 ```kio {}
-module dictionary_example;
+mod dictionary_example;
 
-import dict(Compare, Dict, op _ => _, varop [% %]);
+import dict { type Compare; type Dict; op _ => _; op_var [% %] }
 
 host type I32 role(i32);
 

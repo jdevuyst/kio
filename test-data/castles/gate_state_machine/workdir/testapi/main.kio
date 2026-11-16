@@ -1,5 +1,5 @@
-module testapi/main;
+mod testapi/main;
 
-import gate/machine(run);
+import gate/machine { fn run }
 
 pub fn main() { run() }

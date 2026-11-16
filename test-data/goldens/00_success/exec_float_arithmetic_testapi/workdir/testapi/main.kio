@@ -1,9 +1,9 @@
-module testapi/main;
+mod testapi/main;
 
-import testapi(F32, F64, String);
-import testapi/arith(add_f32, add_f64, mul_f64, sub_f64);
-import testapi/fmt(f32_to_string, f64_to_string);
-import testapi/io(print);
+import testapi { type F32; type F64; type String }
+import testapi/arith { fn add_f32; fn add_f64; fn mul_f64; fn sub_f64 }
+import testapi/fmt { fn f32_to_string; fn f64_to_string }
+import testapi/io { fn print }
 
 fn print_f32(n: F32) { let s = f32_to_string(n); let l = print(s); print("\n"[String]) }
 

@@ -1,6 +1,6 @@
-module m;
+mod m;
 op _ + _ { impl ((ops.add)) }
-varop [* *] { foldl ((ops.join)) (ops.empty); finalize ((())) }
+op_var [* *] { foldl ((ops.join)) (ops.empty); finalize ((())) }
 macro form: . -> . { captures ((helper), ((Type))); impl ((helpers.run)) }
 macro later: . -> . { impl (fills) }
 macro scheduled: . -> . { impl (fills) ((helpers.run)) }

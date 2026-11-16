@@ -1,4 +1,4 @@
-package exec_array_ffi_newtype;
+pkg exec_array_ffi_newtype;
 
 build {
   cache "out/.kio-cache/";

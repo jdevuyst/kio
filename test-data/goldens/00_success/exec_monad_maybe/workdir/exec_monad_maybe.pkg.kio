@@ -1,4 +1,4 @@
-package exec_monad_maybe;
+pkg exec_monad_maybe;
 
 build {
   cache "out/.kio-cache/";

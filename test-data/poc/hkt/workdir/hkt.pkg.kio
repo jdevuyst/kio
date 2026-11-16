@@ -1,4 +1,4 @@
-package hkt;
+pkg hkt;
 
 build {
   cache "out/.kio-cache/";

@@ -1,4 +1,4 @@
-package broken
+pkg broken
 
 build {
   cache "out/.kio-cache/";

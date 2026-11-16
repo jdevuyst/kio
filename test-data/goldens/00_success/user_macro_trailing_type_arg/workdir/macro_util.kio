@@ -1,4 +1,4 @@
-module macro_util;
+mod macro_util;
 
 import __intrinsics__;
 

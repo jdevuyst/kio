@@ -1,6 +1,6 @@
-module lit/m;
+mod lit/m;
 
-import lit(I32);
+import lit { type I32 }
 
 equiv int_lit() {
   42[I32];

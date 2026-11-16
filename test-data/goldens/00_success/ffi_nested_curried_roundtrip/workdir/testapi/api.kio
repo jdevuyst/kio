@@ -1,6 +1,6 @@
-module testapi/api;
+mod testapi/api;
 
-import testapi(String);
+import testapi { type String }
 
 host fn round_host(f: String -> String -> String) -> String -> String -> String;
 

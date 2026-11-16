@@ -5,15 +5,15 @@
 /// that holds it and shares every other row untouched — functional
 /// rasterization, done honestly rather than smuggled through a mutable buffer
 /// the host would have had to provide.
-module turtle/canvas;
+mod turtle/canvas;
 
 import list/core as list;
-import list/list(append, drop, foldl, replicate, take);
-import macros/control(macro if);
-import macros/match(macro match);
-import testapi(Bool, I32, String);
-import testapi/arith(add_i32, leq_i32, lt_i32);
-import testapi/io(print);
+import list/list { fn append; fn drop; fn foldl; fn replicate; fn take }
+import macros/control { macro if }
+import macros/match { macro match }
+import testapi { type Bool; type I32; type String }
+import testapi/arith { fn add_i32; fn leq_i32; fn lt_i32 }
+import testapi/io { fn print }
 import turtle/glyph as glyph;
 import turtle/num as num;
 import turtle/text as text;

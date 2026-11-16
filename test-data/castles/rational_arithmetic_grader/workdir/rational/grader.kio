@@ -1,16 +1,16 @@
 /// Verdicts, the exercise roster, and the marking rubric.
-module rational/grader;
+mod rational/grader;
 
-import macros/control(macro if);
-import macros/match(macro match);
-import macros/row_macros(macro select, macro with);
-import macros/spine_macros(macro widen_sum);
+import macros/control { macro if }
+import macros/match { macro match }
+import macros/row_macros { macro select; macro with }
+import macros/spine_macros { macro widen_sum }
 import rational/core as core;
-import rational/core(Division_by_zero, Eval, Fraction, Rational);
-import rational/expr(Expr);
+import rational/core { type Division_by_zero; type Eval; type Fraction; type Rational }
+import rational/expr { type Expr }
 import rational/render as render;
 import rational/text as text;
-import testapi(Bool, I32, String);
+import testapi { type Bool; type I32; type String }
 import testapi/arith as arith;
 
 /// `Exact` and `Equivalent` are both accepted answers; they differ only in

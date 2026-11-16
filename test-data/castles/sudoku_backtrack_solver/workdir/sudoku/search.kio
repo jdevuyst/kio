@@ -12,39 +12,39 @@
 /// then tries the next digit up. Advancing with nothing left to try pops
 /// the frame and advances into the parent, so a failure walks back up the
 /// stack one frame at a time rather than unwinding a call chain.
-module sudoku/search;
+mod sudoku/search;
 
-import macros/control(macro if);
-import macros/match(macro match);
-import macros/row_macros(macro select as row_select);
-import macros/spine_macros(macro widen_sum);
+import macros/control { macro if }
+import macros/match { macro match }
+import macros/row_macros { macro select as row_select }
+import macros/spine_macros { macro widen_sum }
 import sudoku/constraints as constraints;
 import sudoku/geometry as geo;
-import sudoku/model(
-, Backtracks
-, Board
-, Complete
-, Exhausted
-, Max_depth
-, Outcome
-, Pick
-, Pick_cell
-, Pick_count
-, Placements
-, Report
-, Solved
-, Stack_cell
-, Stack_digit
-, Steps
-, Unsolvable
-, Verdict
-, Work
-);
+import sudoku/model {
+  type Backtracks;
+  type Board;
+  type Complete;
+  type Exhausted;
+  type Max_depth;
+  type Outcome;
+  type Pick;
+  type Pick_cell;
+  type Pick_count;
+  type Placements;
+  type Report;
+  type Solved;
+  type Stack_cell;
+  type Stack_digit;
+  type Steps;
+  type Unsolvable;
+  type Verdict;
+  type Work
+}
 import sudoku/num as num;
-import testapi(Bool, I32);
-import testapi/arith(add_i32, leq_i32, sub_i32);
-import testapi/array(array_get, array_len, array_pop_back, array_push, array_set);
-import testapi/iter(loop);
+import testapi { type Bool; type I32 }
+import testapi/arith { fn add_i32; fn leq_i32; fn sub_i32 }
+import testapi/array { fn array_get; fn array_len; fn array_pop_back; fn array_push; fn array_set }
+import testapi/iter { fn loop }
 
 /// One more than the largest candidate count a cell can have, so the scan
 /// below can start with "nothing seen yet" without a sentinel index.

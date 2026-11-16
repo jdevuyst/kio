@@ -1,7 +1,7 @@
-module testapi/main;
+mod testapi/main;
 
-import testapi(Int);
-import testapi/fmt(int_to_string);
-import testapi/io(print);
+import testapi { type Int }
+import testapi/fmt { fn int_to_string }
+import testapi/io { fn print }
 
 pub fn main() { print(int_to_string(42[Int])) }

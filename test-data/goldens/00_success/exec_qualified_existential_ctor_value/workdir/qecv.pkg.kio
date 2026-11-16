@@ -1,4 +1,4 @@
-package qecv;
+pkg qecv;
 
 build {
   cache "out/.kio-cache/";

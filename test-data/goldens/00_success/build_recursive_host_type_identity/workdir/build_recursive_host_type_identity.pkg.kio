@@ -1,4 +1,4 @@
-package build_recursive_host_type_identity;
+pkg build_recursive_host_type_identity;
 
 build {
   cache "out/.kio-cache/";

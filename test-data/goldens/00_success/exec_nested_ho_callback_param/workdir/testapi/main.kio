@@ -1,10 +1,10 @@
-module testapi/main;
+mod testapi/main;
 
-import macros/spine_macros(macro one_prod);
-import testapi(I32);
-import testapi/arith(add);
-import testapi/fmt(int_to_string);
-import testapi/io(print);
+import macros/spine_macros { macro one_prod }
+import testapi { type I32 }
+import testapi/arith { fn add }
+import testapi/fmt { fn int_to_string }
+import testapi/io { fn print }
 
 // A stored function value whose own parameter is itself function-typed:
 // a higher-order callback bundled into a product slot. This complements

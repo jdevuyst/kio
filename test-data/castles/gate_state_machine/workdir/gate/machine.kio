@@ -1,13 +1,13 @@
-module gate/machine;
+mod gate/machine;
 
-import macros/control(macro if);
-import macros/row_macros(macro select);
-import testapi(Bool, I32, String);
-import testapi/arith(add_i32, eq_i32, leq_i32, lt_i32);
-import testapi/fmt(bool_to_string, int_to_string);
-import testapi/io(print);
-import testapi/iter(loop);
-import testapi/text(string_concat);
+import macros/control { macro if }
+import macros/row_macros { macro select }
+import testapi { type Bool; type I32; type String }
+import testapi/arith { fn add_i32; fn eq_i32; fn leq_i32; fn lt_i32 }
+import testapi/fmt { fn bool_to_string; fn int_to_string }
+import testapi/io { fn print }
+import testapi/iter { fn loop }
+import testapi/text { fn string_concat }
 
 type Machine = {
   Tick: I32;

@@ -1,4 +1,4 @@
-package option_demo;
+pkg option_demo;
 
 build {
   cache "out/.kio-cache/";

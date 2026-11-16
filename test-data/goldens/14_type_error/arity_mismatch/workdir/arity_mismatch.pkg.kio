@@ -1,4 +1,4 @@
-package arity_mismatch;
+pkg arity_mismatch;
 
 build {
   cache "out/.kio-cache/";

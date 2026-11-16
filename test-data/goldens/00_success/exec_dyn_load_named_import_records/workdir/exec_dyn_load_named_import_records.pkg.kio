@@ -1,4 +1,4 @@
-package exec_dyn_load_named_import_records;
+pkg exec_dyn_load_named_import_records;
 
 build {
   cache "out/.kio-cache/";

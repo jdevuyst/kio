@@ -1,4 +1,4 @@
-package scoped_label_qualified_import;
+pkg scoped_label_qualified_import;
 
 build {
   cache "out/.kio-cache/";

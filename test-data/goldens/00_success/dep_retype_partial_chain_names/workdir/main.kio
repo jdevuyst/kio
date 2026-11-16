@@ -1,5 +1,5 @@
-module main;
+mod main;
 
-import w1/store(make_a, make_b);
+import w1/store { fn make_a; fn make_b }
 
 pub fn main() { let _a = make_a(); let _b = make_b(); () }

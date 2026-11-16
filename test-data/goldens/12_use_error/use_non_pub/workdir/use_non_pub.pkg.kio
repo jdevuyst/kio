@@ -1,4 +1,4 @@
-package use_non_pub;
+pkg use_non_pub;
 
 build {
   cache "out/.kio-cache/";

@@ -1,11 +1,11 @@
-module api/inner;
+mod api/inner;
 
-literal private_value = 1;
+lit private_value = 1;
 
-pub literal public_value = 2;
+pub lit public_value = 2;
 
-pub(api) literal ancestor_value = 3;
+pub(api) lit ancestor_value = 3;
 
-pub(api/inner) literal module_value = 4;
+pub(api/inner) lit module_value = 4;
 
-pub(other) literal unrelated_scope = 5;
+pub(other) lit unrelated_scope = 5;

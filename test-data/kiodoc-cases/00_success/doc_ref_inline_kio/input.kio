@@ -2,7 +2,7 @@
 ///
 /// Uses [`helper`] internally.
 /// Also references the [`Identity`] type alias.
-module docref/main;
+mod docref/main;
 
 /// Returns its argument unchanged.
 ///

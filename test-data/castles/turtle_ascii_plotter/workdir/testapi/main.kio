@@ -12,10 +12,10 @@
 /// program shows what the parser built — indented, so nesting is visible. The
 /// plot shows what the interpreter drew. The stats close the loop: the ink
 /// census is exactly the number of non-`.` characters in the plot above it.
-module testapi/main;
+mod testapi/main;
 
-import testapi(I32, String);
-import testapi/io(print);
+import testapi { type I32; type String }
+import testapi/io { fn print }
 import turtle/canvas as canvas;
 import turtle/echo as echo;
 import turtle/exec as exec;

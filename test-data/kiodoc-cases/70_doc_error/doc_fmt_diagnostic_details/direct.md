@@ -1,11 +1,11 @@
 # Direct snippet
 
 ```kio {}
-module ready;
+mod ready;
 fn ready( ) {()}
 ```
 
 ```kio {}
-module sample;
+mod sample;
 fn value(x: ()) { x }
 ```

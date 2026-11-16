@@ -1,4 +1,4 @@
-module testapi;
+mod testapi;
 
 host type Bool role(bool);
 

@@ -1,4 +1,4 @@
-module literal_alias;
+mod literal_alias;
 
 host type I32 role(i32);
 

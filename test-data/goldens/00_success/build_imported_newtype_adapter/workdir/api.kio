@@ -1,5 +1,5 @@
-module api;
+mod api;
 
-import provider(Token);
+import provider { type Token }
 
 pub fn run(callback: (Token & .) -> .) { callback(Token.mk(()), ()) }

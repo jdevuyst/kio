@@ -1,4 +1,4 @@
-package typecheck_onto_collapse_alpha_equiv;
+pkg typecheck_onto_collapse_alpha_equiv;
 
 build {
   cache "out/.kio-cache/";

@@ -1,4 +1,4 @@
-package build_alias_function_slots;
+pkg build_alias_function_slots;
 
 build {
   cache "out/.kio-cache/";

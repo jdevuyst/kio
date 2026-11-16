@@ -1,4 +1,4 @@
-module vec/list/macros/testapi;
+mod vec/list/macros/testapi;
 
 host type String role(str);
 

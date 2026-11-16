@@ -1,4 +1,4 @@
-module build_rust_module_alias_scope_collision/a/main;
+mod build_rust_module_alias_scope_collision/a/main;
 
 import __intrinsics__;
 

@@ -1,4 +1,4 @@
-package derive_empty_candidates_no_rule;
+pkg derive_empty_candidates_no_rule;
 
 build {
   cache "out/.kio-cache/";

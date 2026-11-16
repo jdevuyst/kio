@@ -1,4 +1,4 @@
-module b;
+mod b;
 
 import a as p;
 

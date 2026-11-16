@@ -1,4 +1,4 @@
-module main;
+mod main;
 
 import __internal__ provider as __provider__;
 

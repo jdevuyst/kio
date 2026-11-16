@@ -1,4 +1,4 @@
-package geomlib;
+pkg geomlib;
 
 bridge {
   vec;

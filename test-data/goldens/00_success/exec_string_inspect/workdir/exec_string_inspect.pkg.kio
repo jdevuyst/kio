@@ -1,4 +1,4 @@
-package exec_string_inspect;
+pkg exec_string_inspect;
 
 build {
   cache "out/.kio-cache/";

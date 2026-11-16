@@ -1,4 +1,4 @@
-package discard_sum_payload;
+pkg discard_sum_payload;
 
 build {
   cache "out/.kio-cache/";

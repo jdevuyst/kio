@@ -1,4 +1,4 @@
-package shunting_yard_desk;
+pkg shunting_yard_desk;
 
 build {
   cache "out/.kio-cache/";

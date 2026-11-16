@@ -1,4 +1,4 @@
-package atom_rejects_multi_arm_target;
+pkg atom_rejects_multi_arm_target;
 
 build {
   cache "out/.kio-cache/";

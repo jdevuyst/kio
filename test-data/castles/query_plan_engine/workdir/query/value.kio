@@ -1,13 +1,13 @@
 /// The datum a single table cell holds.
-module query/value;
+mod query/value;
 
-import macros/match(macro match);
-import macros/row_macros(macro select);
-import macros/spine_macros(macro widen_sum);
+import macros/match { macro match }
+import macros/row_macros { macro select }
+import macros/spine_macros { macro widen_sum }
 import query/text as text;
-import testapi(I32, String);
-import testapi/arith(sub_i32);
-import testapi/fmt(int_to_string);
+import testapi { type I32; type String }
+import testapi/arith { fn sub_i32 }
+import testapi/fmt { fn int_to_string }
 
 /// A value is an integer or a run of text. Text carries its own display
 /// width, because a text datum is stored here the way a column store

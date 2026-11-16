@@ -10,12 +10,12 @@
 ///
 /// There is no stdin: the fixtures are the input, and stdout is the whole
 /// story.
-module testapi/main;
+mod testapi/main;
 
 import forge/macros as mac;
 import forge/programs as prog;
 import forge/report as r;
-import testapi(I32, String);
+import testapi { type I32; type String }
 
 pub fn main() {
   let macros = mac.table();

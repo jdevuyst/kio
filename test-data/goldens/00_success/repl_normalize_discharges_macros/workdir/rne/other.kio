@@ -1,5 +1,5 @@
-module rne/other;
+mod rne/other;
 
-import macros/type_of(Type_rep, macro type_of);
+import macros/type_of { type Type_rep; macro type_of }
 
 pub fn rep_of_unit() -> Type_rep { type_of[.](()) }

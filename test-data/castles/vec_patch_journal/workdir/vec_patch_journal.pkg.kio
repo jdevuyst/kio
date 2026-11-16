@@ -1,4 +1,4 @@
-package vec_patch_journal;
+pkg vec_patch_journal;
 
 build {
   cache "out/.kio-cache/";

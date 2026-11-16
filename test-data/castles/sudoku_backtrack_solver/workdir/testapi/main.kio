@@ -14,17 +14,17 @@
 /// in its row, column, and box and yet rules out every completion. `main`
 /// prints each grid, the verdict, an independent re-check of the result,
 /// and the search statistics.
-module testapi/main;
+mod testapi/main;
 
 import sudoku/constraints as constraints;
 import sudoku/puzzles as puzzles;
 import sudoku/report as report;
 import sudoku/search as search;
-import testapi(Array, I32, String);
-import testapi/array(array_clone);
-import testapi/fmt(int_to_string);
-import testapi/io(print);
-import testapi/text(string_concat);
+import testapi { type Array; type I32; type String }
+import testapi/array { fn array_clone }
+import testapi/fmt { fn int_to_string }
+import testapi/io { fn print }
+import testapi/text { fn string_concat }
 
 /// Loop iterations one puzzle may spend. A grid that somehow defeated the
 /// heuristic would stop here with a verdict rather than run forever; the

@@ -1,4 +1,4 @@
-package host_type_wrong_arity;
+pkg host_type_wrong_arity;
 
 build {
   cache "out/.kio-cache/";

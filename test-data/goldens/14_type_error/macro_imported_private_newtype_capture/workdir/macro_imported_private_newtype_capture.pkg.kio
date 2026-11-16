@@ -1,4 +1,4 @@
-package macro_imported_private_newtype_capture;
+pkg macro_imported_private_newtype_capture;
 
 build {
   cache "out/.kio-cache/";

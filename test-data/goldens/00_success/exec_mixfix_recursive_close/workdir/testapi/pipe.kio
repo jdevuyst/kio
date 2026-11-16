@@ -1,4 +1,4 @@
-module testapi/pipe;
+mod testapi/pipe;
 
 import testapi as host;
 import testapi/arith as arith;

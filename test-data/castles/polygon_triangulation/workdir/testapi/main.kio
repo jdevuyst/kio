@@ -1,17 +1,17 @@
-module testapi/main;
+mod testapi/main;
 
-import macros/control(macro if);
-import macros/match(macro match);
+import macros/control { macro if }
+import macros/match { macro match }
 import polygon/certificate as cert;
 import polygon/clip as clip;
 import polygon/fixtures as fixtures;
 import polygon/geometry as geo;
-import testapi(Array, Bool, I32, String);
+import testapi { type Array; type Bool; type I32; type String }
 import testapi/arith as num;
 import testapi/array as arr;
 import testapi/fmt as fmt;
 import testapi/io as io;
-import testapi/iter(loop);
+import testapi/iter { fn loop }
 import testapi/text as text;
 
 fn number(value: I32) { io.print(fmt.int_to_string(value)) }

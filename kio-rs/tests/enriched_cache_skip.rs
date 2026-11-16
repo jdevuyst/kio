@@ -94,11 +94,11 @@ fn clear_artifact_cache(dir: &Path) {
 fn scaffold_with_cache(pkg: &TempPkg) {
     pkg.write(
         "pkg.pkg.kio",
-        "package pkg;\n\n\
+        "pkg pkg;\n\n\
          build {\n  cache \".cache/\";\n\n  target js { out \"out/\"; }\n}\n\n\
          bridge {\n  main;\n}\n",
     );
-    pkg.write("main.kio", "module main;\n\npub fn main() -> . { () }\n");
+    pkg.write("main.kio", "mod main;\n\npub fn main() -> . { () }\n");
 }
 
 /// Scaffold a minimal single-module package whose package file's
@@ -107,11 +107,11 @@ fn scaffold_with_cache(pkg: &TempPkg) {
 fn scaffold_with_disabled_cache(pkg: &TempPkg) {
     pkg.write(
         "pkg.pkg.kio",
-        "package pkg;\n\n\
+        "pkg pkg;\n\n\
          build {\n  cache ();\n\n  target js { out \"out/\"; }\n}\n\n\
          bridge {\n  main;\n}\n",
     );
-    pkg.write("main.kio", "module main;\n\npub fn main() -> . { () }\n");
+    pkg.write("main.kio", "mod main;\n\npub fn main() -> . { () }\n");
 }
 
 #[test]
@@ -155,7 +155,7 @@ fn source_edit_invalidates_cache() {
 
     pkg.write(
         "main.kio",
-        "module main;\n\npub fn main() -> . { let x = (); x }\n",
+        "mod main;\n\npub fn main() -> . { let x = (); x }\n",
     );
     let (code2, log2) = kio_build(pkg.path());
     assert_eq!(code2, 0, "edited package should still build: {log2}");

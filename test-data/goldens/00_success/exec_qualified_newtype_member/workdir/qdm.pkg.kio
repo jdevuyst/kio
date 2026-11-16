@@ -1,4 +1,4 @@
-package qdm;
+pkg qdm;
 
 build {
   cache "out/.kio-cache/";

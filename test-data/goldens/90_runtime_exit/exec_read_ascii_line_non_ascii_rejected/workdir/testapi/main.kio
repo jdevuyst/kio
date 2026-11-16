@@ -1,5 +1,5 @@
-module testapi/main;
+mod testapi/main;
 
-import testapi/io(read_ascii_line);
+import testapi/io { fn read_ascii_line }
 
 pub fn main() { let _line = read_ascii_line(); () }

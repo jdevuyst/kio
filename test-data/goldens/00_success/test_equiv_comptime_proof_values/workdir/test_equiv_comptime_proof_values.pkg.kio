@@ -1,4 +1,4 @@
-package test_equiv_comptime_proof_values;
+pkg test_equiv_comptime_proof_values;
 
 build {
   cache "out/.kio-cache/";

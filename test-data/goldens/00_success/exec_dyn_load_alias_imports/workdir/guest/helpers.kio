@@ -1,5 +1,5 @@
-module helpers;
+mod helpers;
 
-import hostapi(I32, add_i32);
+import hostapi { type I32; fn add_i32 }
 
 pub fn twice(x: I32) -> I32 { add_i32(x, x) }

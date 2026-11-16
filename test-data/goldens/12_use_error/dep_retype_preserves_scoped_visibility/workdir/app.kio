@@ -1,5 +1,5 @@
-module app;
+mod app;
 
-import widget/store(Token);
+import widget/store { type Token }
 
 pub fn main(_value: Token) { () }

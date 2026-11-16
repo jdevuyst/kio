@@ -1,4 +1,4 @@
-package later_newtype_member_from_function_body;
+pkg later_newtype_member_from_function_body;
 
 build {
   target js {

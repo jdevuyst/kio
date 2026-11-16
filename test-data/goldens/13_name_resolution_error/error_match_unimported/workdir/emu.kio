@@ -1,4 +1,4 @@
-module emu;
+mod emu;
 
 host type I32 role(i32);
 

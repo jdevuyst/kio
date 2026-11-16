@@ -1907,10 +1907,10 @@ mod tests {
         let consumer_uri = workspace_uri("app.kio");
         let provider_path = workspace_path("provider.kio");
         let provider_uri = workspace_uri("provider.kio");
-        let consumer = "module app; import provider(macro expand); fn run() { expand() }";
-        let changed = "module app; import provider(macro expand); fn run() { ex";
+        let consumer = "mod app; import provider {macro expand} fn run() { expand() }";
+        let changed = "mod app; import provider {macro expand} fn run() { ex";
         let provider =
-            "module provider; /// Current expansion.\npub macro expand : . -> . { impl build }";
+            "mod provider; /// Current expansion.\npub macro expand : . -> . { impl build }";
         let mut analysis = analysis_for_file(&consumer_path, "app", consumer);
         analysis
             .sources
@@ -1981,20 +1981,20 @@ mod tests {
         let consumer_path = root.join("main.kio");
         let provider_path = root.join("provider.kio");
         let other_path = other_root.join("main.kio");
-        let consumer = "module main; import provider(produce); fn f() -> . { let value = produce(); let _ = value; () }";
-        let provider = "module provider; pub fn produce() -> . { () }";
-        let next_provider = "module provider; pub fn produce() -> . -> . { .(x: .) -> . { x } }";
-        let other = "module main; fn unrelated() -> . { () }";
+        let consumer = "mod main; import provider {fn produce} fn f() -> . { let value = produce(); let _ = value; () }";
+        let provider = "mod provider; pub fn produce() -> . { () }";
+        let next_provider = "mod provider; pub fn produce() -> . -> . { .(x: .) -> . { x } }";
+        let other = "mod main; fn unrelated() -> . { () }";
         for (path, source) in [
             (
                 root.join("completion.pkg.kio"),
-                "package completion; bridge { main; }",
+                "pkg completion; bridge { main; }",
             ),
             (consumer_path.clone(), consumer),
             (provider_path.clone(), provider),
             (
                 other_root.join("other.pkg.kio"),
-                "package other; bridge { main; }",
+                "pkg other; bridge { main; }",
             ),
             (other_path.clone(), other),
         ] {
@@ -2093,14 +2093,14 @@ mod tests {
         let consumer_uri = workspace_uri("app/main.kio");
         let provider_path = workspace_path("provider.kio");
         let provider_uri = workspace_uri("provider.kio");
-        let consumer = "module app/main; import provider(produce, macro expand, answer); fn f() -> . { let value = produce(); let _ = value; () }";
+        let consumer = "mod app/main; import provider {fn produce; macro expand; lit answer} fn f() -> . { let value = produce(); let _ = value; () }";
         let provider = |item: &str, body: &str, doc: &str| {
             format!(
-                "module provider; import __comptime__; pub fn produce() -> {item} {{ {body} }}
+                "mod provider; import __comptime__; pub fn produce() -> {item} {{ {body} }}
              pure fn expand_body(ct: __Comptime__, _unit: __Checked_term__) -> __Checked_term__ {{ __term_unit__(ct) }}
              /// {doc}
              pub macro expand : . -> . {{ impl expand_body; }};
-             pub literal answer = 1;"
+             pub lit answer = 1;"
             )
         };
         let analyze = |provider: &str| {
@@ -2109,7 +2109,7 @@ mod tests {
                 BTreeMap::from([
                     (
                         root.join("completion.pkg.kio"),
-                        "package completion; bridge { app/main; }".into(),
+                        "pkg completion; bridge { app/main; }".into(),
                     ),
                     (consumer_path.clone(), consumer.into()),
                     (provider_path.clone(), provider.into()),
@@ -2246,7 +2246,7 @@ mod tests {
         let consumer_uri = workspace_uri("app/main.kio");
         let provider_path = workspace_path("syntax.kio");
         let provider_uri = workspace_uri("syntax.kio");
-        let consumer = "module app/main;\nimport syntax(op";
+        let consumer = "mod app/main;\nimport syntax {op";
         let mut state = ServerState::new();
         state.open(consumer_uri.clone(), consumer.to_owned(), 1);
         let (mut scheduler, _results) = Scheduler::spawn();
@@ -2281,7 +2281,7 @@ mod tests {
         for (event, (operator, marker)) in [("+", "*"), ("-", "%")].into_iter().enumerate() {
             let version = event as i32 + 1;
             let provider = format!(
-                "module syntax;
+                "mod syntax;
                 import __comptime__;
                 pub fn pair(a: ., b: .) -> . {{ a }}
                 pub fn zero() -> . {{ () }}
@@ -2290,15 +2290,18 @@ mod tests {
                 pure fn expand_body(ct: __Comptime__, _unit: __Checked_term__) -> __Checked_term__ {{ __term_unit__(ct) }}
                 pub macro expand : . -> . {{ impl expand_body; }};
                 pub op _ {operator} _ {{ impl pair; }};
-                pub varop [{marker} {marker}] {{ foldl pair zero; }};"
+                pub op_var [{marker} {marker}] {{ foldl pair zero; }};"
             );
             state.open(provider_uri.clone(), provider.clone(), version);
             let stale = request(&mut state, &consumer_uri).expect("valid consumer context");
             if event == 0 {
                 assert!(stale.is_incomplete);
                 assert!(
-                    stale.items.is_empty(),
-                    "the provider identity is not discovered yet"
+                    stale
+                        .items
+                        .iter()
+                        .all(|item| item.kind == Some(lsp_types::CompletionItemKind::KEYWORD)),
+                    "only provider-independent kind keywords remain"
                 );
             } else {
                 assert!(!stale.is_incomplete);
@@ -2309,19 +2312,19 @@ mod tests {
             let mut files = BTreeMap::from([
                 (
                     root.join("completion.pkg.kio"),
-                    "package completion; bridge { syntax; }".to_owned(),
+                    "pkg completion; bridge { syntax; }".to_owned(),
                 ),
                 (provider_path.clone(), provider.clone()),
             ]);
             let mut versions = BTreeMap::from([(provider_uri.clone(), version)]);
             if event == 0 {
                 let valid_consumer =
-                    "module app/main; import syntax(pair); pub fn run() -> . { () }";
+                    "mod app/main; import syntax {fn pair} pub fn run() -> . { () }";
                 state.open(consumer_uri.clone(), valid_consumer.to_owned(), 2);
                 files.insert(consumer_path.clone(), valid_consumer.to_owned());
                 files.insert(
                     root.join("completion.pkg.kio"),
-                    "package completion; bridge { app/main; }".to_owned(),
+                    "pkg completion; bridge { app/main; }".to_owned(),
                 );
                 versions.insert(consumer_uri.clone(), 2);
             }
@@ -2351,8 +2354,13 @@ mod tests {
 
             let current = request(&mut state, &consumer_uri).expect("valid consumer context");
             assert!(!current.is_incomplete);
-            assert_eq!(current.items.len(), 7);
-            for name in ["pair", "zero", "Unit", "Field", "macro expand"] {
+            for name in [
+                "fn pair",
+                "fn zero",
+                "type Unit",
+                "type Field",
+                "macro expand",
+            ] {
                 assert!(
                     current.items.iter().any(|item| item.label == name),
                     "{name}"
@@ -2366,9 +2374,13 @@ mod tests {
                     .count(),
                 2
             );
-            for item in current.items {
+            for item in current
+                .items
+                .into_iter()
+                .filter(|item| item.kind != Some(lsp_types::CompletionItemKind::KEYWORD))
+            {
                 let expected_fixed = format!("op _ {operator} _");
-                let expected_variadic = format!("varop [{marker} {marker}]");
+                let expected_variadic = format!("op_var [{marker} {marker}]");
                 let body = if item.label == expected_fixed {
                     format!("() {operator} ()")
                 } else if item.label == expected_variadic {
@@ -2387,7 +2399,7 @@ mod tests {
                     character: edit.range.start.character,
                 }) as usize;
                 let inserted = format!(
-                    "{}{});\npub fn run() -> . {{ {body} }}",
+                    "{}{}}}\npub fn run() -> . {{ {body} }}",
                     &consumer[..start],
                     edit.new_text,
                 );
@@ -2397,7 +2409,7 @@ mod tests {
                     BTreeMap::from([
                         (
                             root.join("completion.pkg.kio"),
-                            "package completion; bridge { app/main; }".to_owned(),
+                            "pkg completion; bridge { app/main; }".to_owned(),
                         ),
                         (provider_path.clone(), provider.clone()),
                         (consumer_path.clone(), inserted.clone()),
@@ -2413,7 +2425,7 @@ mod tests {
         }
         state.open(
             consumer_uri.clone(),
-            "module wrong/path;\nimport syntax(op".to_owned(),
+            "mod wrong/path;\nimport syntax {op".to_owned(),
             4,
         );
         assert!(
@@ -2430,7 +2442,7 @@ mod tests {
             7
         );
         state.open(consumer_uri.clone(), consumer.to_owned(), 5);
-        state.open(provider_uri, "module syntax; broken {".to_owned(), 3);
+        state.open(provider_uri, "mod syntax; broken {".to_owned(), 3);
         let broken = request(&mut state, &consumer_uri).expect("valid consumer context");
         assert!(broken.is_incomplete);
         assert!(broken.items.is_empty());
@@ -2448,10 +2460,10 @@ mod tests {
             std::fs::create_dir(root.join("app")).expect("consumer directory");
             let consumer_path = root.join("app/main.kio");
             let provider_path = root.join("syntax.kio");
-            let consumer = "module app/main; import syntax(op); pub fn run() -> . { () }";
+            let consumer = "mod app/main; import syntax {fn op} pub fn run() -> . { () }";
             let provider = |operator| {
                 format!(
-                    "module syntax;
+                    "mod syntax;
                 pub fn op(value: .) -> . {{ value }}
                 pub fn pair(a: ., b: .) -> . {{ a }}
                 pub op _ {operator} _ {{ impl pair; }};"
@@ -2459,8 +2471,8 @@ mod tests {
             };
             let unsaved = provider("+");
             let disk = provider("-");
-            let package = "package completion; bridge { app/main; }".to_owned();
-            std::fs::write(root.join("completion.pkg.kio"), &package).expect("package file");
+            let package = "pkg completion; bridge { app/main; }".to_owned();
+            std::fs::write(root.join("completion.pkg.kio"), &package).expect("pkg file");
             std::fs::write(&consumer_path, consumer).expect("consumer file");
             if present_on_disk {
                 std::fs::write(&provider_path, &disk).expect("disk provider");
@@ -2492,7 +2504,7 @@ mod tests {
                 initial,
             );
             let request = |state: &mut ServerState| {
-                let offset = consumer.find("(op)").unwrap() as u32 + 3;
+                let offset = consumer.find("fn op").unwrap() as u32 + 1;
                 let position = crate::lsp::positions::LineIndex::new(consumer).to_position(offset);
                 let response = dispatch_request(
                     lsp_server::Request::new(
@@ -2545,7 +2557,12 @@ mod tests {
                 assert!(!pending.items.iter().any(|item| item.label == "op _ + _"));
             } else {
                 assert!(pending.is_incomplete);
-                assert!(pending.items.is_empty());
+                assert!(
+                    pending
+                        .items
+                        .iter()
+                        .all(|item| item.kind == Some(lsp_types::CompletionItemKind::KEYWORD))
+                );
             }
             let refreshed = results
                 .recv_timeout(Duration::from_secs(10))
@@ -2577,7 +2594,12 @@ mod tests {
                 assert!(!after.items.iter().any(|item| item.label == "op _ + _"));
             } else {
                 assert!(after.is_incomplete);
-                assert!(after.items.is_empty());
+                assert!(
+                    after
+                        .items
+                        .iter()
+                        .all(|item| item.kind == Some(lsp_types::CompletionItemKind::KEYWORD))
+                );
             }
             assert!(matches!(request_syntax_module(&mut state, &consumer_uri),
                 RequestSyntaxModule::Contextual { source, .. } if source == consumer));
@@ -2736,10 +2758,10 @@ mod tests {
         let consumer = workspace_uri("app/main.kio");
         state.open(
             provider,
-            "module app/syntax; pub varop [* *] { foldr pair empty; };".to_owned(),
+            "mod app/syntax; pub op_var [* *] { foldr pair empty; };".to_owned(),
             1,
         );
-        let source = "module app/main; import app/syntax(varop [* *]); fn make(value: .) -> . { value } fn run(value: .) -> . { let identity = .(inner: .) -> . { inner }; identity([* make(value), value *]) }";
+        let source = "mod app/main; import app/syntax {op_var [* *]} fn make(value: .) -> . { value } fn run(value: .) -> . { let identity = .(inner: .) -> . { inner }; identity([* make(value), value *]) }";
         state.open(consumer.clone(), source.to_owned(), 1);
 
         let result = handle_semantic_tokens_full(&consumer, &mut state).expect("semantic tokens");
@@ -2774,7 +2796,7 @@ mod tests {
     fn semantic_tokens_keep_binder_classification_without_the_provider() {
         let mut state = ServerState::new();
         let consumer = workspace_uri("a/b/c.kio");
-        let source = "module a/b/c; import a/d/e(varop [* *]); fn make(x: A) -> A { x } fn run(value: A) -> A { let identity = .(inner: A) -> A { inner }; identity([* make(value), value *]) }";
+        let source = "mod a/b/c; import a/d/e {op_var [* *]} fn make(x: A) -> A { x } fn run(value: A) -> A { let identity = .(inner: A) -> A { inner }; identity([* make(value), value *]) }";
         let deferred_binder_offset = source.find("inner").expect("deferred lambda binder") as u32;
         state.open(consumer.clone(), source.to_owned(), 1);
 
@@ -2813,10 +2835,10 @@ mod tests {
         let invalid = Uri::from_str(&invalid_source).expect("query-bearing file URI");
         let provider = workspace_uri("a/d/e.kio");
         let source =
-            "module a/b/c; import a/d/e(varop [* *]); fn run(value: A) -> A { [* value, value *] }";
+            "mod a/b/c; import a/d/e {op_var [* *]} fn run(value: A) -> A { [* value, value *] }";
         state.open(
             provider,
-            "module a/d/e; pub varop [* *] { foldr pair empty; };".to_owned(),
+            "mod a/d/e; pub op_var [* *] { foldr pair empty; };".to_owned(),
             1,
         );
         state.open(invalid.clone(), source.to_owned(), 1);
@@ -2831,14 +2853,12 @@ mod tests {
         let uri = workspace_uri("a/b/c.kio");
         let mismatch = request_syntax_module_direct(
             &uri,
-            "module wrong/path; fn run(value: .) -> . { value }".to_owned(),
+            "mod wrong/path; fn run(value: .) -> . { value }".to_owned(),
         );
         assert!(matches!(mismatch, RequestSyntaxModule::ContextInvalid));
 
-        let incomplete = request_syntax_module_direct(
-            &uri,
-            "module a/b/c; fn run(value: .) -> . { (".to_owned(),
-        );
+        let incomplete =
+            request_syntax_module_direct(&uri, "mod a/b/c; fn run(value: .) -> . { (".to_owned());
         assert!(matches!(
             incomplete,
             RequestSyntaxModule::AuthenticatedLazy { .. }
@@ -2846,7 +2866,7 @@ mod tests {
 
         let closed = request_syntax_module_direct(
             &uri,
-            "module a/b/c; import a/d/e(varop [* *]); fn pair(k: A, v: A) -> A { [* k, v *] }"
+            "mod a/b/c; import a/d/e {op_var [* *]} fn pair(k: A, v: A) -> A { [* k, v *] }"
                 .to_owned(),
         );
         assert!(matches!(closed, RequestSyntaxModule::Contextual { .. }));
@@ -2859,10 +2879,10 @@ mod tests {
         let consumer = workspace_uri("app/main.kio");
         state.open(
             provider,
-            "module app/syntax; pub op ? _ : _ { impl choose }".to_owned(),
+            "mod app/syntax; pub op ? _ : _ { impl choose }".to_owned(),
             1,
         );
-        let source = "module app/main;\nimport app/syntax(op ? _ : _);\n/// Chooses with [`@source exercise`].\npub fn choose_value(value: .) -> . { value }\nfn exercise(condition: ., yes: .) -> . { ? condition : yes }\n";
+        let source = "mod app/main;\nimport app/syntax {op ? _ : _}\n/// Chooses with [`@source exercise`].\npub fn choose_value(value: .) -> . { value }\nfn exercise(condition: ., yes: .) -> . { ? condition : yes }\n";
         state.open(consumer.clone(), source.to_owned(), 1);
         let cursor = LineIndex::new(source).to_position(
             u32::try_from(
@@ -2966,18 +2986,18 @@ mod tests {
         use std::time::Duration;
 
         let dir = tempfile::tempdir().expect("tempdir");
-        std::fs::write(dir.path().join("outer.pkg.kio"), "package outer;\n")
+        std::fs::write(dir.path().join("outer.pkg.kio"), "pkg outer;\n")
             .expect("write ancestor package");
         let workspace_root = dir.path().join("workspace");
         std::fs::create_dir(&workspace_root).expect("create workspace");
         let workspace_root = std::fs::canonicalize(workspace_root).expect("canonical workspace");
         std::fs::write(
             workspace_root.join("app.pkg.kio"),
-            "package app; bridge { main; }\n",
+            "pkg app; bridge { main; }\n",
         )
         .expect("write workspace package");
         let file_path = workspace_root.join("main.kio");
-        std::fs::write(&file_path, "module main;\n").expect("write source");
+        std::fs::write(&file_path, "mod main;\n").expect("write source");
         let request_root = request_root(&workspace_root);
         let uri =
             crate::lsp::diagnostics::path_to_uri(&request_root.join("main.kio"), &request_root)
@@ -3010,7 +3030,7 @@ mod tests {
         let package_root = workspace_path("kio-lsp-reopened-publish");
         let file_path = package_root.join("main.kio");
         let uri = workspace_uri("kio-lsp-reopened-publish/main.kio");
-        let old_source = "module pkg/old;\n";
+        let old_source = "mod pkg/old;\n";
         state.open(uri.clone(), old_source.to_owned(), 1);
         let snapshot_id = ids.next();
         state.mark_focused_scheduled(&uri, &file_path, snapshot_id);
@@ -3018,7 +3038,7 @@ mod tests {
             crate::lsp::snapshot::Snapshot::new(snapshot_id, BTreeMap::from([(uri.clone(), 1)]));
 
         state.close(&uri);
-        state.open(uri.clone(), "module pkg/new;\n".to_owned(), 1);
+        state.open(uri.clone(), "mod pkg/new;\n".to_owned(), 1);
         publish_worker_result(
             &server,
             &mut state,
@@ -3051,7 +3071,7 @@ mod tests {
         let package_root = workspace_path("kio-lsp-full-failure-retention");
         let file_path = package_root.join("main.kio");
         let uri = workspace_uri("kio-lsp-full-failure-retention/main.kio");
-        let source = "module pkg/main;\n";
+        let source = "mod pkg/main;\n";
         state.open(uri.clone(), source.to_owned(), 1);
         let focused_id = ids.next();
         state.mark_focused_scheduled(&uri, &file_path, focused_id);
@@ -3110,7 +3130,7 @@ mod tests {
         // Dependency diagnostics need not lie below either analyzed root.
         let file = workspace_path("shared/dependency.kio");
         let uri = workspace_uri("shared/dependency.kio");
-        let source = "module dependency;\n";
+        let source = "mod dependency;\n";
         state.open(uri.clone(), source.to_owned(), 4);
         let result = |root: &Path, snapshot: Snapshot, error: bool| WorkerResult {
             declarations: None,
@@ -3121,7 +3141,7 @@ mod tests {
                 Err(AnalysisFailure {
                     errors: vec![LocatedError {
                         file_path: file.clone(),
-                        error: Error::type_(Span::new(0, 1), "dependency error"),
+                        error: Error::type_(Span::new(0, 1), "dep error"),
                     }],
                     sources: Box::new(HashMap::from([(file.clone(), source.to_owned())])),
                 })
@@ -3129,7 +3149,7 @@ mod tests {
                 Ok(analysis_for_file(
                     &root.join("main.kio"),
                     "main",
-                    "module main;",
+                    "mod main;",
                 ))
             }),
         };
@@ -3242,7 +3262,7 @@ mod tests {
             package_root.clone(),
             Snapshot::new(older, BTreeMap::from([(uri.clone(), 1)])),
             file_path.clone(),
-            "module pkg/main;\n\npub fn run() -> . { 1 }\n",
+            "mod pkg/main;\n\npub fn run() -> . { 1 }\n",
             Error::type_(Span::new(39, 40), "stale type error"),
         );
         publish_worker_result(&server, &mut state, stale).expect("publish stale result");
@@ -3258,7 +3278,7 @@ mod tests {
             package_root.clone(),
             Snapshot::new(newer, BTreeMap::from([(uri, 2)])),
             file_path,
-            "module pkg/main;\n\npub fn run() -> . { 2 }\n",
+            "mod pkg/main;\n\npub fn run() -> . { 2 }\n",
             Error::type_(Span::new(39, 40), "fresh type error"),
         );
         publish_worker_result(&server, &mut state, fresh).expect("publish fresh result");
@@ -3577,7 +3597,7 @@ mod tests {
                 }],
                 sources: Box::new(HashMap::from([(
                     file_path.clone(),
-                    "module pkg/main;\n\npub fn run() -> . { 1 }\n".to_owned(),
+                    "mod pkg/main;\n\npub fn run() -> . { 1 }\n".to_owned(),
                 )])),
             })),
         };
@@ -3606,7 +3626,7 @@ mod tests {
                     }],
                     sources: Box::new(HashMap::from([(
                         file_path,
-                        "module pkg/main;\n\npub fn run() -> . { 2 }\n".to_owned(),
+                        "mod pkg/main;\n\npub fn run() -> . { 2 }\n".to_owned(),
                     )])),
                 }),
             },

@@ -1,8 +1,8 @@
-module rtiu/main;
+mod rtiu/main;
 
 import __intrinsics__;
 
-import rtiu(String);
+import rtiu { type String }
 
 // `[B]` does not appear in either `x: A` or the return type `A` —
 // neither value-arg unification nor return-type unification can

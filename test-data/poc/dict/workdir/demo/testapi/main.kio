@@ -1,36 +1,36 @@
-module testapi/main;
+mod testapi/main;
 
-import library/dict(
-, Dict
-, Flag
-, Ordering
-, bool_select
-, delete
-, eq
-, filter
-, fold_asc
-, get
-, get_or
-, gt
-, insert
-, intersection
-, lt
-, map_values
-, member
-, no
-, op _ => _
-, size
-, union
-, varop [% %]
-, yes
-);
-import library/macros/match(macro match);
-import library/macros/spine_macros(macro widen_sum);
-import testapi(I32, String);
-import testapi/arith(add, eq_i32, lt_i32);
-import testapi/fmt(bool_to_string, int_to_string);
-import testapi/io(print);
-import testapi/text(string_concat);
+import library/dict {
+  type Dict;
+  type Flag;
+  type Ordering;
+  fn bool_select;
+  fn delete;
+  fn eq;
+  fn filter;
+  fn fold_asc;
+  fn get;
+  fn get_or;
+  fn gt;
+  fn insert;
+  fn intersection;
+  fn lt;
+  fn map_values;
+  fn member;
+  fn no;
+  fn size;
+  fn union;
+  fn yes;
+  op _ => _;
+  op_var [% %]
+}
+import library/macros/match { macro match }
+import library/macros/spine_macros { macro widen_sum }
+import testapi { type I32; type String }
+import testapi/arith { fn add; fn eq_i32; fn lt_i32 }
+import testapi/fmt { fn bool_to_string; fn int_to_string }
+import testapi/io { fn print }
+import testapi/text { fn string_concat }
 
 fn cmp_i32(pair: I32 & I32) -> Ordering {
   match(pair) {

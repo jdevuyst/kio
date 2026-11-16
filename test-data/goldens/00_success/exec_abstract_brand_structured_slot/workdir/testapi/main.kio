@@ -1,9 +1,9 @@
-module testapi/main;
+mod testapi/main;
 
 import __intrinsics__;
 
-import testapi(String);
-import testapi/io(print);
+import testapi { type String }
+import testapi/io { fn print }
 
 // `Maybe` and `Either` as concrete type constructors.
 pub type { Maybe[A]: . | A { pub mk; pub get } }

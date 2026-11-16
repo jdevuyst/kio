@@ -1,4 +1,4 @@
-package exec_dyn_load_exact_descriptors;
+pkg exec_dyn_load_exact_descriptors;
 
 build {
   cache "out/.kio-cache/";

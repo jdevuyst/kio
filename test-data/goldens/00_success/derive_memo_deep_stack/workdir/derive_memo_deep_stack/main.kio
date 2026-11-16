@@ -1,9 +1,9 @@
-module derive_memo_deep_stack/main;
+mod derive_memo_deep_stack/main;
 
 import __intrinsics__;
 
-import macros/derive(macro derive);
-import testapi(String);
+import macros/derive { macro derive }
+import testapi { type String }
 
 pub type { Cell[A]: A { pub mk; pub get } }
 

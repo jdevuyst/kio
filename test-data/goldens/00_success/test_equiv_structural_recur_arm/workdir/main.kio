@@ -1,7 +1,7 @@
-module main;
+mod main;
 
 import __comptime__;
-import macros/control(macro scope);
+import macros/control { macro scope }
 
 pure fn run(ct: __Comptime__, k: . -> .) {
   __structural_recur__(ct)[__Type__][.][.](

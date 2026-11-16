@@ -4,12 +4,12 @@
 /// The graph is a total function of `(room, direction)` rather than a stored
 /// table. Each hand-authored edge is one branch, and the fallback represents
 /// an absent edge.
-module cellar/world;
+mod cellar/world;
 
 import cellar/ids as ids;
-import macros/control(macro if);
-import macros/spine_macros(macro widen_sum);
-import testapi(Bool, String);
+import macros/control { macro if }
+import macros/spine_macros { macro widen_sum }
+import testapi { type Bool; type String }
 
 pub type Exit =
   { Open_to: ids.Room_id } | { Locked_to: ids.Room_id; Locked_by: ids.Item_id } | { No_way: . }

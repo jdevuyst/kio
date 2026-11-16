@@ -1,10 +1,10 @@
 /// `Eval_result`: the outcome of a `prime_eval` run — a value, or stuck with a reason.
-module docs_loader/result;
+mod docs_loader/result;
 
-import docs_loader/host_descriptor(Host_fn);
-import docs_loader/macros/spine_macros(macro widen_sum);
-import docs_loader/testapi(String);
-import docs_loader/value(Value);
+import docs_loader/host_descriptor { type Host_fn }
+import docs_loader/macros/spine_macros { macro widen_sum }
+import docs_loader/testapi { type String }
+import docs_loader/value { type Value }
 
 // `result.kio` — the evaluator outcome types, factored out of `eval.kio`.
 //

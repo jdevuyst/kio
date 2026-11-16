@@ -1,6 +1,6 @@
-module hkt/testapi/fmt;
+mod hkt/testapi/fmt;
 
-import hkt/testapi(Bool, I32, String);
+import hkt/testapi { type Bool; type I32; type String }
 import testapi/fmt as _rehost_hegfhdhegbhagjcpgggnhe;
 
 pub fn int_to_string(p0: I32) -> String { _rehost_hegfhdhegbhagjcpgggnhe.int_to_string(p0) }

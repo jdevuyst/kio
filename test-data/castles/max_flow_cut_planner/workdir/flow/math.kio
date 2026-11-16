@@ -1,7 +1,7 @@
-module flow/math;
+mod flow/math;
 
-import macros/control(macro if);
-import testapi(Bool, I32);
+import macros/control { macro if }
+import testapi { type Bool; type I32 }
 import testapi/arith as a;
 
 pub fn equal(x: I32, y: I32) -> Bool {

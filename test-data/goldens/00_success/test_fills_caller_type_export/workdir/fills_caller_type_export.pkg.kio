@@ -1,4 +1,4 @@
-package fills_caller_type_export;
+pkg fills_caller_type_export;
 
 build {
   cache "out/.kio-cache/";

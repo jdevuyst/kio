@@ -1,10 +1,10 @@
-module stack/testapi/main;
+mod stack/testapi/main;
 
-import stack/macros/control(macro if);
-import stack/testapi(Bool, I32, String);
+import stack/macros/control { macro if }
+import stack/testapi { type Bool; type I32; type String }
 import stack/testapi/arith as arith;
 import stack/testapi/io as io;
-import stack/testapi/iter(loop);
+import stack/testapi/iter { fn loop }
 
 pub rec(loop) fn deep(n: I32) -> Bool {
   if(arith.leq_i32(n, 0)) { .t } else if(recur(cont) deep(arith.sub_i32(n, 1))) { .t } else { .f }

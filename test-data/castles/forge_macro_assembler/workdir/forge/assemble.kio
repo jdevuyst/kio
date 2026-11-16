@@ -9,54 +9,54 @@
 /// two: `forge/isa` declares them once and reuses the same nominals in
 /// both instruction sets, so a `Loadi` read out of a `Src` *is* an `Ins`
 /// arm and crosses with a widen. Only `jmp` and `jmpz` are rebuilt.
-module forge/assemble;
+mod forge/assemble;
 
 import forge/expand as e;
 import forge/isa as isa;
-import forge/isa(
-, Add
-, Div
-, Emit
-, Halt
-, Ins
-, Jmp
-, Jmpz
-, Loadi
-, Mod
-, Mov
-, Mul
-, Pop
-, Push
-, Reg
-, Src
-, Sub
-);
+import forge/isa {
+  type Add;
+  type Div;
+  type Emit;
+  type Halt;
+  type Ins;
+  type Jmp;
+  type Jmpz;
+  type Loadi;
+  type Mod;
+  type Mov;
+  type Mul;
+  type Pop;
+  type Push;
+  type Reg;
+  type Src;
+  type Sub
+}
 import forge/list as l;
 import forge/program as p;
-import forge/program(
-, Built
-, Duplicate_label
-, Fixed
-, Flat
-, Flats
-, Instr
-, Items
-, Macros
-, Mark
-, Prog
-, Srcs
-, Symbol
-, Symbols
-, Undefined_label
-, Unknown_macro
-);
-import macros/control(macro if);
-import macros/match(macro match);
-import macros/row_macros(macro select);
-import macros/spine_macros(macro widen_sum);
-import testapi(Bool, I32, String);
-import testapi/arith(add_i32);
-import testapi/iter(loop);
+import forge/program {
+  type Built;
+  type Duplicate_label;
+  type Fixed;
+  type Flat;
+  type Flats;
+  type Instr;
+  type Items;
+  type Macros;
+  type Mark;
+  type Prog;
+  type Srcs;
+  type Symbol;
+  type Symbols;
+  type Undefined_label;
+  type Unknown_macro
+}
+import macros/control { macro if }
+import macros/match { macro match }
+import macros/row_macros { macro select }
+import macros/spine_macros { macro widen_sum }
+import testapi { type Bool; type I32; type String }
+import testapi/arith { fn add_i32 }
+import testapi/iter { fn loop }
 
 /// Pass one's result: address-ordered code and the placed symbols, or the
 /// label that was marked twice.

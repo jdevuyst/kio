@@ -1,4 +1,4 @@
-package weighted_choice_audit;
+pkg weighted_choice_audit;
 
 build {
   cache "out/.kio-cache/";

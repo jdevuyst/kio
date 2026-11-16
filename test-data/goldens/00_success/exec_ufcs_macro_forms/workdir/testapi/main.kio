@@ -1,11 +1,11 @@
-module testapi/main;
+mod testapi/main;
 
-import macros/algebraic_macros(macro atom);
-import macros/match(macro match);
-import macros/spine_macros(macro narrow_prod, macro narrow_sum, macro widen_sum);
-import testapi(I32, String);
-import testapi/fmt(int_to_string);
-import testapi/io(print);
+import macros/algebraic_macros { macro atom }
+import macros/match { macro match }
+import macros/spine_macros { macro narrow_prod; macro narrow_sum; macro widen_sum }
+import testapi { type I32; type String }
+import testapi/fmt { fn int_to_string }
+import testapi/io { fn print }
 
 // Exercise multiple macro dot-splice forms in one program. The
 // standalone spellings `widen_sum(v)[T]`, `narrow_prod(v)[T]`,

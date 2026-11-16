@@ -4,14 +4,14 @@
 /// token, so a `Step` is deliberately narrower than a `Token`: it is exactly
 /// what an RPN machine can execute, push a literal or apply an operator. The
 /// evaluator therefore has no impossible arm to answer for.
-module desk/step;
+mod desk/step;
 
-import desk/op(Op, symbol);
-import macros/match(macro match);
-import macros/row_macros(macro select);
-import macros/spine_macros(macro widen_sum);
-import testapi(I32, String);
-import testapi/fmt(int_to_string);
+import desk/op { type Op; fn symbol }
+import macros/match { macro match }
+import macros/row_macros { macro select }
+import macros/spine_macros { macro widen_sum }
+import testapi { type I32; type String }
+import testapi/fmt { fn int_to_string }
 
 pub type Action = { Lit: I32 } | { App: Op };
 

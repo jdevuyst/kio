@@ -5,13 +5,13 @@ use crate::pass::parser::{CursorSlot, ToolingProbe, probe_tooling};
 #[test]
 fn removed_default_modifier_is_not_a_keyword_completion() {
     for (marked, kind) in [
-        ("module app; |", KioFileKind::Module),
-        ("module app; rec { type A = .; | }", KioFileKind::Module),
-        ("module app; pub |", KioFileKind::Module),
-        ("module app; host |", KioFileKind::Module),
-        ("module app; fn run() { | }", KioFileKind::Module),
-        ("package app; |", KioFileKind::Package),
-        ("signature app v(1); |", KioFileKind::Signature),
+        ("mod app; |", KioFileKind::Module),
+        ("mod app; rec { type A = .; | }", KioFileKind::Module),
+        ("mod app; pub |", KioFileKind::Module),
+        ("mod app; host |", KioFileKind::Module),
+        ("mod app; fn run() { | }", KioFileKind::Module),
+        ("pkg app; |", KioFileKind::Package),
+        ("sig app v(1); |", KioFileKind::Signature),
     ] {
         let (source, offset) = probe(marked, Some(kind));
         let probe = probe_tooling(&source, Some(kind), Some(offset), None);
@@ -23,42 +23,42 @@ fn removed_default_modifier_is_not_a_keyword_completion() {
 fn numbered_binding_completion_tracks_lexical_owners() {
     for (marked, expected, absent) in [
         (
-            "module m; fn run() { let .x. = (); print(x3); let .x. = (); x|2 }",
+            "mod m; fn run() { let .x. = (); print(x3); let .x. = (); x|2 }",
             vec!["x1", "x2"],
             vec!["x3"],
         ),
         (
-            "module m; fn run() { .x. { print(x3); let .x. = (); x|2 } }",
+            "mod m; fn run() { .x. { print(x3); let .x. = (); x|2 } }",
             vec!["x1", "x2"],
             vec!["x3"],
         ),
         (
-            "module m; fn run() { let .x. = (); (x3, x|1) }",
+            "mod m; fn run() { let .x. = (); (x3, x|1) }",
             vec!["x1", "x2", "x3"],
             vec![],
         ),
         (
-            "module m; fn run() { let .x. = (); let .y. = (); (x1, y|2) }",
+            "mod m; fn run() { let .x. = (); let .y. = (); (x1, y|2) }",
             vec!["x1", "y1", "y2"],
             vec!["x2"],
         ),
         (
-            "module m; fn run() { let .x. = (); print(x2); let .x. = (); x|3 }",
+            "mod m; fn run() { let .x. = (); print(x2); let .x. = (); x|3 }",
             vec!["x1", "x2", "x3"],
             vec![],
         ),
         (
-            "module m; fn run() { let .x. = (); let .x. = x|2; x3 }",
+            "mod m; fn run() { let .x. = (); let .x. = x|2; x3 }",
             vec!["x1", "x2"],
             vec!["x3"],
         ),
         (
-            "module m; fn run() { let .x. = (); (x1, .y. { y|2 }) }",
+            "mod m; fn run() { let .x. = (); (x1, .y. { y|2 }) }",
             vec!["y1", "y2"],
             vec!["x1"],
         ),
         (
-            "module m; fn run() { action { let .x. <- (); let .y. <- (); (x1, y|2) } }",
+            "mod m; fn run() { action { let .x. <- (); let .y. <- (); (x1, y|2) } }",
             vec!["x1", "y1", "y2"],
             vec!["x2"],
         ),
@@ -97,8 +97,8 @@ fn numbered_binding_completion_tracks_lexical_owners() {
         }
     }
     for marked in [
-        "module m; fn run() { let .x. = (); print(x3); let .x. = (); x|",
-        "module m; fn run() { action { let .x. <- (); print(x3); let .x. <- (); x|",
+        "mod m; fn run() { let .x. = (); print(x3); let .x. = (); x|",
+        "mod m; fn run() { action { let .x. <- (); print(x3); let .x. <- (); x|",
     ] {
         let (source, offset) = probe(marked, None);
         let facts = crate::pass::parser::probe_tooling_source(&source, Some(offset));
@@ -124,9 +124,8 @@ fn numbered_binding_completion_tracks_lexical_owners() {
 #[test]
 fn placeholder_missing_brace_recovery_keeps_neighbor_scope_separate() {
     for body in ["()", ".x. { x1 }", ".x. { x1"] {
-        let marked = format!(
-            "module m; fn broken(prior: .) {{ {body} fn neighbor(current: .) {{ cur|rent }}"
-        );
+        let marked =
+            format!("mod m; fn broken(prior: .) {{ {body} fn neighbor(current: .) {{ cur|rent }}");
         let (source, offset) = probe(&marked, None);
         let probe = crate::pass::parser::probe_tooling_source(&source, Some(offset));
         assert!(probe.parse_error.is_some());
@@ -145,7 +144,7 @@ fn placeholder_missing_brace_recovery_keeps_neighbor_scope_separate() {
         );
     }
     let (source, offset) = probe(
-        "module m; fn broken(prior: .) { .x. { x|1 fn neighbor(current: .) { current }",
+        "mod m; fn broken(prior: .) { .x. { x|1 fn neighbor(current: .) { current }",
         None,
     );
     let probe = crate::pass::parser::probe_tooling_source(&source, Some(offset));
@@ -167,17 +166,17 @@ fn placeholder_missing_brace_recovery_keeps_neighbor_scope_separate() {
 fn placeholder_completion_uses_nearest_family_and_preserves_ordinary_shadowing() {
     for (marked, expected, absent) in [
         (
-            "module m; fn run() { .x. { (x3, x|1) } }",
+            "mod m; fn run() { .x. { (x3, x|1) } }",
             vec!["x1", "x2", "x3"],
             vec![],
         ),
         (
-            "module m; fn run() { .x. { (x1, .y. { y|2 }) } }",
+            "mod m; fn run() { .x. { (x1, .y. { y|2 }) } }",
             vec!["y1", "y2"],
             vec!["x1"],
         ),
         (
-            "module m; fn run() { .x. { .(x1) { (x2, x|1) } } }",
+            "mod m; fn run() { .x. { .(x1) { (x2, x|1) } } }",
             vec!["x1", "x2"],
             vec![],
         ),
@@ -213,7 +212,7 @@ fn placeholder_completion_uses_nearest_family_and_preserves_ordinary_shadowing()
             }
         }
     }
-    let (source, offset) = probe("module m; fn run() { .x. { (x1, .y. { y|", None);
+    let (source, offset) = probe("mod m; fn run() { .x. { (x1, .y. { y|", None);
     let probe = crate::pass::parser::probe_tooling_source(&source, Some(offset));
     let candidates = tooling::namespace_candidates(&probe, offset, Namespace::Value);
     assert!(
@@ -328,7 +327,7 @@ fn neutral_block_completion_keeps_the_lexical_recursive_owner() {
             ("recur ", CursorSlot::RecursiveCallee),
         ] {
             let source = format!(
-                "module app; fn identity(value: .) {{ value }} rec(loop) fn run[A](parent: .) {{ {prefix}{tail}"
+                "mod app; fn identity(value: .) {{ value }} rec(loop) fn run[A](parent: .) {{ {prefix}{tail}"
             );
             let probe = probe_tooling(
                 &source,
@@ -363,19 +362,19 @@ fn neutral_block_completion_keeps_the_lexical_recursive_owner() {
 fn neutral_block_completion_preserves_locals_and_preceding_positions() {
     for (marked, expected) in [
         (
-            "module app; rec(loop) fn run(parent: .) { sequence (bind) { let local <- pa|rent; local } }",
+            "mod app; rec(loop) fn run(parent: .) { sequence (bind) { let local <- pa|rent; local } }",
             vec!["parent"],
         ),
         (
-            "module app; rec(loop) fn run(parent: .) { sequence (bind) { let local <- parent; lo|cal } }",
+            "mod app; rec(loop) fn run(parent: .) { sequence (bind) { let local <- parent; lo|cal } }",
             vec!["local", "parent"],
         ),
         (
-            "module app; rec(loop) fn run(parent: .) { sequence (bind) { pa|rent; parent } }",
+            "mod app; rec(loop) fn run(parent: .) { sequence (bind) { pa|rent; parent } }",
             vec!["parent"],
         ),
         (
-            "module app; rec(loop) fn run(parent: .) { let prior = sequence (bind) { let local <- parent; local }; pa|rent }",
+            "mod app; rec(loop) fn run(parent: .) { let prior = sequence (bind) { let local <- parent; local }; pa|rent }",
             vec!["prior", "parent"],
         ),
     ] {
@@ -410,7 +409,7 @@ fn neutral_block_completion_distinguishes_insertions_from_closed_and_malformed_b
         ),
     ] {
         let owner = if recursive { "rec(loop) fn" } else { "fn" };
-        let marked = format!("module app; {owner} run(parent: .) {{ {body} }}");
+        let marked = format!("mod app; {owner} run(parent: .) {{ {body} }}");
         let (source, offset) = at(&marked);
         let probe = probe_tooling(&source, Some(KioFileKind::Module), Some(offset), None);
         let result = project(&probe);
@@ -437,7 +436,7 @@ fn neutral_block_completion_distinguishes_insertions_from_closed_and_malformed_b
         ("sequence (bind) { parent; parent }", true),
         ("sequence (bind) { parent parent }", false),
     ] {
-        let source = format!("module app; fn run(parent: .) {{ {body} }}");
+        let source = format!("mod app; fn run(parent: .) {{ {body} }}");
         assert_eq!(
             crate::pass::parser::parse(&source).is_ok(),
             parses,
@@ -449,7 +448,7 @@ fn neutral_block_completion_distinguishes_insertions_from_closed_and_malformed_b
 #[test]
 fn adapter_success_uses_exact_root_scope_and_local_identity() {
     let (source, offset) = at(
-        "module app; import provider(imported, Imported); fn earlier() { () } fn run(parameter: .) { let local = parameter; lo|cal } fn later() { () }",
+        "mod app; import provider {fn imported; type Imported} fn earlier() { () } fn run(parameter: .) { let local = parameter; lo|cal } fn later() { () }",
     );
     let probe = probe_tooling(&source, Some(KioFileKind::Module), Some(offset), None);
     assert!(probe.syntax.is_some() && probe.parse_error.is_none());
@@ -478,7 +477,7 @@ fn adapter_success_uses_exact_root_scope_and_local_identity() {
 #[test]
 fn adapter_failed_body_projects_patterns_and_shadow_order_once() {
     let (source, offset) = at(
-        "module app; import provider(imported, Imported); fn earlier() { () } fn run((left: ., right: .)) { let left = right; let .(a: ., b: .) = (left, right); |",
+        "mod app; import provider {fn imported; type Imported} fn earlier() { () } fn run((left: ., right: .)) { let left = right; let .(a: ., b: .) = (left, right); |",
     );
     let probe = probe_tooling(&source, Some(KioFileKind::Module), Some(offset), None);
     assert!(probe.syntax.is_none() && probe.parse_error.is_some());
@@ -510,7 +509,7 @@ fn adapter_failed_body_projects_patterns_and_shadow_order_once() {
 #[test]
 fn adapter_failed_body_projects_prior_binding_and_excludes_unfinished_rhs_binder() {
     let (source, offset) =
-        at("module app; fn run(record: .) { let renamed = record; let unfinished = |");
+        at("mod app; fn run(record: .) { let renamed = record; let unfinished = |");
     let probe = probe_tooling(&source, Some(KioFileKind::Module), Some(offset), None);
     assert!(probe.syntax.is_none());
     assert_eq!(names(&project(&probe).values), ["renamed", "record"]);
@@ -520,11 +519,11 @@ fn adapter_failed_body_projects_prior_binding_and_excludes_unfinished_rhs_binder
 fn adapter_grammar_slots_do_not_admit_lexical_values_or_types() {
     for (marked, kind) in [
         (
-            "module app; type Earlier = .; fn earlier() { () } |",
+            "mod app; type Earlier = .; fn earlier() { () } |",
             KioFileKind::Module,
         ),
-        ("package app; build { |", KioFileKind::Package),
-        ("module app; type { Box: . { |", KioFileKind::Module),
+        ("pkg app; build { |", KioFileKind::Package),
+        ("mod app; type { Box: . { |", KioFileKind::Module),
     ] {
         let (source, offset) = probe(marked, Some(kind));
         let probe = probe_tooling(&source, Some(kind), Some(offset), None);
@@ -544,7 +543,7 @@ fn adapter_grammar_slots_do_not_admit_lexical_values_or_types() {
 #[test]
 fn adapter_type_slot_preserves_namespace_and_written_type_parameter() {
     let (source, offset) =
-        at("module app; type Earlier = .; fn before() { () } fn run[T](value: T|) -> T { value }");
+        at("mod app; type Earlier = .; fn before() { () } fn run[T](value: T|) -> T { value }");
     let probe = probe_tooling(&source, Some(KioFileKind::Module), Some(offset), None);
     let result = project(&probe);
     assert_eq!(result.slot, Some(CursorSlot::Type));
@@ -554,7 +553,7 @@ fn adapter_type_slot_preserves_namespace_and_written_type_parameter() {
 
 #[test]
 fn adapter_argument_keeps_namespaces_separate_until_semantic_eligibility() {
-    let (source, offset) = at("module app; type Earlier = .; fn run[T](value: T) { f(   |");
+    let (source, offset) = at("mod app; type Earlier = .; fn run[T](value: T) { f(   |");
     let probe = probe_tooling(&source, Some(KioFileKind::Module), Some(offset), None);
     let result = project(&probe);
     assert_eq!(result.slot, Some(CursorSlot::Argument));
@@ -566,9 +565,9 @@ fn adapter_argument_keeps_namespaces_separate_until_semantic_eligibility() {
 #[test]
 fn adapter_parser_suppression_prevents_edits_and_candidates() {
     for marked in [
-        "module app; fn run(para|meter: .) { parameter }",
-        "module app; fn run() { \"te|xt\" }",
-        "module app; fn run() { // comm|ent\n () }",
+        "mod app; fn run(para|meter: .) { parameter }",
+        "mod app; fn run() { \"te|xt\" }",
+        "mod app; fn run() { // comm|ent\n () }",
     ] {
         let (source, offset) = at(marked);
         let probe = probe_tooling(&source, Some(KioFileKind::Module), Some(offset), None);
@@ -581,8 +580,7 @@ fn adapter_parser_suppression_prevents_edits_and_candidates() {
 
 #[test]
 fn adapter_success_delimiter_whitespace_retains_completed_locals() {
-    let (source, offset) =
-        at("module app; fn run(parameter: .) { let local = parameter;  |  local }");
+    let (source, offset) = at("mod app; fn run(parameter: .) { let local = parameter;  |  local }");
     let probe = probe_tooling(&source, Some(KioFileKind::Module), Some(offset), None);
     assert!(probe.syntax.is_some() && probe.parse_error.is_none());
     assert_eq!(names(&project(&probe).values), ["local", "parameter"]);

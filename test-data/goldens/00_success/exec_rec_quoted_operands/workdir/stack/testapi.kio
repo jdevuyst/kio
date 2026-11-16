@@ -1,4 +1,4 @@
-module stack/testapi;
+mod stack/testapi;
 
 import testapi as _rehost_hegfhdhegbhagj;
 

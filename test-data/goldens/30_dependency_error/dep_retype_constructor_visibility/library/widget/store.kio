@@ -1,3 +1,3 @@
-module store;
+mod store;
 
-pub type { Token: . { pub mk; get; }; };
+pub type { Token: . { pub mk; get } }

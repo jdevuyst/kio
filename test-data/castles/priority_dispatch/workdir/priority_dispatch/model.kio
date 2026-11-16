@@ -1,7 +1,7 @@
-module priority_dispatch/model;
+mod priority_dispatch/model;
 
-import macros/row_macros(macro record);
-import testapi(Bool, I32, String);
+import macros/row_macros { macro record }
+import testapi { type Bool; type I32; type String }
 
 pub type Job = {
   Job_id: I32;

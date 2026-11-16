@@ -1,4 +1,4 @@
-package let_shadow_recursive;
+pkg let_shadow_recursive;
 
 build {
   cache "out/.kio-cache/";

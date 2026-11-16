@@ -1,6 +1,6 @@
-module testapi/main;
+mod testapi/main;
 
-import testapi/iter(loop);
+import testapi/iter { fn loop }
 
 rec(loop) {
   fn finish[A][B](transform: A -> B, value: A) -> B { transform(value) };

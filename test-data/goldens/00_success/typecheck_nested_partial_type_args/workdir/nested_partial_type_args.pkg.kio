@@ -1,4 +1,4 @@
-package nested_partial_type_args;
+pkg nested_partial_type_args;
 
 build {
   cache "out/.kio-cache/";

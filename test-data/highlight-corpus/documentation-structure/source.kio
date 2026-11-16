@@ -1,4 +1,4 @@
-module documentation;
+mod documentation;
 
 /// Prose é [`entry`] and [`@signature entry`].
 /// Literal ``[`not_a_reference`]``, escaped \[`escaped`], [link](url/[`destination`]).

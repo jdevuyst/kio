@@ -8,16 +8,25 @@
 /// against this node type — two keys and three children are a 3-node's shape —
 /// so it is recomputed from counts rather than read off the shape, and the half
 /// that a bad rebalance really can break is those two keys' ascending order.
-module tree/audit;
+mod tree/audit;
 
-import macros/control(macro if);
-import macros/match(macro match);
-import macros/row_macros(macro select);
-import macros/spine_macros(macro widen_sum);
-import testapi(Bool, I32, String);
-import testapi/arith(add_i32, eq_i32, lt_i32);
-import testapi/iter(loop);
-import tree/node(Leaf, Node, Three, Tree, Two, and, root_of, size_of);
+import macros/control { macro if }
+import macros/match { macro match }
+import macros/row_macros { macro select }
+import macros/spine_macros { macro widen_sum }
+import testapi { type Bool; type I32; type String }
+import testapi/arith { fn add_i32; fn eq_i32; fn lt_i32 }
+import testapi/iter { fn loop }
+import tree/node {
+  type Leaf;
+  type Node;
+  type Three;
+  type Tree;
+  type Two;
+  fn and;
+  fn root_of;
+  fn size_of
+}
 
 /// (a) The uniform leaf depth of a subtree, or `ragged` when its leaves
 /// disagree — the answer that makes a broken rebalance visible.

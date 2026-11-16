@@ -1,12 +1,12 @@
 /// Higher-kinded types worked example, NOT a drop-in library: it demonstrates
 /// kinded brands, instance dictionaries, and do-block syntax together.
-module hkt/testapi/main;
+mod hkt/testapi/main;
 
-import hkt/macros/derive(macro derive);
-import hkt/macros/sequence(macro do);
-import hkt/testapi(String);
-import hkt/testapi/io(print);
-import hkt/testapi/text(string_concat);
+import hkt/macros/derive { macro derive }
+import hkt/macros/sequence { macro do }
+import hkt/testapi { type String }
+import hkt/testapi/io { fn print }
+import hkt/testapi/text { fn string_concat }
 
 // Higher-kinded types worked example — NOT a drop-in library.
 //

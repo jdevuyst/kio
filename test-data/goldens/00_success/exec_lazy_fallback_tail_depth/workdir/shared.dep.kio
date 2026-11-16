@@ -1,4 +1,4 @@
-dependency shared;
+dep shared;
 
 source {
   path "../../exec_lazy_fallbacks/workdir/exec_lazy_fallbacks.pkg.kio"

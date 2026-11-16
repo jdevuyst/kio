@@ -1,4 +1,4 @@
-package hierarchical_test_report;
+pkg hierarchical_test_report;
 
 build {
   cache "out/.kio-cache/";

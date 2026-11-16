@@ -1,4 +1,4 @@
-module fmt_label_payload_comments;
+mod fmt_label_payload_comments;
 
 type { Ready: . { mk; get } }
 

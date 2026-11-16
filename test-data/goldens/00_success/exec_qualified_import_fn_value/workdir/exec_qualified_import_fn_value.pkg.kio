@@ -1,4 +1,4 @@
-package exec_qualified_import_fn_value;
+pkg exec_qualified_import_fn_value;
 
 build {
   cache "out/.kio-cache/";

@@ -13,11 +13,11 @@
 /// the same nominal type. Pass two of the
 /// assembler therefore carries an untouched opcode straight across with
 /// `widen_sum` and rebuilds only the two jumps.
-module forge/isa;
+mod forge/isa;
 
-import macros/match(macro match);
-import macros/spine_macros(macro widen_sum);
-import testapi(I32, String);
+import macros/match { macro match }
+import macros/spine_macros { macro widen_sum }
+import testapi { type I32; type String }
 
 /// The four general registers, as a selector. `forge/vm` holds their
 /// values in a separate labeled record; this sum only says *which* one an

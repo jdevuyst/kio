@@ -366,7 +366,7 @@ mod tests {
 
     #[test]
     fn hover_returns_none_outside_any_span() {
-        let source = "module pkg/main;\n\npub fn run() -> . { () }\n";
+        let source = "mod pkg/main;\n\npub fn run() -> . { () }\n";
         // Place a type entry at bytes 30..40 — hover at byte 0 misses it.
         let analysis = make_analysis("pkg/main", source, Span::new(30, 40));
         let uri = test_file_uri("/tmp/test.kio");
@@ -380,7 +380,7 @@ mod tests {
     #[test]
     fn hover_returns_some_inside_span() {
         // `source` has the recorded span at bytes 7..8 ("p" in "pkg/main").
-        let source = "module pkg/main;\n";
+        let source = "mod pkg/main;\n";
         let analysis = make_analysis("pkg/main", source, Span::new(7, 15));
         let uri = test_file_uri("/tmp/test.kio");
         // line 0, char 7 → byte offset 7, inside span 7..15.
@@ -410,7 +410,7 @@ mod tests {
     #[test]
     fn hover_preserves_type_identity_under_qualified_alias_collision() {
         let source = concat!(
-            "module main;\n",
+            "mod main;\n",
             "import other as types;\n",
             "import types as real;\n",
             "fn run() -> . { () }\n",
@@ -421,8 +421,8 @@ mod tests {
         let mut analysis = make_analysis("main", source, span);
         analysis.root_package_lowered = lowered_package(&[
             source,
-            "module other; pub host type Actual role(i32);",
-            "module types; pub host type Actual role(bool);",
+            "mod other; pub host type Actual role(i32);",
+            "mod types; pub host type Actual role(bool);",
         ]);
         let canonical_type = Type::synth_path(
             vec!["types".to_owned(), "Actual".to_owned()],

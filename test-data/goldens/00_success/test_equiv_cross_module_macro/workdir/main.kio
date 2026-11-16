@@ -1,7 +1,7 @@
-module main;
+mod main;
 
-import helper(Bool, a, b, pick);
-import macros/control(macro if);
+import helper { type Bool; fn a; fn b; fn pick }
+import macros/control { macro if }
 
 equiv main_local_differs() {
   if(.t) { b() } else { a() };

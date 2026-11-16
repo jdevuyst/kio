@@ -1,3 +1,3 @@
-module labels;
+mod labels;
 
 pub type { Item: . { pub mk; pub get } }

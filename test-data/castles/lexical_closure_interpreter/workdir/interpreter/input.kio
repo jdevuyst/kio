@@ -1,13 +1,13 @@
-module interpreter/input;
+mod interpreter/input;
 
 import list/core as lists;
 import list/list as traversal;
-import macros/control(macro if);
-import macros/match(macro match);
-import macros/spine_macros(macro widen_sum);
-import testapi(Bool, String);
+import macros/control { macro if }
+import macros/match { macro match }
+import macros/spine_macros { macro widen_sum }
+import testapi { type Bool; type String }
 import testapi/io as io;
-import testapi/iter(loop);
+import testapi/iter { fn loop }
 import testapi/text as text;
 
 pub type Tokens = lists.List[String];

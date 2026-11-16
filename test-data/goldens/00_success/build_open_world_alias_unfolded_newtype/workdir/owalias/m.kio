@@ -1,8 +1,8 @@
-module owalias/m;
+mod owalias/m;
 
 import __intrinsics__;
 
-import owalias/n(A);
+import owalias/n { type A }
 
 pub type Bag = A;
 

@@ -1,4 +1,4 @@
-package user_macro_identity;
+pkg user_macro_identity;
 
 build {
   cache "out/.kio-cache/";

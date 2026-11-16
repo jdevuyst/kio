@@ -6,11 +6,11 @@
 /// transparent alias. Materialization flattens the chain to its origin —
 /// `w1`'s `Tag` binds straight to `core/store` — so `make1`'s result (the
 /// one shared `core.store.Tag`) threads into `core`'s `tag_val`.
-module testapi/main;
+mod testapi/main;
 
-import core/store(tag_val);
-import testapi(I32);
-import testapi/fmt(print_i32);
-import w1/store(make1);
+import core/store { fn tag_val }
+import testapi { type I32 }
+import testapi/fmt { fn print_i32 }
+import w1/store { fn make1 }
 
 pub fn main() { let t = make1(7[I32]); print_i32(tag_val(t)) }

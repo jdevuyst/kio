@@ -1,11 +1,11 @@
-module testapi/main;
+mod testapi/main;
 
 import __intrinsics__;
 
-import macros/row_macros(macro select);
-import testapi(I32);
-import testapi/fmt(int_to_string);
-import testapi/io(print);
+import macros/row_macros { macro select }
+import testapi { type I32 }
+import testapi/fmt { fn int_to_string }
+import testapi/io { fn print }
 
 type { Foo: I32 { mk; get } }
 

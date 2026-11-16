@@ -1,12 +1,12 @@
-module captured;
+mod captured;
 
 import __intrinsics__;
 
 import __comptime__;
 import other as types;
-import reflect_helper(reflected_actual);
+import reflect_helper { fn reflected_actual }
 import types as real;
-import types(Actual);
+import types { type Actual }
 
 pub type Keeper = real.Actual -> real.Actual;
 

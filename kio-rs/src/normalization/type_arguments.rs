@@ -384,7 +384,7 @@ mod tests {
         let artifact = lowered_package(&[(
             "x.kio",
             r#"
-            module x;
+            mod x;
             import __comptime__;
             pure fn reflected[A](ct: __Comptime__) -> __Type__ {
                 __reflect_type__(ct)[A]
@@ -435,7 +435,7 @@ mod tests {
         let artifact = lowered_package(&[(
             "x.kio",
             r#"
-            module x;
+            mod x;
             pure fn keep[A](value: .) -> . { value }
         "#,
         )]);
@@ -582,7 +582,7 @@ mod tests {
             };
         }
         let source = ReflectedType::new_trusted(deep);
-        let artifact = lowered_package(&[("x.kio", "module x; pure fn keep(value: .) { value }")]);
+        let artifact = lowered_package(&[("x.kio", "mod x; pure fn keep(value: .) { value }")]);
         let ctx = AuthenticatedEvalCtx::for_module(artifact.prepare_module("x").expect("module"));
         for module in [None, ctx.root_module] {
             let state = EvalCompileState {

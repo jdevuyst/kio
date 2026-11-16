@@ -1,4 +1,4 @@
-module scalar;
+mod scalar;
 
 pub type Scaled[A] = A;
 

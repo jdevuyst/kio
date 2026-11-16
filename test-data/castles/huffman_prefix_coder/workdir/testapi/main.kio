@@ -12,20 +12,26 @@
 /// that the recorded lengths account for the complete leaf tree; it does not
 /// distinguish valid tie-breaks or independently establish prefix-freeness or
 /// optimality. The exact build log and code table pin the selected tie-break.
-module testapi/main;
+mod testapi/main;
 
-import huffman/code(code_table);
-import huffman/codec(decode, encode, same_symbols);
-import huffman/freq(present, tally, zero_counts);
-import huffman/list(len, nil);
-import huffman/message(alphabet_size, message, message_text);
-import huffman/render(print_build, print_codes, print_decoded, print_encoded);
-import huffman/render(print_frequencies, print_kraft, print_message, print_queue, print_savings);
-import huffman/report(kraft_holds, kraft_sum, longest_code, pow2, savings);
-import huffman/tree(Built_log, Built_root, Step, build, initial_queue);
-import macros/row_macros(macro select);
-import testapi(String);
-import testapi/io(print);
+import huffman/code { fn code_table }
+import huffman/codec { fn decode; fn encode; fn same_symbols }
+import huffman/freq { fn present; fn tally; fn zero_counts }
+import huffman/list { fn len; fn nil }
+import huffman/message { fn alphabet_size; fn message; fn message_text }
+import huffman/render {
+  fn print_frequencies;
+  fn print_kraft;
+  fn print_message;
+  fn print_queue;
+  fn print_savings
+}
+import huffman/render { fn print_build; fn print_codes; fn print_decoded; fn print_encoded }
+import huffman/report { fn kraft_holds; fn kraft_sum; fn longest_code; fn pow2; fn savings }
+import huffman/tree { type Built_log; type Built_root; type Step; fn build; fn initial_queue }
+import macros/row_macros { macro select }
+import testapi { type String }
+import testapi/io { fn print }
 
 pub fn main() {
   let symbols = message();

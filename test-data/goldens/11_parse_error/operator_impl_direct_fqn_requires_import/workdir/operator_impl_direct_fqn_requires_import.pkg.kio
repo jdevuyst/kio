@@ -1,4 +1,4 @@
-package operator_impl_direct_fqn_requires_import;
+pkg operator_impl_direct_fqn_requires_import;
 
 build {
   cache "out/.kio-cache/";

@@ -1,14 +1,14 @@
-module egraph/graph;
+mod egraph/graph;
 
 import egraph/numbers as n;
-import macros/control(macro if);
-import macros/match(macro match);
-import macros/row_macros(macro select);
-import macros/spine_macros(macro widen_sum);
-import testapi(Array, Bool, I32);
+import macros/control { macro if }
+import macros/match { macro match }
+import macros/row_macros { macro select }
+import macros/spine_macros { macro widen_sum }
+import testapi { type Array; type Bool; type I32 }
 import testapi/arith as num;
 import testapi/array as arr;
-import testapi/iter(loop);
+import testapi/iter { fn loop }
 
 pub type Node =
   { Constant: I32 } | { Variable: I32 } | { Addition: I32 & I32 } | { Product: I32 & I32 }

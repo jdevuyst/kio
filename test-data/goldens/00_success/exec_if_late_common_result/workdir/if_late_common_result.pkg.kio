@@ -1,4 +1,4 @@
-package if_late_common_result;
+pkg if_late_common_result;
 
 build {
   target js {

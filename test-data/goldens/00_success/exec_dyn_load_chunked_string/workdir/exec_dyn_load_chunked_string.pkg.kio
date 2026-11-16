@@ -1,4 +1,4 @@
-package exec_dyn_load_chunked_string;
+pkg exec_dyn_load_chunked_string;
 
 build {
   cache "out/.kio-cache/";

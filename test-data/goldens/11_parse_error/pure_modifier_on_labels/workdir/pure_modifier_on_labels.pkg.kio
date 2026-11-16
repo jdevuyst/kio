@@ -1,4 +1,4 @@
-package pure_modifier_on_labels;
+pkg pure_modifier_on_labels;
 
 build {
   cache "out/.kio-cache/";

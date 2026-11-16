@@ -1,4 +1,4 @@
-package derive_zero_arg_candidates;
+pkg derive_zero_arg_candidates;
 
 build {
   cache "out/.kio-cache/";

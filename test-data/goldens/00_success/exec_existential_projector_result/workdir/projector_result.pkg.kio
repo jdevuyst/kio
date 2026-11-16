@@ -1,4 +1,4 @@
-package projector_result;
+pkg projector_result;
 
 build {
   cache "out/.kio-cache/";

@@ -10,25 +10,25 @@
 /// allocation top, which is why the collector hands cells back by
 /// popping them off the end rather than tracking a bump pointer that
 /// could fall out of step with the array.
-module gc/heap;
+mod gc/heap;
 
-import gc/num(and, int_eq, int_lt);
-import gc/slot(Slot, slot_of);
-import macros/control(macro if);
-import testapi(Array, Bool, I32, String);
-import testapi/arith(add_i32, leq_i32);
-import testapi/array(array_get, array_len, array_make_filled, array_set);
-import testapi/iter(loop);
+import gc/num { fn and; fn int_eq; fn int_lt }
+import gc/slot { type Slot; fn slot_of }
+import macros/control { macro if }
+import testapi { type Array; type Bool; type I32; type String }
+import testapi/arith { fn add_i32; fn leq_i32 }
+import testapi/array { fn array_get; fn array_len; fn array_make_filled; fn array_set }
+import testapi/iter { fn loop }
 
-literal header_cells = 2;
+lit header_cells = 2;
 
-pub literal tag_frame = 1;
+pub lit tag_frame = 1;
 
-pub literal tag_pair = 2;
+pub lit tag_pair = 2;
 
-pub literal tag_vec = 3;
+pub lit tag_vec = 3;
 
-pub literal tag_box = 4;
+pub lit tag_box = 4;
 
 /// A heap image: the arena plus the roots the collector starts from.
 /// Both are host arrays, so every phase rewrites them in place and the

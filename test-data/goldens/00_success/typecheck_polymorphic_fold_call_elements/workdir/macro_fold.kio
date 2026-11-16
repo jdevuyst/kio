@@ -1,4 +1,4 @@
-module macro_fold;
+mod macro_fold;
 
 import __comptime__;
 
@@ -6,11 +6,11 @@ pub pure fn implementation_base() { () }
 
 pub pure fn right_step[A](_value: A, _acc: .) { () }
 
-pub varop [* *] { foldr right_step implementation_base }
+pub op_var [* *] { foldr right_step implementation_base }
 
 pub pure fn left_step[A](_acc: ., _value: A) { () }
 
-pub varop [! !] { foldl left_step implementation_base }
+pub op_var [! !] { foldl left_step implementation_base }
 
 pub pure fn multislot_step[A][B]((_left: A, _right: B), _acc: .) { () }
 
@@ -18,11 +18,11 @@ pub pure fn entry[A][B](left: A, right: B) -> A & B { (left, right) }
 
 pub op _ => _ { impl entry }
 
-pub varop [% %] { foldr multislot_step implementation_base }
+pub op_var [% %] { foldr multislot_step implementation_base }
 
 pub pure fn finalize(_acc: .) { () }
 
-pub varop [+ +] { foldr right_step implementation_base; finalize finalize }
+pub op_var [+ +] { foldr right_step implementation_base; finalize finalize }
 
 pure fn nested_nonfinalizing_impl(_ct: __Comptime__, _source: __Type__, value: __Checked_term__) -> __Checked_term__ {
   [% () => [* (), () *] %];

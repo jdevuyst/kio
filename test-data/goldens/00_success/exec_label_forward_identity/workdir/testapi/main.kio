@@ -1,11 +1,11 @@
-module testapi/main;
+mod testapi/main;
 
 import middle as words;
-import origin(Item);
-import testapi(String);
+import origin { type Item }
+import testapi { type String }
 import testapi/forward as view;
-import testapi/forward(Display, Local);
-import testapi/io(print);
+import testapi/forward { type Display; type Local }
+import testapi/io { fn print }
 
 fn build_selected(value: String) -> Item { Display.mk(value) }
 

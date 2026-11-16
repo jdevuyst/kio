@@ -1,9 +1,9 @@
-module testapi/main;
+mod testapi/main;
 
-import testapi(Int, String);
-import testapi/arith(add, mul);
-import testapi/fmt(int_to_string);
-import testapi/io(print);
+import testapi { type Int; type String }
+import testapi/arith { fn add; fn mul }
+import testapi/fmt { fn int_to_string }
+import testapi/io { fn print }
 
 fn identity(n: Int) -> Int { n }
 

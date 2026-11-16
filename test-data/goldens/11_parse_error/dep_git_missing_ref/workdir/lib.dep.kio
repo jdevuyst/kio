@@ -1,4 +1,4 @@
-dependency lib;
+dep lib;
 
 source {
   git "https://example.com/lib.git";

@@ -1,4 +1,4 @@
-package tabbed_return_mismatch;
+pkg tabbed_return_mismatch;
 
 build {
   cache ();

@@ -1,4 +1,4 @@
-package repeated_fold_import;
+pkg repeated_fold_import;
 
 build {
   target js {

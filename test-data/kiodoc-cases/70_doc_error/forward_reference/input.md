@@ -8,6 +8,6 @@ pub fn greet() { () }
 ```
 
 ```kio {harness=main placeholder="__INSERT_CODE_HERE__"}
-module kiodoc/main;
+mod kiodoc/main;
 __INSERT_CODE_HERE__
 ```

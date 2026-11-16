@@ -1,5 +1,5 @@
-module testapi/types;
+mod testapi/types;
 
-import testapi(String);
+import testapi { type String }
 
 pub type { Box <A>: String & A { pub mk; pub get } }

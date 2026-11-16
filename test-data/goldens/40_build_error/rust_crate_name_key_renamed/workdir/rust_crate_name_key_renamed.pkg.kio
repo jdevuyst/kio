@@ -1,4 +1,4 @@
-package rust_crate_name_key_renamed;
+pkg rust_crate_name_key_renamed;
 
 build {
   cache "out/.kio-cache/";

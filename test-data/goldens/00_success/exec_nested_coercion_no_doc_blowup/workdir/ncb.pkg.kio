@@ -1,4 +1,4 @@
-package ncb;
+pkg ncb;
 
 build {
   cache "out/.kio-cache/";

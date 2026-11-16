@@ -1,6 +1,6 @@
-module float_weather_index/readings;
+mod float_weather_index/readings;
 
-import testapi(F64);
+import testapi { type F64 }
 import testapi/arith as arith;
 
 pub fn morning_temperature() -> F64 { 72.5[F64] }

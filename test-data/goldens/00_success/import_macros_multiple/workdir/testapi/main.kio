@@ -1,8 +1,8 @@
-module testapi/main;
+mod testapi/main;
 
-import macros/spine_macros(macro one_prod, macro widen_prod);
-import testapi(I32, String);
-import testapi/io(print);
+import macros/spine_macros { macro one_prod; macro widen_prod }
+import testapi { type I32; type String }
+import testapi/io { fn print }
 
 // One comma-separated selective import pulls several elaborators.
 fn extend(p: String & I32) -> String & I32 & . { widen_prod(p) }

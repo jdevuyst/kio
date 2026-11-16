@@ -1,6 +1,6 @@
-module unitp/m;
+mod unitp/m;
 
-import unitp(mk);
+import unitp { fn mk }
 
 fn wrap(x: .) { x }
 

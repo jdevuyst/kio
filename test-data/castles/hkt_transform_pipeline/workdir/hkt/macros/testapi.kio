@@ -1,4 +1,4 @@
-module hkt/macros/testapi;
+mod hkt/macros/testapi;
 
 import testapi as _rehost_hegfhdhegbhagj;
 

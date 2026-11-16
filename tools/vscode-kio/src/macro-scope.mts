@@ -83,7 +83,7 @@ export function macroScope(root: Node): MacroScope {
           const alias = child.childForFieldName("alias");
           let end = child.nextNamedSibling;
           while (end && (end.type.startsWith("comment") || end.type.startsWith("doc_"))) end = end.nextNamedSibling;
-          const completeAs = source?.text !== "as" || alias || (end && !end.isMissing && ["separator_comma", "bracket_rparen"].includes(end.type));
+          const completeAs = source?.text !== "as" || alias || (end && !end.isMissing && ["separator_semicolon", "bracket_rbrace"].includes(end.type));
           if (source && !source.isMissing && !alias?.isMissing && completeAs) {
             bind((alias ?? source).text, true);
             heads.add(source.startIndex);

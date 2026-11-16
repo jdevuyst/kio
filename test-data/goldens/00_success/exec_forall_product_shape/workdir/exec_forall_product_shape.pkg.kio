@@ -1,4 +1,4 @@
-package exec_forall_product_shape;
+pkg exec_forall_product_shape;
 
 build {
   cache "out/.kio-cache/";

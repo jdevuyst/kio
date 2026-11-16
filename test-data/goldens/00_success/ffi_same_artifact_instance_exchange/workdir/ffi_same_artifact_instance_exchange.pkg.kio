@@ -1,4 +1,4 @@
-package ffi_same_artifact_instance_exchange;
+pkg ffi_same_artifact_instance_exchange;
 
 build {
   target js {

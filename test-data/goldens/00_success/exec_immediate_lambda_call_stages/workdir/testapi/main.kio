@@ -1,7 +1,7 @@
-module testapi/main;
+mod testapi/main;
 
-import testapi(I32);
-import testapi/fmt(print_i32);
+import testapi { type I32 }
+import testapi/fmt { fn print_i32 }
 
 fn connected(known: I32) -> I32 {
   let result = .[A](first: A)(middle)(last: A) -> A { first }(7)(())(known);

@@ -1,4 +1,4 @@
-package reflected_boolean_intrinsics;
+pkg reflected_boolean_intrinsics;
 
 build {
   cache "out/.kio-cache/";

@@ -1,4 +1,4 @@
-package build_mutual_recursive_alias_carrier;
+pkg build_mutual_recursive_alias_carrier;
 
 build {
   cache "out/.kio-cache/";

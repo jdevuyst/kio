@@ -1,4 +1,4 @@
-package typecheck_unit_call_type_parity;
+pkg typecheck_unit_call_type_parity;
 
 build {
   cache "out/.kio-cache/";

@@ -1,4 +1,4 @@
-package tup;
+pkg tup;
 
 build {
   cache "out/.kio-cache/";

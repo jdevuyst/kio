@@ -1,4 +1,4 @@
-module testapi/types;
+mod testapi/types;
 
 // `Both` is a type alias whose expansion is the two-slot product the
 // newtype wraps. A boundary slot named through the alias must cross as

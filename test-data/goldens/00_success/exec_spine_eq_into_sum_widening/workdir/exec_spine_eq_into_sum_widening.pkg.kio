@@ -1,4 +1,4 @@
-package exec_spine_eq_into_sum_widening;
+pkg exec_spine_eq_into_sum_widening;
 
 build {
   cache "out/.kio-cache/";

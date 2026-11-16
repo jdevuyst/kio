@@ -1,4 +1,4 @@
-module a_ternary;
+mod a_ternary;
 
 pub fn choose(a: ., b: ., c: .) { a }
 

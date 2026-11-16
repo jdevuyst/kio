@@ -1,4 +1,4 @@
-package exec_recur_escape_type_shadowing;
+pkg exec_recur_escape_type_shadowing;
 
 build {
   cache "out/.kio-cache/";

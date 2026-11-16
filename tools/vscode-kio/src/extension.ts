@@ -87,6 +87,7 @@ const NODE_KIND: Record<string, SemanticKind> = {
   keyword_bridge: "keyword",
   keyword_import: "variable",
   keyword_op: "variable",
+  keyword_op_macro: "variable",
   keyword_varop: "variable",
   keyword_let: "keyword",
   keyword_as: "variable",
@@ -337,7 +338,7 @@ function walkTree(node: Node, builder: vscode.SemanticTokensBuilder, body?: DocP
     kind = parentType !== undefined && ["import_decl", "incomplete_import_decl"].includes(parentType) && node.parent?.firstNamedChild?.id === node.id
       ? "keyword"
       : "variable";
-  } else if (node.type === "keyword_op" || node.type === "keyword_varop") {
+  } else if (node.type === "keyword_op" || node.type === "keyword_op_macro" || node.type === "keyword_varop") {
     kind = parentType !== undefined && ["op_decl", "incomplete_op_decl", "variadic_decl", "incomplete_variadic_decl", "import_operator_item"].includes(parentType)
       ? "keyword"
       : "variable";

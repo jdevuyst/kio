@@ -1,4 +1,4 @@
-package alias_guest;
+pkg alias_guest;
 
 build {
   cache "out/.kio-cache/";

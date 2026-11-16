@@ -2,7 +2,7 @@
 set -eu
 
 formatted=$("$KIO_BIN" fmt - <<'KIO'
-module fmt_type_expression_boundaries;
+mod fmt_type_expression_boundaries;
 type Universal = [// binder start
 A // binder end
 ] // universal body

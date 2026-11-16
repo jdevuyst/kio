@@ -1,4 +1,4 @@
-package exec_unit_alias_statement;
+pkg exec_unit_alias_statement;
 
 build {
   cache "out/.kio-cache/";

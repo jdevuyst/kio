@@ -1,4 +1,4 @@
-module numbers;
+mod numbers;
 
 host type Int role(i64);
 

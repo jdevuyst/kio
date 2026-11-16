@@ -1,12 +1,12 @@
 # Signature snippet
 
 ```kio {variant=signature}
-signature sample v(1);
+sig sample v(1);
 
 v(1) {
   nonbreaking {
     add {
-      module api {
+      mod api {
         pub fn value(x: ())
       }
     }

@@ -1,7 +1,7 @@
-module common;
+mod common;
 
 import __comptime__;
-import testapi(String);
+import testapi { type String }
 
 pure fn common_impl(
 , ct: __Comptime__

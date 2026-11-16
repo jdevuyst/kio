@@ -1,4 +1,4 @@
-module core/store;
+mod core/store;
 
 pub type { Inner: . { pub mk; pub get } }
 

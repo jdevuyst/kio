@@ -1,9 +1,9 @@
-module testapi/main;
+mod testapi/main;
 
-import lib(identity);
+import lib { fn identity }
 import lib/ops as ops;
-import testapi(String);
-import testapi/io(print);
+import testapi { type String }
+import testapi/io { fn print }
 
 pub fn main() {
   let a = identity("root module import: ok\n"[String]);

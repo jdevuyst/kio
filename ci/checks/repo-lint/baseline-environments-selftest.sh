@@ -134,7 +134,7 @@ for environment in development typescript5_0; do
 done
 chmod +x "$scratch/bin/kio" "$scratch/bin/runner"
 for name in ordinary fixed custom; do
-  printf 'package example;\nbuild {\n    target ts {\n        out "out/ts";\n        baseline latest;\n    }\n}\n' >"$scratch/cases/$name/workdir/example.pkg.kio"
+  printf 'pkg example;\nbuild {\n    target ts {\n        out "out/ts";\n        baseline latest;\n    }\n}\n' >"$scratch/cases/$name/workdir/example.pkg.kio"
   printf 'committed dependency\n' >"$scratch/cases/$name/workdir/materialized.kio"
   printf 'ok\n' >"$scratch/cases/$name/expected.stdout"
   printf '0\n' >"$scratch/cases/$name/expected.exit"

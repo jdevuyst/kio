@@ -70,7 +70,7 @@ status=0
 
 if [ -n "$symlinks" ]; then
   echo "golden-reference-deps: git-tracked symlinks into the canonical macros" >&2
-  echo "library found (consume macros through a \`dependency macros;\` instead):" >&2
+  echo "library found (consume macros through a \`dep macros;\` instead):" >&2
   echo "$symlinks" | sed 's/^/  /' >&2
   echo >&2
   status=1
@@ -78,7 +78,7 @@ fi
 
 if [ -n "$copies" ]; then
   echo "golden-reference-deps: byte-identical copies of canonical macros" >&2
-  echo "reference modules found (consume macros through a \`dependency macros;\`" >&2
+  echo "reference modules found (consume macros through a \`dep macros;\`" >&2
   echo "instead of copying its modules):" >&2
   echo "$copies" | sed 's/^/  /' >&2
   echo >&2
@@ -88,9 +88,9 @@ fi
 if [ "$status" -ne 0 ]; then
   echo "Fix each by depending on macros and importing the re-rooted module:" >&2
   echo "  // <local>.dep.kio at the consumer package root" >&2
-  echo "  dependency macros;" >&2
+  echo "  dep macros;" >&2
   echo "  source { path \"<rel>/macros.pkg.kio\"; }" >&2
-  echo "  // then, in a module: import macros/derive(macro derive);  import macros/match(macro match);" >&2
+  echo "  // then, in a module: import macros/derive { macro derive }  import macros/match { macro match }" >&2
   exit 1
 fi
 

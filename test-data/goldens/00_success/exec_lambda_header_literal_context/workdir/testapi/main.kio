@@ -1,7 +1,7 @@
-module testapi/main;
+mod testapi/main;
 
-import testapi(I32);
-import testapi/fmt(print_i32);
+import testapi { type I32 }
+import testapi/fmt { fn print_i32 }
 
 fn choose[A](callback: (A -> A) -> A) -> A {
   callback(.(value: A) { value })

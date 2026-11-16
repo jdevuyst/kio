@@ -18,11 +18,11 @@ bridge {
   kiodoc;
 }
 
-module kiodoc;
+mod kiodoc;
 
-import match(macro match);
-import control(Bool, macro if, macro scope);
-import spine_macros(macro narrow_prod, macro one_prod, macro one_sum, macro widen_sum);
+import match {macro match}
+import control {type Bool; macro if; macro scope}
+import spine_macros {macro narrow_prod; macro one_prod; macro one_sum; macro widen_sum}
 
 host type Int role(i32);
 host type String role(str);
@@ -42,11 +42,11 @@ bridge {
   kiodoc;
 }
 
-module kiodoc;
+mod kiodoc;
 
-import match(macro match);
-import control(Bool, macro if, macro scope);
-import spine_macros(macro narrow_prod, macro one_prod, macro one_sum, macro widen_sum);
+import match {macro match}
+import control {type Bool; macro if; macro scope}
+import spine_macros {macro narrow_prod; macro one_prod; macro one_sum; macro widen_sum}
 
 host type Int role(i32);
 host type String role(str);
@@ -67,7 +67,7 @@ The package file lives at the package root. Its filename stem (`hello`) is the p
 
 ```kio {file}
 // hello.pkg.kio
-package hello;
+pkg hello;
 
 build {
   cache "out/.kio-cache/";
@@ -88,7 +88,7 @@ the submodule at `hello/main.kio` reaches them with an `import`.
 
 ```kio {file}
 // hello.kio
-module hello;
+mod hello;
 
 host type String role(str);
 
@@ -103,9 +103,9 @@ The host also supplies `print`, which accepts values of that type.
 
 ```kio {file}
 // hello/main.kio
-module hello/main;
+mod hello/main;
 
-import hello(String, print);
+import hello {type String; fn print}
 
 pub fn main() { print("hello\n") }
 ```
@@ -116,9 +116,9 @@ The call's parameter type determines the string literal's carrier. See
 for explicit annotations and unresolved literals.
 
 <!--kio {harness=hello_check file placeholder="__CHECK__"}
-module hello/doc_check;
+mod hello/doc_check;
 
-import hello/main(main);
+import hello/main {fn main}
 
 __CHECK__
 -->
@@ -155,37 +155,38 @@ read it as *the body of `pub fn main() { ... }` in a module whose host supplies 
 
 ## Chapter 2 — Inside a module
 
-The hello-world's `hello/main.kio` is a **module**. A module is a `.kio` source file with a `module` declaration at the top, optional `import` statements pulling names into scope, and a sequence of definitions — types, functions, operators. Modules group definitions; the *package* groups modules.
+The hello-world's `hello/main.kio` is a **module**. A module is a `.kio` source file with a `mod` declaration at the top, optional `import` statements pulling names into scope, and a sequence of definitions — types, functions, operators. Modules group definitions; the *package* groups modules.
 
-The `module hello/main;` line says "this file is the module at path `hello/main`." The path mirrors the directory layout: `hello/main.kio` is the module `hello/main`; `hello/util/string.kio` would be `hello/util/string`.
+The `mod hello/main;` line says "this file is the module at path `hello/main`." The path mirrors the directory layout: `hello/main.kio` is the module `hello/main`; `hello/util/string.kio` would be `hello/util/string`.
 
 ### Import statements
 
 `import` brings names into the module's scope. The common shape pulls items from another module in the same package:
 
-`import some/module(X);` lists one or more items, comma-separated. Bare items select ordinary values or types. A tagged `macro name` item selects a macro, for example `import match(macro match);`. Importing an ordinary nominal type also makes its accessible members available: `import people(Name);` lets a consumer use `Name.mk` and `Name.get` when those members are public. Host capabilities are no exception: `host type` and `host fn` declarations are ordinary public items of the module that declares them, so the hello-world brings in `String` and `print` with `import hello(String, print);`.
+`import some/module {type X}` lists one or more semicolon-separated items. Every item specifies its kind: `fn`, `type`, `lit`, `macro`, `op`, `op_macro`, or `op_var`. A `macro name` item selects a macro, for example `import match {macro match}`. Importing an ordinary nominal type also makes its accessible members available: `import people {type Name}` lets a consumer use `Name.mk` and `Name.get` when those members are public. Host capabilities are no exception: `host type` and `host fn` declarations are ordinary public items of the module that declares them, so the hello-world brings in `String` and `print` with `import hello {type String; fn print}`.
 
 When another module is mostly used as a source of names, prefer the qualified alias form where that import surface supports it: `import some/module as m;` or `import utils/list_ops as l;`. The call site then keeps the origin visible, as in `m.helper(...)`. The alias also reaches exported types, type constructors, and nominal members: `m.Shape` names a type, `m.Stack[Item]` applies a type constructor, and `m.Stack.get` reaches a public nominal member. These remain qualified names; the alias does not add them to unqualified scope. Use selective imports when the bare name is the point of the example, part of the module's public vocabulary, or required by syntax. The special compile-time and core imports are the exceptions: `import __comptime__;` and `import __intrinsics__;` are block imports with no alias form. Ordinary programs rarely need `__intrinsics__`; use tuples, nominal types, and imported library macros such as `match` and the structural palette for normal product and sum code.
 
 To choose a local spelling, use a selective alias:
-`import hello(String as Text, print as write);`. The destination keeps the
+`import hello {type String as Text; fn print as write}`. The destination keeps the
 source's type-shaped or value-shaped identifier class. This selects the same
 declaration, with the same type and visibility; it does not create a wrapper or
 re-export it. Multiple distinct local aliases are allowed.
 
 An operator is selected by its complete tagged grammar, for example
-`import arithmetic(op _ + __);` or `import list(varop [* *]);`.
+`import arithmetic {op _ + __}` or `import list {op_var [* *]}`.
 The import supplies the syntax needed to parse this module; semantic checking
 then requires an exact exported match in the named provider. Importing the
 underlying function alone does not import its operator. See the
 [operator guide](../guides/operators.md) for fixed patterns and the
 [variadic-operator guide](../guides/variadic-operators.md) for collection syntax.
 
-Selective imports have a nonempty parenthesized list even for one name. For a
-long list, keep `(` on the module-path line and put each selected item on its
-own line with a leading comma. Each local ordinary name or module alias is introduced
-once: repeating the same import is an error, even from the same provider. The
-two fixed builtin block imports are idempotent.
+Selective imports have a nonempty braced list even for one name. A long list
+keeps `{` on the module-path line and places each item on its own indented
+line. Each local name or module alias is introduced once: repeating an import
+is an error, even from the same provider. The two fixed builtin block imports
+are idempotent. Macros and literal aliases require selective imports; qualified
+expression references expose functions and types.
 
 ### pub and fn
 
@@ -193,7 +194,7 @@ two fixed builtin block imports are idempotent.
 
 For a named `fn` or `host fn`, leaving out the return annotation fixes its result to unit (`.`). An ordinary function's body must produce unit rather than determine a different result type.
 
-Same idea for `type` and `literal`: `pub` makes them visible; declarations without `pub` are module-private. The package's `bridge` block exposes only the `pub` items of the modules it matches; non-`pub` items stay internal regardless.
+Same idea for `type` and `lit`: `pub` makes them visible; declarations without `pub` are module-private. The package's `bridge` block exposes only the `pub` items of the modules it matches; non-`pub` items stay internal regardless.
 
 ### Definitions are read top-to-bottom
 
@@ -225,7 +226,7 @@ Recall `hello.kio`:
 
 ```kio {variant=module}
 // hello.kio
-module hello;
+mod hello;
 
 host type String role(str);
 
@@ -249,7 +250,7 @@ the carrier of an ordinary unannotated literal:
 
 ```kio {variant=module}
 // arith.kio
-module arith;
+mod arith;
 
 host type Int role(i32);
 
@@ -268,7 +269,7 @@ The package file admits that module's surface by listing it in `bridge`:
 
 ```kio {variant=package}
 // arith.pkg.kio
-package arith;
+pkg arith;
 
 bridge {
   arith;
@@ -293,7 +294,7 @@ and an explicit annotation is the clearest spelling when the surrounding context
 does not already force the type:
 
 ```kio {variant=module}
-module temps;
+mod temps;
 
 host type F64 role(f64);
 
@@ -421,7 +422,7 @@ first.
 
 ### Conditionals
 
-`import macros/control(Bool, macro if);` selects the library's Boolean type
+`import macros/control {type Bool; macro if}` selects the library's Boolean type
 and conditional macro when the dependency is named `macros`; see
 [macro-library adoption](../guides/using-libraries.md#the-macro-library).
 Importing `if` provides a macro call with a parenthesized condition and two
@@ -547,9 +548,9 @@ bridge {
   kiodoc;
 }
 
-module kiodoc;
+mod kiodoc;
 
-import macros/row_macros(macro record_, macro select);
+import macros/row_macros {macro record_; macro select}
 
 host type String role(str);
 host fn print(p0: String);
@@ -580,7 +581,7 @@ The macro library's `record_` builds a product in written order, and `select`
 applies projectors to matching fields. Add the dependency as described in
 [Using libraries](../guides/using-libraries.md#the-minimal-dependency-workflow).
 With the dependency named `macros`, import them using
-`import macros/row_macros(macro record_, macro select);`:
+`import macros/row_macros {macro record_; macro select}`:
 
 ```kio {@tutorial_fields_block}
 let pair = record_ { Hello.mk("hi\n"); Goodbye.mk("bye\n") };
@@ -612,7 +613,7 @@ fn classify(v: String | Int) {
 
 `(String | Int)` is the type of a value that is *either* a `String` *or* an `Int`. `match` takes one **clause** per arm of the sum. Each `.(name: Type) { body }` matches one branch; the body computes the result.
 
-This is a deliberate preview of macros. `match` is imported library code, not a built-in keyword. The tutorial harness imports it for the snippets; in a real package, you depend on the module that defines `match` and bring it into scope with `import match(macro match);`. Chapter 9 comes back to the import model.
+This is a deliberate preview of macros. `match` is imported library code, not a built-in keyword. The tutorial harness imports it for the snippets; in a real package, you depend on the module that defines `match` and bring it into scope with `import match {macro match}`. Chapter 9 comes back to the import model.
 
 Every clause body must produce the same result type. Both arms above produce the unit value, so the `match` expression has type `.`. We bind it to `_r` only to sequence the printing before returning `()`.
 
@@ -665,7 +666,7 @@ bridge {
   kiodoc;
 }
 
-module kiodoc;
+mod kiodoc;
 
 host type Int role(i32);
 host type String role(str);
@@ -908,7 +909,7 @@ and grouping.
 
 ## Chapter 9 — Imported macros
 
-Macros are Kio library code that the compiler runs while checking a call. A module declares a macro under an ordinary name. Callers select it explicitly, for example `import match(macro match);`, then call that local name directly. If `widen_sum` is not in scope, `widen_sum(...)` does not resolve.
+Macros are Kio library code that the compiler runs while checking a call. A module declares a macro under an ordinary name. Callers select it explicitly, for example `import match {macro match}`, then call that local name directly. If `widen_sum` is not in scope, `widen_sum(...)` does not resolve.
 
 The tutorial harness imports `match` from `match` and imports `widen_sum`, `one_prod`, and friends from `spine_macros`. A real package gets those modules through a dependency and writes the imports itself. Kio provides the macro mechanism; it does not globally install this palette.
 

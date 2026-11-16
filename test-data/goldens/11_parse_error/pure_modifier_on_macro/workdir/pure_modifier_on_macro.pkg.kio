@@ -1,4 +1,4 @@
-package pure_modifier_on_macro;
+pkg pure_modifier_on_macro;
 
 build {
   cache "out/.kio-cache/";

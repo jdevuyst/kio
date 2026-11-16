@@ -63,25 +63,25 @@ chmod +x "$scratch/bin/git" "$scratch/bin/find" "$scratch/bin/awk" "$scratch/bin
 
 # Header classification is intentionally lexical: a later module line and a
 # leading block comment are not selected. Files after a blank/line comment are.
-printf '\n  // heading\n  module plain;\n' > "$scratch/tracked/workdir/plain.kio"
-printf 'module spaced;\n' > "$scratch/tracked/workdir/space [x].kio"
-printf 'not_a_module\nmodule later;\n' > "$scratch/tracked/workdir/nonmodule.kio"
-printf '/* heading */\nmodule later;\n' > "$scratch/tracked/workdir/block.kio"
+printf '\n  // heading\n  mod plain;\n' > "$scratch/tracked/workdir/plain.kio"
+printf 'mod spaced;\n' > "$scratch/tracked/workdir/space [x].kio"
+printf 'not_a_module\nmod later;\n' > "$scratch/tracked/workdir/nonmodule.kio"
+printf '/* heading */\nmod later;\n' > "$scratch/tracked/workdir/block.kio"
 printf '// comment only\n\n' > "$scratch/tracked/workdir/empty.kio"
-printf 'module excluded;\n' > "$scratch/tracked/workdir/skip.pkg.kio"
-printf 'module excluded;\n' > "$scratch/tracked/workdir/out/skip.kio"
+printf 'mod excluded;\n' > "$scratch/tracked/workdir/skip.pkg.kio"
+printf 'mod excluded;\n' > "$scratch/tracked/workdir/out/skip.kio"
 i=0
 while [ "$i" -lt 32 ]; do
-  printf 'module wide;\n' > "$scratch/tracked/workdir/wide$i.kio"
+  printf 'mod wide;\n' > "$scratch/tracked/workdir/wide$i.kio"
   i=$((i + 1))
 done
-printf 'module generated;\n' > "$scratch/generated/workdir/source.kio"
-printf 'module draft;\n' > "$scratch/tracked/draft/workdir/draft.kio"
+printf 'mod generated;\n' > "$scratch/generated/workdir/source.kio"
+printf 'mod draft;\n' > "$scratch/tracked/draft/workdir/draft.kio"
 ln -s plain.kio "$scratch/tracked/workdir/linked.kio"
 ln -s ../../generated/workdir "$scratch/tracked/workdir/linked-dir"
 "$REAL_GIT" -C "$scratch/tracked" init -q
 "$REAL_GIT" -C "$scratch/tracked" add -- workdir
-printf 'module untracked;\n' > "$scratch/tracked/workdir/extra.kio"
+printf 'mod untracked;\n' > "$scratch/tracked/workdir/extra.kio"
 
 fail() { printf 'prime-marker-selftest: %s\n' "$*" >&2; exit 1; }
 run_check() {
@@ -122,9 +122,9 @@ expect_fault() {
 # only module. A same-prefix identifier is not the module keyword.
 for separator in tab newline comment; do
   case "$separator" in
-    tab) printf 'module\ttrivia;\n' ;;
-    newline) printf 'module\ntrivia;\n' ;;
-    comment) printf 'module// heading\ntrivia;\n' ;;
+    tab) printf 'mod\ttrivia;\n' ;;
+    newline) printf 'mod\ntrivia;\n' ;;
+    comment) printf 'mod// heading\ntrivia;\n' ;;
   esac > "$scratch/trivia/workdir/trivia.kio"
   rm -f "$scratch/trivia/IS_KIO_PRIME"
   run_check "$scratch/trivia" 1
@@ -143,9 +143,9 @@ for separator in tab newline comment; do
   unset UPDATE REJECT_FILE
   [ ! -f "$scratch/trivia/IS_KIO_PRIME" ] || fail 'rejected trivia module retained marker'
 done
-printf 'module regular;\n' > "$scratch/trivia/workdir/regular.kio"
-printf 'module_name unrelated;\n' > "$scratch/trivia/workdir/nonmodule.kio"
-printf 'module\ttrivia;\n' > "$scratch/trivia/workdir/trivia.kio"
+printf 'mod regular;\n' > "$scratch/trivia/workdir/regular.kio"
+printf 'mod_name unrelated;\n' > "$scratch/trivia/workdir/nonmodule.kio"
+printf 'mod\ttrivia;\n' > "$scratch/trivia/workdir/trivia.kio"
 : > "$scratch/trivia/IS_KIO_PRIME"
 run_check "$scratch/trivia" 0
 LC_ALL=C sort "$TRACE/verified" > "$scratch/actual"
@@ -225,8 +225,8 @@ expect_fault read "$scratch/generated" 'cannot read'
 expect_fault classify "$scratch/tracked" 'cannot classify'
 
 # C-quoted Git records take exact literal queries, not a pathname decoder.
-printf 'module quoted;\n' > "$scratch/tracked/workdir/quote\"name.kio"
-printf 'module slash;\n' > "$scratch/tracked/workdir/back\\slash.kio"
+printf 'mod quoted;\n' > "$scratch/tracked/workdir/quote\"name.kio"
+printf 'mod slash;\n' > "$scratch/tracked/workdir/back\\slash.kio"
 "$REAL_GIT" -C "$scratch/tracked" add -- 'workdir/quote"name.kio' 'workdir/back\slash.kio'
 run_check "$scratch/tracked" 0
 grep -F 'workdir/quote"name.kio' "$TRACE/verified" >/dev/null || fail 'quoted path lost'
@@ -249,7 +249,7 @@ mkdir -p "$scratch/normalization/workdir"
 NFC=$(printf 'workdir/caf\303\251.kio')
 NFD=$(printf 'workdir/cafe\314\201.kio')
 export NFC NFD
-printf 'module cafe;\n' > "$scratch/normalization/$NFC"
+printf 'mod cafe;\n' > "$scratch/normalization/$NFC"
 "$REAL_GIT" -C "$scratch/normalization" init -q
 "$REAL_GIT" -C "$scratch/normalization" config core.precomposeUnicode true
 "$REAL_GIT" -C "$scratch/normalization" config core.quotePath false
@@ -266,7 +266,7 @@ unset MODEL_PRECOMPOSE NFC NFD
 
 # Exercise available caller locales without changing the check's environment.
 mkdir -p "$scratch/locale/workdir"
-printf '\342\200\203module spaced;\n' > "$scratch/locale/workdir/unicode.kio"
+printf '\342\200\203mod spaced;\n' > "$scratch/locale/workdir/unicode.kio"
 for locale_name in C C.UTF-8; do
   if LC_ALL="$locale_name" locale charmap >/dev/null 2>&1; then
     LC_ALL=$locale_name
@@ -275,10 +275,10 @@ for locale_name in C C.UTF-8; do
     # original first-line filter, including non-ASCII leading whitespace.
     first_line=$(sed -n 's/^[[:space:]]*//; p; q' "$scratch/locale/workdir/unicode.kio")
     rm -f "$scratch/locale/IS_KIO_PRIME"
-    case "$first_line" in 'module '*) : > "$scratch/locale/IS_KIO_PRIME" ;; esac
+    case "$first_line" in 'mod '*) : > "$scratch/locale/IS_KIO_PRIME" ;; esac
     run_check "$scratch/locale" 0
     case "$first_line" in
-      'module '*) expect_verified workdir/unicode.kio ;;
+      'mod '*) expect_verified workdir/unicode.kio ;;
       *) expect_no_verifier ;;
     esac
   fi

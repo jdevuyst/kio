@@ -1,7 +1,7 @@
-module queue_backlog_sim/model;
+mod queue_backlog_sim/model;
 
-import queue/core(Queue);
-import testapi(I32);
+import queue/core { type Queue }
+import testapi { type I32 }
 
 pub type Job = { Ticket: I32; Arrived: I32; Effort: I32 };
 

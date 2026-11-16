@@ -1,9 +1,9 @@
-module testapi/main;
+mod testapi/main;
 
-import macros(macro apply_pair);
-import testapi(String);
-import testapi/io(print);
-import testapi/text(string_concat);
+import macros { macro apply_pair }
+import testapi { type String }
+import testapi/io { fn print }
+import testapi/text { fn string_concat }
 
 // `apply_pair(())` elaborates to a fn whose packet is
 // `((String & String) -> String) & String & String`. Supplying the

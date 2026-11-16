@@ -1,8 +1,8 @@
-module testapi/main;
+mod testapi/main;
 
-import list/list(varop [] as [* *]);
+import list/list { op_var [] as [* *] }
 import terms as term;
-import testapi(I32, String);
+import testapi { type I32; type String }
 import workbench as bench;
 
 pub fn main() {

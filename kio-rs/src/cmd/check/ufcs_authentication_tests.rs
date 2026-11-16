@@ -152,7 +152,7 @@ fn ufcs_authentication_final_full_and_focused_first_last_mixed_chains() {
         } else {
             "fn f(a: ., b: .) -> . { a }"
         };
-        let source = format!("module pkg/main; {signature} pub fn run() -> . {{ {body} }}");
+        let source = format!("mod pkg/main; {signature} pub fn run() -> . {{ {body} }}");
         let (dir, default, path) = super::tests::analyze_lsp_fixture(&source);
         assert!(
             default
@@ -204,7 +204,7 @@ fn ufcs_authentication_final_local_generic_origins_and_reused_scopes() {
         std::mem::size_of::<LspUserMacroMemos>(),
         std::mem::size_of::<crate::pass::typecheck_core::PackageTypecheckScope<Lowered>>()
     );
-    let source = "module pkg/main; pub fn run[A](f: (A & A) -> A, a: A, b: A, c: A, d: A) -> A { f(f(a, f(b, c)), d) }";
+    let source = "mod pkg/main; pub fn run[A](f: (A & A) -> A, a: A, b: A, c: A, d: A) -> A { f(f(a, f(b, c)), d) }";
     let (dir, default, path) = super::tests::analyze_lsp_fixture(source);
     assert!(
         default
@@ -245,7 +245,8 @@ fn ufcs_authentication_final_local_generic_origins_and_reused_scopes() {
 #[cfg(feature = "repl-core")]
 #[test]
 fn ufcs_authentication_repl_refresh_keeps_observation_disabled() {
-    let source = "module pkg/main; fn f(a: ., b: .) -> . { a } pub fn run() -> . { f(f(f((), ()), ()), ()) }";
+    let source =
+        "mod pkg/main; fn f(a: ., b: .) -> . { a } pub fn run() -> . { f(f(f((), ()), ()), ()) }";
     let (dir, _, _) = super::tests::analyze_lsp_fixture(source);
     let mut session = crate::repl_core::session::Session::new(dir.path().to_owned());
     session.refresh().unwrap();

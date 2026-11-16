@@ -1,4 +1,4 @@
-dependency acore;
+dep acore;
 
 source {
   path "../library/target/target.pkg.kio";

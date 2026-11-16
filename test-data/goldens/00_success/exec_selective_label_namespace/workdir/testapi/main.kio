@@ -1,10 +1,10 @@
-module testapi/main;
+mod testapi/main;
 
 import labels as provider;
-import labels(item);
-import testapi(String);
-import testapi/io(print);
-import types(Item);
+import labels { fn item }
+import testapi { type String }
+import testapi/io { fn print }
+import types { type Item }
 
 pub fn keep(value: Item) -> Item { value }
 

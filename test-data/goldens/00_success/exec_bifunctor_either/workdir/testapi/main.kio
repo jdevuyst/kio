@@ -1,10 +1,10 @@
-module testapi/main;
+mod testapi/main;
 
 import __intrinsics__;
 
-import testapi(String);
-import testapi/io(print);
-import testapi/text(string_concat);
+import testapi { type String }
+import testapi/io { fn print }
+import testapi/text { fn string_concat }
 
 // `Either[E][A]` as `E | A`: the canonical "one of two shapes" sum.
 // It is an arity-2 newtype, so its kind is `*→*→*` — a two-argument

@@ -1,4 +1,4 @@
-package pkg;
+pkg pkg;
 build {
   docs { md (("do" "cs")); md_out ((())); html "out/docs/" };
   target js { out ("out/js/") };

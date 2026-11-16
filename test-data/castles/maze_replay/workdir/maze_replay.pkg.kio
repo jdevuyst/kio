@@ -1,4 +1,4 @@
-package maze_replay;
+pkg maze_replay;
 
 build {
   cache "out/.kio-cache/";

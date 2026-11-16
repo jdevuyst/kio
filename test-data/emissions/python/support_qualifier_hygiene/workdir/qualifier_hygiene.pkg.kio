@@ -1,4 +1,4 @@
-package qualifier_hygiene;
+pkg qualifier_hygiene;
 
 build {
   cache "out/.kio-cache/";

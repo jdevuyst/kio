@@ -1,4 +1,4 @@
-module ops;
+mod ops;
 
 pub fn add(_left: ., _right: .) { () }
 

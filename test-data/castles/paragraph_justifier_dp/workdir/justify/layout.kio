@@ -9,19 +9,19 @@
 /// recovered lines a genuinely independent check on the DP's own `best[n]`: a
 /// back-pointer that walks to the wrong predecessor, or a scan whose running
 /// width drifts, shows up as two numbers that disagree.
-module justify/layout;
+mod justify/layout;
 
 import justify/cost as cost;
-import justify/dp(Table, table_back);
+import justify/dp { type Table; fn table_back }
 import justify/list as list;
-import justify/list(List);
-import justify/word(Words, span_used);
-import macros/control(macro if);
-import macros/match(macro match);
-import macros/row_macros(macro select);
-import testapi(Bool, I32);
-import testapi/arith(eq_i32, leq_i32, sub_i32);
-import testapi/iter(loop);
+import justify/list { type List }
+import justify/word { type Words; fn span_used }
+import macros/control { macro if }
+import macros/match { macro match }
+import macros/row_macros { macro select }
+import testapi { type Bool; type I32 }
+import testapi/arith { fn eq_i32; fn leq_i32; fn sub_i32 }
+import testapi/iter { fn loop }
 
 pub type Line = { Start: I32; Stop: I32; Used: I32; Slack: I32; Badness: I32 };
 

@@ -1,4 +1,4 @@
-module word1_names2/word3_items4;
+mod word1_names2/word3_items4;
 
 import testapi as api;
 

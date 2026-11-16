@@ -1,12 +1,12 @@
-module testapi/main;
+mod testapi/main;
 
 import inventory_cycle_counter/audit as audit;
 import inventory_cycle_counter/model as model;
 import inventory_cycle_counter/report as report;
-import testapi(String);
+import testapi { type String }
 import testapi/fmt as fmt;
-import testapi/io(print);
-import testapi/text(string_concat);
+import testapi/io { fn print }
+import testapi/text { fn string_concat }
 
 pub fn main() {
   let a = model.bin_a();

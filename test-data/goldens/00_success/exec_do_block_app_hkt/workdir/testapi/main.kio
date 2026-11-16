@@ -1,9 +1,9 @@
-module testapi/main;
+mod testapi/main;
 
-import macros/sequence(macro do);
-import testapi(String);
-import testapi/io(print);
-import testapi/text(string_concat);
+import macros/sequence { macro do }
+import testapi { type String }
+import testapi/io { fn print }
+import testapi/text { fn string_concat }
 
 // A brand-using monad: `box_pure` and `box_bind` operate over the
 // kind-`*→*` brand `Box` applied to a carrier (`Box(A)`).

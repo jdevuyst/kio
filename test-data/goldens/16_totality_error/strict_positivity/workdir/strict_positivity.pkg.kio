@@ -1,4 +1,4 @@
-package strict_positivity;
+pkg strict_positivity;
 
 build {
   cache "out/.kio-cache/";

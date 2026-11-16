@@ -1,6 +1,6 @@
-module river_bytecode_vm/constants;
+mod river_bytecode_vm/constants;
 
-import testapi(I32);
+import testapi { type I32 }
 
 pub fn west() -> I32 { 0 }
 

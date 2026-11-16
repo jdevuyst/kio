@@ -1,4 +1,4 @@
-module env_use_own_submodule/sub;
+mod env_use_own_submodule/sub;
 
 host type Int role(i32);
 

@@ -1,11 +1,11 @@
-module testapi/main;
+mod testapi/main;
 
 import __intrinsics__;
 
 import __comptime__;
-import macros/derive(macro derive);
-import testapi(String);
-import testapi/io(print);
+import macros/derive { macro derive }
+import testapi { type String }
+import testapi/io { fn print }
 
 type Type_pair = __Type__ & __Type__;
 

@@ -1,4 +1,4 @@
-package role_alias_identity_shared;
+pkg role_alias_identity_shared;
 
 build {
   target js {

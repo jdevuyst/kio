@@ -5,14 +5,14 @@
 /// by id, a berth names its zone by id and carries the zone's label for
 /// the report. That split is what lets the whole engine run on a host
 /// that offers no string comparison at all.
-module query/fixtures;
+mod query/fixtures;
 
-import macros/match(macro match);
+import macros/match { macro match }
 import query/list as list;
 import query/row as rel;
 import query/schema as schema;
 import query/value as value;
-import testapi(I32, String);
+import testapi { type I32; type String }
 
 /// Flag codes are two letters by definition, so the row builder knows
 /// their width without being told.

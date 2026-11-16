@@ -1,6 +1,6 @@
-module edit_distance_audit/tokens;
+mod edit_distance_audit/tokens;
 
-import testapi(Array, I32);
+import testapi { type Array; type I32 }
 import testapi/array as array;
 
 pub fn left_len() -> I32 { 6 }

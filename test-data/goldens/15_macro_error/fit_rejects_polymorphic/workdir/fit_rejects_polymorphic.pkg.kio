@@ -1,4 +1,4 @@
-package fit_rejects_polymorphic;
+pkg fit_rejects_polymorphic;
 
 build {
   cache "out/.kio-cache/";

@@ -1,4 +1,4 @@
-module build_structural_recovery_newtype_collision/qualified;
+mod build_structural_recovery_newtype_collision/qualified;
 
 import __intrinsics__;
 

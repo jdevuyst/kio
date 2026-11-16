@@ -1,4 +1,4 @@
-package operator_later_local_function_implementation;
+pkg operator_later_local_function_implementation;
 
 build {
   cache "out/.kio-cache/";

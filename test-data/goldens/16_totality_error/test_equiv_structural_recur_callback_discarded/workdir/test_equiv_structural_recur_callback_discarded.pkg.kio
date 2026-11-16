@@ -1,4 +1,4 @@
-package test_equiv_structural_recur_callback_discarded;
+pkg test_equiv_structural_recur_callback_discarded;
 
 build {
   cache "out/.kio-cache/";

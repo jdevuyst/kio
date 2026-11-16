@@ -1,5 +1,5 @@
 /// Sequencing through an explicitly supplied bind function.
-module hkt/macros/sequence;
+mod hkt/macros/sequence;
 
 import __comptime__;
 

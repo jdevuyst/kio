@@ -1,6 +1,6 @@
-module testapi/a;
+mod testapi/a;
 
-import testapi(String);
+import testapi { type String }
 
 // Modules `a` and `b` each define a newtype `Functor` with the same
 // leaf name, so the Rust emitter must disambiguate the host-facing

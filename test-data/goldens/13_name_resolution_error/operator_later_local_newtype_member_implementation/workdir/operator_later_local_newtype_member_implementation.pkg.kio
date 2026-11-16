@@ -1,4 +1,4 @@
-package operator_later_local_newtype_member_implementation;
+pkg operator_later_local_newtype_member_implementation;
 
 build {
   cache "out/.kio-cache/";

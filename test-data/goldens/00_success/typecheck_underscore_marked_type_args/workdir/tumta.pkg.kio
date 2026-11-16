@@ -1,4 +1,4 @@
-package tumta;
+pkg tumta;
 
 build {
   cache "out/.kio-cache/";

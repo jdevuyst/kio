@@ -1,4 +1,4 @@
-package typecheck_fn_complete_scheme_lambda_result;
+pkg typecheck_fn_complete_scheme_lambda_result;
 
 build {
   cache "out/.kio-cache/";

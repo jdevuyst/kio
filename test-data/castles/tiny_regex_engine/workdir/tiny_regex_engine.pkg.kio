@@ -1,4 +1,4 @@
-package tiny_regex_engine;
+pkg tiny_regex_engine;
 
 build {
   cache "out/.kio-cache/";

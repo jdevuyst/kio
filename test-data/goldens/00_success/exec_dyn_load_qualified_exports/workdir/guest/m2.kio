@@ -1,5 +1,5 @@
-module m2;
+mod m2;
 
-import hostapi(I32);
+import hostapi { type I32 }
 
 pub fn ping() -> I32 { 2 }

@@ -1,9 +1,9 @@
-module testapi/main;
+mod testapi/main;
 
-import forms(macro arrange, macro block_pair, macro discard, macro discard_whole, macro last_blocks, macro outer, macro packet, macro pair_prefix, macro run_sequence);
-import testapi(String);
-import testapi/io(print);
-import testapi/text(string_concat);
+import forms {macro arrange; macro block_pair; macro discard; macro discard_whole; macro last_blocks; macro outer; macro packet; macro pair_prefix; macro run_sequence}
+import testapi {type String}
+import testapi/io {fn print}
+import testapi/text {fn string_concat}
 
 fn line(value: String) { print(string_concat(value, "\n")) }
 

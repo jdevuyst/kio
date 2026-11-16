@@ -1,7 +1,7 @@
-module widget/feature/store;
+mod widget/feature/store;
 
 import widget/feature/target as _rehost_hhgjgeghgfhecpgggfgbhehfhcgfcphegbhcghgfhe;
-import widget/feature/target(Hidden);
+import widget/feature/target { type Hidden }
 
 pub(widget/feature) type Box[A] = _rehost_hhgjgeghgfhecpgggfgbhehfhcgfcphegbhcghgfhe.Box[A];
 

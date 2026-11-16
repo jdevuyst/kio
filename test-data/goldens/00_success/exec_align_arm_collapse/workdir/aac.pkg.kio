@@ -1,4 +1,4 @@
-package aac;
+pkg aac;
 
 build {
   cache "out/.kio-cache/";

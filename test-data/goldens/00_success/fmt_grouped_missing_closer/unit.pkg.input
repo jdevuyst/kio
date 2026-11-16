@@ -1,1 +1,1 @@
-package pkg; build { cache ( }
+pkg pkg; build { cache ( }

@@ -1,9 +1,9 @@
-module testapi/main;
+mod testapi/main;
 
-import macros/control(macro if);
-import testapi(Bool);
+import macros/control { macro if }
+import testapi { type Bool }
 import testapi/io as io;
-import testapi/iter(loop);
+import testapi/iter { fn loop }
 
 fn invoke(predicate: . -> Bool) -> Bool { predicate() }
 

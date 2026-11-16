@@ -1,4 +1,4 @@
-module lambda_annotation;
+mod lambda_annotation;
 
 host type Witness;
 

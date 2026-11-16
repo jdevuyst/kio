@@ -1,10 +1,10 @@
 /// Show macro that turns supported reflected values into host `String` rendering functions.
-module continuations/macros/show;
+mod continuations/macros/show;
 
 import __intrinsics__;
 
 import __comptime__;
-import continuations/macros/testapi(String);
+import continuations/macros/testapi { type String }
 
 /// Renders the unit value.
 pub fn show_unit_text() -> String { "()"[String] }

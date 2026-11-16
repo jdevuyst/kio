@@ -1,6 +1,6 @@
-module main;
+mod main;
 
-import macros/match(macro match);
+import macros/match { macro match }
 
 // Apply a transform to a value. The transform is the final positional
 // argument, so a multi-line closure reads naturally at the call site.

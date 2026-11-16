@@ -3,11 +3,11 @@
 /// The host supplies exactly one integer comparison, `leq_i32`. Equality,
 /// strict order, and the boolean connectives are all derived from it here
 /// so no other module has to think about it again.
-module sudoku/num;
+mod sudoku/num;
 
-import macros/control(macro if);
-import testapi(Bool, I32);
-import testapi/arith(leq_i32);
+import macros/control { macro if }
+import testapi { type Bool; type I32 }
+import testapi/arith { fn leq_i32 }
 
 fn not_bool(value: Bool) -> Bool {
   if(value) { .f } else { .t }

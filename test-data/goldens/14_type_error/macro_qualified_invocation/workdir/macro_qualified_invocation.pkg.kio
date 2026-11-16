@@ -1,4 +1,4 @@
-package macro_qualified_invocation;
+pkg macro_qualified_invocation;
 
 build {
   target js {

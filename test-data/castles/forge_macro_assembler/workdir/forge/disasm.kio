@@ -9,37 +9,37 @@
 /// Mnemonics are padded by hand: this host tier has no string-length
 /// primitive, so the column is a property of the literal, not something
 /// measured at run time.
-module forge/disasm;
+mod forge/disasm;
 
 import forge/isa as isa;
-import forge/isa(
-, Add
-, Div
-, Emit
-, Halt
-, Ins
-, Jmp_addr
-, Jmpz_addr
-, Loadi
-, Mod
-, Mov
-, Mul
-, Pop
-, Push
-, Reg
-, Sub
-);
+import forge/isa {
+  type Add;
+  type Div;
+  type Emit;
+  type Halt;
+  type Ins;
+  type Jmp_addr;
+  type Jmpz_addr;
+  type Loadi;
+  type Mod;
+  type Mov;
+  type Mul;
+  type Pop;
+  type Push;
+  type Reg;
+  type Sub
+}
 import forge/list as l;
 import forge/program as p;
-import forge/program(Prog, Symbol, Symbols);
+import forge/program { type Prog; type Symbol; type Symbols }
 import forge/text as t;
-import forge/vm(int_eq);
-import macros/control(macro if);
-import macros/match(macro match);
-import macros/row_macros(macro select);
-import testapi(Bool, I32, String);
-import testapi/arith(add_i32);
-import testapi/iter(loop);
+import forge/vm { fn int_eq }
+import macros/control { macro if }
+import macros/match { macro match }
+import macros/row_macros { macro select }
+import testapi { type Bool; type I32; type String }
+import testapi/arith { fn add_i32 }
+import testapi/iter { fn loop }
 
 /// `dst, src` - the operand pair every two-address opcode carries.
 fn two(ops: Reg & Reg) -> String {

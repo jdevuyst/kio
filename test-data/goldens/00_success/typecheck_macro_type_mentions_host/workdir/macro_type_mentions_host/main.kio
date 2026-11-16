@@ -1,6 +1,6 @@
-module macro_type_mentions_host/main;
+mod macro_type_mentions_host/main;
 
-import macro_type_mentions_host(I32);
-import macro_type_mentions_host/macros(macro checked);
+import macro_type_mentions_host { type I32 }
+import macro_type_mentions_host/macros { macro checked }
 
 fn keep(value: I32) -> I32 { checked(value) }

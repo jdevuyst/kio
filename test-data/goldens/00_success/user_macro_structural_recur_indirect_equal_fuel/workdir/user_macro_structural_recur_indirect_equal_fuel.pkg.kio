@@ -1,4 +1,4 @@
-package user_macro_structural_recur_indirect_equal_fuel;
+pkg user_macro_structural_recur_indirect_equal_fuel;
 
 build {
   cache "out/.kio-cache/";

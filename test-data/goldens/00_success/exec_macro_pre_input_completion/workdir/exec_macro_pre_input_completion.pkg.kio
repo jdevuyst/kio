@@ -1,4 +1,4 @@
-package exec_macro_pre_input_completion;
+pkg exec_macro_pre_input_completion;
 
 build {
   cache "out/.kio-cache/";

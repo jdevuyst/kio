@@ -1,4 +1,4 @@
-module numlib/store;
+mod numlib/store;
 
 import testapi as _rehost_hegfhdhegbhagj;
 

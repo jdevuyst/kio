@@ -1,4 +1,4 @@
-module shape;
+mod shape;
 
 import slot0 as s;
 

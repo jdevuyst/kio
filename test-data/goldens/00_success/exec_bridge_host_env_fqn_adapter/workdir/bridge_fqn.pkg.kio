@@ -1,4 +1,4 @@
-package bridge_fqn;
+pkg bridge_fqn;
 
 build {
   cache "out/.kio-cache/";

@@ -1,4 +1,4 @@
-package exec_literal_alias_cross_module;
+pkg exec_literal_alias_cross_module;
 
 build {
   cache "out/.kio-cache/";

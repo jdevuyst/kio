@@ -1,4 +1,4 @@
-package recursive_alias_cycle_needs_newtype;
+pkg recursive_alias_cycle_needs_newtype;
 
 build {
   target js {

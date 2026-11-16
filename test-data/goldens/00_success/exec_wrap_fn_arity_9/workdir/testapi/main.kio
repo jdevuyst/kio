@@ -1,8 +1,8 @@
-module testapi/main;
+mod testapi/main;
 
-import testapi(String);
-import testapi/io(print);
-import testapi/text(string_concat);
+import testapi { type String }
+import testapi/io { fn print }
+import testapi/text { fn string_concat }
 
 // A nine-parameter function taken as a first-class value. It exercises
 // callable arity beyond the small fixed cases without changing source

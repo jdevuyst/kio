@@ -1,4 +1,4 @@
-module m;
+mod m;
 
 pub fn id[A][*F](x: F[A]) -> A { x }
 pub type Identity[A]=A;

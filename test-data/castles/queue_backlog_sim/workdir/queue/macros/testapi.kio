@@ -1,4 +1,4 @@
-module queue/macros/testapi;
+mod queue/macros/testapi;
 
 host type String role(str);
 

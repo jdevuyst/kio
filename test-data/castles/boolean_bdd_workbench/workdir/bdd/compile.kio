@@ -1,12 +1,12 @@
-module bdd/compile;
+mod bdd/compile;
 
 import bdd/apply as engine;
 import bdd/expression as expr;
 import bdd/logic as logic;
 import bdd/store as table;
-import macros/match(macro match);
-import macros/row_macros(macro select);
-import testapi/iter(loop);
+import macros/match { macro match }
+import macros/row_macros { macro select }
+import testapi/iter { fn loop }
 
 pub rec(loop) fn compile(m: engine.Manager, expression: expr.Expression) ->
   engine.Manager & table.Node_id

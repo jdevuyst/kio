@@ -1,4 +1,4 @@
-package ffi_host_callback_return_roundtrip;
+pkg ffi_host_callback_return_roundtrip;
 
 build {
   cache "out/.kio-cache/";

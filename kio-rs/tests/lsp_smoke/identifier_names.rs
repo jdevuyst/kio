@@ -80,22 +80,22 @@ fn every_identifier_word_violation_repairs_the_current_version() {
         ("__foo", "_foo"),
         ("__foo", "foo"),
     ] {
-        let source = format!("module pkg/main;\npub fn {invalid}() -> . {{ () }}\n");
-        let expected = format!("module pkg/main;\npub fn {valid}() -> . {{ () }}\n");
+        let source = format!("mod pkg/main;\npub fn {invalid}() -> . {{ () }}\n");
+        let expected = format!("mod pkg/main;\npub fn {valid}() -> . {{ () }}\n");
         assert_local_repair("value", &source, &expected, valid, "pkg/main.kio", &[]);
     }
     assert_local_repair(
         "type",
-        "module pkg/main;\npub type Foo_Bar = .;\n",
-        "module pkg/main;\npub type Foo_bar = .;\n",
+        "mod pkg/main;\npub type Foo_Bar = .;\n",
+        "mod pkg/main;\npub type Foo_bar = .;\n",
         "Foo_bar",
         "pkg/main.kio",
         &[],
     );
     assert_local_repair(
         "type",
-        "module pkg/main;\npub type { Foo_Bar: .; };\n",
-        "module pkg/main;\npub type { Foo_bar: .; };\n",
+        "mod pkg/main;\npub type { Foo_Bar: .; };\n",
+        "mod pkg/main;\npub type { Foo_bar: .; };\n",
         "Foo_bar",
         "pkg/main.kio",
         &[],
@@ -106,19 +106,19 @@ fn every_identifier_word_violation_repairs_the_current_version() {
 fn name_repairs_cover_module_and_package_headers() {
     assert_local_repair(
         "module",
-        "module pkg/foo_123;\n",
-        "module pkg/foo123;\n",
+        "mod pkg/foo_123;\n",
+        "mod pkg/foo123;\n",
         "foo123",
         "pkg/foo123.kio",
         &[],
     );
     assert_local_repair(
         "package",
-        "package foo_123;\n",
-        "package foo123;\n",
+        "pkg foo_123;\n",
+        "pkg foo123;\n",
         "foo123",
         "foo123.pkg.kio",
-        &[("foo123.kio", "module foo123;\n")],
+        &[("foo123.kio", "mod foo123;\n")],
     );
 }
 
@@ -126,16 +126,16 @@ fn name_repairs_cover_module_and_package_headers() {
 fn dependency_local_name_repairs_keep_the_exact_filename_identity() {
     assert_local_repair(
         "dependency",
-        "dependency foo_123;\nsource { path \"provider/provider.pkg.kio\"; }\n",
-        "dependency foo123;\nsource { path \"provider/provider.pkg.kio\"; }\n",
+        "dep foo_123;\nsource { path \"provider/provider.pkg.kio\"; }\n",
+        "dep foo123;\nsource { path \"provider/provider.pkg.kio\"; }\n",
         "foo123",
         "foo123.dep.kio",
         &[
-            ("pkg.pkg.kio", "package pkg;\n"),
-            ("pkg.kio", "module pkg;\n"),
-            ("provider/provider.pkg.kio", "package provider;\n"),
-            ("provider/provider.kio", "module provider;\n"),
-            ("foo123/main.kio", "module foo123/main;\n"),
+            ("pkg.pkg.kio", "pkg pkg;\n"),
+            ("pkg.kio", "mod pkg;\n"),
+            ("provider/provider.pkg.kio", "pkg provider;\n"),
+            ("provider/provider.kio", "mod provider;\n"),
+            ("foo123/main.kio", "mod foo123/main;\n"),
         ],
     );
 }
@@ -143,7 +143,7 @@ fn dependency_local_name_repairs_keep_the_exact_filename_identity() {
 #[test]
 fn a_token_local_name_repair_does_not_rename_other_namespaces_or_text() {
     let source = concat!(
-        "module pkg/main;\n",
+        "mod pkg/main;\n",
         "host type Str role(str);\n",
         "pub type Foo = .;\n",
         "// Foo remains a type and literal text.\n",
@@ -157,8 +157,8 @@ fn a_token_local_name_repair_does_not_rename_other_namespaces_or_text() {
 #[test]
 fn invalid_name_repairs_withhold_collisions_and_letterless_guesses() {
     for source in [
-        "module pkg/main;\npub fn foo123() -> . { () }\npub fn foo_123() -> . { () }\n",
-        "module pkg/main;\npub fn _123() -> . { () }\n",
+        "mod pkg/main;\npub fn foo123() -> . { () }\npub fn foo_123() -> . { () }\n",
+        "mod pkg/main;\npub fn _123() -> . { () }\n",
     ] {
         let dir = TempDir::new("identifier-repair-withheld");
         dir.write_pkg_root_package();
@@ -181,7 +181,7 @@ fn invalid_name_repairs_withhold_collisions_and_letterless_guesses() {
 
 #[test]
 fn marked_type_and_numbered_words_are_valid_without_a_naming_action() {
-    let source = "module pkg/main;\npub type _Foo = .;\npub fn a1_b2() -> . { () }\n";
+    let source = "mod pkg/main;\npub type _Foo = .;\npub fn a1_b2() -> . { () }\n";
     let invalid_source = source.replace("_Foo", "_FooBar");
     let dir = TempDir::new("identifier-valid-roles");
     dir.write_pkg_root_package();

@@ -13,11 +13,11 @@
 /// line is conventionally allowed to end naturally. Its remaining space is
 /// therefore free. Earlier breaks still change the costs and possibilities of
 /// the suffix, so the optimization remains global with or without this rule.
-module justify/cost;
+mod justify/cost;
 
-import macros/control(macro if);
-import testapi(Bool, I32);
-import testapi/arith(add_i32, leq_i32, lt_i32, mul_i32, sub_i32);
+import macros/control { macro if }
+import testapi { type Bool; type I32 }
+import testapi/arith { fn add_i32; fn leq_i32; fn lt_i32; fn mul_i32; fn sub_i32 }
 
 /// Larger than any layout of this paragraph can cost, and small enough that two
 /// of them still add up inside `i32`.

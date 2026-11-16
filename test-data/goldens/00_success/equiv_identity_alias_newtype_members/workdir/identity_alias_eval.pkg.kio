@@ -1,4 +1,4 @@
-package identity_alias_eval;
+pkg identity_alias_eval;
 
 build {
   cache "out/.kio-cache/";

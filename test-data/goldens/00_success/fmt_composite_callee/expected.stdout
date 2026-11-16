@@ -1,4 +1,4 @@
-module fmt_composite_callee;
+mod fmt_composite_callee;
 
 fn prefix_impl(value: Formtype) -> Formtype { value }
 

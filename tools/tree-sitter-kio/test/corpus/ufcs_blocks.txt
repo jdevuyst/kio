@@ -345,7 +345,7 @@ fn subject() { outer (helper.<receiver) { first } }
 ================================================================================
 closed operator result as a forward block receiver
 ================================================================================
-import ops(op <| _ |>);
+import ops {op <| _ |>}
 fn subject() { <|value|>.>outer { body } }
 --------------------------------------------------------------------------------
 
@@ -354,14 +354,13 @@ fn subject() { <|value|>.>outer { body } }
     (keyword_import)
     (module_path
       (entity_name_module))
-    (bracket_lparen)
+    (bracket_lbrace)
     (import_operator_item
       (keyword_op)
       (operator_run)
       (slot)
       (operator_run))
-    (bracket_rparen)
-    (separator_semicolon))
+    (bracket_rbrace))
   (function_definition
     (fn_decl_head
       (keyword_fn)
@@ -393,7 +392,7 @@ fn subject() { <|value|>.>outer { body } }
 ================================================================================
 tight reverse receivers include Unit and closed operators
 ================================================================================
-import ops(op <| _ |>);
+import ops {op <| _ |>}
 fn subject() {
   outer { body }.<{};
   outer { body }.<< <|value|>
@@ -405,14 +404,13 @@ fn subject() {
     (keyword_import)
     (module_path
       (entity_name_module))
-    (bracket_lparen)
+    (bracket_lbrace)
     (import_operator_item
       (keyword_op)
       (operator_run)
       (slot)
       (operator_run))
-    (bracket_rparen)
-    (separator_semicolon))
+    (bracket_rbrace))
   (function_definition
     (fn_decl_head
       (keyword_fn)

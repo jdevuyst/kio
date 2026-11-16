@@ -1,7 +1,7 @@
-module main;
+mod main;
 
 // Header note for the import block.
-import a/b(T);
+import a/b { type T }
 
 // First paragraph of the docstring for `id`.
 
@@ -109,10 +109,10 @@ fn computed_callee() {
 
 // Trailing item.
 fn last() { () }
-module main;
+mod main;
 
 // Header note for the import block.
-import a/b(T);
+import a/b { type T }
 
 // First paragraph of the docstring for `id`.
 

@@ -1,4 +1,4 @@
-package os_scheduler_sim;
+pkg os_scheduler_sim;
 
 build {
   cache "out/.kio-cache/";

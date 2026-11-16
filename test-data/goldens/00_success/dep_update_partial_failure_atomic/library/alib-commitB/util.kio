@@ -1,4 +1,4 @@
-module util;
+mod util;
 
 // commit B: a comment-only change — the contract surface is unchanged, so
 // re-pinning alib is a compatible move (its gate passes silently).

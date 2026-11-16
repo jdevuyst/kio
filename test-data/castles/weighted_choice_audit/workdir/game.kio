@@ -1,10 +1,10 @@
-module game;
+mod game;
 
 import choice as choice;
-import macros/match(macro match);
-import macros/row_macros(macro select);
-import macros/spine_macros(macro widen_sum);
-import testapi(Bool, I32);
+import macros/match { macro match }
+import macros/row_macros { macro select }
+import macros/spine_macros { macro widen_sum }
+import testapi { type Bool; type I32 }
 import testapi/arith as arith;
 
 pub type Loot = { Blade: I32 } | { Bow: I32 } | { Coins: I32 };

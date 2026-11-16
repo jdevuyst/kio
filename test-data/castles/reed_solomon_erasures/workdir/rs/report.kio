@@ -1,16 +1,16 @@
-module rs/report;
+mod rs/report;
 
 import list/core as c;
 import list/list as l;
-import macros/control(macro if);
-import macros/match(macro match);
-import macros/row_macros(macro select);
+import macros/control { macro if }
+import macros/match { macro match }
+import macros/row_macros { macro select }
 import rs/field as f;
 import rs/input as input;
 import rs/polynomial as p;
 import rs/recover as recovery;
 import rs/symbols as s;
-import testapi(Bool, I32, String);
+import testapi { type Bool; type I32; type String }
 import testapi/arith as a;
 import testapi/fmt as fmt;
 import testapi/io as io;

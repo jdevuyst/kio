@@ -1,3 +1,3 @@
-module private_tree;
+mod private_tree;
 
 rec type { Tree: . | Tree { mk; get } }

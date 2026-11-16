@@ -1,4 +1,4 @@
-package projected_type_apply_open_target;
+pkg projected_type_apply_open_target;
 
 build {
   cache "out/.kio-cache/";

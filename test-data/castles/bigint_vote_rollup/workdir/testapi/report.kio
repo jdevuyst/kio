@@ -1,6 +1,6 @@
-module testapi/report;
+mod testapi/report;
 
-import testapi(I128, I64, String, U64);
+import testapi { type I128; type I64; type String; type U64 }
 import testapi/fmt as fmt;
 import testapi/io as io;
 

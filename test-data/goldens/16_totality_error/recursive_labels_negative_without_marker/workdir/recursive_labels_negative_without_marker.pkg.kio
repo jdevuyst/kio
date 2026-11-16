@@ -1,4 +1,4 @@
-package recursive_labels_negative_without_marker;
+pkg recursive_labels_negative_without_marker;
 
 build {
   target js {

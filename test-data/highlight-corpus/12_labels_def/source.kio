@@ -1,4 +1,4 @@
-module m;
+mod m;
 
 pub type { Foo: I32; Bar: String };
 pub type Shared = { Entry: I32; Extra: . };

@@ -1,9 +1,9 @@
-module priority_window_scheduler/planner;
+mod priority_window_scheduler/planner;
 
-import macros/control(macro if);
-import macros/row_macros(macro select);
-import priority_window_scheduler/model(Handoff, Impact, Risk, Window);
-import testapi(Bool, I32);
+import macros/control { macro if }
+import macros/row_macros { macro select }
+import priority_window_scheduler/model { type Handoff; type Impact; type Risk; type Window }
+import testapi { type Bool; type I32 }
 import testapi/arith as arith;
 
 pub fn score(window: Window) -> I32 {

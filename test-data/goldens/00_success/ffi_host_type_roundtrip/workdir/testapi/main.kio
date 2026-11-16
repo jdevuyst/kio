@@ -1,10 +1,10 @@
-module testapi/main;
+mod testapi/main;
 
-import testapi(Count, I32, String, Token);
-import testapi/arith(add_count);
-import testapi/fmt(count_to_string, i32_to_string);
-import testapi/io(print);
-import testapi/opaque(make_token, token_value);
+import testapi { type Count; type I32; type String; type Token }
+import testapi/arith { fn add_count }
+import testapi/fmt { fn count_to_string; fn i32_to_string }
+import testapi/io { fn print }
+import testapi/opaque { fn make_token; fn token_value }
 
 fn keep(t: Token) -> Token { t }
 

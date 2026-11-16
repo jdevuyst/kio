@@ -1,12 +1,12 @@
-module testapi/main;
+mod testapi/main;
 
 import dict/dict as d;
-import dict/macros/match(macro match);
+import dict/macros/match { macro match }
 import list/core as lc;
 import list/list as ls;
-import list/list(varop [] as [* *]);
-import macros/control(macro if);
-import testapi(Bool, I32, String);
+import list/list { op_var [] as [* *] }
+import macros/control { macro if }
+import testapi { type Bool; type I32; type String }
 import testapi/arith as arith;
 import testapi/fmt as fmt;
 import testapi/io as io;

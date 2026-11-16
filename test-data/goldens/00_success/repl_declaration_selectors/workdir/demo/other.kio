@@ -1,4 +1,4 @@
-module demo/other;
+mod demo/other;
 
 pub fn choose(left: ., right: .) { right }
 

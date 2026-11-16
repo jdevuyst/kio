@@ -1,5 +1,5 @@
-module testapi/io;
+mod testapi/io;
 
-import testapi(_String);
+import testapi { type _String }
 
 host fn print(p0: _String);

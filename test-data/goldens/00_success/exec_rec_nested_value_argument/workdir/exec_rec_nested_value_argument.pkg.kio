@@ -1,4 +1,4 @@
-package exec_rec_nested_value_argument;
+pkg exec_rec_nested_value_argument;
 
 build {
   cache "out/.kio-cache/";

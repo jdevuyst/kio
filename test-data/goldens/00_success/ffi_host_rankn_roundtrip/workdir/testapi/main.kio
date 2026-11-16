@@ -1,7 +1,7 @@
-module testapi/main;
+mod testapi/main;
 
-import testapi/arith(apply_poly);
-import testapi/io(print);
+import testapi/arith { fn apply_poly }
+import testapi/io { fn print }
 
 pub fn poly_echo[T](x: T) -> T { x }
 

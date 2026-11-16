@@ -1,4 +1,4 @@
-package rank_n_forall_inference_shadowing;
+pkg rank_n_forall_inference_shadowing;
 
 build {
   cache "out/.kio-cache/";

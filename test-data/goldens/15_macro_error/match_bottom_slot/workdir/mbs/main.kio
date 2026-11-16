@@ -1,9 +1,9 @@
-module mbs/main;
+mod mbs/main;
 
 import __intrinsics__;
 
-import macros/match(macro match);
-import mbs(I32);
+import macros/match { macro match }
+import mbs { type I32 }
 
 // A Bottom parameter covers no source branch.
 fn handle(s: I32) -> I32 {

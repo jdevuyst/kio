@@ -1,4 +1,4 @@
-package exec_selective_label_namespace;
+pkg exec_selective_label_namespace;
 
 build {
   cache "out/.kio-cache/";

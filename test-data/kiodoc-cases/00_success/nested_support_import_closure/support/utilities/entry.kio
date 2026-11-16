@@ -1,5 +1,5 @@
-module utilities/entry;
+mod utilities/entry;
 
-import details/core(id);
+import details/core {fn id}
 
 pub fn run() { id(()) }

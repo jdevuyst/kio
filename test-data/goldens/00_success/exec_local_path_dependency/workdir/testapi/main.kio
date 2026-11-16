@@ -1,9 +1,9 @@
-module testapi/main;
+mod testapi/main;
 
-import mathlib/combinator(const_first);
-import mathlib/pair(Pair, dup, first);
-import testapi(String);
-import testapi/io(print);
+import mathlib/combinator { fn const_first }
+import mathlib/pair { type Pair; fn dup; fn first }
+import testapi { type String }
+import testapi/io { fn print }
 
 // Thread a host `String` through the host-free `mathlib` dependency,
 // pulled in by the local `path` dependency in `mathlib.dep.kio` and

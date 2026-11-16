@@ -1,4 +1,4 @@
-module main;
+mod main;
 
 import widget/store as source;
 import zcore/store as target;

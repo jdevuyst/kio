@@ -1,4 +1,4 @@
-package match_macro_non_exhaustive_type_param;
+pkg match_macro_non_exhaustive_type_param;
 
 build {
   cache "out/.kio-cache/";

@@ -1,7 +1,7 @@
-module circuit_netlist_eval/bool_logic;
+mod circuit_netlist_eval/bool_logic;
 
-import macros/control(macro if);
-import testapi(Bool, I32);
+import macros/control { macro if }
+import testapi { type Bool; type I32 }
 
 pub fn b_not(v: Bool) -> Bool {
   if(v) { .f } else { .t }

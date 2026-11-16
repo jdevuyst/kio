@@ -1,6 +1,6 @@
-module user_macro_owner_context/main;
+mod user_macro_owner_context/main;
 
-import macros(macro imported_owner);
-import user_macro_owner_context(String);
+import macros { macro imported_owner }
+import user_macro_owner_context { type String }
 
 fn keep(s: String) -> String { imported_owner(s)[String] }

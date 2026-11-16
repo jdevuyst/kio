@@ -1339,7 +1339,7 @@ mod tests {
             })
             .collect();
         let parsed_package_file =
-            parse_package_file(&format!("package pkg;\n{package_file_src}"), None)
+            parse_package_file(&format!("pkg pkg;\n{package_file_src}"), None)
                 .expect("parse package file");
         let (lowered_modules, lowered_package_file) =
             FullPipeline::lower_package(parsed_modules, Some(parsed_package_file))
@@ -1427,11 +1427,11 @@ mod tests {
     }
 
     fn retained_carrier_signature() -> (u32, crate::sig::ReplayedInterface) {
-        let source = r#"signature pkg v(3);
+        let source = r#"sig pkg v(3);
 v(1) {
   nonbreaking {
     add {
-      module api {
+      mod api {
         host type Box[A];
         host type Unused[A];
         type { Token[A]: A { pub mk; get; }; };
@@ -1443,12 +1443,12 @@ v(1) {
 v(2) {
   nonbreaking {
     remove {
-      module api {
-        Box;
-        Unused;
-        Token;
-        old;
-      }
+
+        api.Box;
+        api.Unused;
+        api.Token;
+        api.old;
+
     }
   }
 }
@@ -1457,11 +1457,11 @@ v(2) {
     }
 
     fn retained_transparent_payload_signature() -> (u32, crate::sig::ReplayedInterface) {
-        let source = r#"signature pkg v(3);
+        let source = r#"sig pkg v(3);
 v(1) {
   nonbreaking {
     add {
-      module api {
+      mod api {
         host type Str role(str);
         type { Token[A]: A { pub mk; pub get; }; };
         host fn old(value: Token[Str]) -> Token[Str];
@@ -1472,10 +1472,10 @@ v(1) {
 v(2) {
   nonbreaking {
     remove {
-      module api {
-        Token;
-        old;
-      }
+
+        api.Token;
+        api.old;
+
     }
   }
 }
@@ -1484,11 +1484,11 @@ v(2) {
     }
 
     fn retained_unsaturated_transparent_signature() -> (u32, crate::sig::ReplayedInterface) {
-        let source = r#"signature pkg v(3);
+        let source = r#"sig pkg v(3);
 v(1) {
   nonbreaking {
     add {
-      module api {
+      mod api {
         host type Str role(str);
         type { Wrap[A]: A { pub mk; pub get; }; };
         type { Lift[*F]: F[Str] { pub mk; pub get; }; };
@@ -1500,11 +1500,11 @@ v(1) {
 v(2) {
   nonbreaking {
     remove {
-      module api {
-        Wrap;
-        Lift;
-        old;
-      }
+
+        api.Wrap;
+        api.Lift;
+        api.old;
+
     }
   }
 }
@@ -1513,11 +1513,11 @@ v(2) {
     }
 
     fn reintroduced_host_signature() -> (u32, crate::sig::ReplayedInterface) {
-        let source = r#"signature pkg v(3);
+        let source = r#"sig pkg v(3);
 v(1) {
   nonbreaking {
     add {
-      module api {
+      mod api {
         host type Str role(str);
         host fn old(value: Str) -> Str;
       }
@@ -1527,9 +1527,9 @@ v(1) {
 v(2) {
   nonbreaking {
     remove {
-      module api {
-        old;
-      }
+
+        api.old;
+
     }
   }
 }
@@ -1549,10 +1549,7 @@ v(2) {
 
     #[test]
     fn retained_signature_emits_optional_deprecated_exact_surface_only() {
-        let pkg = build_package(
-            &["module api; pub fn unit() -> . { () }"],
-            "bridge { api; }",
-        );
+        let pkg = build_package(&["mod api; pub fn unit() -> . { () }"], "bridge { api; }");
         let live = lower_package_to_dts(&pkg, "facade").expect("render live skin");
         let sig = retained_carrier_signature();
         let retained = lower_package_to_dts_with_signature(&pkg, "facade", Some(&sig))
@@ -1613,7 +1610,7 @@ v(2) {
     #[test]
     fn retained_signature_uses_frozen_transparent_payload_presentation() {
         let pkg = build_package(
-            &["module api; host type Str role(str); pub fn unit() -> . { () }"],
+            &["mod api; host type Str role(str); pub fn unit() -> . { () }"],
             "bridge { api; }",
         );
         let sig = retained_transparent_payload_signature();
@@ -1636,7 +1633,7 @@ v(2) {
     #[test]
     fn retained_unsaturated_transparent_dependency_declares_deprecated_witness() {
         let pkg = build_package(
-            &["module api; host type Str role(str); pub fn unit() -> . { () }"],
+            &["mod api; host type Str role(str); pub fn unit() -> . { () }"],
             "bridge { api; }",
         );
         let sig = retained_unsaturated_transparent_signature();
@@ -1664,7 +1661,7 @@ v(2) {
     #[test]
     fn live_callable_provenance_dominates_same_identity_history() {
         let pkg = build_package(
-            &["module api; host type Str role(str); host fn old(value: Str) -> Str;"],
+            &["mod api; host type Str role(str); host fn old(value: Str) -> Str;"],
             "bridge { api; }",
         );
         let sig = reintroduced_host_signature();
@@ -1755,7 +1752,7 @@ v(2) {
     #[test]
     fn returned_forall_values_reach_the_type_surface() {
         let pkg = build_package(
-            &["module stages; host fn produce(_unit: .) -> [A] A;"],
+            &["mod stages; host fn produce(_unit: .) -> [A] A;"],
             "bridge { stages; }",
         );
         let dts = lower_package_to_dts(&pkg, "facade").expect("render returned forall");
@@ -1769,12 +1766,8 @@ v(2) {
     #[test]
     fn host_type_keys_are_readable_exact_and_additive() {
         let base_sources = [
-            "module plain; \
-             host type Token; host type Box[A]; \
-             host fn keep(value: Token) -> Token;",
-            "module nested/with_key; \
-             host type Token; \
-             host fn keep_nested(value: Token) -> Token;",
+            "mod plain; host type Token; host type Box[A]; host fn keep(value: Token) -> Token;",
+            "mod nested/with_key; host type Token; host fn keep_nested(value: Token) -> Token;",
         ];
         let base = build_package(&base_sources, "bridge { plain; nested/with_key; }");
         let base_dts = lower_package_to_dts(&base, "greeter").expect("render");
@@ -1804,9 +1797,7 @@ v(2) {
 
         let added = build_package(
             &[
-                "module plain; \
-                 host type Token; host type Box[A]; host type Added; \
-                 host fn keep(value: Token) -> Token;",
+                "mod plain; host type Token; host type Box[A]; host type Added; host fn keep(value: Token) -> Token;",
                 base_sources[1],
             ],
             "bridge { plain; nested/with_key; }",
@@ -1824,12 +1815,9 @@ v(2) {
     #[test]
     fn prepared_sites_drive_exact_host_bindings_and_direct_generics() {
         let pkg = build_package(
-            &["module api; \
-               host type Token; \
-               host type Box[A]; \
-               host fn round_token(value: Token) -> Token; \
-               host fn box[A](value: A) -> Box[A]; \
-               pub fn keep[A](value: A) -> A { value }"],
+            &[
+                "mod api; host type Token; host type Box[A]; host fn round_token(value: Token) -> Token; host fn box[A](value: A) -> Box[A]; pub fn keep[A](value: A) -> A { value }",
+            ],
             "bridge { api; }",
         );
         let dts = lower_package_to_dts(&pkg, "facade").expect("render");
@@ -1863,10 +1851,9 @@ v(2) {
         // A `host fn` reaches the host nested under its module's JS
         // namespace; each role maps to its TS primitive.
         let pkg = build_package(
-            &["module main; \
-               host type Str role(str); host type I64 role(i64); \
-               host fn emit(p0: Str, p1: I64) -> .; \
-               fn dummy() -> . { () }"],
+            &[
+                "mod main; host type Str role(str); host type I64 role(i64); host fn emit(p0: Str, p1: I64) -> .; fn dummy() -> . { () }",
+            ],
             "bridge { main; }",
         );
         let dts = lower_package_to_dts(&pkg, "greeter").expect("render");
@@ -1893,12 +1880,8 @@ v(2) {
     fn same_leaf_host_types_keep_exact_roles() {
         let pkg = build_package(
             &[
-                "module left; \
-                 host type Shared role(i32); \
-                 host fn keep_left(value: Shared) -> Shared;",
-                "module right; \
-                 host type Shared role(str); \
-                 host fn keep_right(value: Shared) -> Shared;",
+                "mod left; host type Shared role(i32); host fn keep_left(value: Shared) -> Shared;",
+                "mod right; host type Shared role(str); host fn keep_right(value: Shared) -> Shared;",
             ],
             "bridge { left; right; }",
         );
@@ -1937,21 +1920,9 @@ v(2) {
     #[test]
     fn comptime_prefixed_user_types_keep_exact_boundary_identity() {
         let pkg = build_package(
-            &["module main; \
-               host type I32 role(i32); \
-               host type Comptime_host role(i32); \
-               pub type Comptime_alias = I32; \
-               pub type { Comptime_bool: I32 { \
-                 pub mk; pub get; \
-               }; }; \
-               pub type { Wrapped: Comptime_host { \
-                 pub mk; pub get; \
-               }; }; \
-               pub fn round_nominal(value: Comptime_bool) -> Comptime_bool { value } \
-               pub fn round_host(value: Comptime_host) -> Comptime_host { value } \
-               pub fn round_wrapped(value: Wrapped) -> Wrapped { value } \
-               pub fn round_alias(value: Comptime_alias) -> Comptime_alias { value } \
-               pub fn keep[Comptime_str](value: Comptime_str) -> Comptime_str { value }"],
+            &[
+                "mod main; host type I32 role(i32); host type Comptime_host role(i32); pub type Comptime_alias = I32; pub type { Comptime_bool: I32 { pub mk; pub get; }; }; pub type { Wrapped: Comptime_host { pub mk; pub get; }; }; pub fn round_nominal(value: Comptime_bool) -> Comptime_bool { value } pub fn round_host(value: Comptime_host) -> Comptime_host { value } pub fn round_wrapped(value: Wrapped) -> Wrapped { value } pub fn round_alias(value: Comptime_alias) -> Comptime_alias { value } pub fn keep[Comptime_str](value: Comptime_str) -> Comptime_str { value }",
+            ],
             "bridge { main; }",
         );
         let dts = lower_package_to_dts(&pkg, "facade").expect("render");
@@ -1974,11 +1945,9 @@ v(2) {
     #[test]
     fn returned_function_preserves_product_source_parameter() {
         let pkg = build_package(
-            &["module main; \
-               host type I32 role(i32); \
-               pub fn make() -> (& I32 & I32) -> I32 { \
-                 .(, left: I32, right: I32) { left } \
-               }"],
+            &[
+                "mod main; host type I32 role(i32); pub fn make() -> (& I32 & I32) -> I32 { .(, left: I32, right: I32) { left } }",
+            ],
             "bridge { main; }",
         );
         let dts = lower_package_to_dts(&pkg, "facade").expect("render");
@@ -1997,17 +1966,8 @@ v(2) {
     fn visible_newtype_payloads_resolve_nested_nominals_in_their_module() {
         let pkg = build_package(
             &[
-                "module aaa; \
-                 pub type { Nested: . { mk; get; }; };",
-                "module zed; \
-                 host type I32 role(i32); \
-                 pub type { Nested: I32 { \
-                   pub mk; pub get; \
-                 }; }; \
-                 pub type { Outer: Nested { \
-                   pub mk; pub get; \
-                 }; }; \
-                 pub fn round(value: Outer) -> Outer { value }",
+                "mod aaa; pub type { Nested: . { mk; get; }; };",
+                "mod zed; host type I32 role(i32); pub type { Nested: I32 { pub mk; pub get; }; }; pub type { Outer: Nested { pub mk; pub get; }; }; pub fn round(value: Outer) -> Outer { value }",
             ],
             "bridge { zed; }",
         );
@@ -2112,12 +2072,7 @@ v(2) {
 
     #[test]
     fn facade_binder_hygiene_preserves_callable_constraints_and_primitive_types() {
-        let source = "module api; \
-            host type Text role(str); \
-            host fn use[Demo_callable](value: Demo_callable, callback: . -> .) -> Demo_callable; \
-            host fn higher[*Demo_type_lambda][Demo_apply](value: Demo_type_lambda[Demo_apply]) -> Demo_type_lambda[Demo_apply]; \
-            host fn nested[Demo_poly](value: Demo_poly, callback: [Demo_callable] Demo_callable -> Demo_poly) -> Demo_poly; \
-            host fn primitive[String](value: String, text: Text) -> String;";
+        let source = "mod api; host type Text role(str); host fn use[Demo_callable](value: Demo_callable, callback: . -> .) -> Demo_callable; host fn higher[*Demo_type_lambda][Demo_apply](value: Demo_type_lambda[Demo_apply]) -> Demo_type_lambda[Demo_apply]; host fn nested[Demo_poly](value: Demo_poly, callback: [Demo_callable] Demo_callable -> Demo_poly) -> Demo_poly; host fn primitive[String](value: String, text: Text) -> String;";
         let pkg = build_package(&[source], "bridge { api; }");
         let dts = lower_package_to_dts(&pkg, "demo").expect("render");
         for signature in [
@@ -2145,7 +2100,7 @@ v(2) {
 
     #[test]
     fn package_handles_cannot_capture_factory_binders_or_intrinsic_types() {
-        let pkg = build_package(&["module api; pub fn unit() { () }"], "bridge { api; }");
+        let pkg = build_package(&["mod api; pub fn unit() { () }"], "bridge { api; }");
         let dts = lower_package_to_dts(&pkg, "b").expect("render B handle");
         assert!(
             dts.contains("export function createB<__KioBindings extends BHostTypes")
@@ -2168,16 +2123,9 @@ v(2) {
     #[test]
     fn exact_type_variables_observe_ordered_and_nested_binder_scope() {
         let pkg = build_package(
-            &["module main; \
-               host type Str role(str); \
-               pub type { T: Str { pub mk; pub get; }; }; \
-               pub type { Box[A]: A { pub mk; pub get; }; }; \
-               pub type { Shadow[T]: T & ([T] T -> T) { pub mk; pub get; }; }; \
-               pub type { Pack <T>: T { pub mk; pub get; }; }; \
-               host fn apply_poly(f: [T] T -> T) -> Str; \
-               host fn round_shadow(value: Shadow[Box[Str]]) -> Shadow[Box[Str]]; \
-               host fn round_pack(value: Pack) -> Pack; \
-               pub fn ordered(value: T)[T](later: T) -> T { later }"],
+            &[
+                "mod main; host type Str role(str); pub type { T: Str { pub mk; pub get; }; }; pub type { Box[A]: A { pub mk; pub get; }; }; pub type { Shadow[T]: T & ([T] T -> T) { pub mk; pub get; }; }; pub type { Pack <T>: T { pub mk; pub get; }; }; host fn apply_poly(f: [T] T -> T) -> Str; host fn round_shadow(value: Shadow[Box[Str]]) -> Shadow[Box[Str]]; host fn round_pack(value: Pack) -> Pack; pub fn ordered(value: T)[T](later: T) -> T { later }",
+            ],
             "bridge { main; }",
         );
         let dts = lower_package_to_dts(&pkg, "greeter").expect("render");
@@ -2218,9 +2166,9 @@ v(2) {
     #[test]
     fn first_class_callable_protocols_keep_stages_and_unit_domain() {
         let pkg = build_package(
-            &["module main; \
-               pub fn relay(value: [A] A -> A) -> [A] A -> A { value } \
-               pub fn unit(value: . -> .) -> . -> . { value }"],
+            &[
+                "mod main; pub fn relay(value: [A] A -> A) -> [A] A -> A { value } pub fn unit(value: . -> .) -> . -> . { value }",
+            ],
             "bridge { main; }",
         );
         let dts = lower_package_to_dts(&pkg, "facade").expect("render");
@@ -2245,10 +2193,7 @@ v(2) {
     fn hostless_package_has_zero_argument_factory_branch() {
         // No package-declared host fns or roleless host types means an empty
         // Host/HostTypes pair and a zero-argument factory branch.
-        let pkg = build_package(
-            &["module main; pub fn run() -> . { () }"],
-            "bridge { main; }",
-        );
+        let pkg = build_package(&["mod main; pub fn run() -> . { () }"], "bridge { main; }");
         let dts = lower_package_to_dts(&pkg, "greeter").expect("render");
         assert!(
             dts.contains("export interface GreeterHostTypes {}"),
@@ -2272,11 +2217,9 @@ v(2) {
         // A product-typed source parameter remains one structural JS object;
         // the returned sum keeps its discriminated JS shape.
         let pkg = build_package(
-            &["module main; \
-               import __intrinsics__; \
-               host type I32 role(i32); host type Str role(str); \
-               pub fn split(p: (I32 & Str)) -> (I32 | Str) { \
-                 __left__[I32][ Str]( __fst__[I32][ Str]( p)) }"],
+            &[
+                "mod main; import __intrinsics__; host type I32 role(i32); host type Str role(str); pub fn split(p: (I32 & Str)) -> (I32 | Str) { __left__[I32][ Str]( __fst__[I32][ Str]( p)) }",
+            ],
             "bridge { main; }",
         );
         let dts = lower_package_to_dts(&pkg, "greeter").expect("render");
@@ -2294,14 +2237,9 @@ v(2) {
         // The members consume and produce the same structural newtype shape
         // as an exported fn. An opaque newtype still has an empty namespace.
         let pkg = build_package(
-            &["module main; \
-               host type I32 role(i32); \
-               pub type { Opaque: I32 { mk; get; }; }; \
-               pub fn make_opaque(value: I32) -> Opaque { Opaque.mk(value) } \
-               pub fn read_opaque(value: Opaque) -> I32 { Opaque.get(value) } \
-               pub type { Constructor_only: I32 { pub mk; get; }; }; \
-               pub type { Projector_only: I32 { mk; pub get; }; }; \
-               pub type { Counter: I32 { pub mk; pub get; }; };"],
+            &[
+                "mod main; host type I32 role(i32); pub type { Opaque: I32 { mk; get; }; }; pub fn make_opaque(value: I32) -> Opaque { Opaque.mk(value) } pub fn read_opaque(value: Opaque) -> I32 { Opaque.get(value) } pub type { Constructor_only: I32 { pub mk; get; }; }; pub type { Projector_only: I32 { mk; pub get; }; }; pub type { Counter: I32 { pub mk; pub get; }; };",
+            ],
             "bridge { main; }",
         );
         let dts = lower_package_to_dts(&pkg, "greeter").expect("render");
@@ -2362,15 +2300,9 @@ v(2) {
     #[test]
     fn transparent_public_wrapper_keys_case_words_in_every_declaration_surface() {
         let pkg = build_package(
-            &["module main; \
-               pub type { _Word_box__[Item_type]: Item_type { \
-                 pub mk; pub get; \
-               }; }; \
-               pub type { Hidden[Item_type]: . { mk; get; }; }; \
-               pub rec type { _Root_word_: Hidden[_Root_word_] { \
-                 pub mk; pub get; \
-               }; }; \
-               pub fn keep_word(value: _Root_word_) -> _Root_word_ { value }"],
+            &[
+                "mod main; pub type { _Word_box__[Item_type]: Item_type { pub mk; pub get; }; }; pub type { Hidden[Item_type]: . { mk; get; }; }; pub rec type { _Root_word_: Hidden[_Root_word_] { pub mk; pub get; }; }; pub fn keep_word(value: _Root_word_) -> _Root_word_ { value }",
+            ],
             "bridge { main; }",
         );
         let dts = lower_package_to_dts(&pkg, "facade").expect("render");
@@ -2388,21 +2320,9 @@ v(2) {
     #[test]
     fn newtype_namespace_types_follow_parametric_existential_nested_and_recursive_schemes() {
         let pkg = build_package(
-            &["module shapes; \
-               host type I32 role(i32); \
-               pub type { Nested: I32 & (I32 | I32) { \
-                 pub mk; pub get; \
-               }; }; \
-               pub type { Box[A]: A { \
-                 pub mk; pub get; \
-               }; }; \
-               pub type { Packed <A>: A { \
-                 pub mk; pub get; \
-               }; }; \
-               pub type { Field: I32; }; \
-               pub rec type { Recursive: . | (I32 & Recursive) { \
-                 pub mk; pub get; \
-               }; };"],
+            &[
+                "mod shapes; host type I32 role(i32); pub type { Nested: I32 & (I32 | I32) { pub mk; pub get; }; }; pub type { Box[A]: A { pub mk; pub get; }; }; pub type { Packed <A>: A { pub mk; pub get; }; }; pub type { Field: I32; }; pub rec type { Recursive: . | (I32 & Recursive) { pub mk; pub get; }; };",
+            ],
             "bridge { shapes; }",
         );
         let dts = lower_package_to_dts(&pkg, "facade").expect("render");
@@ -2453,14 +2373,8 @@ v(2) {
     fn opaque_types_are_exact_nominals_and_nested_payloads_stay_hidden() {
         let pkg = build_package(
             &[
-                "module left; \
-                 type { Secret: . { mk; get; }; }; \
-                 pub type { Token: Secret { mk; get; }; }; \
-                 pub fn echo_token(value: Token) -> Token { value } \
-                 pub fn echo_pair(value: Token & .) -> Token & . { value }",
-                "module right; \
-                 pub type { Token: . { mk; get; }; }; \
-                 pub fn echo_token(value: Token) -> Token { value }",
+                "mod left; type { Secret: . { mk; get; }; }; pub type { Token: Secret { mk; get; }; }; pub fn echo_token(value: Token) -> Token { value } pub fn echo_pair(value: Token & .) -> Token & . { value }",
+                "mod right; pub type { Token: . { mk; get; }; }; pub fn echo_token(value: Token) -> Token { value }",
             ],
             "bridge { left; right; }",
         );
@@ -2496,12 +2410,9 @@ v(2) {
     #[test]
     fn hidden_generic_argument_keeps_enclosing_newtype_structural() {
         let pkg = build_package(
-            &["module main; \
-               pub type { Hidden[A]: . { mk; get; }; }; \
-               pub rec type { Root: Hidden[Root] { \
-                 pub mk; pub get; \
-               }; }; \
-               pub fn keep(value: Root) -> Root { value }"],
+            &[
+                "mod main; pub type { Hidden[A]: . { mk; get; }; }; pub rec type { Root: Hidden[Root] { pub mk; pub get; }; }; pub fn keep(value: Root) -> Root { value }",
+            ],
             "bridge { main; }",
         );
         let dts = lower_package_to_dts(&pkg, "facade").expect("render");
@@ -2520,10 +2431,7 @@ v(2) {
 
     #[test]
     fn package_without_host_items_renders_complete_skin() {
-        let pkg = build_package(
-            &["module main; pub fn run() -> . { () }"],
-            "bridge { main; }",
-        );
+        let pkg = build_package(&["mod main; pub fn run() -> . { () }"], "bridge { main; }");
         let dts = lower_package_to_dts(&pkg, "greeter").expect("render");
         assert!(dts.starts_with("// Generated by kio"), "{dts}");
         assert!(dts.contains("export interface GreeterHostTypes"), "{dts}");

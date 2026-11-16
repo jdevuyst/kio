@@ -1,4 +1,4 @@
-package tev;
+pkg tev;
 
 build {
   cache "out/.kio-cache/";

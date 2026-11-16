@@ -1,4 +1,4 @@
-package exec_macro_ambient_type_shadowing;
+pkg exec_macro_ambient_type_shadowing;
 
 build {
   cache "out/.kio-cache/";

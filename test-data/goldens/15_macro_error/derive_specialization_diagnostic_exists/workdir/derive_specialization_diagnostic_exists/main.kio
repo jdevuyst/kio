@@ -1,7 +1,7 @@
-module derive_specialization_diagnostic_exists/main;
+mod derive_specialization_diagnostic_exists/main;
 
-import macros/derive(macro derive);
-import testapi(I32);
+import macros/derive { macro derive }
+import testapi { type I32 }
 
 host fn zero() -> I32;
 

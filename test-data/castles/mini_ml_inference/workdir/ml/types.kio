@@ -1,15 +1,15 @@
-module ml/types;
+mod ml/types;
 
 import list/core as lists;
 import list/list as walk;
 import list_host as number;
-import macros/control(macro if);
-import macros/match(macro match);
-import macros/row_macros(macro select);
-import macros/spine_macros(macro widen_sum);
-import testapi(Bool, I32, String);
+import macros/control { macro if }
+import macros/match { macro match }
+import macros/row_macros { macro select }
+import macros/spine_macros { macro widen_sum }
+import testapi { type Bool; type I32; type String }
 import testapi/fmt as fmt;
-import testapi/iter(loop);
+import testapi/iter { fn loop }
 import testapi/text as text;
 
 pub rec type Ty =

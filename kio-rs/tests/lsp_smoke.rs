@@ -54,10 +54,10 @@ impl TempDir {
     }
 
     fn write_pkg_root_package(&self) {
-        self.write("pkg.kio", "module pkg;\n");
+        self.write("pkg.kio", "mod pkg;\n");
         self.write(
             "pkg.pkg.kio",
-            "package pkg;\n\nbridge {\n  pkg;\n  pkg/**;\n}\n",
+            "pkg pkg;\n\nbridge {\n  pkg;\n  pkg/**;\n}\n",
         );
     }
 }
@@ -391,7 +391,7 @@ fn lsp_initialize_and_shutdown_cleanly() {
 #[test]
 fn lsp_timing_telemetry_emits_request_analysis_and_publish_lines() {
     let dir = TempDir::new("timing");
-    let source = "module pkg/main;\n\npub fn run() -> . { 1 }\n";
+    let source = "mod pkg/main;\n\npub fn run() -> . { 1 }\n";
     let main_path = dir.write("pkg/main.kio", source);
     dir.write_pkg_root_package();
 
@@ -436,7 +436,7 @@ fn lsp_timing_telemetry_emits_request_analysis_and_publish_lines() {
 #[test]
 fn lsp_hover_before_background_analysis_schedules_foreground_work() {
     let dir = TempDir::new("foreground-timing");
-    let source = "module pkg/main;\n\npub fn run() -> . { 1 }\n";
+    let source = "mod pkg/main;\n\npub fn run() -> . { 1 }\n";
     let main_path = dir.write("pkg/main.kio", source);
     dir.write_pkg_root_package();
 
@@ -480,10 +480,7 @@ fn lsp_reports_type_error_for_open_document() {
     // Package with a guaranteed type error: returning an I32
     // literal where the signature says `.`. `kio check` exits 14
     // on this; the LSP must surface the diagnostic.
-    let main_path = dir.write(
-        "pkg/main.kio",
-        "module pkg/main;\n\npub fn run() -> . { 1 }\n",
-    );
+    let main_path = dir.write("pkg/main.kio", "mod pkg/main;\n\npub fn run() -> . { 1 }\n");
     // The package needs a package file so `kio check`'s walker
     // treats `dir` as a package root.
     dir.write_pkg_root_package();
@@ -536,7 +533,7 @@ fn lsp_reports_type_error_for_open_document() {
 fn lsp_nominal_payload_context_clears_a_conflicting_factory_argument() {
     let dir = TempDir::new("nominal-payload-context");
     let source = concat!(
-        "module pkg/main;\n",
+        "mod pkg/main;\n",
         "type { Box[A]: . { pub mk; pub get } }\n",
         "fn empty[A]() -> Box[A] { Box.mk(()) }\n",
         "type { First: Box[. -> .] }\n",
@@ -590,7 +587,7 @@ fn lsp_fills_computed_input_diagnostic_clears_with_an_outside_annotation() {
     let source = include_str!(
         "../../test-data/goldens/14_type_error/fills_computed_input_requires_determined_type/workdir/main.kio"
     )
-    .replace("module main;", "module pkg/main;")
+    .replace("mod main;", "mod pkg/main;")
     .replace("fn run()", "pub fn run()");
     let main_path = dir.write("pkg/main.kio", &source);
     dir.write_pkg_root_package();
@@ -646,19 +643,16 @@ fn lsp_fills_computed_input_diagnostic_clears_with_an_outside_annotation() {
 fn lsp_unrelated_package_keeps_current_diagnostic_and_its_quick_fix() {
     let dir = TempDir::new("diagnostic-package-ownership");
     let source =
-        "module main; import support as host; pub rec(host.drive) fn again(x: .) { again(x) }\n";
+        "mod main; import support as host; pub rec(host.drive) fn again(x: .) { again(x) }\n";
     let call_path = dir.write("call/main.kio", source);
     dir.write(
         "call/support.kio",
-        "module support; host fn drive[S][R](step: S -> (S | R), state: S) -> R;\n",
+        "mod support; host fn drive[S][R](step: S -> (S | R), state: S) -> R;\n",
     );
-    dir.write(
-        "call/call.pkg.kio",
-        "package call; bridge { main; support; }\n",
-    );
-    let other_source = "module main; pub fn main() { () }\n";
+    dir.write("call/call.pkg.kio", "pkg call; bridge { main; support; }\n");
+    let other_source = "mod main; pub fn main() { () }\n";
     let other_path = dir.write("other/main.kio", other_source);
-    dir.write("other/other.pkg.kio", "package other; bridge { main; }\n");
+    dir.write("other/other.pkg.kio", "pkg other; bridge { main; }\n");
     let call_uri = path_to_file_uri(&call_path);
     let other_uri = path_to_file_uri(&other_path);
     let mut lsp = LspProcess::spawn();
@@ -722,7 +716,7 @@ fn lsp_unrelated_package_keeps_current_diagnostic_and_its_quick_fix() {
 fn lsp_publish_diagnostics_groups_multiple_errors_for_one_file() {
     let dir = TempDir::new("multi-diag");
     let source = concat!(
-        "module pkg/main;\n",
+        "mod pkg/main;\n",
         "\n",
         "pub fn a() -> . { 1 }\n",
         "pub fn b() -> . { 2 }\n",
@@ -774,7 +768,7 @@ fn lsp_publish_diagnostics_groups_multiple_errors_for_one_file() {
 fn lsp_diagnostic_suggestion_produces_quickfix_code_action() {
     let dir = TempDir::new("quickfix");
     let source = concat!(
-        "module pkg/main;\n",
+        "mod pkg/main;\n",
         "\n",
         "fn helper() -> . { () }\n",
         "pub fn run() -> . { hepler() }\n",
@@ -884,12 +878,12 @@ fn assert_auto_import_reanalysis(lsp: &mut LspProcess, uri: &str, source: &str, 
 #[test]
 fn lsp_code_action_resolve_auto_import_inserts_use_and_qualifies_call() {
     let dir = TempDir::new("auto-import");
-    let clean = "module pkg/main;\n\npub fn run() -> . { () }\n";
-    let broken = "module pkg/main;\n\npub fn run() -> . { helper() }\n";
+    let clean = "mod pkg/main;\n\npub fn run() -> . { () }\n";
+    let broken = "mod pkg/main;\n\npub fn run() -> . { helper() }\n";
     let main_path = dir.write("pkg/main.kio", clean);
     dir.write(
         "pkg/util.kio",
-        "module pkg/util;\n\npub fn helper() -> . { () }\n",
+        "mod pkg/util;\n\npub fn helper() -> . { () }\n",
     );
     dir.write_pkg_root_package();
 
@@ -957,13 +951,13 @@ fn lsp_code_action_resolve_auto_import_inserts_use_and_qualifies_call() {
 #[test]
 fn lsp_auto_import_finds_public_recursive_type_group_members() {
     let dir = TempDir::new("auto-import-recursive-type-member");
-    let clean = "module pkg/main;\n\npub fn run(value: .) -> . { () }\n";
-    let broken = "module pkg/main;\n\npub fn run(value: Node) -> . { () }\n";
+    let clean = "mod pkg/main;\n\npub fn run(value: .) -> . { () }\n";
+    let broken = "mod pkg/main;\n\npub fn run(value: Node) -> . { () }\n";
     let main_path = dir.write("pkg/main.kio", clean);
     dir.write(
         "pkg/types.kio",
         concat!(
-            "module pkg/types;\n",
+            "mod pkg/types;\n",
             "rec {\n",
             "  pub type Chain = . | Node;\n",
             "  pub type { Node: Chain { pub mk; pub get; }; };\n",
@@ -1015,13 +1009,13 @@ fn lsp_auto_import_finds_public_recursive_type_group_members() {
 fn lsp_code_action_resolve_auto_import_alias_collision_uses_selective_import() {
     let dir = TempDir::new("auto-import-collision");
     let clean = concat!(
-        "module pkg/main;\n",
+        "mod pkg/main;\n",
         "import pkg/other as util;\n",
         "\n",
         "pub fn run() -> . { () }\n",
     );
     let broken = concat!(
-        "module pkg/main;\n",
+        "mod pkg/main;\n",
         "import pkg/other as util;\n",
         "\n",
         "pub fn run() -> . { helper() }\n",
@@ -1029,11 +1023,11 @@ fn lsp_code_action_resolve_auto_import_alias_collision_uses_selective_import() {
     let main_path = dir.write("pkg/main.kio", clean);
     dir.write(
         "pkg/other.kio",
-        "module pkg/other;\n\npub fn noop() -> . { () }\n",
+        "mod pkg/other;\n\npub fn noop() -> . { () }\n",
     );
     dir.write(
         "pkg/util.kio",
-        "module pkg/util;\n\npub fn helper() -> . { () }\n",
+        "mod pkg/util;\n\npub fn helper() -> . { () }\n",
     );
     dir.write_pkg_root_package();
 
@@ -1075,7 +1069,7 @@ fn lsp_code_action_resolve_auto_import_alias_collision_uses_selective_import() {
         edits
             .iter()
             .any(|edit| edit.get("newText").and_then(Value::as_str)
-                == Some("\nimport pkg/util(helper);")),
+                == Some("\nimport pkg/util {fn helper}")),
         "alias collision should insert a selective import: {resolved:?}"
     );
     assert_eq!(
@@ -1092,7 +1086,7 @@ fn lsp_code_action_resolve_auto_import_alias_collision_uses_selective_import() {
 #[test]
 fn lsp_code_action_resolve_add_stub_inserts_eof_stub() {
     let dir = TempDir::new("add-stub");
-    let source = "module pkg/main;\n\npub fn run() -> . { missing(()) }\n";
+    let source = "mod pkg/main;\n\npub fn run() -> . { missing(()) }\n";
     let main_path = dir.write("pkg/main.kio", source);
     dir.write_pkg_root_package();
 
@@ -1160,7 +1154,7 @@ fn lsp_code_action_resolve_add_stub_inserts_eof_stub() {
 fn lsp_inlay_hint_returns_let_type_and_inferred_type_args() {
     let dir = TempDir::new("inlay");
     let source = concat!(
-        "module pkg/main;\n",
+        "mod pkg/main;\n",
         "\n",
         "fn id[A](x: A) -> A { x }\n",
         "\n",
@@ -1204,7 +1198,7 @@ fn lsp_inlay_hint_returns_let_type_and_inferred_type_args() {
 fn lsp_symmetric_common_results_refresh_hover_and_inlay_hints() {
     let dir = TempDir::new("symmetric-common-results");
     let common_source = concat!(
-        "module pkg/common;\n",
+        "mod pkg/common;\n",
         "import __comptime__;\n",
         "\n",
         "pure fn common_impl(\n",
@@ -1235,9 +1229,9 @@ fn lsp_symmetric_common_results_refresh_hover_and_inlay_hints() {
         "};\n",
     );
     let initial_source = concat!(
-        "module pkg/main;\n",
-        "import pkg/common(macro common);\n",
-        "import control(Bool, macro if);\n",
+        "mod pkg/main;\n",
+        "import pkg/common {macro common}\n",
+        "import control {type Bool; macro if}\n",
         "\n",
         "host type I32 role(i32);\n",
         "host type String role(str);\n",
@@ -1268,10 +1262,10 @@ fn lsp_symmetric_common_results_refresh_hover_and_inlay_hints() {
         include_str!("../../test-data/poc/macros/workdir/control.kio"),
     );
     let main_path = dir.write("pkg/main.kio", initial_source);
-    dir.write("pkg.kio", "module pkg;\n");
+    dir.write("pkg.kio", "mod pkg;\n");
     dir.write(
         "pkg.pkg.kio",
-        "package pkg;\n\nbridge {\n  pkg;\n  pkg/**;\n  control;\n}\n",
+        "pkg pkg;\n\nbridge {\n  pkg;\n  pkg/**;\n  control;\n}\n",
     );
 
     let mut lsp = LspProcess::spawn();
@@ -1426,7 +1420,7 @@ fn symmetric_common_result_hints_match(source: &str, result: &Value, ty: &str) -
 fn lsp_signature_help_uses_value_argument_active_parameter() {
     let dir = TempDir::new("signature-help");
     let source = concat!(
-        "module pkg/main;\n",
+        "mod pkg/main;\n",
         "\n",
         "fn choose[A](x: A, y: A) -> A { y }\n",
         "\n",
@@ -1469,7 +1463,7 @@ fn lsp_signature_help_uses_value_argument_active_parameter() {
 fn lsp_signature_help_preserves_shadowed_source_binder_spelling() {
     let dir = TempDir::new("signature-help-shadowed-binder");
     let source = concat!(
-        "module pkg/main;\n",
+        "mod pkg/main;\n",
         "\n",
         "fn choose[A](x: A, f: [A] A -> A) -> A { x }\n",
         "\n",
@@ -1507,7 +1501,7 @@ fn lsp_signature_help_preserves_shadowed_source_binder_spelling() {
 fn lsp_hover_uses_the_source_shadowed_binder_spelling() {
     let dir = TempDir::new("hover-shadowed-binder");
     let source = concat!(
-        "module pkg/main;\n",
+        "mod pkg/main;\n",
         "\n",
         "pub fn inspect[A](outer: A) -> A {\n",
         "  let inner = .[A](value: A) -> A { value };\n",
@@ -1539,7 +1533,7 @@ fn lsp_hover_uses_the_source_shadowed_binder_spelling() {
 fn lsp_hover_retains_the_occurrences_polymorphic_binder_spelling() {
     let dir = TempDir::new("hover-polymorphic-occurrence");
     let source = concat!(
-        "module pkg/main;\n",
+        "mod pkg/main;\n",
         "\n",
         "pub fn witness(first: [A] A -> A, second: [B] B -> B) -> . {\n",
         "  let chosen = second;\n",
@@ -1571,7 +1565,7 @@ fn lsp_composed_types_keep_each_providers_written_binders() {
         dir.write(
             &format!("pkg/{module}.kio"),
             &format!(
-                "module pkg/{module};\n\
+                "mod pkg/{module};\n\
                  pub fn make[{binder}](value: {binder}) -> [{binder}] {binder} -> {binder} {{\n\
                  .[Item](inner: Item) -> Item {{ inner }}\n\
                  }}\n"
@@ -1579,7 +1573,7 @@ fn lsp_composed_types_keep_each_providers_written_binders() {
         );
     }
     let source = concat!(
-        "module pkg/main;\n",
+        "mod pkg/main;\n",
         "import pkg/left as l;\n",
         "import pkg/rite as r;\n",
         "pub fn run() -> . {\n",
@@ -1622,7 +1616,7 @@ fn lsp_composed_types_keep_each_providers_written_binders() {
 fn lsp_unused_warning_publishes_and_offers_underscore_quickfix() {
     let dir = TempDir::new("unused-warning");
     let source = concat!(
-        "module pkg/main;\n",
+        "mod pkg/main;\n",
         "\n",
         "pub fn run() -> . {\n",
         "  let x = ();\n",
@@ -1698,7 +1692,7 @@ fn lsp_source_fix_all_applies_every_coexisting_warning_in_a_recursive_module() {
     // marker/group application-and-retraction tests below.
     let dir = TempDir::new("source-fix-all-warnings");
     let source = concat!(
-        "module pkg/main;\n",
+        "mod pkg/main;\n",
         "\n",
         "rec type { Tree: . | Tree { mk; get; }; };\n",
         "\n",
@@ -1789,7 +1783,7 @@ fn lsp_source_fix_all_applies_every_coexisting_warning_in_a_recursive_module() {
 fn lsp_reports_declared_dependency_that_is_not_materialized() {
     let dir = TempDir::new("missing-dep");
     let source = concat!(
-        "module pkg/main;\n",
+        "mod pkg/main;\n",
         "import foo/lib as lib;\n",
         "\n",
         "pub fn run() -> . { () }\n",
@@ -1797,7 +1791,7 @@ fn lsp_reports_declared_dependency_that_is_not_materialized() {
     let main_path = dir.write("pkg/main.kio", source);
     let dep_path = dir.write(
         "foo.dep.kio",
-        "dependency foo;\nsource { path \"../foo/foo.pkg.kio\"; }\n",
+        "dep foo;\nsource { path \"../foo/foo.pkg.kio\"; }\n",
     );
     dir.write_pkg_root_package();
 
@@ -1844,10 +1838,7 @@ fn lsp_reports_declared_dependency_that_is_not_materialized() {
 fn lsp_reports_parse_error() {
     let dir = TempDir::new("parse-err");
     // Unterminated paren list — a guaranteed parse error.
-    let main_path = dir.write(
-        "pkg/main.kio",
-        "module pkg/main;\n\npub fn run() -> . { (\n",
-    );
+    let main_path = dir.write("pkg/main.kio", "mod pkg/main;\n\npub fn run() -> . { (\n");
     dir.write_pkg_root_package();
 
     let mut lsp = LspProcess::spawn();
@@ -1880,7 +1871,7 @@ fn lsp_publishes_empty_diagnostics_for_clean_package() {
     let dir = TempDir::new("clean");
     let main_path = dir.write(
         "pkg/main.kio",
-        "module pkg/main;\n\npub fn run() -> . { () }\n",
+        "mod pkg/main;\n\npub fn run() -> . { () }\n",
     );
     dir.write_pkg_root_package();
 
@@ -1912,10 +1903,7 @@ fn lsp_publishes_empty_diagnostics_for_clean_package() {
 #[test]
 fn lsp_clears_diagnostics_when_file_becomes_clean() {
     let dir = TempDir::new("clear");
-    let main_path = dir.write(
-        "pkg/main.kio",
-        "module pkg/main;\n\npub fn run() -> . { 1 }\n",
-    );
+    let main_path = dir.write("pkg/main.kio", "mod pkg/main;\n\npub fn run() -> . { 1 }\n");
     dir.write_pkg_root_package();
 
     let mut lsp = LspProcess::spawn();
@@ -1945,7 +1933,7 @@ fn lsp_clears_diagnostics_when_file_becomes_clean() {
     // overlay is authoritative now — disk-only changes don't affect
     // analysis. Send a full-document replacement (range omitted)
     // to keep the test edit-position-independent.
-    let fixed = "module pkg/main;\n\npub fn run() -> . { () }\n";
+    let fixed = "mod pkg/main;\n\npub fn run() -> . { () }\n";
     lsp.send_notification(
         "textDocument/didChange",
         json!({
@@ -1988,7 +1976,7 @@ fn lsp_didchange_incremental_edit_publishes_fresh_diagnostics() {
     let dir = TempDir::new("didchange-incr");
     let main_path = dir.write(
         "pkg/main.kio",
-        "module pkg/main;\n\npub fn run() -> . { () }\n",
+        "mod pkg/main;\n\npub fn run() -> . { () }\n",
     );
     dir.write_pkg_root_package();
 
@@ -2048,7 +2036,7 @@ fn lsp_didchange_overlay_overrides_disk() {
     // The new publish should still carry the diagnostic — the
     // overlay overrides disk.
     let dir = TempDir::new("overlay-overrides");
-    let broken = "module pkg/main;\n\npub fn run() -> . { 1 }\n";
+    let broken = "mod pkg/main;\n\npub fn run() -> . { 1 }\n";
     let main_path = dir.write("pkg/main.kio", broken);
     dir.write_pkg_root_package();
 
@@ -2080,7 +2068,7 @@ fn lsp_didchange_overlay_overrides_disk() {
 
     // Mutate the disk to a clean version. The LSP doesn't know about
     // this change; the overlay still says "broken".
-    let clean = "module pkg/main;\n\npub fn run() -> . { () }\n";
+    let clean = "mod pkg/main;\n\npub fn run() -> . { () }\n";
     std::fs::write(&main_path, clean).unwrap();
 
     // Send a didChange that *re-states* the broken text in full
@@ -2116,10 +2104,7 @@ fn lsp_publish_diagnostics_carries_overlay_version() {
     // must carry `version: 2` to let the client correlate the
     // diagnostic with its local state.
     let dir = TempDir::new("version-tag");
-    let main_path = dir.write(
-        "pkg/main.kio",
-        "module pkg/main;\n\npub fn run() -> . { 1 }\n",
-    );
+    let main_path = dir.write("pkg/main.kio", "mod pkg/main;\n\npub fn run() -> . { 1 }\n");
     dir.write_pkg_root_package();
 
     let mut lsp = LspProcess::spawn();
@@ -2189,7 +2174,7 @@ fn lsp_didchange_burst_coalesces_to_single_publish() {
     // a diagnostic — keeps the publish from being skipped by the
     // "clean → clean, nothing to clear" short-circuit.
     let dir = TempDir::new("debounce");
-    let broken = "module pkg/main;\n\npub fn run() -> . { 1 }\n";
+    let broken = "mod pkg/main;\n\npub fn run() -> . { 1 }\n";
     let main_path = dir.write("pkg/main.kio", broken);
     dir.write_pkg_root_package();
 
@@ -2505,12 +2490,12 @@ fn lsp_hover_returns_type_on_expression() {
     // containing `.`.
     //
     // Source layout:
-    //   line 0: "module pkg/main;\n"   (16 chars + \n)
+    //   line 0: "mod pkg/main;\n"   (16 chars + \n)
     //   line 1: "\n"
     //   line 2: "pub fn run() -> . { () }\n"
     //   Inner `()` starts at col 21 on line 2.
     let dir = TempDir::new("hover");
-    let source = "module pkg/main;\n\npub fn run() -> . { () }\n";
+    let source = "mod pkg/main;\n\npub fn run() -> . { () }\n";
     let main_path = dir.write("pkg/main.kio", source);
     dir.write_pkg_root_package();
 
@@ -2539,7 +2524,7 @@ fn lsp_hover_returns_type_on_expression() {
 fn lsp_recursive_documentation_group_hover_and_completion_preserve_doc_ownership() {
     let dir = TempDir::new("recursive-group-documentation");
     dir.write_pkg_root_package();
-    let source = "module pkg/main;\n\n/// Group prose.\nrec {\n  /// Alias prose.\n  type Chain = Node;\n  /// Nominal prose.\n  type { Node: . | Chain { mk; get; }; };\n}\nfn use_site(value: Node) -> . { () }\n";
+    let source = "mod pkg/main;\n\n/// Group prose.\nrec {\n  /// Alias prose.\n  type Chain = Node;\n  /// Nominal prose.\n  type { Node: . | Chain { mk; get; }; };\n}\nfn use_site(value: Node) -> . { () }\n";
     let path = dir.write("pkg/main.kio", source);
     let mut lsp = LspProcess::spawn();
     lsp.initialize(&path_to_file_uri(dir.path()));
@@ -2585,7 +2570,7 @@ fn lsp_recursive_documentation_group_hover_and_completion_preserve_doc_ownership
 fn lsp_recursive_documentation_outer_group_hover_is_not_a_member() {
     let dir = TempDir::new("recursive-group-outer-documentation");
     dir.write_pkg_root_package();
-    let source = "module pkg/main;\n/// Group prose.\nrec {\n  /// Alias prose.\n  type Chain = Node;\n  /// Nominal prose.\n  type { Node: . | Chain { mk; get; }; };\n}\n";
+    let source = "mod pkg/main;\n/// Group prose.\nrec {\n  /// Alias prose.\n  type Chain = Node;\n  /// Nominal prose.\n  type { Node: . | Chain { mk; get; }; };\n}\n";
     let path = dir.write("pkg/main.kio", source);
     let mut lsp = LspProcess::spawn();
     lsp.initialize(&path_to_file_uri(dir.path()));
@@ -2613,7 +2598,7 @@ fn lsp_recursive_documentation_outer_group_hover_is_not_a_member() {
 fn lsp_recursive_documentation_labels_preserve_their_written_owner() {
     let dir = TempDir::new("recursive-label-documentation");
     dir.write_pkg_root_package();
-    let source = "module pkg/main;\nrec {\n  type Tree = Twig;\n  /// Twig prose.\n  type { Twig: . | Tree; };\n}\n/// List prose.\nrec type { List: . | List; };\nfn use_site(value: Twig) -> . { () }\n";
+    let source = "mod pkg/main;\nrec {\n  type Tree = Twig;\n  /// Twig prose.\n  type { Twig: . | Tree; };\n}\n/// List prose.\nrec type { List: . | List; };\nfn use_site(value: Twig) -> . { () }\n";
     let path = dir.write("pkg/main.kio", source);
     let mut lsp = LspProcess::spawn();
     lsp.initialize(&path_to_file_uri(dir.path()));
@@ -2659,7 +2644,7 @@ fn lsp_recursive_documentation_labels_preserve_their_written_owner() {
 fn lsp_hover_returns_type_on_elaborator_implementation_path() {
     let dir = TempDir::new("hover-elaborator-implementation");
     let source = concat!(
-        "module pkg/main;\n",
+        "mod pkg/main;\n",
         "\n",
         "import pkg/provider as helper;\n",
         "\n",
@@ -2671,7 +2656,7 @@ fn lsp_hover_returns_type_on_elaborator_implementation_path() {
     dir.write(
         "pkg/provider.kio",
         concat!(
-            "module pkg/provider;\n",
+            "mod pkg/provider;\n",
             "\n",
             "import __comptime__;\n",
             "\n",
@@ -2720,13 +2705,14 @@ fn lsp_hover_returns_type_on_elaborator_implementation_path() {
 fn lsp_callable_declaration_targets_use_exact_semantic_leaf_positions() {
     let dir = TempDir::new("callable-declaration-target-positions");
     let source = concat!(
-        "module pkg/main;\n",
+        "mod pkg/main;\n",
         "\n",
         "import pkg/provider as helper;\n",
+        "import pkg/provider {macro echo}\n",
         "\n",
         "op _ + _ { impl helper.combine; };\n",
-        "op macro # ._ { impl helper.echo; };\n",
-        "varop [* *] {\n",
+        "op_macro # ._ { impl echo; };\n",
+        "op_var [* *] {\n",
         "  foldr helper.push helper.empty;\n",
         "  finalize helper.finish;\n",
         "};\n",
@@ -2738,7 +2724,7 @@ fn lsp_callable_declaration_targets_use_exact_semantic_leaf_positions() {
     );
     let main_path = dir.write("pkg/main.kio", source);
     let provider = concat!(
-        "module pkg/provider;\n",
+        "mod pkg/provider;\n",
         "\n",
         "import __comptime__;\n",
         "\n",
@@ -2762,9 +2748,16 @@ fn lsp_callable_declaration_targets_use_exact_semantic_leaf_positions() {
     open_and_wait_for_analysis(&mut lsp, &uri, source);
 
     for target in ["combine", "empty", "push", "finish", "echo"] {
-        let written = format!("helper.{target}");
-        let path_start = source.find(&written).expect("declaration target");
-        let leaf_start = path_start + "helper.".len();
+        let written = if target == "echo" {
+            "echo".to_owned()
+        } else {
+            format!("helper.{target}")
+        };
+        let leaf_start = if target == "echo" {
+            source.find("impl echo").expect("macro operator target") + "impl ".len()
+        } else {
+            source.find(&written).expect("declaration target") + "helper.".len()
+        };
         let position = source_position(source, leaf_start + 1);
         let hover = wait_for_hover(&mut lsp, &uri, position.0, position.1);
         assert!(!hover.is_null(), "`{written}` must have a hover type");
@@ -2887,7 +2880,7 @@ fn lsp_callable_declaration_targets_use_exact_semantic_leaf_positions() {
 fn lsp_identity_alias_callable_paths_keep_head_and_member_identities_separate() {
     let dir = TempDir::new("identity-alias-callable-dual-identity");
     let origin = concat!(
-        "module pkg/origin;\n",
+        "mod pkg/origin;\n",
         "\n",
         "pub type Alias = .;\n",
         "pub type { Terminal: . {\n",
@@ -2896,7 +2889,7 @@ fn lsp_identity_alias_callable_paths_keep_head_and_member_identities_separate() 
         "}; };\n",
     );
     let relay = concat!(
-        "module pkg/relay;\n",
+        "mod pkg/relay;\n",
         "\n",
         "import pkg/origin as source;\n",
         "\n",
@@ -2904,7 +2897,7 @@ fn lsp_identity_alias_callable_paths_keep_head_and_member_identities_separate() 
         "pub fn mk() -> . { () }\n",
     );
     let source = concat!(
-        "module pkg/main;\n",
+        "mod pkg/main;\n",
         "\n",
         "import pkg/relay as forwarded;\n",
         "\n",
@@ -3090,7 +3083,7 @@ fn lsp_identity_alias_callable_paths_keep_head_and_member_identities_separate() 
 fn lsp_recursive_newtype_callable_path_uses_packed_declaration_identity() {
     let dir = TempDir::new("recursive-newtype-callable-definition");
     let source = concat!(
-        "module pkg/main;\n",
+        "mod pkg/main;\n",
         "\n",
         "rec {\n",
         "  type { A: (. | B) { mk; get; }; };\n",
@@ -3129,12 +3122,9 @@ fn lsp_recursive_newtype_callable_path_uses_packed_declaration_identity() {
 #[test]
 fn lsp_hover_uses_focused_module_when_sibling_body_fails() {
     let dir = TempDir::new("hover-focused");
-    let source = "module pkg/main;\n\npub fn run() -> . { () }\n";
+    let source = "mod pkg/main;\n\npub fn run() -> . { () }\n";
     let main_path = dir.write("pkg/main.kio", source);
-    dir.write(
-        "pkg/bad.kio",
-        "module pkg/bad;\n\npub fn bad() -> . { 1 }\n",
-    );
+    dir.write("pkg/bad.kio", "mod pkg/bad;\n\npub fn bad() -> . { 1 }\n");
     dir.write_pkg_root_package();
 
     let mut lsp = LspProcess::spawn();
@@ -3179,7 +3169,7 @@ fn lsp_hover_returns_null_for_whitespace() {
     // Hover on the blank line — no typeable node, must return null.
     //   line 1: "\n"  (blank between module decl and fn)
     let dir = TempDir::new("hover-ws");
-    let source = "module pkg/main;\n\npub fn run() -> . { () }\n";
+    let source = "mod pkg/main;\n\npub fn run() -> . { () }\n";
     let main_path = dir.write("pkg/main.kio", source);
     dir.write_pkg_root_package();
 
@@ -3204,7 +3194,7 @@ fn lsp_definition_returns_null_or_location() {
     // The result must be either null or a valid Location / array —
     // never an error response.
     let dir = TempDir::new("def");
-    let source = "module pkg/main;\n\npub fn run() -> . { () }\n";
+    let source = "mod pkg/main;\n\npub fn run() -> . { () }\n";
     let main_path = dir.write("pkg/main.kio", source);
     dir.write_pkg_root_package();
 
@@ -3242,7 +3232,7 @@ fn lsp_references_returns_null_or_list() {
     // Send a textDocument/references request and verify the server
     // responds with either null (no binder at cursor) or a list.
     let dir = TempDir::new("refs");
-    let source = "module pkg/main;\n\npub fn run() -> . { () }\n";
+    let source = "mod pkg/main;\n\npub fn run() -> . { () }\n";
     let main_path = dir.write("pkg/main.kio", source);
     dir.write_pkg_root_package();
 
@@ -3280,7 +3270,7 @@ fn lsp_document_highlight_returns_occurrences_in_current_file() {
     // the body call. documentHighlight on the declaration name returns
     // both occurrences, each with kind = Text (1).
     let dir = TempDir::new("highlight");
-    let source = "module pkg/main;\n\npub fn run() -> . { run() }\n";
+    let source = "mod pkg/main;\n\npub fn run() -> . { run() }\n";
     let main_path = dir.write("pkg/main.kio", source);
     dir.write_pkg_root_package();
 
@@ -3352,13 +3342,13 @@ fn definition_uri(result: &Value) -> String {
 fn lsp_definition_resolves_local_to_let_declaration() {
     // Go-to-definition on a use of a `let`-bound local resolves to the
     // `let` declaration on a different line.
-    //   line 0: "module pkg/main;"
+    //   line 0: "mod pkg/main;"
     //   line 1: "pub fn run() -> . {"
     //   line 2: "  let payload = ();"
     //   line 3: "  payload"
     //   line 4: "}"
     let dir = TempDir::new("def-local");
-    let source = "module pkg/main;\npub fn run() -> . {\n  let payload = ();\n  payload\n}\n";
+    let source = "mod pkg/main;\npub fn run() -> . {\n  let payload = ();\n  payload\n}\n";
     let main_path = dir.write("pkg/main.kio", source);
     dir.write_pkg_root_package();
 
@@ -3386,12 +3376,12 @@ fn lsp_definition_resolves_local_to_let_declaration() {
 fn lsp_definition_resolves_fn_param_to_declaration() {
     // Go-to-definition on a use of a `fn` value parameter resolves to
     // the parameter binder in the signature.
-    //   line 0: "module pkg/main;"
+    //   line 0: "mod pkg/main;"
     //   line 1: "pub fn echo(x: .) -> . {"
     //   line 2: "  x"
     //   line 3: "}"
     let dir = TempDir::new("def-param");
-    let source = "module pkg/main;\npub fn echo(x: .) -> . {\n  x\n}\n";
+    let source = "mod pkg/main;\npub fn echo(x: .) -> . {\n  x\n}\n";
     let main_path = dir.write("pkg/main.kio", source);
     dir.write_pkg_root_package();
 
@@ -3423,7 +3413,7 @@ fn lsp_definition_resolves_type_param_to_binder() {
     // The `[A]` binder is on line 1; the `A` use in `x: A` is also on
     // line 1 but the binder's own span is what we resolve to.
     let dir = TempDir::new("def-tyvar");
-    let source = "module pkg/main;\npub fn id[A](x: A) -> A {\n  x\n}\n";
+    let source = "mod pkg/main;\npub fn id[A](x: A) -> A {\n  x\n}\n";
     let main_path = dir.write("pkg/main.kio", source);
     dir.write_pkg_root_package();
 
@@ -3455,8 +3445,8 @@ fn lsp_definition_does_not_cross_module_for_same_named_local() {
     // `pkg/main`'s use must resolve within `pkg/main`, never hop to the
     // same-named local in `pkg/other` — locals are module-scoped.
     let dir = TempDir::new("def-xmod");
-    let main_src = "module pkg/main;\npub fn run() -> . {\n  let payload = ();\n  payload\n}\n";
-    let other_src = "module pkg/other;\npub fn go() -> . {\n  let payload = ();\n  payload\n}\n";
+    let main_src = "mod pkg/main;\npub fn run() -> . {\n  let payload = ();\n  payload\n}\n";
+    let other_src = "mod pkg/other;\npub fn go() -> . {\n  let payload = ();\n  payload\n}\n";
     let main_path = dir.write("pkg/main.kio", main_src);
     dir.write("pkg/other.kio", other_src);
     dir.write_pkg_root_package();
@@ -3525,7 +3515,7 @@ fn lsp_document_symbol_returns_symbols_for_multi_item_file() {
     // documentSymbol returns one entry per item in source order.
     let dir = TempDir::new("sym");
     let source = concat!(
-        "module pkg/main;\n",
+        "mod pkg/main;\n",
         "\n",
         "pub fn run() -> . { () }\n",
         "\n",
@@ -3590,7 +3580,7 @@ fn lsp_document_symbol_stale_snapshot_serves_from_overlay() {
     // correct result derived from the overlay text (not from a
     // possibly-absent analysis snapshot).
     let dir = TempDir::new("sym-stale");
-    let source = "module pkg/main;\n\npub fn run() -> . { () }\n";
+    let source = "mod pkg/main;\n\npub fn run() -> . { () }\n";
     let main_path = dir.write("pkg/main.kio", source);
     dir.write_pkg_root_package();
 
@@ -3633,7 +3623,7 @@ fn lsp_document_symbol_stale_snapshot_serves_from_overlay() {
 #[test]
 fn lsp_document_symbol_uses_lazy_parse_when_body_is_broken() {
     let dir = TempDir::new("sym-lazy-body");
-    let source = "module pkg/main;\n\npub fn run() -> . { let x = ; () }\n";
+    let source = "mod pkg/main;\n\npub fn run() -> . { let x = ; () }\n";
     let main_path = dir.write("pkg/main.kio", source);
     dir.write_pkg_root_package();
 
@@ -3674,9 +3664,9 @@ fn lsp_document_symbol_uses_lazy_parse_when_body_is_broken() {
 #[test]
 fn lsp_document_symbol_selects_scoped_rec_member_name_from_lazy_overlay() {
     let dir = TempDir::new("sym-lazy-scoped-rec");
-    let disk_source = "module pkg/main;\n\nfn disk_only() -> . { () }\n";
+    let disk_source = "mod pkg/main;\n\nfn disk_only() -> . { () }\n";
     let overlay_source = concat!(
-        "module pkg/main;\n",
+        "mod pkg/main;\n",
         "rec(loop) {\n",
         "  pub(pkg) fn pkg(value: .) -> . { let broken = ; recur pkg(value) }\n",
         "}\n",
@@ -3726,7 +3716,7 @@ fn lsp_folding_range_returns_ranges_for_multi_brace_file() {
     // two ranges.
     let dir = TempDir::new("fold");
     let source = concat!(
-        "module pkg/main;\n",
+        "mod pkg/main;\n",
         "\n",
         "pub fn run(x: Bool) -> . {\n",
         "    let r = match x {\n",
@@ -3784,7 +3774,7 @@ fn lsp_folding_range_on_single_line_body_returns_empty() {
     // A file where every brace group is on one line. The server must
     // return an empty array (no collapse points).
     let dir = TempDir::new("fold-empty");
-    let source = "module pkg/main;\n\npub fn run() -> . { () }\n";
+    let source = "mod pkg/main;\n\npub fn run() -> . { () }\n";
     let main_path = dir.write("pkg/main.kio", source);
     dir.write_pkg_root_package();
 
@@ -3871,7 +3861,7 @@ fn lsp_formatting_non_canonical_returns_single_edit() {
     // replacement edit whose new_text equals `kio fmt`'s output.
     let dir = TempDir::new("fmt-noncanonical");
     // Non-canonical: no blank line between module header and fn.
-    let non_canonical = "module pkg/main;\nfn run() -> . { () }\n";
+    let non_canonical = "mod pkg/main;\nfn run() -> . { () }\n";
     let main_path = dir.write("pkg/main.kio", non_canonical);
     dir.write_pkg_root_package();
 
@@ -3946,7 +3936,7 @@ fn lsp_formatting_already_canonical_returns_empty() {
     let dir = TempDir::new("fmt-canonical");
     // Canonical form: blank line between module header and fn, fn body
     // on its own line if it fits inline, trailing newline.
-    let canonical = "module pkg/main;\n\nfn run() { () }\n";
+    let canonical = "mod pkg/main;\n\nfn run() { () }\n";
     let main_path = dir.write("pkg/main.kio", canonical);
     dir.write_pkg_root_package();
 
@@ -3986,7 +3976,7 @@ fn lsp_formatting_parse_broken_returns_empty() {
     // A file with a parse error. The server must return an empty edit
     // list — no JSON-RPC error, no MethodNotFound, just silence.
     let dir = TempDir::new("fmt-broken");
-    let broken = "module pkg/main;\n\nfn run() -> . { (\n";
+    let broken = "mod pkg/main;\n\nfn run() -> . { (\n";
     let main_path = dir.write("pkg/main.kio", broken);
     dir.write_pkg_root_package();
 
@@ -4145,7 +4135,7 @@ fn lsp_capabilities_advertise_completion_provider() {
 #[test]
 fn lsp_numbered_binding_completion_retains_only_the_nearest_family() {
     let dir = TempDir::new("completion-numbered");
-    let source = "module pkg/main;\nfn run() -> . { let .x. = ((), (), ()); let keep = x3; let .x. = (); x1 }\n";
+    let source = "mod pkg/main;\nfn run() -> . { let .x. = ((), (), ()); let keep = x3; let .x. = (); x1 }\n";
     let main_path = dir.write("pkg/main.kio", source);
     dir.write_pkg_root_package();
     let mut lsp = LspProcess::spawn();
@@ -4191,7 +4181,7 @@ fn lsp_numbered_binding_completion_retains_only_the_nearest_family() {
 fn lsp_completion_exact_scope_and_shadow_identity() {
     let dir = TempDir::new("completion-exact-scope");
     let source = concat!(
-        "module pkg/main;\n",
+        "mod pkg/main;\n",
         "/// Documentation belonging only to the function.\n",
         "fn value() -> . { () }\n",
         "fn consumer(value: .) -> . { value }\n",
@@ -4226,7 +4216,7 @@ fn lsp_completion_returns_module_level_fn_names() {
     // exclusion of a nonrecursive function from its own body.
     let dir = TempDir::new("completion-fns");
     let source = concat!(
-        "module pkg/main;\n",
+        "mod pkg/main;\n",
         "\n",
         "pub fn run() -> . { () }\n",
         "fn helper() -> . { () }\n",
@@ -4272,7 +4262,7 @@ fn lsp_completion_inside_nested_let() {
     // continuation must list both `x` (fn param) and `y` (let-bound).
     let dir = TempDir::new("completion-let");
     let source = concat!(
-        "module pkg/main;\n",
+        "mod pkg/main;\n",
         "\n",
         "fn f(x: .) -> . {\n",
         "    let y = x;\n",
@@ -4320,7 +4310,7 @@ fn lsp_completion_shadowing_deduplication() {
     // shadows the parameter `x`. The completion list must contain
     // exactly one `x` entry.
     let dir = TempDir::new("completion-shadow");
-    let source = "module pkg/main;\n\nfn f(x: .) -> . { let x = (); x }\n";
+    let source = "mod pkg/main;\n\nfn f(x: .) -> . { let x = (); x }\n";
     let main_path = dir.write("pkg/main.kio", source);
     dir.write_pkg_root_package();
 
@@ -4358,8 +4348,8 @@ fn lsp_completion_use_import_visible() {
     // even before its provider can be resolved.
     let dir = TempDir::new("completion-use");
     let source = concat!(
-        "module pkg/main;\n",
-        "import pkg/helper(h);\n",
+        "mod pkg/main;\n",
+        "import pkg/helper {fn h}\n",
         "\n",
         "fn f() -> . { () }\n",
     );
@@ -4375,7 +4365,7 @@ fn lsp_completion_use_import_visible() {
     let (line, character) = source_position(source, offset);
     let result = send_completion(&mut lsp, &uri, line, character);
 
-    // The file has an `import pkg/helper(h);` that won't typecheck
+    // The file has an `import pkg/helper {fn h}` that won't typecheck
     // (no dep), but the parser succeeds, so completion should work.
     assert!(
         !result.is_null(),
@@ -4409,7 +4399,7 @@ fn lsp_completion_at_top_level_no_fn_locals() {
     // Completion at the module header line must not include fn-local
     // names (parameters, let-bound variables).
     let dir = TempDir::new("completion-toplevel");
-    let source = "module pkg/main;\n\nfn f(x: .) -> . { x }\n";
+    let source = "mod pkg/main;\n\nfn f(x: .) -> . { x }\n";
     let main_path = dir.write("pkg/main.kio", source);
     dir.write_pkg_root_package();
 
@@ -4445,7 +4435,7 @@ fn lsp_completion_at_top_level_no_fn_locals() {
 fn lsp_type_completion_obeys_explicit_recursive_scopes_and_source_order() {
     let dir = TempDir::new("completion-recursive-type-scopes");
     let source = concat!(
-        "module pkg/main;\n",
+        "mod pkg/main;\n",
         "\n",
         "type Earlier = .;\n",
         "type { Unmarked: Later { mk; get; }; };\n",
@@ -4531,7 +4521,7 @@ fn lsp_type_completion_recovery_uses_declarations_not_capitalized_text() {
         (
             "lazy-body",
             concat!(
-                "module pkg/main;\n",
+                "mod pkg/main;\n",
                 "type Earlier = .;\n",
                 "fn broken() -> . { let .(value: ); \"StringLeak\" } // CommentLeak\n",
                 "type Later = .;\n",
@@ -4542,7 +4532,7 @@ fn lsp_type_completion_recovery_uses_declarations_not_capitalized_text() {
         (
             "incomplete-group",
             concat!(
-                "module pkg/main;\n",
+                "mod pkg/main;\n",
                 "type Earlier = .;\n",
                 "rec {\n",
                 "  type A = B;\n",
@@ -4598,23 +4588,20 @@ fn lsp_incomplete_generic_recursive_labels_complete_their_generated_heads() {
     for (case, source, expected, excluded) in [
         (
             "anonymous",
-            "module pkg/main;\nimport pkg/dep(Imported);\nrec type { List[A] <U>: Pair[A][Bogus[B]: ",
+            "mod pkg/main;\nimport pkg/dep {type Imported}\nrec type { List[A] <U>: Pair[A][Bogus[B]: ",
             vec!["A", "U", "List", "Imported"],
             vec!["B", "Bogus"],
         ),
         (
             "named",
-            "module pkg/main;\nimport pkg/dep(Imported);\nrec type Tree[A] = { List[B] <U>: Pair[B][Bogus[C]: ",
+            "mod pkg/main;\nimport pkg/dep {type Imported}\nrec type Tree[A] = { List[B] <U>: Pair[B][Bogus[C]: ",
             vec!["B", "U", "Tree", "List", "Imported"],
             vec!["A", "C", "Bogus"],
         ),
     ] {
         let dir = TempDir::new(&format!("completion-incomplete-generic-rec-labels-{case}"));
         let main_path = dir.write("pkg/main.kio", source);
-        dir.write(
-            "pkg/dep.kio",
-            "module pkg/dep;\npub type Imported[A] = A;\n",
-        );
+        dir.write("pkg/dep.kio", "mod pkg/dep;\npub type Imported[A] = A;\n");
         dir.write_pkg_root_package();
         let mut lsp = LspProcess::spawn();
         lsp.initialize(&path_to_file_uri(dir.path()));
@@ -4656,29 +4643,26 @@ fn lsp_incomplete_unmarked_type_declarations_keep_only_active_binders() {
     for (case, source, expected, excluded) in [
         (
             "newtype",
-            "module pkg/main;\nimport pkg/dep(Imported);\ntype Earlier = .;\ntype { Box[A] <E>: ",
+            "mod pkg/main;\nimport pkg/dep {type Imported}\ntype Earlier = .;\ntype { Box[A] <E>: ",
             vec!["A", "E", "Earlier", "Imported"],
             vec!["Box"],
         ),
         (
             "labels",
-            "module pkg/main;\nimport pkg/dep(Imported);\ntype Tree[A] = { First[X]: .; List[B] <E>: ",
+            "mod pkg/main;\nimport pkg/dep {type Imported}\ntype Tree[A] = { First[X]: .; List[B] <E>: ",
             vec!["B", "E", "First", "Imported"],
             vec!["A", "Tree", "List", "X"],
         ),
         (
             "alias-rhs",
-            "module pkg/main;\nimport pkg/dep(Imported);\ntype Tree[A] = { First: .; } | A",
+            "mod pkg/main;\nimport pkg/dep {type Imported}\ntype Tree[A] = { First: .; } | A",
             vec!["A", "Imported"],
             vec!["Tree"],
         ),
     ] {
         let dir = TempDir::new(&format!("completion-incomplete-unmarked-{case}"));
         let main_path = dir.write("pkg/main.kio", source);
-        dir.write(
-            "pkg/dep.kio",
-            "module pkg/dep;\npub type Imported[A] = A;\n",
-        );
+        dir.write("pkg/dep.kio", "mod pkg/dep;\npub type Imported[A] = A;\n");
         dir.write_pkg_root_package();
         let mut lsp = LspProcess::spawn();
         lsp.initialize(&path_to_file_uri(dir.path()));
@@ -4726,7 +4710,7 @@ fn lsp_valid_recursive_groups_retract_every_diagnostic_after_reanalysis() {
         (
             "mutual-newtypes",
             concat!(
-                "module pkg/main;\n",
+                "mod pkg/main;\n",
                 "rec {\n",
                 "  type { A: B { mk; get; }; };\n",
                 "  type { B: A { mk; get; }; };\n",
@@ -4736,14 +4720,14 @@ fn lsp_valid_recursive_groups_retract_every_diagnostic_after_reanalysis() {
         (
             "multiple-label-knots",
             concat!(
-                "module pkg/main;\n",
+                "mod pkg/main;\n",
                 "rec type Pair = { First: . | First; Second: . | Second; };\n",
             ),
         ),
         (
             "mutual-named-labels",
             concat!(
-                "module pkg/main;\n",
+                "mod pkg/main;\n",
                 "rec {\n",
                 "  type A = { To_b: B; };\n",
                 "  type B = { To_a: A; };\n",
@@ -4796,7 +4780,7 @@ fn lsp_valid_recursive_groups_retract_every_diagnostic_after_reanalysis() {
 fn lsp_mutual_type_references_navigate_to_exact_group_member_heads() {
     let dir = TempDir::new("definition-recursive-type-group-members");
     let source = concat!(
-        "module pkg/main;\n",
+        "mod pkg/main;\n",
         "\n",
         "rec {\n",
         "  type Forest = Tree;\n",
@@ -4929,20 +4913,20 @@ fn lsp_mutual_type_references_navigate_to_exact_group_member_heads() {
 fn lsp_identity_alias_members_keep_alias_heads_and_terminal_member_identity() {
     let dir = TempDir::new("identity-alias-newtype-member-navigation");
     let origin_source = concat!(
-        "module pkg/origin;\n",
+        "mod pkg/origin;\n",
         "pub type { Tag: . { pub mk; pub get; }; };\n",
         "fn local() -> Tag { Tag.mk(()) }\n",
         "fn inspect(value: Tag) -> . { Tag.get(value) }\n",
     );
     let relay_source = concat!(
-        "module pkg/relay;\n",
+        "mod pkg/relay;\n",
         "import pkg/origin as source;\n",
         "pub type Tag = source.Tag;\n",
         "fn mk() -> . { () }\n",
         "fn get(value: .) -> . { value }\n",
     );
     let consumer_source = concat!(
-        "module pkg/consumer;\n",
+        "mod pkg/consumer;\n",
         "import pkg/relay as forwarded;\n",
         "fn first() -> forwarded.Tag { forwarded.Tag.mk(()) }\n",
         "fn second(value: forwarded.Tag) -> . { forwarded.Tag.get(value) }\n",
@@ -5157,7 +5141,7 @@ fn lsp_identity_alias_members_keep_alias_heads_and_terminal_member_identity() {
 fn lsp_type_binders_shadow_same_named_recursive_group_heads() {
     let dir = TempDir::new("recursive-type-binder-shadowing");
     let source = concat!(
-        "module pkg/main;\n",
+        "mod pkg/main;\n",
         "\n",
         "rec {\n",
         "  type Universal = Ubox[.];\n",
@@ -5220,7 +5204,7 @@ fn lsp_type_binders_shadow_same_named_recursive_group_heads() {
 fn lsp_recursive_singleton_binders_shadow_outer_type_heads() {
     let dir = TempDir::new("recursive-singleton-binder-shadowing");
     let source = concat!(
-        "module pkg/main;\n",
+        "mod pkg/main;\n",
         "type Universal = .;\n",
         "type Existential = .;\n",
         "rec type { Ubox[Universal]: . | Ubox[Universal] { mk; get; }; };\n",
@@ -5274,7 +5258,7 @@ fn lsp_recursive_singleton_binders_shadow_outer_type_heads() {
 fn lsp_recursive_type_identity_does_not_cross_same_leaf_module_names() {
     let dir = TempDir::new("recursive-type-same-leaf-modules");
     let main_source = concat!(
-        "module pkg/main;\n",
+        "mod pkg/main;\n",
         "\n",
         "rec {\n",
         "  type Node = Edge;\n",
@@ -5282,7 +5266,7 @@ fn lsp_recursive_type_identity_does_not_cross_same_leaf_module_names() {
         "}\n",
     );
     let other_source = concat!(
-        "module pkg/other;\n",
+        "mod pkg/other;\n",
         "\n",
         "rec {\n",
         "  type Node = Edge;\n",
@@ -5344,7 +5328,7 @@ fn lsp_recursive_type_identity_does_not_cross_same_leaf_module_names() {
 fn lsp_later_type_diagnostic_does_not_create_navigation_authority() {
     let dir = TempDir::new("later-type-is-diagnostic-only");
     let source = concat!(
-        "module pkg/main;\n",
+        "mod pkg/main;\n",
         "\n",
         "type Before = Later;\n",
         "type Later = .;\n",
@@ -5412,7 +5396,7 @@ fn lsp_alias_only_recursive_components_publish_totality_diagnostics() {
         (
             "mutual-aliases",
             concat!(
-                "module pkg/main;\n",
+                "mod pkg/main;\n",
                 "rec {\n",
                 "  type A = B;\n",
                 "  type B = A;\n",
@@ -5421,7 +5405,7 @@ fn lsp_alias_only_recursive_components_publish_totality_diagnostics() {
         ),
         (
             "self-alias",
-            concat!("module pkg/main;\n", "type Loop = Loop;\n"),
+            concat!("mod pkg/main;\n", "type Loop = Loop;\n"),
         ),
     ] {
         let dir = TempDir::new(&format!("alias-only-recursive-component-{case}"));
@@ -5472,12 +5456,12 @@ fn lsp_forbidden_recursive_type_spellings_offer_no_unsound_rewrite() {
     for (case, source, expected_message) in [
         (
             "rec-type",
-            "module pkg/main;\n\nrec type Loop = Loop;\n",
+            "mod pkg/main;\n\nrec type Loop = Loop;\n",
             "a recursive type declaration must introduce a nominal boundary",
         ),
         (
             "function-in-type-group",
-            "module pkg/main;\n\nrec { fn loop() -> . { () } }\n",
+            "mod pkg/main;\n\nrec { fn loop() -> . { () } }\n",
             "a bare `rec { ... }` type group admits only type declarations",
         ),
     ] {
@@ -5532,7 +5516,7 @@ fn lsp_type_group_visibility_diagnostic_highlights_only_the_modifier() {
     ] {
         let dir = TempDir::new(&format!("recursive-type-group-leading-visibility-{case}"));
         let source = format!(
-            "module pkg/main;\n\n{modifier} rec {{\n  // alias stays attached\n  type A = B;\n  /// nominal docs stay attached\n  type {{ B: A {{ mk; get; }}; }}\n  // trailing group comment survives\n}}\n"
+            "mod pkg/main;\n\n{modifier} rec {{\n  // alias stays attached\n  type A = B;\n  /// nominal docs stay attached\n  type {{ B: A {{ mk; get; }}; }}\n  // trailing group comment survives\n}}\n"
         );
         let main_path = dir.write("pkg/main.kio", &source);
         dir.write_pkg_root_package();
@@ -5624,7 +5608,7 @@ fn lsp_type_group_visibility_diagnostic_highlights_only_the_modifier() {
 fn lsp_type_group_visibility_fix_is_withheld_when_a_member_already_has_visibility() {
     let dir = TempDir::new("recursive-type-group-visibility-no-fix");
     let source = concat!(
-        "module pkg/main;\n",
+        "mod pkg/main;\n",
         "\n",
         "pub rec {\n",
         "  pub type A = B;\n",
@@ -5675,7 +5659,7 @@ fn lsp_type_group_visibility_fix_is_withheld_when_a_member_already_has_visibilit
 fn lsp_recursive_labels_keep_alias_and_generated_nominal_identities_distinct() {
     let dir = TempDir::new("definition-recursive-label-identities");
     let source = concat!(
-        "module pkg/main;\n",
+        "mod pkg/main;\n",
         "\n",
         "rec type Tree = { Leaf: . | Leaf; } | { Branch: Tree & Branch; };\n",
     );
@@ -5831,7 +5815,7 @@ fn lsp_recursive_labels_keep_alias_and_generated_nominal_identities_distinct() {
 fn lsp_rename_checks_generated_nominals_in_the_complete_module_namespace() {
     let dir = TempDir::new("rename-generated-label-collision");
     let source = concat!(
-        "module pkg/main;\n",
+        "mod pkg/main;\n",
         "\n",
         "type Bar = .;\n",
         "type { Foo: .; };\n",
@@ -5875,7 +5859,7 @@ fn lsp_rename_checks_generated_nominals_in_the_complete_module_namespace() {
 fn lsp_recursive_labels_support_multiple_internal_knots_and_mutual_named_peers() {
     let dir = TempDir::new("recursive-labels-multiple-and-mutual");
     let source = concat!(
-        "module pkg/main;\n",
+        "mod pkg/main;\n",
         "\n",
         "rec type Pair = { First: . | First; Second: . | Second; };\n",
         "rec {\n",
@@ -6032,7 +6016,7 @@ fn lsp_recursive_labels_support_multiple_internal_knots_and_mutual_named_peers()
 fn lsp_unmarked_labels_keep_only_earlier_generated_heads_in_scope() {
     let dir = TempDir::new("unmarked-label-source-order");
     let source = concat!(
-        "module pkg/main;\n",
+        "mod pkg/main;\n",
         "\n",
         "type { Early: .; Uses_early: Early; Uses_later: Later; Later: .; };\n",
     );
@@ -6111,7 +6095,7 @@ fn send_semantic_tokens_full(lsp: &mut LspProcess, uri: &str) -> Value {
 fn lsp_doc_roles_follow_current_utf16_source_and_hidden_fence_recovery() {
     let dir = TempDir::new("doc-roles");
     dir.write_pkg_root_package();
-    let source = "module pkg/main;\r\n/// é [`😀`]; [`@type value`].\r\n/// ``[`literal`]`` [url](x/[`destination`])\r\n/// <!--text\r\n/// [`hidden`]\r\n/// -->\r\n/// # Heading\r\n/// **strong** and *emphasis*\r\n/// ```kio {@}\r\n/// let nested = ();\r\n/// nested\r\n/// ```\r\nfn value() { () }\r\n/// [`eof`]";
+    let source = "mod pkg/main;\r\n/// é [`😀`]; [`@type value`].\r\n/// ``[`literal`]`` [url](x/[`destination`])\r\n/// <!--text\r\n/// [`hidden`]\r\n/// -->\r\n/// # Heading\r\n/// **strong** and *emphasis*\r\n/// ```kio {@}\r\n/// let nested = ();\r\n/// nested\r\n/// ```\r\nfn value() { () }\r\n/// [`eof`]";
     let path = dir.write("pkg/main.kio", source);
     let uri = path_to_file_uri(&path);
     let mut lsp = LspProcess::spawn();
@@ -6359,11 +6343,11 @@ fn lsp_semantic_tokens_full_returns_tokens_for_open_document() {
     // SemanticTokens object (not null) with a non-empty `data` array.
     //
     // Source layout:
-    //   line 0: "module pkg/main;"   (has keywords)
+    //   line 0: "mod pkg/main;"   (has keywords)
     //   line 1: ""
     //   line 2: "pub fn run() -> . { () }"
     let dir = TempDir::new("semtok-basic");
-    let source = "module pkg/main;\n\npub fn run() -> . { () }\n";
+    let source = "mod pkg/main;\n\npub fn run() -> . { () }\n";
     let main_path = dir.write("pkg/main.kio", source);
     dir.write_pkg_root_package();
 
@@ -6455,7 +6439,7 @@ fn lsp_semantic_tokens_full_data_has_keyword_tokens() {
     // find its index, then decode the delta-encoded data array looking
     // for a token of that type.
     let dir = TempDir::new("semtok-kw");
-    let source = "module pkg/main;\n\nfn run() -> . { () }\n";
+    let source = "mod pkg/main;\n\nfn run() -> . { () }\n";
     let main_path = dir.write("pkg/main.kio", source);
     dir.write_pkg_root_package();
 
@@ -6530,7 +6514,7 @@ fn lsp_semantic_tokens_full_data_has_keyword_tokens() {
 fn lsp_semantic_tokens_keep_rec_contextual_across_value_and_declaration_sites() {
     let dir = TempDir::new("semtok-contextual-rec");
     let source = concat!(
-        "module pkg/main;\n",
+        "mod pkg/main;\n",
         "fn use(rec: .) -> . { rec }\n",
         "rec(loop) fn walk(value: .) -> . { value }\n",
         "rec {\n",
@@ -6805,7 +6789,7 @@ fn lsp_prepare_rename_returns_range_on_identifier() {
     // `pub fn run()` must return a RangeWithPlaceholder whose
     // `placeholder` matches the identifier text.
     let dir = TempDir::new("prep-rename");
-    let source = "module pkg/main;\n\npub fn run() -> . { () }\n";
+    let source = "mod pkg/main;\n\npub fn run() -> . { () }\n";
     let main_path = dir.write("pkg/main.kio", source);
     dir.write_pkg_root_package();
 
@@ -6842,7 +6826,7 @@ fn lsp_prepare_rename_returns_null_on_whitespace() {
     // prepareRename on a whitespace-only position (between tokens)
     // must return null — there is no identifier to rename.
     let dir = TempDir::new("prep-rename-ws");
-    let source = "module pkg/main;\n\npub fn run() -> . { () }\n";
+    let source = "mod pkg/main;\n\npub fn run() -> . { () }\n";
     let main_path = dir.write("pkg/main.kio", source);
     dir.write_pkg_root_package();
 
@@ -6879,7 +6863,7 @@ fn lsp_rename_produces_workspace_edit_for_local_binder() {
     //                   0123456789012345678901234567
     // The `x` in `{ x }` is at character 24.
     let dir = TempDir::new("rename-local");
-    let source = "module pkg/main;\n\npub fn run(x: .) -> . { x }\n";
+    let source = "mod pkg/main;\n\npub fn run(x: .) -> . { x }\n";
     let main_path = dir.write("pkg/main.kio", source);
     dir.write_pkg_root_package();
 
@@ -6909,7 +6893,7 @@ fn lsp_rename_produces_workspace_edit_for_local_binder() {
 #[test]
 fn lsp_rename_returns_versioned_document_changes_for_open_file() {
     let dir = TempDir::new("rename-versioned");
-    let source = "module pkg/main;\n\npub fn run(x: .) -> . { x }\n";
+    let source = "mod pkg/main;\n\npub fn run(x: .) -> . { x }\n";
     let main_path = dir.write("pkg/main.kio", source);
     dir.write_pkg_root_package();
 
@@ -6964,7 +6948,7 @@ fn lsp_rename_returns_versioned_document_changes_for_open_file() {
 fn lsp_pattern_let_rename_preserves_lexical_and_nominal_identity() {
     let dir = TempDir::new("pattern-let-rename-identity");
     let source = concat!(
-        "module pkg/main;\n",
+        "mod pkg/main;\n",
         "type { Field: .; Value: . }\n",
         "fn first() -> . { let .(value, _) = (Field.get(Field.mk(())), ()); value }\n",
         "fn second() -> . { let .(value, _) = (Field.get(Field.mk(())), ()); value }\n",
@@ -6975,7 +6959,7 @@ fn lsp_pattern_let_rename_preserves_lexical_and_nominal_identity() {
     dir.write(
         "pkg/other.kio",
         concat!(
-            "module pkg/other;\n",
+            "mod pkg/other;\n",
             "type { Field: . }\n",
             "fn other() -> . { let .(value, _) = (Field.get(Field.mk(())), ()); value }\n",
         ),
@@ -7080,7 +7064,7 @@ fn lsp_pattern_let_rename_preserves_lexical_and_nominal_identity() {
 fn lsp_newtype_member_rename_rejects_sibling_collisions() {
     let dir = TempDir::new("rename-newtype-sibling");
     let source = concat!(
-        "module pkg/main;\n",
+        "mod pkg/main;\n",
         "type { Wrap: . { mk; get; }; };\n",
         "rec {\n",
         "  type Link = Node;\n",
@@ -7161,7 +7145,7 @@ fn lsp_newtype_member_rename_rejects_sibling_collisions() {
 fn lsp_ordinary_newtype_head_rename_covers_checked_type_positions() {
     let dir = TempDir::new("rename-nominal-type-positions");
     let provider = concat!(
-        "module pkg/provider;\n",
+        "mod pkg/provider;\n",
         "pub type { Token: . { pub mk; pub get; }; };\n",
         "type Alias = Token;\n",
         "type { Carrier: Token { mk; get; }; };\n",
@@ -7180,8 +7164,8 @@ fn lsp_ordinary_newtype_head_rename_covers_checked_type_positions() {
         "fn explicit(value: Token) -> Token { generic[Token](value) }\n",
     );
     let consumer = concat!(
-        "module pkg/main;\n",
-        "import pkg/provider(Token);\n",
+        "mod pkg/main;\n",
+        "import pkg/provider {type Token}\n",
         "type Alias = Token;\n",
         "type { Carrier: Token { mk; get; }; };\n",
         "type Pair = Token & Token;\n",
@@ -7199,13 +7183,13 @@ fn lsp_ordinary_newtype_head_rename_covers_checked_type_positions() {
         "fn explicit(value: Token) -> Token { generic[Token](value) }\n",
     );
     let qualified = concat!(
-        "module pkg/qualified;\n",
+        "mod pkg/qualified;\n",
         "import pkg/provider as p;\n",
         "type Alias = p.Token;\n",
         "fn identity(value: p.Token) -> p.Token { value }\n",
     );
     let decoy = concat!(
-        "module pkg/other;\n",
+        "mod pkg/other;\n",
         "pub type { Token: . { pub mk; pub get; }; };\n",
         "pub fn identity(value: Token) -> Token { value }\n",
     );
@@ -7436,7 +7420,7 @@ fn lsp_rename_invalid_name_returns_error() {
     // Source (line 2): "pub fn run(x: .) -> . { x }"
     // The `x` body reference is at character 27.
     let dir = TempDir::new("rename-invalid");
-    let source = "module pkg/main;\n\npub fn run(x: .) -> . { x }\n";
+    let source = "mod pkg/main;\n\npub fn run(x: .) -> . { x }\n";
     let main_path = dir.write("pkg/main.kio", source);
     dir.write_pkg_root_package();
 
@@ -7472,19 +7456,19 @@ fn lsp_rename_cross_file_produces_edits_in_multiple_files() {
     // both files. The test waits for the analysis via the debounce
     // timeout before sending the rename request.
     let dir = TempDir::new("rename-xfile");
-    let lib_source = "module pkg/lib;\n\npub fn helper() -> . { () }\n";
+    let lib_source = "mod pkg/lib;\n\npub fn helper() -> . { () }\n";
     let main_source = concat!(
-        "module pkg/main;\n",
-        "import pkg/lib(helper);\n",
+        "mod pkg/main;\n",
+        "import pkg/lib {fn helper}\n",
         "\n",
         "pub fn run() -> . { helper() }\n",
     );
-    dir.write("pkg.kio", "module pkg;\n");
+    dir.write("pkg.kio", "mod pkg;\n");
     dir.write("pkg/lib.kio", lib_source);
     let main_path = dir.write("pkg/main.kio", main_source);
     dir.write(
         "pkg.pkg.kio",
-        "package pkg;\n\nbridge {\n  pkg;\n  pkg/**;\n}\n",
+        "pkg pkg;\n\nbridge {\n  pkg;\n  pkg/**;\n}\n",
     );
 
     let mut lsp = LspProcess::spawn();
@@ -7527,11 +7511,11 @@ fn lsp_rename_cross_file_produces_edits_in_multiple_files() {
 fn write_pkg_root_with_host_types(dir: &TempDir) {
     dir.write(
         "pkg.kio",
-        "module pkg;\n\nhost type I32 role(i32);\n\nhost type String role(str);\n",
+        "mod pkg;\n\nhost type I32 role(i32);\n\nhost type String role(str);\n",
     );
     dir.write(
         "pkg.pkg.kio",
-        "package pkg;\n\nbridge {\n  pkg;\n  pkg/**;\n}\n",
+        "pkg pkg;\n\nbridge {\n  pkg;\n  pkg/**;\n}\n",
     );
 }
 
@@ -7549,9 +7533,9 @@ fn lsp_hover_returns_literal_types_in_checking_position() {
     //          0123456789...
     let dir = TempDir::new("hover-literal");
     let source = concat!(
-        "module pkg/main;\n",
+        "mod pkg/main;\n",
         "\n",
-        "import pkg(I32, String);\n",
+        "import pkg {type I32; type String}\n",
         "\n",
         "fn take(n: I32, label: String) -> I32 { n }\n",
         "\n",
@@ -7823,7 +7807,7 @@ fn assert_lsp_nested_rec_call_identity(tag: &str, source: &str) {
 #[test]
 fn lsp_rec_call_inside_normal_operator_operand_keeps_member_identity() {
     let source = concat!(
-        "module pkg/main;\n",
+        "mod pkg/main;\n",
         "host fn loop[S][R](step: S -> (S | R), state: S) -> R;\n",
         "fn choose(left: ., right: .) -> . { left }\n",
         "op _ + _ { impl choose; };\n",
@@ -7838,11 +7822,11 @@ fn lsp_rec_call_inside_normal_operator_operand_keeps_member_identity() {
 #[test]
 fn lsp_rec_call_inside_variadic_operator_operand_keeps_member_identity() {
     let source = concat!(
-        "module pkg/main;\n",
+        "mod pkg/main;\n",
         "host fn loop[S][R](step: S -> (S | R), state: S) -> R;\n",
         "fn empty() -> . { () }\n",
         "fn prepend(head: ., tail: .) -> . { head }\n",
-        "varop [* *] { foldr prepend empty; };\n",
+        "op_var [* *] { foldr prepend empty; };\n",
         "rec(loop) {\n",
         "  fn first(value: .) -> . { [* recur(cont) second(value), value *] };\n",
         "  fn second(value: .) -> . { recur first(value) }\n",
@@ -7870,10 +7854,10 @@ fn lsp_rec_call_inside_variadic_operator_operand_keeps_member_identity() {
 fn lsp_publishes_no_diagnostics_for_a_clean_rec_loop() {
     let dir = TempDir::new("rec-loop-clean");
     let source = concat!(
-        "module pkg/main;\n",
+        "mod pkg/main;\n",
         "\n",
-        "import pkg(Bool, I32, add_i32, leq_i32, loop);\n",
-        "import control(macro if);\n",
+        "import pkg {type Bool; type I32; fn add_i32; fn leq_i32; fn loop}\n",
+        "import control {macro if}\n",
         "\n",
         // Three value params: the lowering unpacks the rec state tuple with a
         // `rec_rest` binding per param past the first, which is what the leak
@@ -7894,7 +7878,7 @@ fn lsp_publishes_no_diagnostics_for_a_clean_rec_loop() {
     dir.write(
         "pkg.kio",
         concat!(
-            "module pkg;\n",
+            "mod pkg;\n",
             "\n",
             "host type Bool role(bool);\n",
             "\n",
@@ -7909,7 +7893,7 @@ fn lsp_publishes_no_diagnostics_for_a_clean_rec_loop() {
     );
     dir.write(
         "pkg.pkg.kio",
-        "package pkg;\n\nbridge {\n  pkg;\n  pkg/**;\n}\n",
+        "pkg pkg;\n\nbridge {\n  pkg;\n  pkg/**;\n}\n",
     );
 
     let mut lsp = LspProcess::spawn();
@@ -7960,12 +7944,12 @@ fn lsp_publishes_no_diagnostics_for_a_clean_rec_loop() {
 fn lsp_recursive_newtype_marker_fix_applies_and_retracts_the_diagnostic() {
     let dir = TempDir::new("recursive-newtype-marker-fix");
     let source = concat!(
-        "module pkg/main;\n",
+        "mod pkg/main;\n",
         "\n",
         "type { Tree: . | Tree { mk; get; }; }\n",
     );
     let repaired = concat!(
-        "module pkg/main;\n",
+        "mod pkg/main;\n",
         "\n",
         "rec type { Tree: . | Tree { mk; get; }; }\n",
     );
@@ -8098,7 +8082,7 @@ fn lsp_recursive_newtype_marker_fix_applies_and_retracts_the_diagnostic() {
 fn lsp_marked_recursive_newtype_supports_every_navigation_surface() {
     let dir = TempDir::new("recursive-newtype-navigation-surfaces");
     let source = concat!(
-        "module pkg/main;\n",
+        "mod pkg/main;\n",
         "\n",
         "rec type {\n",
         "  Tree: . | Tree {\n",
@@ -8215,7 +8199,7 @@ fn lsp_marked_recursive_newtype_supports_every_navigation_surface() {
 fn lsp_invalid_edit_cannot_reuse_stale_recursive_type_bindings() {
     let dir = TempDir::new("recursive-type-stale-binding-authority");
     let valid = concat!(
-        "module pkg/main;\n",
+        "mod pkg/main;\n",
         "\n",
         "rec type { Tree: . | Tree { mk; get; }; }\n",
     );
@@ -8298,9 +8282,9 @@ fn lsp_invalid_edit_cannot_reuse_stale_recursive_type_bindings() {
 #[test]
 fn lsp_incomplete_recursive_declaration_retracts_recovery_diagnostics_at_new_version() {
     let dir = TempDir::new("incomplete-recursive-declaration-reanalysis");
-    let incomplete = concat!("module pkg/main;\n", "\n", "rec type { Tree: . |\n",);
+    let incomplete = concat!("mod pkg/main;\n", "\n", "rec type { Tree: . |\n",);
     let complete = concat!(
-        "module pkg/main;\n",
+        "mod pkg/main;\n",
         "\n",
         "rec type { Tree: . | Tree { mk; get; }; }\n",
     );
@@ -8347,12 +8331,12 @@ fn lsp_incomplete_recursive_declaration_retracts_recovery_diagnostics_at_new_ver
 fn lsp_recursive_labels_marker_fix_applies_and_retracts_the_diagnostic() {
     let dir = TempDir::new("recursive-labels-marker-fix");
     let source = concat!(
-        "module pkg/main;\n",
+        "mod pkg/main;\n",
         "\n",
         "type Tree = { Leaf: .; } | { Branch: Tree & Tree; };\n",
     );
     let repaired = concat!(
-        "module pkg/main;\n",
+        "mod pkg/main;\n",
         "\n",
         "rec type Tree = { Leaf: .; } | { Branch: Tree & Tree; };\n",
     );
@@ -8434,12 +8418,8 @@ fn lsp_recursive_labels_marker_fix_applies_and_retracts_the_diagnostic() {
 #[test]
 fn lsp_anonymous_recursive_labels_marker_fix_applies_and_retracts_the_diagnostic() {
     let dir = TempDir::new("anonymous-recursive-labels-marker-fix");
-    let source = concat!("module pkg/main;\n", "\n", "type { Node: . | Node; };\n",);
-    let repaired = concat!(
-        "module pkg/main;\n",
-        "\n",
-        "rec type { Node: . | Node; };\n",
-    );
+    let source = concat!("mod pkg/main;\n", "\n", "type { Node: . | Node; };\n",);
+    let repaired = concat!("mod pkg/main;\n", "\n", "rec type { Node: . | Node; };\n",);
     let main_path = dir.write("pkg/main.kio", source);
     dir.write_pkg_root_package();
 
@@ -8522,13 +8502,13 @@ fn lsp_anonymous_recursive_labels_marker_fix_applies_and_retracts_the_diagnostic
 fn lsp_mutual_type_group_fix_applies_and_retracts_the_diagnostic() {
     let dir = TempDir::new("mutual-type-group-fix");
     let source = concat!(
-        "module pkg/main;\n",
+        "mod pkg/main;\n",
         "\n",
         "type { A: . | B { mk; get; }; };\n",
         "type { B: . | A { mk; get; }; };\n",
     );
     let repaired = concat!(
-        "module pkg/main;\n",
+        "mod pkg/main;\n",
         "\n",
         "rec {\n",
         "type { A: . | B { mk; get; }; };\n",
@@ -8615,13 +8595,13 @@ fn lsp_mutual_type_group_fix_preserves_visibility_and_attached_docs() {
         (
             "scoped-public",
             concat!(
-                "module pkg/main ;\n",
+                "mod pkg/main ;\n",
                 "\n",
                 "pub(pkg) type A = B;\n",
                 "pub(pkg) type { B: A { mk; get; }; };\n",
             ),
             concat!(
-                "module pkg/main ;\n",
+                "mod pkg/main ;\n",
                 "\n",
                 "rec {\n",
                 "pub(pkg) type A = B;\n",
@@ -8632,7 +8612,7 @@ fn lsp_mutual_type_group_fix_preserves_visibility_and_attached_docs() {
         (
             "documented",
             concat!(
-                "module pkg/main;\n",
+                "mod pkg/main;\n",
                 "\n",
                 "/// A docs\n",
                 "type A = B;\n",
@@ -8640,7 +8620,7 @@ fn lsp_mutual_type_group_fix_preserves_visibility_and_attached_docs() {
                 "type { B: A { mk; get; }; };\n",
             ),
             concat!(
-                "module pkg/main;\n",
+                "mod pkg/main;\n",
                 "\n",
                 "rec {\n",
                 "/// A docs\n",
@@ -8653,13 +8633,13 @@ fn lsp_mutual_type_group_fix_preserves_visibility_and_attached_docs() {
         (
             "scoped-public-label",
             concat!(
-                "module pkg/main;\n",
+                "mod pkg/main;\n",
                 "\n",
                 "pub(pkg) type { Foo: Bar; };\n",
                 "pub(pkg) type { Bar: Foo { mk; get; }; };\n",
             ),
             concat!(
-                "module pkg/main;\n",
+                "mod pkg/main;\n",
                 "\n",
                 "rec {\n",
                 "pub(pkg) type { Foo: Bar; };\n",
@@ -8725,14 +8705,14 @@ fn lsp_mutual_type_group_fix_preserves_visibility_and_attached_docs() {
 fn lsp_mutual_label_group_fix_wraps_the_complete_labels_owner() {
     let dir = TempDir::new("mutual-label-group-fix");
     let source = concat!(
-        "module pkg/main;\n",
+        "mod pkg/main;\n",
         "\n",
         "/// label docs\n",
         "type { Foo: Bar; };\n",
         "type { Bar: Foo { mk; get; }; };\n",
     );
     let repaired = concat!(
-        "module pkg/main;\n",
+        "mod pkg/main;\n",
         "\n",
         "rec {\n",
         "/// label docs\n",
@@ -8800,13 +8780,13 @@ fn lsp_mutual_label_group_fix_wraps_the_complete_labels_owner() {
 fn lsp_mutual_label_group_fix_includes_acyclic_generated_siblings() {
     let dir = TempDir::new("mutual-label-group-acyclic-sibling-fix");
     let source = concat!(
-        "module pkg/main;\n",
+        "mod pkg/main;\n",
         "\n",
         "type { Other: .; Foo: Bar; };\n",
         "type { Bar: Foo { mk; get; }; };\n",
     );
     let repaired = concat!(
-        "module pkg/main;\n",
+        "mod pkg/main;\n",
         "\n",
         "rec {\n",
         "type { Other: .; Foo: Bar; };\n",
@@ -8868,13 +8848,13 @@ fn lsp_mutual_label_group_fix_includes_acyclic_generated_siblings() {
 fn lsp_higher_kinded_type_group_fix_applies_and_retracts_the_diagnostic() {
     let dir = TempDir::new("higher-kinded-mutual-type-group-fix");
     let source = concat!(
-        "module pkg/main;\n",
+        "mod pkg/main;\n",
         "\n",
         "type A[*F] = B[F];\n",
         "type { B[*G]: A[G] { mk; get; }; };\n",
     );
     let repaired = concat!(
-        "module pkg/main;\n",
+        "mod pkg/main;\n",
         "\n",
         "rec {\n",
         "type A[*F] = B[F];\n",
@@ -8940,7 +8920,7 @@ fn lsp_higher_kinded_type_group_fix_applies_and_retracts_the_diagnostic() {
 fn lsp_higher_kinded_type_group_fix_is_withheld_when_invalid() {
     let dir = TempDir::new("ill-kinded-mutual-type-group-fix");
     let source = concat!(
-        "module pkg/main;\n",
+        "mod pkg/main;\n",
         "\n",
         "type A[X] = B[X];\n",
         "type { B[*G]: A[.] { mk; get; }; };\n",
@@ -8991,7 +8971,7 @@ fn lsp_higher_kinded_type_group_fix_is_withheld_when_invalid() {
 fn lsp_recursive_group_and_marker_repairs_are_applied_sequentially() {
     let dir = TempDir::new("sequential-recursive-data-fixes");
     let source = concat!(
-        "module pkg/main;\n",
+        "mod pkg/main;\n",
         "\n",
         "type { A: . | B { mk; get; }; };\n",
         "type { B: . | A { mk; get; }; };\n",
@@ -9091,7 +9071,7 @@ fn lsp_recursive_group_and_marker_repairs_are_applied_sequentially() {
 fn lsp_acyclic_type_group_unwrap_preserves_text_and_retracts_the_diagnostic() {
     let dir = TempDir::new("acyclic-type-group-unwrap");
     let source = concat!(
-        "module pkg/main;\n",
+        "mod pkg/main;\n",
         "\n",
         "rec {\n",
         "  // base comment stays attached\n",
@@ -9176,7 +9156,7 @@ fn lsp_acyclic_type_group_unwrap_preserves_text_and_retracts_the_diagnostic() {
 fn lsp_acyclic_type_group_is_topologically_ordered_before_unwrap() {
     let dir = TempDir::new("acyclic-type-group-reorder");
     let source = concat!(
-        "module pkg/main;\n",
+        "mod pkg/main;\n",
         "\n",
         "rec {\n",
         "  type Box = Base;\n",
@@ -9246,7 +9226,7 @@ fn lsp_acyclic_type_group_is_topologically_ordered_before_unwrap() {
 fn lsp_later_type_move_is_versioned_applied_and_retracted() {
     let dir = TempDir::new("later-type-move");
     let source = concat!(
-        "module pkg/main;\n",
+        "mod pkg/main;\n",
         "\n",
         "type User = Dependency // 😀 keeps UTF-16 edits honest\n",
         ";\n",
@@ -9317,7 +9297,7 @@ fn lsp_later_type_move_is_versioned_applied_and_retracted() {
 fn lsp_later_newtype_member_move_is_versioned_applied_and_retracted() {
     let dir = TempDir::new("later-newtype-member-move");
     let source = concat!(
-        "module pkg/main;\n",
+        "mod pkg/main;\n",
         "\n",
         "fn before() {\n",
         "  Later.get(Later.mk(()))\n",
@@ -9410,7 +9390,7 @@ fn lsp_later_newtype_member_move_is_versioned_applied_and_retracted() {
 fn lsp_later_compact_nominal_member_move_is_versioned_applied_and_retracted() {
     let dir = TempDir::new("later-compact-nominal-member-move");
     let source = concat!(
-        "module pkg/main;\n",
+        "mod pkg/main;\n",
         "\n",
         "fn before() {\n",
         "  Later.get(Later.mk(()))\n",
@@ -9503,7 +9483,7 @@ fn lsp_later_compact_nominal_member_move_is_versioned_applied_and_retracted() {
 fn lsp_later_identity_alias_member_move_is_versioned_applied_and_retracted() {
     let dir = TempDir::new("later-identity-alias-member-move");
     let source = concat!(
-        "module pkg/main;\n",
+        "mod pkg/main;\n",
         "import pkg/origin as imported;\n",
         "\n",
         "fn before() {\n",
@@ -9516,7 +9496,7 @@ fn lsp_later_identity_alias_member_move_is_versioned_applied_and_retracted() {
     dir.write(
         "pkg/origin.kio",
         concat!(
-            "module pkg/origin;\n",
+            "mod pkg/origin;\n",
             "pub type { Tag: . { pub mk; pub get; }; };\n",
         ),
     );
@@ -9609,7 +9589,7 @@ fn lsp_invalid_later_alias_member_heads_have_no_move_action() {
         (
             "structural",
             concat!(
-                "module pkg/main;\n",
+                "mod pkg/main;\n",
                 "\n",
                 "fn before() { Later.missing(()) }\n",
                 "type Later = .;\n",
@@ -9618,7 +9598,7 @@ fn lsp_invalid_later_alias_member_heads_have_no_move_action() {
         (
             "missing-member",
             concat!(
-                "module pkg/main;\n",
+                "mod pkg/main;\n",
                 "import pkg/origin as imported;\n",
                 "\n",
                 "fn before() { Later.missing(()) }\n",
@@ -9628,7 +9608,7 @@ fn lsp_invalid_later_alias_member_heads_have_no_move_action() {
         (
             "no-import-edge",
             concat!(
-                "module pkg/main;\n",
+                "mod pkg/main;\n",
                 "\n",
                 "fn before() { Later.mk(()) }\n",
                 "type Later = pkg/origin.Tag;\n",
@@ -9637,7 +9617,7 @@ fn lsp_invalid_later_alias_member_heads_have_no_move_action() {
         (
             "later-local-target",
             concat!(
-                "module pkg/main;\n",
+                "mod pkg/main;\n",
                 "\n",
                 "fn before() { Later.mk(()) }\n",
                 "type Later = Target;\n",
@@ -9652,7 +9632,7 @@ fn lsp_invalid_later_alias_member_heads_have_no_move_action() {
         dir.write(
             "pkg/origin.kio",
             concat!(
-                "module pkg/origin;\n",
+                "mod pkg/origin;\n",
                 "pub type { Tag: . { pub mk; pub get; }; };\n",
             ),
         );
@@ -9708,7 +9688,7 @@ fn lsp_invalid_later_alias_member_heads_have_no_move_action() {
 fn lsp_later_generated_label_member_has_no_partial_move_action() {
     let dir = TempDir::new("later-generated-label-member");
     let source = concat!(
-        "module pkg/main;\n",
+        "mod pkg/main;\n",
         "\n",
         "fn before() -> . {\n",
         "  let value = Foo.mk(());\n",
@@ -9791,9 +9771,8 @@ fn lsp_later_compact_nominal_move_is_withheld_for_ambiguous_owners() {
         ("named-owner", "type Alias = { Later: .; };\n"),
     ] {
         let dir = TempDir::new(&format!("later-compact-no-move-{case}"));
-        let source = format!(
-            "module pkg/main;\n\nfn before() {{ let _ = Later.mk(()); () }}\n\n{declaration}"
-        );
+        let source =
+            format!("mod pkg/main;\n\nfn before() {{ let _ = Later.mk(()); () }}\n\n{declaration}");
         let main_path = dir.write("pkg/main.kio", &source);
         dir.write_pkg_root_package();
         let mut lsp = LspProcess::spawn();
@@ -9829,7 +9808,7 @@ fn lsp_later_compact_nominal_move_is_withheld_for_ambiguous_owners() {
 fn lsp_overbroad_type_group_is_split_into_exact_components() {
     let dir = TempDir::new("overbroad-type-group-split");
     let source = concat!(
-        "module pkg/main;\n",
+        "mod pkg/main;\n",
         "\n",
         "rec {\n",
         "  type { A: B { mk; get; }; };\n",
@@ -9902,7 +9881,7 @@ fn lsp_structural_type_fixes_are_withheld_for_ambiguous_comment_ownership() {
         (
             "later-move",
             concat!(
-                "module pkg/main;\n",
+                "mod pkg/main;\n",
                 "\n",
                 "// This comment may describe User.\n",
                 "type User = Dependency;\n",
@@ -9912,7 +9891,7 @@ fn lsp_structural_type_fixes_are_withheld_for_ambiguous_comment_ownership() {
         (
             "group-reorder",
             concat!(
-                "module pkg/main;\n",
+                "mod pkg/main;\n",
                 "\n",
                 "rec {\n",
                 "  type User = Dependency;\n",
@@ -9924,7 +9903,7 @@ fn lsp_structural_type_fixes_are_withheld_for_ambiguous_comment_ownership() {
         (
             "missing-mutual-group",
             concat!(
-                "module pkg/main;\n",
+                "mod pkg/main;\n",
                 "\n",
                 "// This comment may describe A.\n",
                 "type { A: B { mk; get; }; }\n",
@@ -9934,7 +9913,7 @@ fn lsp_structural_type_fixes_are_withheld_for_ambiguous_comment_ownership() {
         (
             "missing-mutual-label-group",
             concat!(
-                "module pkg/main;\n",
+                "mod pkg/main;\n",
                 "\n",
                 "// This comment may describe Foo.\n",
                 "type { Foo: Bar; }\n",
@@ -9998,22 +9977,22 @@ fn lsp_host_source_order_diagnostics_retract_after_declaration_reorder() {
         (
             "function",
             "later",
-            "module pkg/main;\npub fn before() -> . { later() }\nhost fn later() -> .;\n",
-            "module pkg/main;\nhost fn later() -> .;\npub fn before() -> . { later() }\n",
+            "mod pkg/main;\npub fn before() -> . { later() }\nhost fn later() -> .;\n",
+            "mod pkg/main;\nhost fn later() -> .;\npub fn before() -> . { later() }\n",
             "later() }",
             8,
         ),
         (
             "type",
             "Later",
-            "module pkg/main;\npub fn before(value: Later) -> Later { value }\nhost type Later;\n",
-            "module pkg/main;\nhost type Later;\npub fn before(value: Later) -> Later { value }\n",
+            "mod pkg/main;\npub fn before(value: Later) -> Later { value }\nhost type Later;\n",
+            "mod pkg/main;\nhost type Later;\npub fn before(value: Later) -> Later { value }\n",
             "Later) ->",
             10,
         ),
     ] {
         let dir = TempDir::new(&format!("host-source-order-{case}"));
-        let initial = "module pkg/main;\nfn seed() -> . { missing() }\n";
+        let initial = "mod pkg/main;\nfn seed() -> . { missing() }\n";
         let main_path = dir.write("pkg/main.kio", initial);
         dir.write_pkg_root_package();
         let mut lsp = LspProcess::spawn();
@@ -10082,7 +10061,7 @@ fn lsp_host_source_order_diagnostics_retract_after_declaration_reorder() {
 
 #[test]
 fn lsp_owned_parse_context_preserves_the_error_range() {
-    let source = "module pkg/main;\nhost fn value() -> . { () }\n";
+    let source = "mod pkg/main;\nhost fn value() -> . { () }\n";
     let dir = TempDir::new("owned-parse-context");
     let main_path = dir.write("pkg/main.kio", source);
     dir.write_pkg_root_package();
@@ -10110,12 +10089,12 @@ fn lsp_owned_parse_context_preserves_the_error_range() {
 
 #[test]
 fn lsp_type_as_value_preserves_the_inner_binding_and_has_no_missing_name_fix() {
-    let source = "module pkg/main;\nfn outer[A](value: A) -> . {\n  let inner = .[A](other: A) -> . { A };\n  ()\n}\n";
+    let source = "mod pkg/main;\nfn outer[A](value: A) -> . {\n  let inner = .[A](other: A) -> . { A };\n  ()\n}\n";
     let dir = TempDir::new("type-as-value-binding");
     let main_path = dir.write("pkg/main.kio", source);
-    let provider_source = "module pkg/provider;\npub type Value = .;\n";
+    let provider_source = "mod pkg/provider;\npub type Value = .;\n";
     let provider_path = dir.write("pkg/provider.kio", provider_source);
-    dir.write("pkg/decoy.kio", "module pkg/decoy;\npub type Value = .;\n");
+    dir.write("pkg/decoy.kio", "mod pkg/decoy;\npub type Value = .;\n");
     dir.write_pkg_root_package();
     let mut lsp = LspProcess::spawn();
     lsp.initialize(&path_to_file_uri(dir.path()));
@@ -10153,7 +10132,7 @@ fn lsp_type_as_value_preserves_the_inner_binding_and_has_no_missing_name_fix() {
         response["result"].as_array().is_none_or(Vec::is_empty),
         "a known type must not get missing-import/stub fixes: {response:?}"
     );
-    let imported = "module pkg/main;\nimport pkg/provider as p;\nfn value() -> . { p.Value }\n";
+    let imported = "mod pkg/main;\nimport pkg/provider as p;\nfn value() -> . { p.Value }\n";
     send_full_text_change(&mut lsp, &uri, 2, imported);
     let publish = wait_for_publish_version(&mut lsp, &uri, 2);
     let diagnostic = publish["diagnostics"]
@@ -10193,19 +10172,19 @@ fn lsp_imported_parameter_diagnostics_retain_signature_owner_across_overlays() {
     for (import, callee, binding) in [
         ("import pkg/provider as p;", "p.take", ""),
         ("import pkg/provider as p;", "f", "let f = p.take; "),
-        ("import pkg/provider(take);", "f", "let f = take; "),
+        ("import pkg/provider {fn take}", "f", "let f = take; "),
     ] {
         let dir = TempDir::new("imported-parameter-source");
         dir.write_pkg_root_package();
         dir.write(
             "pkg/origin.kio",
-            "module pkg/origin;\npub type { W: . { pub mk; pub get; }; };\n",
+            "mod pkg/origin;\npub type { W: . { pub mk; pub get; }; };\n",
         );
-        dir.write("pkg/decoy.kio", "module pkg/decoy;\npub type W = .;\n");
-        let provider = "module pkg/provider;\nimport pkg/origin as o;\npub type W = o.W;\n\npub fn take(value: W) -> . { () }\n";
+        dir.write("pkg/decoy.kio", "mod pkg/decoy;\npub type W = .;\n");
+        let provider = "mod pkg/provider;\nimport pkg/origin as o;\npub type W = o.W;\n\npub fn take(value: W) -> . { () }\n";
         let provider_path = dir.write("pkg/provider.kio", provider);
         let source = format!(
-            "module pkg/main;\n{import}\n// Caller-only padding makes a foreign annotation offset land on visibly unrelated source text, not a type.\nfn caller() -> . {{ {binding}{callee}(()) }}\n"
+            "mod pkg/main;\n{import}\n// Caller-only padding makes a foreign annotation offset land on visibly unrelated source text, not a type.\nfn caller() -> . {{ {binding}{callee}(()) }}\n"
         );
         let main_path = dir.write("pkg/main.kio", &source);
         let uri = path_to_file_uri(&main_path);
@@ -10270,9 +10249,9 @@ fn lsp_rec_loop_diagnostics_select_written_path_and_related_signature() {
     ] {
         let dir = TempDir::new("rec-loop-diagnostic");
         dir.write_pkg_root_package();
-        let provider = format!("module pkg/provider;\n\n{signature}\n");
+        let provider = format!("mod pkg/provider;\n\n{signature}\n");
         let provider_path = dir.write("pkg/provider.kio", &provider);
-        let source = "module pkg/main;\nimport pkg/provider as p;\n\nrec(p.selected) fn again(value: .) { recur again(value) }\n";
+        let source = "mod pkg/main;\nimport pkg/provider as p;\n\nrec(p.selected) fn again(value: .) { recur again(value) }\n";
         let main_path = dir.write("pkg/main.kio", source);
         let uri = path_to_file_uri(&main_path);
         let provider_uri = path_to_file_uri(&provider_path);
@@ -10331,7 +10310,7 @@ fn lsp_rec_loop_diagnostics_select_written_path_and_related_signature() {
             "choosing or repairing the loop needs author intent: {response:?}"
         );
         let repaired =
-            "module pkg/provider;\n\nhost fn selected[S][R](step: S -> (S | R), state: S) -> R;\n";
+            "mod pkg/provider;\n\nhost fn selected[S][R](step: S -> (S | R), state: S) -> R;\n";
         send_full_text_change(&mut lsp, &provider_uri, 2, repaired);
         wait_for_analysis_event(&lsp.analysis_events, &provider_uri, 2);
         // Provider edits preserve the consumer's version. Fence the accepted
@@ -10369,7 +10348,7 @@ fn lsp_rec_loop_diagnostics_select_written_path_and_related_signature() {
 
 #[test]
 fn lsp_module_header_diagnostic_describes_the_local_header_shape() {
-    let source = "module package main;\n";
+    let source = "mod pkg main;\n";
     let dir = TempDir::new("module-header-diagnostic");
     let main_path = dir.write("pkg/main.kio", source);
     dir.write_pkg_root_package();
@@ -10389,11 +10368,11 @@ fn lsp_module_header_diagnostic_describes_the_local_header_shape() {
     assert_eq!(diagnostic["code"], 11);
     assert_eq!(
         diagnostic["message"],
-        "`module` must be followed by one module path, not adjacent names"
+        "`mod` must be followed by one module path, not adjacent names"
     );
     assert_eq!(
         diagnostic["range"],
-        json!({"start": {"line": 0, "character": 7}, "end": {"line": 0, "character": 19}})
+        json!({"start": {"line": 0, "character": 4}, "end": {"line": 0, "character": 12}})
     );
     let response = send_code_action(&mut lsp, &uri, diagnostic);
     assert!(
@@ -10408,29 +10387,29 @@ fn lsp_unit_and_product_type_repairs_apply_and_reanalyse() {
     for (case, source, expected, message, title) in [
         (
             "unit",
-            "module pkg/main;\npub type U=();\n",
-            "module pkg/main;\npub type U= . ;\n",
+            "mod pkg/main;\npub type U=();\n",
+            "mod pkg/main;\npub type U= . ;\n",
             "`()` is unit value syntax; write `.` for the unit type",
             "Use `.` for the unit type",
         ),
         (
             "commented-unit",
-            "module pkg/main;\npub type U=(// keep unit\n);\n",
-            "module pkg/main;\npub type U= . // keep unit\n;\n",
+            "mod pkg/main;\npub type U=(// keep unit\n);\n",
+            "mod pkg/main;\npub type U= . // keep unit\n;\n",
             "`()` is unit value syntax; write `.` for the unit type",
             "Use `.` for the unit type",
         ),
         (
             "product",
-            "module pkg/main;\npub type Pack[A][B] = A & B;\npub type T = (Pack[.][.], // keep separator\n .);\n",
-            "module pkg/main;\npub type Pack[A][B] = A & B;\npub type T = (Pack[.][.] &  // keep separator\n .);\n",
+            "mod pkg/main;\npub type Pack[A][B] = A & B;\npub type T = (Pack[.][.], // keep separator\n .);\n",
+            "mod pkg/main;\npub type Pack[A][B] = A & B;\npub type T = (Pack[.][.] &  // keep separator\n .);\n",
             "commas form tuple values, not product types; write `A & B`",
             "Use `&` for the product type",
         ),
         (
             "grouped-product",
-            "module pkg/main;\npub type T = (. -> ., . | !);\n",
-            "module pkg/main;\npub type T = ((. -> .) &  (. | !));\n",
+            "mod pkg/main;\npub type T = (. -> ., . | !);\n",
+            "mod pkg/main;\npub type T = ((. -> .) &  (. | !));\n",
             "commas form tuple values, not product types; write `A & B`",
             "Use `&` for the product type",
         ),
@@ -10484,7 +10463,7 @@ fn lsp_redundant_recursive_data_markers_are_removed_and_reanalysed() {
         (
             "newtype",
             concat!(
-                "module pkg/main;\n",
+                "mod pkg/main;\n",
                 "\n",
                 "// declaration ownership\n",
                 "pub(pkg) rec type { Box[A]: A { mk; get; }; };\n",
@@ -10493,7 +10472,7 @@ fn lsp_redundant_recursive_data_markers_are_removed_and_reanalysed() {
         (
             "labels",
             concat!(
-                "module pkg/main;\n",
+                "mod pkg/main;\n",
                 "\n",
                 "rec type Pair = { First: .; Second: .; };\n",
             ),
@@ -10586,7 +10565,7 @@ fn lsp_one_member_type_groups_unwrap_to_the_canonical_singleton_form() {
         (
             "recursive-newtype",
             concat!(
-                "module pkg/main;\n",
+                "mod pkg/main;\n",
                 "\n",
                 "rec {\n",
                 "  /// recursive tree docs\n",
@@ -10598,7 +10577,7 @@ fn lsp_one_member_type_groups_unwrap_to_the_canonical_singleton_form() {
         (
             "recursive-labels",
             concat!(
-                "module pkg/main;\n",
+                "mod pkg/main;\n",
                 "\n",
                 "rec {\n",
                 "  /// recursive labels docs\n",
@@ -10610,7 +10589,7 @@ fn lsp_one_member_type_groups_unwrap_to_the_canonical_singleton_form() {
         (
             "acyclic-alias",
             concat!(
-                "module pkg/main;\n",
+                "mod pkg/main;\n",
                 "\n",
                 "rec {\n",
                 "  /// ordinary alias docs\n",
@@ -10696,7 +10675,7 @@ fn lsp_nested_recursive_markers_are_removed_from_mutual_type_groups() {
         (
             "newtype",
             concat!(
-                "module pkg/main;\n",
+                "mod pkg/main;\n",
                 "\n",
                 "rec {\n",
                 "  rec type { A: B { mk; get; }; };\n",
@@ -10707,7 +10686,7 @@ fn lsp_nested_recursive_markers_are_removed_from_mutual_type_groups() {
         (
             "labels",
             concat!(
-                "module pkg/main;\n",
+                "mod pkg/main;\n",
                 "\n",
                 "rec {\n",
                 "  rec type A = { To_b: B; };\n",

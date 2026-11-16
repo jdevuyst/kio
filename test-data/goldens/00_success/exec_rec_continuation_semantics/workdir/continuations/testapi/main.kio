@@ -1,10 +1,10 @@
-module continuations/testapi/main;
+mod continuations/testapi/main;
 
-import continuations/macros/control(macro if);
-import continuations/testapi(Bool, I32, String);
+import continuations/macros/control { macro if }
+import continuations/testapi { type Bool; type I32; type String }
 import continuations/testapi/arith as arith;
 import continuations/testapi/io as io;
-import continuations/testapi/iter(loop);
+import continuations/testapi/iter { fn loop }
 
 rec(loop) fn deep(n: I32) -> Bool {
   if(arith.leq_i32(n, 0)) {

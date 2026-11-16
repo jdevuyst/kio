@@ -1,5 +1,5 @@
 /// Type reflection macro that materializes a first-order `Type_rep` tree for a Kio type.
-module optics/macros/type_of;
+mod optics/macros/type_of;
 
 import __intrinsics__;
 

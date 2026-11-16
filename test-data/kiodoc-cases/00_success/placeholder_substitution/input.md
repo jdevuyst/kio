@@ -8,7 +8,7 @@ bridge {
   kiodoc;
 }
 
-module kiodoc;
+mod kiodoc;
 
 host type String role(str);
 

@@ -1,6 +1,6 @@
-module main;
+mod main;
 
-import macros/match(macro match);
+import macros/match { macro match }
 
 // Non-exhaustive `match`. The scrutinee `(Foo | Bar)` has DNF
 // branches `[Foo]` and `[Bar]`; only the Foo branch has a covering

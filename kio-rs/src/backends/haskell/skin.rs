@@ -1144,7 +1144,7 @@ pub(crate) fn newtype_qual_key(module_path: &str, name: &str) -> String {
 }
 
 /// Per-module bare-leaf → exact declaration resolution scope (own
-/// declarations + `import N(…);` imports), built once over the package.
+/// declarations + `import N { … }` imports), built once over the package.
 /// Qualified Routed paths already carry canonical module identities. Bare
 /// leaves resolve only through the referring-module scope.
 #[derive(Debug, Default)]

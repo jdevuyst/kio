@@ -203,7 +203,7 @@ mod tests {
     fn type_only_export_digest_uses_replayed_stages_and_alpha_identity() {
         let digest = |declaration: &str| {
             let source = format!(
-                "signature app v(1); v(1) {{ nonbreaking {{ add {{ module api {{
+                "sig app v(1); v(1) {{ nonbreaking {{ add {{ mod api {{
                     {declaration}
                 }} }} }} }}"
             );

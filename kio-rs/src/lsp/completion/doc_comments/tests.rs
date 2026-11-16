@@ -4,12 +4,12 @@ use super::*;
 fn current_provider_headers_authenticate_candidates_and_metadata() {
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("provider.kio");
-    std::fs::write(&path, "module provider;").unwrap();
+    std::fs::write(&path, "mod provider;").unwrap();
     let path = std::fs::canonicalize(path).unwrap();
     let uri = crate::lsp::diagnostics::path_to_uri(&path, directory.path()).unwrap();
     let mut state = crate::lsp::state::ServerState::new();
     let module = crate::pass::parser::parse_module_file_lazy(
-        "module app; import provider as p; import provider(value); fn value() -> . { () }",
+        "mod app; import provider as p; import provider {fn value} fn value() -> . { () }",
     )
     .unwrap()
     .module;
@@ -18,14 +18,14 @@ fn current_provider_headers_authenticate_candidates_and_metadata() {
         file_to_module: BTreeMap::from([(path.clone(), "provider".to_owned())]),
         sources: std::collections::HashMap::from([(
             path.clone(),
-            "module provider; pub fn stale() {}".to_owned(),
+            "mod provider; pub fn stale() {}".to_owned(),
         )]),
         import_aliases: Default::default(),
         root_package_lowered: crate::pass::resolve::Package::from_parts(BTreeMap::new(), None),
         warnings: Vec::new(),
     };
     for (version, name) in [(1, "first"), (2, "second")] {
-        state.open(uri.clone(), format!("module provider;\n/// {name} documentation.\npub fn {name}() -> . {{ incomplete body }}\npub fn value(arg: .) -> . {{ arg }}\nfn hidden() {{}}"), version);
+        state.open(uri.clone(), format!("mod provider;\n/// {name} documentation.\npub fn {name}() -> . {{ incomplete body }}\npub fn value(arg: .) -> . {{ arg }}\nfn hidden() {{}}"), version);
         let sources = CompletionSources {
             local: Some(&analysis),
             catalog: Some(&analysis),
@@ -53,7 +53,7 @@ fn current_provider_headers_authenticate_candidates_and_metadata() {
         assert!(selected.detail.as_ref().unwrap().contains("value()"));
         assert!(!selected.detail.as_ref().unwrap().contains("arg"));
     }
-    state.open(uri.clone(), "module wrong; pub fn first() {}".into(), 3);
+    state.open(uri.clone(), "mod wrong; pub fn first() {}".into(), 3);
     let result = names(
         &module,
         "p.",
@@ -67,7 +67,7 @@ fn current_provider_headers_authenticate_candidates_and_metadata() {
     );
     assert!(result.items.is_empty());
     assert!(result.is_incomplete);
-    state.open(uri, "module provider; pub fn first() {}".into(), 4);
+    state.open(uri, "mod provider; pub fn first() {}".into(), 4);
     analysis.file_to_module.insert(
         directory.path().join("other/provider.kio"),
         "provider".into(),
@@ -90,7 +90,7 @@ fn current_provider_headers_authenticate_candidates_and_metadata() {
 #[test]
 fn doc_compact_nominal_members_respect_owner_and_role_visibility() {
     let source = concat!(
-        "module provider; ",
+        "mod provider; ",
         "pub type Alias = { Token: . { mk; pub get; }; }; ",
         "pub type { Default: .; Scoped: . { pub(provider) mk; pub get; }; } ",
         "type { Hidden: . { pub mk; pub get; }; }",
@@ -104,7 +104,7 @@ fn doc_compact_nominal_members_respect_owner_and_role_visibility() {
         root_package_lowered: crate::pass::resolve::Package::from_parts(BTreeMap::new(), None),
         warnings: Vec::new(),
     };
-    let module = crate::pass::parser::parse("module app; import provider as p;").unwrap();
+    let module = crate::pass::parser::parse("mod app; import provider as p;").unwrap();
     let result = names(
         &module,
         "p.",
@@ -135,7 +135,7 @@ fn doc_compact_nominal_members_respect_owner_and_role_visibility() {
 
 #[test]
 fn bounded_doc_and_ordinary_completion_requests() {
-    let mut source = String::from("module app;\n");
+    let mut source = String::from("mod app;\n");
     for index in 0..200 {
         source.push_str(&format!(
             "/// Description of declaration {index}.\nfn value{index}() -> . {{ () }}\n"
@@ -159,7 +159,7 @@ fn bounded_doc_and_ordinary_completion_requests() {
 #[test]
 fn exact_utf16_operand_edits_preserve_program_and_framing() {
     let (source, result) =
-        marked("module app;\r\n\t/// é😀 [`@signature va|lue`]  \r\nfn value() -> . { () }\r\n");
+        marked("mod app;\r\n\t/// é😀 [`@signature va|lue`]  \r\nfn value() -> . { () }\r\n");
     let item = result
         .items
         .iter()
@@ -171,9 +171,8 @@ fn exact_utf16_operand_edits_preserve_program_and_framing() {
     assert_eq!(edit.range.start, Position::new(1, 22));
     let changed = apply(&source, edit);
     assert_eq!(changed, source);
-    let (source, result) = marked(
-        "module app;\r\n\t/// é😀 [`@signature va|lue_old`]  \r\nfn value() -> . { () }\r\n",
-    );
+    let (source, result) =
+        marked("mod app;\r\n\t/// é😀 [`@signature va|lue_old`]  \r\nfn value() -> . { () }\r\n");
     let Some(CompletionTextEdit::Edit(edit)) = &result.items[0].text_edit else {
         panic!("plain edit")
     };
@@ -211,7 +210,7 @@ fn apply(source: &str, edit: &TextEdit) -> String {
 #[test]
 fn embedded_plain_edits_reframe_multiline_and_reject_unsafe_shapes() {
     let source =
-        "module app;\r\n\t/// ```kio {@}\r\n\t/// old\r\n\t/// ```\r\nfn value() -> . { () }\r\n";
+        "mod app;\r\n\t/// ```kio {@}\r\n\t/// old\r\n\t/// ```\r\nfn value() -> . { () }\r\n";
     let lexed = crate::pass::lexer::lex_prefix(source);
     let docs = DocSource::from_lexed(source, &lexed);
     let doc = &docs[0];
@@ -278,7 +277,7 @@ fn embedded_plain_edits_reframe_multiline_and_reject_unsafe_shapes() {
 #[test]
 fn doc_scope_keeps_operator_alias_member_and_type_identities() {
     let prefix = concat!(
-        "module app; import __intrinsics__;\n",
+        "mod app; import __intrinsics__;\n",
         "fn value() -> . { () }\n",
         "fn pair(a: ., b: .) -> . { a }\n",
         "op _ + _ { impl pair }\n",
@@ -313,7 +312,7 @@ fn doc_fences_use_module_harness_and_current_local_scope() {
             "```"
         };
         let (_, list) = marked(&format!(
-            "module app;\n/// {opening}\n/// let local = (); lo|\n/// {closing}\nfn documented(parameter: .) -> . {{ parameter }}\nfn other() {{}}"
+            "mod app;\n/// {opening}\n/// let local = (); lo|\n/// {closing}\nfn documented(parameter: .) -> . {{ parameter }}\nfn other() {{}}"
         ));
         assert!(labels(&list).contains(&"local"));
         assert!(!labels(&list).contains(&"parameter"));
@@ -327,7 +326,7 @@ fn doc_fences_use_module_harness_and_current_local_scope() {
         "{@ check_exit_code=oops}",
     ] {
         let (_, list) = marked(&format!(
-            "module app;\n/// ```kio {attrs}\n/// va|\n/// ```\nfn value() {{}}"
+            "mod app;\n/// ```kio {attrs}\n/// va|\n/// ```\nfn value() {{}}"
         ));
         assert!(list.items.is_empty(), "{attrs}");
     }
@@ -336,10 +335,10 @@ fn doc_fences_use_module_harness_and_current_local_scope() {
 #[test]
 fn nonmodule_docs_and_unauthenticated_trivia_never_invent_names() {
     for (suffix, header) in [
-        (".pkg", "package app;"),
-        (".dep", "dependency app;"),
+        (".pkg", "pkg app;"),
+        (".dep", "dep app;"),
         (".lock", "lock app;"),
-        (".sig", "signature app;"),
+        (".sig", "sig app;"),
     ] {
         let source = format!("{header}\n/// [`na");
         let uri = crate::lsp::util::test_file_uri(format!("/app{suffix}.kio"));
@@ -354,9 +353,9 @@ fn nonmodule_docs_and_unauthenticated_trivia_never_invent_names() {
         assert!(result.items.is_empty());
     }
     for source in [
-        "module app; fn bad() { \"unterminated\n/// [`va|",
-        "module app;\n//// [`va|",
-        "module app;\n///[`va|",
+        "mod app; fn bad() { \"unterminated\n/// [`va|",
+        "mod app;\n//// [`va|",
+        "mod app;\n///[`va|",
     ] {
         assert!(marked(source).1.items.is_empty(), "{source}");
     }
@@ -384,7 +383,7 @@ fn labels(list: &CompletionList) -> Vec<&str> {
 #[test]
 fn keywords_and_module_names_recover_without_function_locals() {
     let (_, qualified) =
-        marked("module app; import provider as path;\n/// [`pa|th.member`]\nfn value() {}\n");
+        marked("mod app; import provider as path;\n/// [`pa|th.member`]\nfn value() {}\n");
     assert_eq!(labels(&qualified), ["path"]);
     for (tail, expected) in [
         ("[`@|", vec!["signature", "source", "type"]),
@@ -393,7 +392,7 @@ fn keywords_and_module_names_recover_without_function_locals() {
         ("[`@type |`]", vec!["documented", "value"]),
     ] {
         let text = format!(
-            "module app;\ntype Shape = .;\n/// {tail}\nfn documented(parameter: .) -> . {{ parameter }}\nfn value() -> . {{ () }}\n"
+            "mod app;\ntype Shape = .;\n/// {tail}\nfn documented(parameter: .) -> . {{ parameter }}\nfn value() -> . {{ () }}\n"
         );
         let (_, list) = marked(&text);
         assert_eq!(labels(&list), expected, "{text}");
@@ -404,14 +403,14 @@ fn keywords_and_module_names_recover_without_function_locals() {
 #[test]
 fn ordinary_prose_and_markdown_overrides_stay_suppressed() {
     for text in [
-        "module app;\n/// val|ue\nfn value() {}",
-        "module app;\n// [`va|lue`]\nfn value() {}",
-        "module app;\n/// `[`va|lue`]`\nfn value() {}",
-        "module app;\n/// [`va|lue`](https://example.test)\nfn value() {}",
-        "module app;\n/// [`va|lue`]\n/// [value]: https://example.test\nfn value() {}",
-        "module app;\n/// [key]: https://example.test/[`va|lue`]\nfn value() {}",
-        "module app;\n/// ```kio {ignore}\n/// va|\n/// ```\nfn value() {}",
-        "module app;\n/// ```kio\n/// va|\n/// ```\nfn value() {}",
+        "mod app;\n/// val|ue\nfn value() {}",
+        "mod app;\n// [`va|lue`]\nfn value() {}",
+        "mod app;\n/// `[`va|lue`]`\nfn value() {}",
+        "mod app;\n/// [`va|lue`](https://example.test)\nfn value() {}",
+        "mod app;\n/// [`va|lue`]\n/// [value]: https://example.test\nfn value() {}",
+        "mod app;\n/// [key]: https://example.test/[`va|lue`]\nfn value() {}",
+        "mod app;\n/// ```kio {ignore}\n/// va|\n/// ```\nfn value() {}",
+        "mod app;\n/// ```kio\n/// va|\n/// ```\nfn value() {}",
     ] {
         assert!(marked(text).1.items.is_empty(), "{text}");
     }

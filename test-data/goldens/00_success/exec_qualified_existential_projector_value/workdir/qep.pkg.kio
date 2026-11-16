@@ -1,4 +1,4 @@
-package qep;
+pkg qep;
 
 build {
   cache "out/.kio-cache/";

@@ -1,4 +1,4 @@
-package hgen;
+pkg hgen;
 
 build {
   cache "out/.kio-cache/";

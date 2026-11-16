@@ -1,4 +1,4 @@
-module main;
+mod main;
 
 rec {
   type { Na: . | (. & Nb) { pub mk; pub get } };

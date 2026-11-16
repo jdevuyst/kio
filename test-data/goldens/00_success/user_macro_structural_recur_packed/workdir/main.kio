@@ -1,6 +1,6 @@
-module main;
+mod main;
 
-import macros(macro flattened_direct, macro packed_bare_hof, macro packed_indirect);
+import macros { macro flattened_direct; macro packed_bare_hof; macro packed_indirect }
 
 fn direct_witness() { flattened_direct(()) }
 

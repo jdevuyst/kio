@@ -8,19 +8,19 @@
 /// sort, and a limit. Each query prints its plan, the relation it
 /// produced as a column table, the row count, and what the run cost in
 /// rows scanned and comparisons performed.
-module testapi/main;
+mod testapi/main;
 
 import query/eval as engine;
-import query/explain(explain);
+import query/explain { fn explain }
 import query/list as list;
 import query/plan as plan;
-import query/render(render_relation);
+import query/render { fn render_relation }
 import query/row as rel;
 import query/schema as schema;
 import query/text as text;
-import testapi(I32, String);
-import testapi/fmt(bool_to_string, int_to_string);
-import testapi/io(print);
+import testapi { type I32; type String }
+import testapi/fmt { fn bool_to_string; fn int_to_string }
+import testapi/io { fn print }
 
 /// Ships whose hull is deep, worst first.
 fn deep_draft_ships() -> plan.Plan {

@@ -42,13 +42,13 @@ expect_exit 0 "$KIO_BIN" sig commit
 expect_exit 0 "$KIO_BIN" sig status
 
 # v(2): remove the host fn `boot` (a compatible removal); record + seal.
-printf 'module app;\n\nimport core(Id);\n\npub fn wrap(x: Id) -> Id { x }\n' > app.kio
+printf 'mod app;\n\nimport core { type Id }\n\npub fn wrap(x: Id) -> Id { x }\n' > app.kio
 expect_exit 0 "$KIO_BIN" sig stage
 expect_exit 0 "$KIO_BIN" sig commit
 expect_exit 0 "$KIO_BIN" sig status
 
 # Compact everything before v(2) into a boundary block. The cross-module
-# `import core(Id);` reference and the removed host fn must survive.
+# `import core { type Id }` reference and the removed host fn must survive.
 expect_exit 0 "$KIO_BIN" sig compact 2
 
 # Replay-equivalence: status on the unchanged source must still be clean
@@ -66,9 +66,9 @@ expect_exit 0 "$KIO_BIN" sig status
   exit 1
 }
 # And the cross-module import survives in the boundary block.
-"$KIO_BIN" sig log | grep -q 'import core(Id)' || {
+"$KIO_BIN" sig log | grep -q 'import core { type Id }' || {
   # shellcheck disable=SC2016
-  printf 'compacted boundary must carry the cross-module `import core(Id)`\n' >&2
+  printf 'compacted boundary must carry the cross-module `import core { type Id }`\n' >&2
   "$KIO_BIN" sig log >&2
   exit 1
 }

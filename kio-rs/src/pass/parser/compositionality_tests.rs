@@ -400,7 +400,7 @@ const EXPR_FORMS: &[ExprForm] = &[
     ExprForm {
         id: "variadic-operator",
         grammar: "VariadicLiteral",
-        declarations: "varop [% %] { foldr form_push form_empty; };",
+        declarations: "op_var [% %] { foldr form_push form_empty; };",
         source: "[% form_left, form_right %]",
         root_tag: "variadic-operator",
     },
@@ -529,7 +529,7 @@ const EXPR_CONTEXTS: &[ExprContext] = &[
     ExprContext {
         id: "variadic-element",
         grammar: "ValueElements",
-        declarations: "varop [! !] { foldr context_push context_empty; };",
+        declarations: "op_var [! !] { foldr context_push context_empty; };",
         // Grouping keeps an arbitrary expression's edge punctuation separate
         // from the source-selected mirrored frame.
         item: "fn subject() -> . { [! (__EXPR_HOLE__) !] }",
@@ -705,7 +705,7 @@ fn matrix_source(form: ExprForm, context: ExprContext, expression: &str) -> Stri
         context.id
     );
     format!(
-        "module matrix;\n{}\n{}\n{}\n",
+        "mod matrix;\n{}\n{}\n{}\n",
         form.declarations,
         context.declarations,
         context.item.replace(EXPR_HOLE, expression)
@@ -831,7 +831,7 @@ fn expression_forms_compose_across_grammar_contexts() {
                 &format!("{cell} scaffold"),
             );
             let marker_module = parse_eager_and_lazy(
-                "module matrix; fn subject() -> . { matrix_hole }",
+                "mod matrix; fn subject() -> . { matrix_hole }",
                 "matrix marker",
             );
             let marker = topology(subject_expr(&marker_module, Subject::Function));
@@ -1045,7 +1045,7 @@ fn type_matrix_source(context: TypeContext, ty: &str) -> String {
         "context {} must contain the type hole",
         context.id
     );
-    format!("module matrix;\n{}\n", context.item.replace(TYPE_HOLE, ty))
+    format!("mod matrix;\n{}\n", context.item.replace(TYPE_HOLE, ty))
 }
 
 #[test]
@@ -1117,7 +1117,7 @@ fn unordered_macro_entries_preserve_path_only_boundaries() {
             } else {
                 format!("{captures} {implementation}")
             };
-            format!("module matrix; macro subject: . {{ {body} }};")
+            format!("mod matrix; macro subject: . {{ {body} }};")
         };
         let canonical = parse_eager_and_lazy(
             &source("context_impl", "context_capture", false),
@@ -1240,7 +1240,7 @@ fn written_call_stages_classify_type_and_value_topology() {
             ArgClass::Value(_) => format!("context_callee({source})"),
             ArgClass::Type(_) => format!("context_callee[{source}]"),
         };
-        let source = format!("module matrix;\n{declarations}\nfn subject() -> . {{ {call} }}\n");
+        let source = format!("mod matrix;\n{declarations}\nfn subject() -> . {{ {call} }}\n");
         let parsed = parse_eager_and_lazy(&source, id);
         match (subject_call_arg(&parsed), expected) {
             (CallArg::Value(value), ArgClass::Value(tag)) => assert_eq!(
@@ -1268,13 +1268,13 @@ fn call_stage_delimiters_reject_the_wrong_argument_namespace() {
         "[Formtype] Formtype",
     ] {
         assert_deferred_body_rejected(
-            &format!("module matrix; fn subject() {{ context_callee({argument}) }}"),
+            &format!("mod matrix; fn subject() {{ context_callee({argument}) }}"),
             "type expression in value stage",
         );
     }
     for argument in ["form_value", "form_callee(value)", "()"] {
         assert_deferred_body_rejected(
-            &format!("module matrix; fn subject() {{ context_callee[{argument}] }}"),
+            &format!("mod matrix; fn subject() {{ context_callee[{argument}] }}"),
             "value expression in type stage",
         );
     }
@@ -1288,10 +1288,10 @@ fn explicit_parametric_type_stage_survives_typechecking() {
     use crate::pipeline::Pipeline;
     use std::path::{Path, PathBuf};
 
-    let source = "module matrix;\n\
-        type { Formbox[A]: A { mk; get; }; };\n\
-        fn identity[A](value: A) -> A { value }\n\
-        fn subject[A](value: Formbox[A]) -> Formbox[A] { identity[Formbox[A]](value) }";
+    let source = "mod matrix;
+type { Formbox[A]: A { mk; get; }; };
+fn identity[A](value: A) -> A { value }
+fn subject[A](value: Formbox[A]) -> Formbox[A] { identity[Formbox[A]](value) }";
     let parsed = parse(source).expect("parse explicit type-stage fixture");
     let raw = subject_expr(&parsed, Subject::Function);
     let Expr::Call { callee, args, .. } = raw else {
@@ -1415,7 +1415,7 @@ fn unparenthesized_and_tight_context_boundaries_keep_their_topology() {
             "block-call",
         ),
     ] {
-        let source = format!("module matrix;\n{declarations}\nfn subject() -> . {{ {body} }}");
+        let source = format!("mod matrix;\n{declarations}\nfn subject() -> . {{ {body} }}");
         let parsed = parse_eager_and_lazy(&source, id);
         assert_eq!(
             expr_root_signature(subject_expr(&parsed, Subject::Function)),
@@ -1440,7 +1440,7 @@ fn precedence_and_scope_boundaries_accept_only_explicit_composition() {
         ),
     ] {
         assert_deferred_body_rejected(
-            &format!("module matrix;\n{operators}\nfn subject() -> . {{ {body} }}"),
+            &format!("mod matrix;\n{operators}\nfn subject() -> . {{ {body} }}"),
             id,
         );
     }
@@ -1451,13 +1451,13 @@ fn precedence_and_scope_boundaries_accept_only_explicit_composition() {
             "context_a + (context_b %% context_c)",
         ),
     ] {
-        let source = format!("module matrix;\n{operators}\nfn subject() -> . {{ {body} }}");
+        let source = format!("mod matrix;\n{operators}\nfn subject() -> . {{ {body} }}");
         let parsed = parse_eager_and_lazy(&source, id);
         assert_pretty_topology(&parsed, id);
     }
 
     let grouped = parse_eager_and_lazy(
-        "module matrix; fn subject() -> . { do({}) { context_final } }",
+        "mod matrix; fn subject() -> . { do({}) { context_final } }",
         "grouped-unit-prefix",
     );
     assert!(matches!(
@@ -1467,17 +1467,17 @@ fn precedence_and_scope_boundaries_accept_only_explicit_composition() {
     assert_pretty_topology(&grouped, "grouped-unit-prefix");
 
     assert_deferred_body_rejected(
-        "module matrix; fn subject() -> . { #1 }",
+        "mod matrix; fn subject() -> . { #1 }",
         "placeholder-outside-scope",
     );
     let placeholder = parse_eager_and_lazy(
-        "module matrix; fn subject() -> . { .x. { x1 } }",
+        "mod matrix; fn subject() -> . { .x. { x1 } }",
         "placeholder-inside-scope",
     );
     assert_pretty_topology(&placeholder, "placeholder-inside-scope");
 
     assert_deferred_body_rejected(
-        "module matrix; fn subject() -> . { let context_bound <- context_value; context_bound }",
+        "mod matrix; fn subject() -> . { let context_bound <- context_value; context_bound }",
         "monadic-bind-outside-do",
     );
 }
@@ -1485,11 +1485,11 @@ fn precedence_and_scope_boundaries_accept_only_explicit_composition() {
 #[test]
 fn tight_splice_boundary_is_distinct_from_a_grouped_rhs() {
     let tight = parse_eager_and_lazy(
-        "module matrix; fn subject() -> . { context_callee.<context_value.>context_next }",
+        "mod matrix; fn subject() -> . { context_callee.<context_value.>context_next }",
         "tight splice",
     );
     let grouped = parse_eager_and_lazy(
-        "module matrix; fn subject() -> . { context_callee.<(context_value.>context_next) }",
+        "mod matrix; fn subject() -> . { context_callee.<(context_value.>context_next) }",
         "grouped splice",
     );
     let tight = subject_expr(&tight, Subject::Function);
@@ -1545,7 +1545,7 @@ fn tight_splice_boundary_is_distinct_from_a_grouped_rhs() {
 #[test]
 fn matched_operator_and_structural_forall_follow_their_syntax() {
     let no_operator = parse_eager_and_lazy(
-        "module matrix; fn subject() -> . { context_callee[[Formtype] Formtype] }",
+        "mod matrix; fn subject() -> . { context_callee[[Formtype] Formtype] }",
         "structural forall call argument",
     );
     assert!(matches!(
@@ -1554,10 +1554,10 @@ fn matched_operator_and_structural_forall_follow_their_syntax() {
     ));
 
     let with_operator = parse_eager_and_lazy(
-        "module matrix;\n\
-         fn context_bracket(context_x: Contexttype, context_y: Contexttype) -> Contexttype { context_x }\n\
-         op <| _ |> _ { impl context_bracket; };\n\
-         fn subject() -> . { context_callee(<| form_type |> form_value) }",
+        "mod matrix;
+fn context_bracket(context_x: Contexttype, context_y: Contexttype) -> Contexttype { context_x }
+op <| _ |> _ { impl context_bracket; };
+fn subject() -> . { context_callee(<| form_type |> form_value) }",
         "matched operator call argument",
     );
     assert!(matches!(
@@ -1567,10 +1567,10 @@ fn matched_operator_and_structural_forall_follow_their_syntax() {
     assert_pretty_topology(&with_operator, "matched operator call argument");
 
     let forall_with_operator = parse_eager_and_lazy(
-        "module matrix;\n\
-         fn context_bracket(context_x: Contexttype, context_y: Contexttype) -> Contexttype { context_x }\n\
-         op <| _ |> _ { impl context_bracket; };\n\
-         fn subject() -> . { context_callee[[Formtype] Formtype] }",
+        "mod matrix;
+fn context_bracket(context_x: Contexttype, context_y: Contexttype) -> Contexttype { context_x }
+op <| _ |> _ { impl context_bracket; };
+fn subject() -> . { context_callee[[Formtype] Formtype] }",
         "structural forall beside a matched operator",
     );
     assert!(matches!(
@@ -1582,7 +1582,7 @@ fn matched_operator_and_structural_forall_follow_their_syntax() {
         "structural forall beside a matched operator",
     );
 
-    let forbidden = "module matrix; op [ _ ] _ { impl context_bracket; };";
+    let forbidden = "mod matrix; op [ _ ] _ { impl context_bracket; };";
     assert!(
         parse(forbidden).is_err(),
         "fixed bracket operators are rejected"
@@ -1652,23 +1652,23 @@ fn parse_eager_and_lazy_with_grammar(source: &str, _provider: &Module, cell: &st
 #[test]
 fn unrelated_provider_declarations_do_not_change_selected_operator_grammar() {
     let base_provider_module = parse(
-        "module syntax;\n\
-         pub fn syntax_add(syntax_left: Syntaxtype, syntax_right: Syntaxtype) -> Syntaxtype { syntax_left }\n\
-         pub op _ + _ { impl syntax_add; };",
+        "mod syntax;
+pub fn syntax_add(syntax_left: Syntaxtype, syntax_right: Syntaxtype) -> Syntaxtype { syntax_left }
+pub op _ + _ { impl syntax_add; };",
     )
     .expect("parse base operator provider");
     let expanded_provider_module = parse(
-        "module syntax;\n\
-         pub fn syntax_add(syntax_left: Syntaxtype, syntax_right: Syntaxtype) -> Syntaxtype { syntax_left }\n\
-         pub op _ + _ { impl syntax_add; };\n\
-         pub fn syntax_noise(syntax_value: Syntaxtype) -> Syntaxtype { syntax_value }\n\
-         pub fn syntax_other(syntax_left: Syntaxtype, syntax_right: Syntaxtype) -> Syntaxtype { syntax_left }\n\
-         pub op _ %% _ { impl syntax_other; };",
+        "mod syntax;
+pub fn syntax_add(syntax_left: Syntaxtype, syntax_right: Syntaxtype) -> Syntaxtype { syntax_left }
+pub op _ + _ { impl syntax_add; };
+pub fn syntax_noise(syntax_value: Syntaxtype) -> Syntaxtype { syntax_value }
+pub fn syntax_other(syntax_left: Syntaxtype, syntax_right: Syntaxtype) -> Syntaxtype { syntax_left }
+pub op _ %% _ { impl syntax_other; };",
     )
     .expect("parse expanded operator provider");
-    let consumer = "module consumer;\n\
-        import syntax(op _ + _);\n\
-        fn subject() -> . { consumer_left + consumer_right }";
+    let consumer = "mod consumer;
+import syntax {op _ + _}
+fn subject() -> . { consumer_left + consumer_right }";
     let base = parse_eager_and_lazy_with_grammar(consumer, &base_provider_module, "base provider");
     let expanded =
         parse_eager_and_lazy_with_grammar(consumer, &expanded_provider_module, "expanded provider");
@@ -1678,10 +1678,10 @@ fn unrelated_provider_declarations_do_not_change_selected_operator_grammar() {
         "an unselected provider declaration changed the consumer expression"
     );
 
-    let expanded_consumer = "module consumer;\n\
-        import syntax(op _ + _);\n\
-        fn consumer_unrelated(consumer_value: Consumertype) -> Consumertype { consumer_value }\n\
-        fn subject() -> . { consumer_left + consumer_right }";
+    let expanded_consumer = "mod consumer;
+import syntax {op _ + _}
+fn consumer_unrelated(consumer_value: Consumertype) -> Consumertype { consumer_value }
+fn subject() -> . { consumer_left + consumer_right }";
     let with_unrelated_consumer_item = parse_eager_and_lazy_with_grammar(
         expanded_consumer,
         &base_provider_module,

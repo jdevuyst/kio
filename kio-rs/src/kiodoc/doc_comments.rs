@@ -464,8 +464,7 @@ fn extract_from_doc(
                 // Bare ` ```kio ` with no attribute list.
                 errors.push(DocCommentError {
                     span: fence_kio_span,
-                    message: "bare ```kio fence in doc-comment: write `{@}` to use the \
-                              surrounding module as harness, or `{ignore}` to skip"
+                    message: "bare ```kio fence in doc-comment: write `{@}` to use the surrounding module as harness, or `{ignore}` to skip"
                         .to_owned(),
                     assembled: None,
                     diagnostic: None,
@@ -757,7 +756,7 @@ fn run_kio_check(
     // doc-comment-only package with no host), synthesize a
     // bare package file that still carries the directive.
     let package_file_content = if package_file_content.trim().is_empty() {
-        with_root_bridge_globs(&format!("package {pkg_name};\n"), pkg_name)
+        with_root_bridge_globs(&format!("pkg {pkg_name};\n"), pkg_name)
     } else {
         with_root_bridge_globs(&package_file_content, pkg_name)
     };
@@ -770,7 +769,7 @@ fn run_kio_check(
     let root_module_path = scratch.join(format!("{pkg_name}.kio"));
     {
         let mut f = fs::File::create(&root_module_path)?;
-        f.write_all(format!("module {pkg_name};\n").as_bytes())?;
+        f.write_all(format!("mod {pkg_name};\n").as_bytes())?;
     }
 
     // Write the augmented module file at the path the module
@@ -950,7 +949,7 @@ mod tests {
     fn make_snippet(module_name: &str, item_name: &str, idx: usize) -> DocCommentSnippet {
         DocCommentSnippet {
             kio_path: PathBuf::from("test.kio"),
-            kio_source: format!("module {module_name}.main;\n"),
+            kio_source: format!("mod {module_name}.main;\n"),
             module_name: format!("{module_name}.main"),
             item_name: item_name.to_owned(),
             snippet_index: idx,
@@ -1008,7 +1007,7 @@ mod tests {
 
     #[test]
     fn extract_no_doc_comments_empty() {
-        let src = "module pkg/main;\nfn f() -> . { () }\n";
+        let src = "mod pkg/main;\nfn f() -> . { () }\n";
         let result = extract_doc_snippets(Path::new("t.kio"), src);
         assert!(result.is_ok());
         assert!(result.unwrap().is_empty());
@@ -1017,7 +1016,7 @@ mod tests {
     #[test]
     fn extract_ignore_fence_skipped() {
         let src =
-            "module pkg/main;\n/// ```kio {ignore}\n/// let x = 1\n/// ```\nfn f() -> . { () }\n";
+            "mod pkg/main;\n/// ```kio {ignore}\n/// let x = 1\n/// ```\nfn f() -> . { () }\n";
         let result = extract_doc_snippets(Path::new("t.kio"), src);
         assert!(result.is_ok());
         assert!(result.unwrap().is_empty());
@@ -1026,7 +1025,7 @@ mod tests {
     #[test]
     fn extract_rec_group_member_doc_uses_exact_member_name() {
         let src = concat!(
-            "module pkg/main;\n",
+            "mod pkg/main;\n",
             "rec(loop) {\n",
             "  fn first(value: .) -> . { recur second(value) };\n",
             "  /// ```kio {@}\n",
@@ -1042,8 +1041,7 @@ mod tests {
 
     #[test]
     fn extract_named_ref_produces_error() {
-        let src =
-            "module pkg/main;\n/// ```kio {@main}\n/// let x = 1\n/// ```\nfn f() -> . { () }\n";
+        let src = "mod pkg/main;\n/// ```kio {@main}\n/// let x = 1\n/// ```\nfn f() -> . { () }\n";
         let result = extract_doc_snippets(Path::new("t.kio"), src);
         assert!(result.is_err());
         let errs = result.unwrap_err();
@@ -1054,7 +1052,7 @@ mod tests {
     #[test]
     fn alias_docs_keep_type_owner_identity_and_validate_their_own_references() {
         let source = concat!(
-            "module pkg/main;\n",
+            "mod pkg/main;\n",
             "pub type { Foo: .; };\n",
             "/// See [`Field`].\n",
             "/// ```kio {@}\n",
@@ -1089,7 +1087,7 @@ mod tests {
     #[test]
     fn standalone_newtype_docs_validate_refs_and_extract_exact_owner() {
         let source = concat!(
-            "module pkg/main;\n",
+            "mod pkg/main;\n",
             "/// See [`Wrapped`].\n",
             "/// ```kio {@}\n",
             "/// ()\n",
@@ -1113,7 +1111,7 @@ mod tests {
 
     #[test]
     fn extract_standalone_produces_error() {
-        let src = "module pkg/main;\n/// ```kio {}\n/// let x = 1\n/// ```\nfn f() -> . { () }\n";
+        let src = "mod pkg/main;\n/// ```kio {}\n/// let x = 1\n/// ```\nfn f() -> . { () }\n";
         let result = extract_doc_snippets(Path::new("t.kio"), src);
         assert!(result.is_err());
         let errs = result.unwrap_err();
@@ -1124,7 +1122,7 @@ mod tests {
     #[test]
     fn doc_comment_refs_ignore_every_fence_language() {
         let src = concat!(
-            "module pkg/main;\n",
+            "mod pkg/main;\n",
             "/// See [`known`].\n",
             "/// ```text\n",
             "/// [`missing`] and [`@signature missing`]\n",
@@ -1141,7 +1139,7 @@ mod tests {
     #[test]
     fn fenced_reference_definition_does_not_override_doc_comment_prose() {
         let src = concat!(
-            "module pkg/main;\n",
+            "mod pkg/main;\n",
             "/// See [`missing`].\n",
             "/// ```markdown\n",
             "/// [missing]: https://example.com\n",

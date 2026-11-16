@@ -11,17 +11,17 @@
 //!   run.args                 (generator-selected exact runner protocol)
 //!   run.sh                   (valid I32 results: runtime observation + equiv)
 //!   workdir/
-//!     prog.pkg.kio       (`package prog;`, cache and five base targets;
+//!     prog.pkg.kio       (`pkg prog;`, cache and five base targets;
 //!                      invoked control probes add go/swift/haskell,
 //!                      and bridge their standard print capability)
-//!     prog.kio           (module prog; `host type` declarations for
+//!     prog.kio           (mod prog; `host type` declarations for
 //!                      every base role type, polymorphic helpers +
 //!                      deftypes + fn gen(...))
 //!     *.kio  (macro support files when surface
 //!                      macro forms may be emitted)
 //! ```
 //!
-//! Each module file sits at the path its `module <path>;`
+//! Each module file sits at the path its `mod <path>;`
 //! declaration implies relative to the package root (`workdir/`), per the
 //! module-path / filesystem coherence rule in `specs/package.md`
 //! § Module-name rules.
@@ -74,7 +74,7 @@ pub const fn runner_protocol(surface_mode: bool) -> &'static str {
 // supplied `KIO_TEST_RUNNER_BUILD_CACHE_DIR`, not this per-package cache
 // directory.
 const PACKAGE_FILE_KIO_PREFIX: &str = "\
-package prog;
+pkg prog;
 
 build {
   cache \"out/.kio-cache/\";
@@ -151,10 +151,10 @@ pub fn package_lists_bridge_glob(package_file: &str, root: &str) -> bool {
 }
 
 const MACRO_IMPORTS: &str = "\
-import algebraic_macros(macro iso, macro into, macro onto, macro align, macro ease, macro atom);
-import spine_macros(macro reorder_sum, macro reorder_prod, macro narrow_sum, macro narrow_prod, macro widen_sum, macro widen_prod, macro flatten_sum, macro flatten_prod, macro one_sum, macro one_prod, macro fit);
-import match(macro match);
-import control(Bool, macro if, macro scope);
+import algebraic_macros { macro iso; macro into; macro onto; macro align; macro ease; macro atom }
+import spine_macros { macro reorder_sum; macro reorder_prod; macro narrow_sum; macro narrow_prod; macro widen_sum; macro widen_prod; macro flatten_sum; macro flatten_prod; macro one_sum; macro one_prod; macro fit }
+import match { macro match }
+import control { type Bool; macro if; macro scope }
 ";
 
 const MACRO_SUPPORT_FILES: &[(&str, &str)] = &[
@@ -203,7 +203,7 @@ const MACRO_SUPPORT_FILES: &[(&str, &str)] = &[
 // host boundary stays free of associated types the `empty`-tier runner
 // host cannot define.
 const GENERATED_TESTAPI_KIO: &str = "\
-module testapi;
+mod testapi;
 
 host type String role(str);
 
@@ -274,18 +274,18 @@ pub pure fn kio_gen_op_pick(x: I32, y: I32) -> I32 { x }
 ";
 
 // Literal aliases appended to the generated root module for surface-using cases.
-// Each `literal name = <literal>;` stores an untyped literal token;
+// Each `lit name = <literal>;` stores an untyped literal token;
 // use sites render as `name[Type]` when the generated expression
 // needs the same explicit annotation as the raw literal. Surface
 // form only: `IS_KIO_PRIME` cases must not see these.
 const UTIL_KIO_LITERAL_ALIASES: &str = "
 pub type Kio_gen_choice = { Kio_gen_text: String; } | I32;
-pub literal zero_i32 = 0;
-pub literal hello_str = \"hello\";
+pub lit zero_i32 = 0;
+pub lit hello_str = \"hello\";
 ";
 
 // The local declaration and its generated chains share the complete binary
-// grammar `_ <+> _`; a consumer selects it as `import prog(op _ <+> _);`.
+// grammar `_ <+> _`; a consumer selects it as `import prog { op _ <+> _ }`.
 const UTIL_KIO_OP: &str = "
 pub op _ <+> _ { impl kio_gen_op_pick }
 pub op !? __ { impl id }
@@ -301,8 +301,8 @@ pub op @ ___ # ___ $ { impl kio_gen_op_pick }
 const UTIL_KIO_VARIADIC: &str = "
 pub pure fn kio_gen_fold_seed(value: I32) -> I32 { value }
 pub pure fn kio_gen_fold_step(_value: I32, _acc: I32) -> I32 { 0[I32] }
-pub varop [* *] { foldr1 kio_gen_fold_step kio_gen_fold_seed }
-pub varop [] { foldr1 kio_gen_fold_step kio_gen_fold_seed }
+pub op_var [* *] { foldr1 kio_gen_fold_step kio_gen_fold_seed }
+pub op_var [] { foldr1 kio_gen_fold_step kio_gen_fold_seed }
 ";
 
 fn util_kio(prog: &Program) -> String {
@@ -339,7 +339,7 @@ fn generated_macro_imports(prog: &Program) -> String {
         .iter()
         .map(|spec| format!("macro {}", spec.name))
         .collect();
-    format!("import kio_gen_macros({});\n", names.join(", "))
+    format!("import kio_gen_macros {{ {} }}\n", names.join("; "))
 }
 
 fn render_generated_macro_module(prog: &Program) -> Option<String> {
@@ -348,7 +348,7 @@ fn render_generated_macro_module(prog: &Program) -> Option<String> {
     }
     let mut out = String::from(
         "\
-module kio_gen_macros;
+mod kio_gen_macros;
 
 import __intrinsics__;
 
@@ -620,7 +620,7 @@ equiv kio_gen_bounded_chain_slots { @ 1[I32] <+> 2[I32] # !? 3[I32] $; 1[I32] }\
     };
     let root_module = format!(
         "\
-module prog;
+mod prog;
 
 import __intrinsics__;
 {control_import}\
@@ -632,7 +632,7 @@ import __intrinsics__;
         macro_imports,
         util_kio(prog),
     );
-    // Each module's file sits at the path its `module <path>;`
+    // Each module's file sits at the path its `mod <path>;`
     // declaration implies relative to the package root (`workdir/`): under
     // the module-name rules in `specs/package.md`, the declared
     // segments equal the file's path relative to the package root with
@@ -790,7 +790,7 @@ mod tests {
     fn package_and_bridge_emit_between_item_separators_only() {
         assert_eq!(
             PACKAGE_FILE_KIO_PREFIX,
-            r#"package prog;
+            r#"pkg prog;
 
 build {
   cache "out/.kio-cache/";
@@ -858,7 +858,7 @@ build {
         );
         assert_eq!(
             UTIL_KIO_VARIADIC,
-            "\npub pure fn kio_gen_fold_seed(value: I32) -> I32 { value }\npub pure fn kio_gen_fold_step(_value: I32, _acc: I32) -> I32 { 0[I32] }\npub varop [* *] { foldr1 kio_gen_fold_step kio_gen_fold_seed }\npub varop [] { foldr1 kio_gen_fold_step kio_gen_fold_seed }\n"
+            "\npub pure fn kio_gen_fold_seed(value: I32) -> I32 { value }\npub pure fn kio_gen_fold_step(_value: I32, _acc: I32) -> I32 { 0[I32] }\npub op_var [* *] { foldr1 kio_gen_fold_step kio_gen_fold_seed }\npub op_var [] { foldr1 kio_gen_fold_step kio_gen_fold_seed }\n"
         );
     }
 
@@ -874,11 +874,11 @@ build {
         let first_item = root.find("host type I8").expect("first host item");
         for import in [
             "import __intrinsics__;",
-            "import algebraic_macros(macro iso, macro into, macro onto, macro align, macro ease, macro atom);",
-            "import spine_macros(macro reorder_sum, macro reorder_prod, macro narrow_sum, macro narrow_prod, macro widen_sum, macro widen_prod, macro flatten_sum, macro flatten_prod, macro one_sum, macro one_prod, macro fit);",
-            "import match(macro match);",
-            "import control(Bool, macro if, macro scope);",
-            "import kio_gen_macros(macro generated);",
+            "import algebraic_macros { macro iso; macro into; macro onto; macro align; macro ease; macro atom }",
+            "import spine_macros { macro reorder_sum; macro reorder_prod; macro narrow_sum; macro narrow_prod; macro widen_sum; macro widen_prod; macro flatten_sum; macro flatten_prod; macro one_sum; macro one_prod; macro fit }",
+            "import match { macro match }",
+            "import control { type Bool; macro if; macro scope }",
+            "import kio_gen_macros { macro generated }",
         ] {
             assert_eq!(root.matches(import).count(), 1, "{import}");
             assert!(root.find(import).unwrap() < first_item, "{import}");

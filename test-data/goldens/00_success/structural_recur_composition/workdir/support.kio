@@ -1,4 +1,4 @@
-module support;
+mod support;
 
 import __intrinsics__;
 

@@ -1,4 +1,4 @@
-package exec_rec_row_let_tail;
+pkg exec_rec_row_let_tail;
 
 build {
   cache "out/.kio-cache/";

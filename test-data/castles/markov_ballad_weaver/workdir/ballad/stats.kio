@@ -1,17 +1,24 @@
 /// Summary numbers over the woven lines. Generated text is opaque on its own,
 /// so the report closes with figures a reader can check against the verses
 /// above them without re-running the generator in their head.
-module ballad/stats;
+mod ballad/stats;
 
-import ballad/list(List, cons, len, nil);
-import ballad/weave(By_end_word, By_no_successor, By_word_cap, Line, Line_stop, Line_words);
-import macros/control(macro if);
-import macros/match(macro match);
-import macros/row_macros(macro select);
-import testapi(Bool, I32, String);
-import testapi/arith(add_i32, lt_i32);
-import testapi/iter(loop);
-import testapi/text(string_eq);
+import ballad/list { type List; fn cons; fn len; fn nil }
+import ballad/weave {
+  type By_end_word;
+  type By_no_successor;
+  type By_word_cap;
+  type Line;
+  type Line_stop;
+  type Line_words
+}
+import macros/control { macro if }
+import macros/match { macro match }
+import macros/row_macros { macro select }
+import testapi { type Bool; type I32; type String }
+import testapi/arith { fn add_i32; fn lt_i32 }
+import testapi/iter { fn loop }
+import testapi/text { fn string_eq }
 
 rec(loop) fn words_onto(lines: List[Line], acc: I32) -> I32 {
   match(lines.>List.get) {

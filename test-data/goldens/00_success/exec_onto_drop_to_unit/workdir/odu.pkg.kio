@@ -1,4 +1,4 @@
-package odu;
+pkg odu;
 
 build {
   cache "out/.kio-cache/";

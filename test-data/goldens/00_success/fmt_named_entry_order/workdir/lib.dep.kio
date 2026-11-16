@@ -1,4 +1,4 @@
-dependency lib;
+dep lib;
 
 retype lib/types to fmt_named_entry_order/types;
 

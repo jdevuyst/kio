@@ -2,12 +2,12 @@
 /// against. The host env supplies exactly one integer comparison, `leq_i32`,
 /// and no division at all, so equality, strict order, and truncated division
 /// are all derived here, once.
-module seg/num;
+mod seg/num;
 
-import macros/control(macro if);
-import testapi(Bool, I32);
-import testapi/arith(add_i32, leq_i32, mul_i32, sub_i32);
-import testapi/iter(loop);
+import macros/control { macro if }
+import testapi { type Bool; type I32 }
+import testapi/arith { fn add_i32; fn leq_i32; fn mul_i32; fn sub_i32 }
+import testapi/iter { fn loop }
 
 pub fn not(value: Bool) -> Bool {
   if(value) { .f } else { .t }

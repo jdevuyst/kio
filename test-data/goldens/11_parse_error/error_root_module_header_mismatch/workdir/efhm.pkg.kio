@@ -1,4 +1,4 @@
-package efhm;
+pkg efhm;
 
 build {
   cache "out/.kio-cache/";

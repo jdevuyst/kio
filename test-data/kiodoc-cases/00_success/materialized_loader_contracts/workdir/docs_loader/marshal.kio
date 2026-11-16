@@ -1,11 +1,19 @@
 /// The higher-order `loop` host op's domain destructuring.
-module docs_loader/marshal;
+mod docs_loader/marshal;
 
 import __intrinsics__;
 
-import docs_loader/result(Call_result, call_fold, call_stuck);
-import docs_loader/testapi(String);
-import docs_loader/value(V_closure, V_host, V_hostfn, V_product, V_sum, V_unit, Value);
+import docs_loader/result { type Call_result; fn call_fold; fn call_stuck }
+import docs_loader/testapi { type String }
+import docs_loader/value {
+  type V_closure;
+  type V_host;
+  type V_hostfn;
+  type V_product;
+  type V_sum;
+  type V_unit;
+  type Value
+}
 
 /// `loop` is a regular host fn with signature
 /// `loop[S][R](S -> S | R, S) -> R`. For a loaded guest, the `step` argument is

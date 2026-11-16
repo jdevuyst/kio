@@ -1,9 +1,14 @@
-module calendar_blackout_planner/scoring;
+mod calendar_blackout_planner/scoring;
 
-import calendar_blackout_planner/model(Frozen, Priority, Support_load, Window);
-import macros/control(macro if);
-import macros/row_macros(macro select);
-import testapi(Bool, I32, String);
+import calendar_blackout_planner/model {
+  type Frozen;
+  type Priority;
+  type Support_load;
+  type Window
+}
+import macros/control { macro if }
+import macros/row_macros { macro select }
+import testapi { type Bool; type I32; type String }
 import testapi/arith as arith;
 
 pub fn score(window: Window) -> I32 {

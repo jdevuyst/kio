@@ -1,4 +1,4 @@
-package typecheck_spine_widen_prod;
+pkg typecheck_spine_widen_prod;
 
 build {
   cache "out/.kio-cache/";

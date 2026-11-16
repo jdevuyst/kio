@@ -1,4 +1,4 @@
-module result/macros/testapi;
+mod result/macros/testapi;
 
 import testapi as _rehost_hegfhdhegbhagj;
 

@@ -1,6 +1,6 @@
-module bang_frames;
-import ops(varop [! !], varop []);
-import library/custom(macro helper, macro varop, macro foldl);
+mod bang_frames;
+import ops {op_var [! !]; op_var []}
+import library/custom {macro helper; macro varop; macro foldl}
 fn run(x: .) {
   [!x!];
   [! x, x!];

@@ -1,4 +1,4 @@
-package numeric_literal_identity;
+pkg numeric_literal_identity;
 
 build {
   cache "out/.kio-cache/";

@@ -1,29 +1,29 @@
 /// Rule-search macro that derives a value from caller-supplied candidate functions and constructors.
-module vec/list/macros/derive;
+mod vec/list/macros/derive;
 
 import __intrinsics__;
 
 import __comptime__;
-import vec/list/macros/macro_util(
-, Macro_result
-, Slot
-, Slot_list
-, Term_list
-, Type_list
-, err
-, finish_macro_result
-, ok
-, product_slots
-, product_spine
-, right_fold_term_product_from_reversed
-, slot_term
-, slot_type
-, term_cons
-, term_nil
-, type_cons
-, type_nil
-);
-import vec/list/macros/testapi(I32, Int, String);
+import vec/list/macros/macro_util {
+  type Macro_result;
+  type Slot;
+  type Slot_list;
+  type Term_list;
+  type Type_list;
+  fn err;
+  fn finish_macro_result;
+  fn ok;
+  fn product_slots;
+  fn product_spine;
+  fn right_fold_term_product_from_reversed;
+  fn slot_term;
+  fn slot_type;
+  fn term_cons;
+  fn term_nil;
+  fn type_cons;
+  fn type_nil
+}
+import vec/list/macros/testapi { type I32; type Int; type String }
 
 type Type_pair = __Type__ & __Type__;
 

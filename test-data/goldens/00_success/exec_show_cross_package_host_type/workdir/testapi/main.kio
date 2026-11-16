@@ -1,9 +1,9 @@
-module testapi/main;
+mod testapi/main;
 
-import macros/show(macro show);
-import testapi(String);
-import testapi/io(print);
-import testapi/text(string_concat);
+import macros/show { macro show }
+import testapi { type String }
+import testapi/io { fn print }
+import testapi/text { fn string_concat }
 
 fn string_to_string(value: String) -> String { value }
 

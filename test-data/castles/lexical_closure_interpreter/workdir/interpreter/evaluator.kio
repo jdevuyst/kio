@@ -1,16 +1,16 @@
-module interpreter/evaluator;
+mod interpreter/evaluator;
 
 import interpreter/environment as env;
 import interpreter/syntax as ast;
 import interpreter/values as values;
 import list/core as lists;
-import macros/control(macro if);
-import macros/match(macro match);
-import macros/row_macros(macro select);
-import macros/spine_macros(macro widen_sum);
-import testapi(Bool, I32, String);
+import macros/control { macro if }
+import macros/match { macro match }
+import macros/row_macros { macro select }
+import macros/spine_macros { macro widen_sum }
+import testapi { type Bool; type I32; type String }
 import testapi/arith as arith;
-import testapi/iter(loop);
+import testapi/iter { fn loop }
 
 type Frame =
   | { Add_left: ast.Expr & values.Environment }

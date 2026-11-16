@@ -4,7 +4,7 @@ use crate::pretty::pretty_module;
 
 fn source(pattern: &str, other: &str, expression: &str, imported: bool) -> String {
     let operators = if imported {
-        format!("import ops(op {pattern}, op {other});")
+        format!("import ops {{op {pattern}; op {other}}}")
     } else {
         format!(
             "fn pick(left: ., right: .) -> . {{ left }}\n\
@@ -13,8 +13,9 @@ fn source(pattern: &str, other: &str, expression: &str, imported: bool) -> Strin
         )
     };
     format!(
-        "module source;\n{operators}\n\
-         fn subject(a: ., b: ., c: .) -> . {{ {expression} }}"
+        "mod source;
+{operators}
+fn subject(a: ., b: ., c: .) -> . {{ {expression} }}"
     )
 }
 
@@ -146,7 +147,7 @@ fn closed_results_and_explicit_groups_compose_with_unbounded_recursion() {
 
 #[test]
 fn owned_word_preempts_same_binding_continuation() {
-    let declaration = "module source; op _ ? __ ? { impl pick; };";
+    let declaration = "mod source; op _ ? __ ? { impl pick; };";
     let error = parse(declaration).unwrap_err();
     assert!(error.diag().1.contains("ineffective"), "{error:?}");
     for imported in [false, true] {

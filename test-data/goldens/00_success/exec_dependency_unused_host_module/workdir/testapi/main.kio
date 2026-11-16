@@ -1,8 +1,8 @@
-module testapi/main;
+mod testapi/main;
 
-import sinklib/core(pick);
-import testapi(String);
-import testapi/io(print);
+import sinklib/core { fn pick }
+import testapi { type String }
+import testapi/io { fn print }
 
 // Use only `sinklib/core` (a pure helper). The dependency also ships
 // `sinklib/sink`, which declares a host fn the `testapi-print` protocol

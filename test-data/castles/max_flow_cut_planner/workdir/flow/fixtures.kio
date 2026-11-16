@@ -1,7 +1,7 @@
-module flow/fixtures;
+mod flow/fixtures;
 
 import flow/network as net;
-import testapi(I32, String);
+import testapi { type I32; type String }
 
 pub type Fixture = { Title: String; Network: net.Network; Source: I32; Sink: I32; Expected: I32 };
 

@@ -1,4 +1,4 @@
-module m;
+mod m;
 
 type Alias[A] = A;
 type _Alias[_A] = _A;

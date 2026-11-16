@@ -55,11 +55,11 @@ module and its explicit imports. After `@`, it offers the directive words;
 a name replaces the whole reference operand, including operator spellings.
 Ordinary prose, links and literal code do not offer these name suggestions.
 
-Module docs use the same syntax before the `module` line:
+Module docs use the same syntax before the `mod` line:
 
 ```text
 /// Utilities for the package's public API.
-module demo/util;
+mod demo/util;
 ```
 
 ## References
@@ -127,7 +127,7 @@ snippets with `{@NAME}`. Here the marker is inside a function, because the
 snippet contains statements and a result expression:
 
 ```kio {harness=demo placeholder="__SNIPPET__"}
-module demo/main;
+mod demo/main;
 
 fn id(x: .) { x }
 

@@ -1,5 +1,5 @@
-module testapi/main;
+mod testapi/main;
 
-import fmtlib/show(show);
+import fmtlib/show { fn show }
 
 pub fn main() { show() }

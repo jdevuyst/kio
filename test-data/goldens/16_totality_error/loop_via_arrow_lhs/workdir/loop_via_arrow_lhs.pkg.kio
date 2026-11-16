@@ -1,4 +1,4 @@
-package loop_via_arrow_lhs;
+pkg loop_via_arrow_lhs;
 
 build {
   cache "out/.kio-cache/";

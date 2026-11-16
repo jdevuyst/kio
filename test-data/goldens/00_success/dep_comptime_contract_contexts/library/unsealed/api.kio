@@ -1,5 +1,5 @@
-module api;
+mod api;
 
-import provider(macro identity);
+import provider { macro identity }
 
 pub fn keep() { () }

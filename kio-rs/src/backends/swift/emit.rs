@@ -145,8 +145,7 @@ pub fn lower_package_with_signature(
 ) -> Result<SwiftPackage, EmitError> {
     package.package_file().ok_or_else(|| {
         EmitError::unsupported(
-            "Swift emitter requires a package file (`<pkg>.pkg.kio`); \
-             a package without one has no package boundary to expose",
+            "Swift emitter requires a package file (`<pkg>.pkg.kio`); a package without one has no package boundary to expose",
         )
     })?;
 
@@ -1606,10 +1605,11 @@ fn wire_namespace_pointers(node: &ExportTree, path: &mut Vec<FacadeSelector>, ou
 /// against a host.
 fn render_create_package(names: &SwiftNames) -> String {
     format!(
-        "// {factory} instantiates the package against a host conformance.\n\
-         public func {factory}<H: {host_ty}>(host: H) -> {handle}<H> {{\n\
-         \treturn {handle}<H>(host: host)\n\
-         }}\n",
+        "// {factory} instantiates the package against a host conformance.
+public func {factory}<H: {host_ty}>(host: H) -> {handle}<H> {{
+\treturn {handle}<H>(host: host)
+}}
+",
         factory = names.factory,
         host_ty = names.host_ty,
         handle = names.handle,
@@ -2897,7 +2897,7 @@ mod tests {
     fn wide_canonical_types_and_witnesses_use_linear_output() {
         use crate::ast::Meta;
         use crate::backends::boundary_facade::PreparedBoundaryScheme;
-        let package = single_api_package("module api; pub fn unit() -> . { () }");
+        let package = single_api_package("mod api; pub fn unit() -> . { () }");
         let prepared = PreparedBoundaryCallableSites::collect(&package, None).unwrap();
         let shapes = super::super::skin::PreparedSwiftShapes::new(&prepared, "PkgHost", &package);
         let span = crate::span::Span::new(0, 0);
@@ -2974,7 +2974,7 @@ mod tests {
     #[test]
     fn higher_order_domains_preserve_generic_escaping_convention() {
         let package = single_api_package(
-            "module api; \
+            "mod api; \
              host fn apply(value: (. -> .) -> .) -> .; \
              pub fn keep(value: (. -> .) -> .) -> (. -> .) -> . { value }",
         );
@@ -2992,7 +2992,7 @@ mod tests {
     #[test]
     fn native_leaf_witnesses_do_not_emit_immediate_closures() {
         use crate::ast::{Meta, PathSegment};
-        let package = single_api_package("module api; host type Atom; pub fn unit() { () }");
+        let package = single_api_package("mod api; host type Atom; pub fn unit() { () }");
         let prepared = PreparedBoundaryCallableSites::collect(&package, None).unwrap();
         let shapes = super::super::skin::PreparedSwiftShapes::new(&prepared, "PkgHost", &package);
         let span = crate::span::Span::new(0, 0);
@@ -3044,7 +3044,7 @@ mod tests {
     fn one_witness_prelude_reuses_only_exact_native_leaves() {
         use crate::ast::{Meta, PathSegment};
         let package =
-            single_api_package("module api; host type Atom; host type Other; pub fn unit() { () }");
+            single_api_package("mod api; host type Atom; host type Other; pub fn unit() { () }");
         let prepared = PreparedBoundaryCallableSites::collect(&package, None).unwrap();
         let shapes = super::super::skin::PreparedSwiftShapes::new(&prepared, "PkgHost", &package);
         let span = crate::span::Span::new(0, 0);
@@ -3128,11 +3128,11 @@ mod tests {
 
     fn same_leaf_package() -> Package<Routed> {
         let sources = [
-            "module left; host type Shared role(i32); \
+            "mod left; host type Shared role(i32); \
              pub type { Token: Shared { mk; get; }; }; \
              host fn round_token(value: Token) -> Token; \
              pub fn left_value() -> Shared { 1 }",
-            "module right; host type Shared role(i64); \
+            "mod right; host type Shared role(i64); \
              pub type { Token: Shared { mk; get; }; }; \
              host fn round_token(value: Token) -> Token; \
              pub fn right_value() -> Shared { 2 }",
@@ -3141,12 +3141,12 @@ mod tests {
             .iter()
             .map(|source| {
                 let module = parse(source).expect("parse module");
-                let path = module.path.segments.last().expect("module leaf").as_str();
+                let path = module.path.segments.last().expect("mod leaf").as_str();
                 (PathBuf::from(format!("{path}.kio")), module)
             })
             .collect();
         let package_file = parse_package_file(
-            "package pkg; build { target swift { out \"out/swift/\"; } } bridge { left; right; }",
+            "pkg pkg; build { target swift { out \"out/swift/\"; } } bridge { left; right; }",
             None,
         )
         .expect("parse package file");
@@ -3172,7 +3172,7 @@ mod tests {
             parse(source).expect("parse api module"),
         )];
         let package_file = parse_package_file(
-            "package pkg; build { target swift { out \"out/swift/\"; } } bridge { api; }",
+            "pkg pkg; build { target swift { out \"out/swift/\"; } } bridge { api; }",
             None,
         )
         .expect("parse api package file");
@@ -3194,8 +3194,7 @@ mod tests {
 
     fn with_routed_invariant_emitter(test: impl FnOnce(&mut BodyEmitter<'_, '_>)) {
         let package = single_api_package(
-            "module api; host type Flag role(bool); host type Text role(str); \
-             pub fn flag() -> Flag { .t }",
+            "mod api; host type Flag role(bool); host type Text role(str); pub fn flag() -> Flag { .t }",
         );
         let prepared = PreparedBoundaryCallableSites::collect_live(&package).unwrap();
         let host_desc = host_descriptor::build_host_descriptor(&package);
@@ -3316,11 +3315,11 @@ mod tests {
     }
 
     fn retained_carrier_signature() -> (u32, crate::sig::ReplayedInterface) {
-        let source = r#"signature pkg v(3);
+        let source = r#"sig pkg v(3);
 v(1) {
   nonbreaking {
     add {
-      module api {
+      mod api {
         host type Box[A];
         host type Legacy role(str);
         host type Unused[A];
@@ -3335,15 +3334,15 @@ v(1) {
 v(2) {
   nonbreaking {
     remove {
-      module api {
-        Box;
-        Legacy;
-        Unused;
-        Unused_nullary;
-        Token;
-        old;
-        old_text;
-      }
+
+        api.Box;
+        api.Legacy;
+        api.Unused;
+        api.Unused_nullary;
+        api.Token;
+        api.old;
+        api.old_text;
+
     }
   }
 }
@@ -3371,25 +3370,30 @@ v(2) {
             .collect::<Vec<_>>()
             .join(", ");
         let removals = (0..width)
-            .flat_map(|index| [format!("Reach{index:02};"), format!("Unused{index:02};")])
-            .chain(std::iter::once("old;".to_owned()))
+            .flat_map(|index| {
+                [
+                    format!("api.Reach{index:02};"),
+                    format!("api.Unused{index:02};"),
+                ]
+            })
+            .chain(std::iter::once("api.old;".to_owned()))
             .collect::<Vec<_>>()
             .join("\n");
         let signature = format!(
-            "signature pkg v(3);\n\
-             v(1) {{ nonbreaking {{ add {{ module api {{\n\
-             {additions}\n\
-             host fn old({parameters}) -> .;\n\
-             }} }} }} }}\n\
-             v(2) {{ nonbreaking {{ remove {{ module api {{\n\
-             {removals}\n\
-             }} }} }} }}"
+            "sig pkg v(3);
+v(1) {{ nonbreaking {{ add {{ mod api {{
+{additions}
+host fn old({parameters}) -> .;
+}} }} }} }}
+v(2) {{ nonbreaking {{ remove {{
+{removals}
+}} }} }}"
         );
         let file = crate::pass::parser::parse_signature_file(&signature, None)
             .expect("parse Swift reached-nominal width fixture");
         let replayed =
             crate::sig::replay(&file).expect("replay Swift reached-nominal width fixture");
-        let package = single_api_package("module api; pub fn unit() -> . { () }");
+        let package = single_api_package("mod api; pub fn unit() -> . { () }");
         let prepared = PreparedBoundaryCallableSites::collect(&package, Some(&replayed))
             .expect("prepare Swift reached-nominal width fixture");
         let shapes =
@@ -3472,7 +3476,7 @@ v(2) {
 
     #[test]
     fn retained_signature_emits_deprecated_optional_source_facade_only() {
-        let package = single_api_package("module api; pub fn unit() -> . { () }");
+        let package = single_api_package("mod api; pub fn unit() -> . { () }");
         let live = lower_package(&package, "Facade").expect("emit live Swift package");
         let sig = retained_carrier_signature();
         let retained = lower_package_with_signature(&package, "Facade", Some(&sig))
@@ -3624,7 +3628,7 @@ v(2) {
 
     #[test]
     fn nested_callable_support_promotes_retained_origins_before_reusing_declarations() {
-        let package = single_api_package("module api; host fn nested() -> [A] A -> [B] B -> A;");
+        let package = single_api_package("mod api; host fn nested() -> [A] A -> [B] B -> A;");
         let prepared = PreparedBoundaryCallableSites::collect(&package, None).unwrap();
         let shapes = super::super::skin::PreparedSwiftShapes::new(&prepared, "PkgHost", &package);
         let site = prepared.sites().next().expect("the one host callable");
@@ -3667,11 +3671,7 @@ v(2) {
     #[test]
     fn live_provenance_dominates_retained_swift_support_deprecation() {
         let package = single_api_package(
-            "module api; \
-             host type Box[A]; \
-             pub type { Token[A]: A { pub mk; get; }; }; \
-             host fn current(value: Box[Token[.]] & (. -> .)) -> [A] A -> A; \
-             pub fn unit() -> . { () }",
+            "mod api; host type Box[A]; pub type { Token[A]: A { pub mk; get; }; }; host fn current(value: Box[Token[.]] & (. -> .)) -> [A] A -> A; pub fn unit() -> . { () }",
         );
         let sig = retained_carrier_signature();
         let emitted = lower_package_with_signature(&package, "Facade", Some(&sig))
@@ -3721,18 +3721,13 @@ v(2) {
     }
 
     fn staged_type_application_package() -> Package<Routed> {
-        let source = "module api; \
-            host type T role(str); \
-            host fn host_id[A](value: A) -> A; \
-            pub fn id[A](value: A) -> A { value } \
-            fn host_value() -> [A] A -> A { host_id } \
-            pub fn call(value: T) -> T { id[T]( value) }";
+        let source = "mod api; host type T role(str); host fn host_id[A](value: A) -> A; pub fn id[A](value: A) -> A { value } fn host_value() -> [A] A -> A { host_id } pub fn call(value: T) -> T { id[T]( value) }";
         let parsed = vec![(
             PathBuf::from("api.kio"),
             parse(source).expect("parse staged module"),
         )];
         let package_file = parse_package_file(
-            "package pkg; build { target swift { out \"out/swift/\"; } } bridge { api; }",
+            "pkg pkg; build { target swift { out \"out/swift/\"; } } bridge { api; }",
             None,
         )
         .expect("parse staged package file");
@@ -3808,9 +3803,7 @@ v(2) {
     #[test]
     fn public_host_method_selects_a_staged_generic_absent_from_its_signature() {
         let package = single_api_package(
-            "module api; \
-             host fn staged[A](value: A)[B](unit: .) -> .; \
-             pub fn call() -> . { staged[.]( ())[ .]( ()) }",
+            "mod api; host fn staged[A](value: A)[B](unit: .) -> .; pub fn call() -> . { staged[.]( ())[ .]( ()) }",
         );
         let emitted = lower_package(&package, "Pkg").expect("emit staged host function");
 
@@ -3836,10 +3829,8 @@ v(2) {
 
     #[test]
     fn public_export_method_selects_a_staged_generic_absent_from_its_signature() {
-        let package = single_api_package(
-            "module api; \
-             pub fn staged[A](value: A)[B](unit: .) -> . { unit }",
-        );
+        let package =
+            single_api_package("mod api; pub fn staged[A](value: A)[B](unit: .) -> . { unit }");
         let emitted = lower_package(&package, "Pkg").expect("emit staged public function");
 
         assert!(
@@ -3859,20 +3850,13 @@ v(2) {
     }
 
     fn comptime_named_package() -> Package<Routed> {
-        let source = "module api; \
-            host type Comptime_bool role(i32); \
-            pub type { Comptime_str: . { \
-              pub mk; \
-              pub get; \
-            }; }; \
-            host fn round_host(value: Comptime_bool) -> Comptime_bool; \
-            host fn round_newtype(value: Comptime_str) -> Comptime_str;";
+        let source = "mod api; host type Comptime_bool role(i32); pub type { Comptime_str: . { pub mk; pub get; }; }; host fn round_host(value: Comptime_bool) -> Comptime_bool; host fn round_newtype(value: Comptime_str) -> Comptime_str;";
         let parsed = vec![(
             PathBuf::from("api.kio"),
             parse(source).expect("parse module"),
         )];
         let package_file = parse_package_file(
-            "package pkg; build { target swift { out \"out/swift/\"; } } bridge { api; }",
+            "pkg pkg; build { target swift { out \"out/swift/\"; } } bridge { api; }",
             None,
         )
         .expect("parse package file");
@@ -3915,43 +3899,13 @@ v(2) {
     }
 
     fn opaque_newtype_package() -> Package<Routed> {
-        let source = "module api; import __comptime__; \
-            type { Hidden_payload: . { mk; get; }; }; \
-            pub type { Hidden_type: __Type__ { mk; get; }; }; \
-            pub type { Opaque_a: Hidden_payload { mk; get; }; }; \
-            pub type { Opaque_b: Hidden_payload { mk; get; }; }; \
-            pub type { Constructor_only: . { pub mk; get; }; }; \
-            pub type { Projector_only: . { mk; pub get; }; }; \
-            pub type { Generic[A]: A { pub mk; get; }; }; \
-            pub type { Existential <U>: U { mk; pub get; }; }; \
-            pub type { Transparent_both: . { pub mk; pub get; }; }; \
-            pub type { Transparent_spread: [A] (Hidden_type & A) -> Hidden_type { pub mk; pub get; }; }; \
-            pub type { Transparent_packed: (Hidden_type & Hidden_type) -> Hidden_type { pub mk; pub get; }; }; \
-            pub type { Constructor_spread: [A] (Hidden_type & A) -> Hidden_type { pub mk; get; }; }; \
-            pub type { Projector_spread: [A] (Hidden_type & A) -> Hidden_type { mk; pub get; }; }; \
-            pub type { Existential_spread <U>: [A] (U & A) -> U { mk; pub get; }; }; \
-            pub type { Foo: . { mk; get; }; }; \
-            pub type { Foo_host: . { mk; get; }; }; \
-            rec { \
-              pub type { Outer: Hidden { pub mk; pub get; }; }; \
-              pub type { Hidden: Outer { mk; get; }; }; \
-            } \
-            pub rec type { Direct_recursive: . | Direct_recursive { pub mk; pub get; }; }; \
-            host fn round_opaque(value: Opaque_a) -> Opaque_a; \
-            host fn round_generic[A](value: Generic[A]) -> Generic[A]; \
-            host fn round_existential(value: Existential) -> Existential; \
-            host fn echo_outer(value: Outer) -> Outer; \
-            host fn echo_direct(value: Direct_recursive) -> Direct_recursive; \
-            host fn round_transparent_spread(value: Transparent_spread) -> Transparent_spread; \
-            host fn round_transparent_packed(value: Transparent_packed) -> Transparent_packed; \
-            pub fn keep_a(value: Opaque_a) -> Opaque_a { value } \
-            pub fn keep_b(value: Opaque_b) -> Opaque_b { value }";
+        let source = "mod api; import __comptime__; type { Hidden_payload: . { mk; get; }; }; pub type { Hidden_type: __Type__ { mk; get; }; }; pub type { Opaque_a: Hidden_payload { mk; get; }; }; pub type { Opaque_b: Hidden_payload { mk; get; }; }; pub type { Constructor_only: . { pub mk; get; }; }; pub type { Projector_only: . { mk; pub get; }; }; pub type { Generic[A]: A { pub mk; get; }; }; pub type { Existential <U>: U { mk; pub get; }; }; pub type { Transparent_both: . { pub mk; pub get; }; }; pub type { Transparent_spread: [A] (Hidden_type & A) -> Hidden_type { pub mk; pub get; }; }; pub type { Transparent_packed: (Hidden_type & Hidden_type) -> Hidden_type { pub mk; pub get; }; }; pub type { Constructor_spread: [A] (Hidden_type & A) -> Hidden_type { pub mk; get; }; }; pub type { Projector_spread: [A] (Hidden_type & A) -> Hidden_type { mk; pub get; }; }; pub type { Existential_spread <U>: [A] (U & A) -> U { mk; pub get; }; }; pub type { Foo: . { mk; get; }; }; pub type { Foo_host: . { mk; get; }; }; rec { pub type { Outer: Hidden { pub mk; pub get; }; }; pub type { Hidden: Outer { mk; get; }; }; } pub rec type { Direct_recursive: . | Direct_recursive { pub mk; pub get; }; }; host fn round_opaque(value: Opaque_a) -> Opaque_a; host fn round_generic[A](value: Generic[A]) -> Generic[A]; host fn round_existential(value: Existential) -> Existential; host fn echo_outer(value: Outer) -> Outer; host fn echo_direct(value: Direct_recursive) -> Direct_recursive; host fn round_transparent_spread(value: Transparent_spread) -> Transparent_spread; host fn round_transparent_packed(value: Transparent_packed) -> Transparent_packed; pub fn keep_a(value: Opaque_a) -> Opaque_a { value } pub fn keep_b(value: Opaque_b) -> Opaque_b { value }";
         let parsed = vec![(
             PathBuf::from("api.kio"),
             parse(source).expect("parse module"),
         )];
         let package_file = parse_package_file(
-            "package pkg; build { target swift { out \"out/swift/\"; } } bridge { api; }",
+            "pkg pkg; build { target swift { out \"out/swift/\"; } } bridge { api; }",
             None,
         )
         .expect("parse package file");
@@ -4098,9 +4052,7 @@ v(2) {
     #[test]
     fn parameterized_host_types_use_exact_generic_carriers_and_constructor_markers() {
         let package = single_api_package(
-            "module api; \
-             host type Box[A]; \
-             host fn round[A](value: Box[A]) -> Box[A];",
+            "mod api; host type Box[A]; host fn round[A](value: Box[A]) -> Box[A];",
         );
         let emitted = lower_package(&package, "Pkg").expect("emit Swift");
 
@@ -4135,12 +4087,7 @@ v(2) {
     #[test]
     fn nominal_applications_are_opaque_host_indexed_and_grouping_canonical() {
         let package = single_api_package(
-            "module api; \
-             pub type { Opaque[A][B]: A & B { mk; get; }; }; \
-             pub type { Construct[A][B]: A & B { pub mk; get; }; }; \
-             pub type { Project[A][B]: A & B { mk; pub get; }; }; \
-             pub type { Both[A][B]: A & B { pub mk; pub get; }; }; \
-             pub type { Packed[A][B] <Hidden>: A & B & Hidden { pub mk; pub get; }; };",
+            "mod api; pub type { Opaque[A][B]: A & B { mk; get; }; }; pub type { Construct[A][B]: A & B { pub mk; get; }; }; pub type { Project[A][B]: A & B { mk; pub get; }; }; pub type { Both[A][B]: A & B { pub mk; pub get; }; }; pub type { Packed[A][B] <Hidden>: A & B & Hidden { pub mk; pub get; }; };",
         );
         let emitted = lower_package(&package, "Pkg").expect("emit Swift");
         for name in ["Opaque", "Construct", "Project", "Both", "Packed"] {
@@ -4175,10 +4122,7 @@ v(2) {
     #[test]
     fn forall_sites_expose_exact_callable_and_implementation_protocols() {
         let package = single_api_package(
-            "module api; \
-             host type Text role(str); \
-             host fn apply(poly: [A] A -> A, value: Text) -> Text; \
-             host fn produce(_unit: .) -> [A] A;",
+            "mod api; host type Text role(str); host fn apply(poly: [A] A -> A, value: Text) -> Text; host fn produce(_unit: .) -> [A] A;",
         );
         let emitted = lower_package(&package, "Pkg").expect("emit Swift");
 
@@ -4220,18 +4164,7 @@ v(2) {
     #[test]
     fn callable_aliases_follow_structural_signature_paths() {
         let package = single_api_package(
-            "module api; \
-             host type N; host type Box[A]; \
-             host fn exchange[Outer][ More]( \
-                 choice: (. -> N) | ([A] A -> A), \
-                 product: (Outer -> More) & ([B] B -> Outer), \
-                 wrapped: Box[[C] C -> Outer], \
-                 callback: ((. -> N) | ([D] D -> D)) -> ((. -> N) | ([E] E -> E)) \
-             ) -> Box[[R] R -> More]; \
-             host fn nested(value: (([A] A -> A) & N) & ([B] B -> B)) -> .; \
-             host fn grouped(callback: ((. -> N) & ([A] A -> A)) -> .) -> .; \
-             pub type { Secret: [A] A -> A { mk; get; }; }; \
-             host fn opaque(value: Secret) -> Secret;",
+            "mod api; host type N; host type Box[A]; host fn exchange[Outer][ More]( choice: (. -> N) | ([A] A -> A), product: (Outer -> More) & ([B] B -> Outer), wrapped: Box[[C] C -> Outer], callback: ((. -> N) | ([D] D -> D)) -> ((. -> N) | ([E] E -> E)) ) -> Box[[R] R -> More]; host fn nested(value: (([A] A -> A) & N) & ([B] B -> B)) -> .; host fn grouped(callback: ((. -> N) & ([A] A -> A)) -> .) -> .; pub type { Secret: [A] A -> A { mk; get; }; }; host fn opaque(value: Secret) -> Secret;",
         );
         let emitted = lower_package(&package, "Pkg").expect("emit structural callable aliases");
         let ffi = &emitted.ffi_swift;
@@ -4298,12 +4231,8 @@ v(2) {
 
     #[test]
     fn retained_structural_callable_aliases_keep_origin_and_binder_hygiene() {
-        let package = single_api_package("module api; pub fn unit() -> . { () }");
-        let source = "signature pkg v(3); \
-            v(1) { nonbreaking { add { module api { \
-                host fn old_field0[H](value: ([A] A -> H) | (. -> H)) -> .; \
-            } } } } \
-            v(2) { nonbreaking { remove { module api { old_field0; } } } }";
+        let package = single_api_package("mod api; pub fn unit() -> . { () }");
+        let source = "sig pkg v(3); v(1) { nonbreaking { add { mod api { host fn old_field0[H](value: ([A] A -> H) | (. -> H)) -> .; } } } } v(2) { nonbreaking { remove {  api.old_field0;  } } }";
         let file = crate::pass::parser::parse_signature_file(source, None)
             .expect("parse retained alias signature");
         let sig = (
@@ -4339,12 +4268,7 @@ v(2) {
     #[test]
     fn callable_alias_paths_do_not_render_higher_kinded_containers_as_values() {
         let package = single_api_package(
-            "module api; \
-             host type Box[A]; host type Pair[A][B]; \
-             pub type { Holder[*F][A]: . { mk; get; }; }; \
-             host fn higher[*F](bound: Holder[F][ [A] A -> A], \
-                 nominal: Holder[Box][ [B] B -> B], \
-                 partial: Holder[Pair[[C] C -> C]][ .]) -> .;",
+            "mod api; host type Box[A]; host type Pair[A][B]; pub type { Holder[*F][A]: . { mk; get; }; }; host fn higher[*F](bound: Holder[F][ [A] A -> A], nominal: Holder[Box][ [B] B -> B], partial: Holder[Pair[[C] C -> C]][ .]) -> .;",
         );
         let emitted = lower_package(&package, "Pkg").expect("emit higher-kinded alias paths");
         let ffi = &emitted.ffi_swift;
@@ -4373,7 +4297,7 @@ v(2) {
     fn structural_callable_alias_count_grows_with_occurrences() {
         for width in [4, 16] {
             let arms = vec!["[A] A -> A"; width].join(") | (");
-            let source = format!("module api; host fn many(value: ({arms})) -> .;");
+            let source = format!("mod api; host fn many(value: ({arms})) -> .;");
             let emitted =
                 lower_package(&single_api_package(&source), "Pkg").expect("emit wide aliases");
             assert_eq!(
@@ -4399,17 +4323,14 @@ v(2) {
     fn unrelated_live_declarations_do_not_perturb_existing_facade_names_or_types() {
         let base = lower_package(
             &single_api_package(
-                "module api; host type Box[A]; \
-                 host fn round[A](value: Box[A]) -> Box[A];",
+                "mod api; host type Box[A]; host fn round[A](value: Box[A]) -> Box[A];",
             ),
             "Pkg",
         )
         .expect("emit base Swift");
         let extended = lower_package(
             &single_api_package(
-                "module api; host type Box[A]; \
-                 host fn round[A](value: Box[A]) -> Box[A]; \
-                 host type Extra; host fn extra(value: Extra) -> Extra;",
+                "mod api; host type Box[A]; host fn round[A](value: Box[A]) -> Box[A]; host type Extra; host fn extra(value: Extra) -> Extra;",
             ),
             "Pkg",
         )

@@ -1,4 +1,4 @@
-package exec_reorder_prod_basic;
+pkg exec_reorder_prod_basic;
 
 build {
   cache "out/.kio-cache/";

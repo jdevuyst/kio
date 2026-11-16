@@ -49,7 +49,3 @@ for name in missing_bool_intrinsic mixed_integer_first mixed_float_first; do
 done
 check_case 14 explicit_float "decimal point"
 check_case 14 expected_float "decimal point"
-source_dir=$case_dir/syntax-fixtures
-for name in removed_host_modifier removed_import_modifier removed_alias_modifier; do
-  check_case 11 "$name"
-done

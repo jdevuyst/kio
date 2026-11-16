@@ -1,4 +1,4 @@
-package ufcs_empty_tail_receiver_last;
+pkg ufcs_empty_tail_receiver_last;
 
 build {
   cache "out/.kio-cache/";

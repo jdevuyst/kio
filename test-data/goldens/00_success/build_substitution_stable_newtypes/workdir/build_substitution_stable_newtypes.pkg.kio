@@ -1,4 +1,4 @@
-package build_substitution_stable_newtypes;
+pkg build_substitution_stable_newtypes;
 
 build {
   cache "out/.kio-cache/";

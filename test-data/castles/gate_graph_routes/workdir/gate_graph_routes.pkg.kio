@@ -1,4 +1,4 @@
-package gate_graph_routes;
+pkg gate_graph_routes;
 
 build {
   cache "out/.kio-cache/";

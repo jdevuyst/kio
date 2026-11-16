@@ -1,6 +1,6 @@
-module user_macro_target_placeholder_needs_context/main;
+mod user_macro_target_placeholder_needs_context/main;
 
-import macros(macro id_user);
-import user_macro_target_placeholder_needs_context(String);
+import macros { macro id_user }
+import user_macro_target_placeholder_needs_context { type String }
 
 fn unresolved(s: String) -> String { let selected = id_user(s)[_]; selected }

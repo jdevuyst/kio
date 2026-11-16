@@ -1,6 +1,6 @@
-module feature/selective;
+mod feature/selective;
 
-import feature/store(Box, Public);
+import feature/store { type Box; type Public }
 
 fn boxed() { Box.get[.](Box.mk[.](())) }
 

@@ -1,6 +1,6 @@
-module testapi/fields;
+mod testapi/fields;
 
-import testapi(String);
+import testapi { type String }
 
 pub type { Hidden: String { mk; get } }
 

@@ -81,8 +81,8 @@ scope. The documented item is visible by its declared name.
 **The snippet body is a block.** It may contain let-bindings and
 expression-statements followed by a trailing expression, exactly
 what a fn body accepts. It may **not** introduce top-level forms:
-no `module` re-declaration, no `import` lines, no inner `fn` /
-`type` / `literal` / `op` declarations.
+no `mod` re-declaration, no `import` lines, no inner `fn` /
+`type` / `lit` / `op` declarations.
 
 ### Diagnostics
 
@@ -324,7 +324,7 @@ The signature is the item's declaration header in the pretty-printed form
 
 - **`fn`**: `fn name[type-params](value-params) -> ReturnType`
 - **`type`**: `type Name = Type;`
-- **`literal`**: `literal name = value;`
+- **`lit`**: `lit name = value;`
 - **Nominal entry**: `type { Name: Type; }`
 - **`op`**: `op pattern { impl function; };`
 - **`host fn`** / **`exported fn`** (at the package boundary): the
@@ -356,7 +356,7 @@ kinds:
   function type of the declaration.
 
 A `type` is a type-level name and is rejected
-(see § Directive keywords) — it has no bound-value type. A `literal`
+(see § Directive keywords) — it has no bound-value type. A `lit`
 alias declaration is rejected until it is used in an expression with enough context,
 because the declaration itself has no standalone bound-value type.
 
@@ -447,7 +447,7 @@ The site has one page per module, plus standing pages:
   tutorial / guide pages.
 - **Module pages** — one per `.kio` module file. The page leads with the
   module-level doc-comment (heading and body), then a per-item section
-  for each top-level `fn` / `type` / `literal` / `op` declaration, in
+  for each top-level `fn` / `type` / `lit` / `op` declaration, in
   source declaration order. Each section shows the item's signature —
   the same form `` [`@signature term`] `` embeds — followed by the
   rendered doc-comment body. Anonymous declarations have no section of their
@@ -705,7 +705,7 @@ checking does not execute them:
 
 ````markdown
 ```kio {harness=main placeholder="__INSERT_CODE_HERE__"}
-module tutorial_example;
+mod tutorial_example;
 
 host type Int role(i32);
 host type String role(str);
@@ -739,7 +739,7 @@ use `variant=package`; a package and several modules use separate
 
 ````markdown
 ```kio {}
-module tutorial_intro;
+mod tutorial_intro;
 
 host type I32 role(i32);
 
@@ -775,7 +775,7 @@ appear inside the `main` harness's function body:
 
 ````markdown
 ```kio {harness=items placeholder="__INSERT_CODE_HERE__"}
-module placeholder_example;
+mod placeholder_example;
 
 host type String role(str);
 fn dummy_code() -> String { "example" }
@@ -888,7 +888,7 @@ For example, save this module as `repl_example.kio` and run `kio repl` from
 its directory:
 
 ```kio {}
-module repl_example;
+mod repl_example;
 
 pure fn identity[A](value: A) -> A { value }
 ```
@@ -923,7 +923,7 @@ redeclaring a name is a runner error.
 
 ````markdown
 ```kio {harness=arithmetic placeholder="__INSERT_CODE_HERE__"}
-module tutorial_example;
+mod tutorial_example;
 
 host type Int role(i32);
 host fn add(a: Int, b: Int) -> Int;
@@ -939,7 +939,7 @@ capabilities:
 
 ````markdown
 ```kio {harness=with_io placeholder="__INSERT_CODE_HERE__"}
-module tutorial_example;
+mod tutorial_example;
 
 host type I32 role(i32);
 host type String role(str);
@@ -960,7 +960,7 @@ GitHub readers by wrapping it in an HTML comment using the form
 
 ```
 <!--kio {harness=arithmetic_hidden placeholder="__INSERT_CODE_HERE__"}
-module tutorial_example;
+mod tutorial_example;
 
 host type I32 role(i32);
 host fn add(a: I32, b: I32) -> I32;
@@ -996,7 +996,7 @@ print("hi")
 ```
 
 ```kio {}
-module tutorial_intro;
+mod tutorial_intro;
 
 host type I32 role(i32);
 
@@ -1023,7 +1023,7 @@ and classifies the marker's position as one of two kinds:
 
 - **Top-level position** — the marker sits at module scope: outside
   every `{...}` group, between top-level items. A snippet member
-  contributes top-level forms (`fn`, `type`, `literal`, `op`, `import`, `pub fn`).
+  contributes top-level forms (`fn`, `type`, `lit`, `op`, `import`, `pub fn`).
 - **Block position** — the marker sits inside a `fn` body's
   `{...}` group at any nesting depth. A snippet member contributes
   block contents: `let` statements, expression statements, and a
@@ -1247,7 +1247,7 @@ validates — not each member independently.
 
 ````markdown
 ```kio {harness=running placeholder="__INSERT_CODE_HERE__" accumulate}
-module kiodoc;
+mod kiodoc;
 
 host type S role(str);
 host fn print(p0: S);
@@ -1313,9 +1313,9 @@ scratch path from that header:
 
 | Header form | Inferred path |
 | --- | --- |
-| `module pkg/main;` | `pkg/main.kio` |
-| `module utils;` | `utils.kio` |
-| `package pkg;` | `pkg.pkg.kio` |
+| `mod pkg/main;` | `pkg/main.kio` |
+| `mod utils;` | `utils.kio` |
+| `pkg pkg;` | `pkg.pkg.kio` |
 
 Module headers may use slash-qualified module paths; a root module
 names a single root-level stem. Package headers name a single
@@ -1325,7 +1325,7 @@ file-backed harness declarations.
 
 ````markdown
 <!--kio {file}
-module utils/list_ops;
+mod utils/list_ops;
 
 pub fn fold[A](x: A) -> A { x }
 -->
@@ -1335,13 +1335,13 @@ The `file` flag can also appear on a harness declaration:
 
 ````markdown
 <!--kio {harness=consumer file placeholder="__SNIPPET__"}
-module pkg/main;
+mod pkg/main;
 
 __SNIPPET__
 -->
 
 ```kio {@consumer}
-import utils/list_ops(fold);
+import utils/list_ops {fn fold}
 ```
 ````
 
@@ -1400,7 +1400,7 @@ variant snippet entirely.
 
 ````markdown
 ```kio {variant=package}
-package hello;
+pkg hello;
 
 bridge {
   hello;

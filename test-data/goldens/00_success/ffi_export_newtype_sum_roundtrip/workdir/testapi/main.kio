@@ -1,8 +1,8 @@
-module testapi/main;
+mod testapi/main;
 
-import macros/match(macro match);
-import macros/spine_macros(macro widen_sum);
-import testapi(I32, String);
+import macros/match { macro match }
+import macros/spine_macros { macro widen_sum }
+import testapi { type I32; type String }
 
 // `Pr` is a nominal type wrapping the product `(I32 & String)`.
 // `Tagged = Pr | .` is a sum whose first arm is that newtype-over-a-

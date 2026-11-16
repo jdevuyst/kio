@@ -1,4 +1,4 @@
-package native_docs;
+pkg native_docs;
 
 build {
   target js {

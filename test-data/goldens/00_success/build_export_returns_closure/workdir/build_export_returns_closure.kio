@@ -1,4 +1,4 @@
-module build_export_returns_closure;
+mod build_export_returns_closure;
 
 host type I32 role(i32);
 

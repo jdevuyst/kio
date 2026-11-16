@@ -1,10 +1,10 @@
-module testapi/main;
+mod testapi/main;
 
-import choose(macro choose);
-import testapi(Bool, I32);
-import testapi/arith(leq_i32);
-import testapi/io(print);
-import testapi/iter(loop);
+import choose { macro choose }
+import testapi { type Bool; type I32 }
+import testapi/arith { fn leq_i32 }
+import testapi/io { fn print }
+import testapi/iter { fn loop }
 
 type { Box[A]: A { mk; get } }
 

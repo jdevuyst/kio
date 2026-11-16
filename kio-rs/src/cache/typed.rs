@@ -453,10 +453,10 @@ mod tests {
 
     #[test]
     fn key_changes_on_source_dependency_and_pipeline_inputs() {
-        let base = key(b"module main;", &[]);
-        let source = key(b"module main; ", &[]);
+        let base = key(b"mod main;", &[]);
+        let source = key(b"mod main; ", &[]);
         let dep = key(
-            b"module main;",
+            b"mod main;",
             &[TypedModuleDependency::same_package_module(
                 PackageModuleKey::new("dep"),
                 crate::cache::keys::SurfaceFingerprint::new("dep"),
@@ -466,7 +466,7 @@ mod tests {
             PackageName::new("pkg"),
             PackageModuleKey::new("main"),
             PipelineTag::new("another-pipeline."),
-            b"module main;",
+            b"mod main;",
             &[],
         );
         assert_ne!(base.hex(), source.hex());
@@ -479,21 +479,21 @@ mod tests {
     fn key_separates_dependency_domains_and_module_identities() {
         let fingerprint = crate::cache::keys::SurfaceFingerprint::new("dep");
         let ordinary = key(
-            b"module main;",
+            b"mod main;",
             &[TypedModuleDependency::same_package_module(
                 PackageModuleKey::new("dep"),
                 fingerprint.clone(),
             )],
         );
         let other_module = key(
-            b"module main;",
+            b"mod main;",
             &[TypedModuleDependency::same_package_module(
                 PackageModuleKey::new("other-dep"),
                 fingerprint.clone(),
             )],
         );
         let macro_def = key(
-            b"module main;",
+            b"mod main;",
             &[TypedModuleDependency::same_package_macro_module(
                 PackageModuleKey::new("dep"),
                 fingerprint,
@@ -507,7 +507,7 @@ mod tests {
     fn disabled_cache_misses_and_ignores_store() {
         let cache = TypedModuleCache::disabled();
         assert!(!cache.is_enabled());
-        let key = key(b"module main;", &[]);
+        let key = key(b"mod main;", &[]);
         cache.store(&key, &empty_module());
         assert!(cache.lookup(&key).is_none());
     }
@@ -516,7 +516,7 @@ mod tests {
     fn active_cache_roundtrips_module() {
         let dir = tempdir();
         let cache = TypedModuleCache::open(dir.clone()).unwrap();
-        let key = key(b"module main;", &[]);
+        let key = key(b"mod main;", &[]);
         assert!(cache.lookup(&key).is_none());
         let module = empty_module();
         cache.store(&key, &module);
@@ -529,7 +529,7 @@ mod tests {
         let dir = tempdir();
         let early = TypedModuleCache::open(dir.clone()).unwrap();
         let peer = TypedModuleCache::open(dir.clone()).unwrap();
-        let key = key(b"module main;", &[]);
+        let key = key(b"mod main;", &[]);
         let module = empty_module();
 
         peer.store(&key, &module);
@@ -546,7 +546,7 @@ mod tests {
         let cache = TypedModuleCache::open(dir.clone()).unwrap();
         let root = dir.join("typed");
         let module = empty_module();
-        let lookup_key = key_for_package("reader", b"module main;", &[]);
+        let lookup_key = key_for_package("reader", b"mod main;", &[]);
         assert!(!entry_path(&root, &lookup_key).exists());
 
         let barrier = std::sync::Arc::new(std::sync::Barrier::new(WRITERS + 1));
@@ -556,8 +556,7 @@ mod tests {
                     let barrier = barrier.clone();
                     let root = root.clone();
                     scope.spawn(move || {
-                        let key =
-                            key_for_package(&format!("writer-{writer}"), b"module main;", &[]);
+                        let key = key_for_package(&format!("writer-{writer}"), b"mod main;", &[]);
                         barrier.wait();
                         write_entry(&root, &key, &empty_module())
                     })
@@ -580,7 +579,7 @@ mod tests {
     fn nonreplacing_rename_accepts_a_valid_peer_publication() {
         let dir = tempdir();
         let root = dir.join("typed");
-        let key = key(b"module main;", &[]);
+        let key = key(b"mod main;", &[]);
         let module = empty_module();
         write_entry(&root, &key, &module).unwrap();
         let attempts = std::cell::Cell::new(0);
@@ -602,7 +601,7 @@ mod tests {
         let dir = tempdir();
         let root = dir.join("typed");
         fs::create_dir_all(&root).unwrap();
-        let key = key(b"module main;", &[]);
+        let key = key(b"mod main;", &[]);
         let module = empty_module();
         fs::write(entry_path(&root, &key), b"corrupt").unwrap();
         let attempts = std::cell::Cell::new(0);
@@ -629,7 +628,7 @@ mod tests {
         let dir = tempdir();
         let root = dir.join("typed");
         fs::create_dir_all(&root).unwrap();
-        let key = key(b"module main;", &[]);
+        let key = key(b"mod main;", &[]);
         let module = empty_module();
         fs::write(entry_path(&root, &key), b"corrupt").unwrap();
         let peer_body = postcard::to_allocvec(&module).unwrap();
@@ -657,8 +656,8 @@ mod tests {
     fn semantic_module_identity_reuses_entries_across_package_names() {
         let dir = tempdir();
         let cache = TypedModuleCache::open(dir.clone()).unwrap();
-        let package_a = key_for_package("package-a", b"module main;", &[]);
-        let package_b = key_for_package("package-b", b"module main;", &[]);
+        let package_a = key_for_package("package-a", b"mod main;", &[]);
+        let package_b = key_for_package("package-b", b"mod main;", &[]);
 
         assert_eq!(package_a.hex(), package_b.hex());
         assert_eq!(
@@ -697,7 +696,7 @@ mod tests {
 
     #[test]
     fn typed_entries_are_stored_by_semantic_key() {
-        let key = key_for_package("diagnostic-label", b"module main;", &[]);
+        let key = key_for_package("diagnostic-label", b"mod main;", &[]);
         assert_eq!(
             entry_path(Path::new("/cache"), &key),
             Path::new("/cache").join(format!("{}.bin", key.hex()))
@@ -710,14 +709,14 @@ mod tests {
             PackageName::new("pkg"),
             PackageModuleKey::new("pkg/main"),
             PipelineTag::new(""),
-            b"module pkg/main;",
+            b"mod pkg/main;",
             &[],
         );
         let other = TypedModuleCacheKey::new(
             PackageName::new("pkg"),
             PackageModuleKey::new("pkg/other"),
             PipelineTag::new(""),
-            b"module pkg/main;",
+            b"mod pkg/main;",
             &[],
         );
         assert_ne!(main.hex(), other.hex());
@@ -731,8 +730,8 @@ mod tests {
     fn stale_header_and_malformed_body_miss() {
         let dir = tempdir();
         let cache = TypedModuleCache::open(dir.clone()).unwrap();
-        let old_key = key(b"module main;", &[]);
-        let new_key = key(b"module main; ", &[]);
+        let old_key = key(b"mod main;", &[]);
+        let new_key = key(b"mod main; ", &[]);
         let path = entry_path(&dir.join("typed"), &new_key);
         let body = postcard::to_allocvec(&empty_module()).unwrap();
         let mut stale = encode_header(&old_key, &body).into_bytes();
@@ -752,7 +751,7 @@ mod tests {
     fn exact_key_header_rejects_a_different_valid_module_body() {
         let dir = tempdir();
         let cache = TypedModuleCache::open(dir.clone()).unwrap();
-        let key = key(b"module main;", &[]);
+        let key = key(b"mod main;", &[]);
         let expected_body = postcard::to_allocvec(&empty_module()).unwrap();
         let replacement_body = postcard::to_allocvec(&module_named("test")).unwrap();
         assert_ne!(expected_body, replacement_body);

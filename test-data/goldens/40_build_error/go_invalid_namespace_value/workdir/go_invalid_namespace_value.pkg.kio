@@ -1,4 +1,4 @@
-package go_invalid_namespace_value;
+pkg go_invalid_namespace_value;
 
 build {
   cache "out/.kio-cache/";

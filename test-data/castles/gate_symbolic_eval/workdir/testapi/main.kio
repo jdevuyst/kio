@@ -1,5 +1,5 @@
-module testapi/main;
+mod testapi/main;
 
-import gate_symbolic_eval/program(run);
+import gate_symbolic_eval/program { fn run }
 
 pub fn main() { run() }

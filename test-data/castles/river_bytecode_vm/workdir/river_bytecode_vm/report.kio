@@ -1,28 +1,28 @@
-module river_bytecode_vm/report;
+mod river_bytecode_vm/report;
 
-import macros/control(macro if);
-import macros/row_macros(macro select);
+import macros/control { macro if }
+import macros/row_macros { macro select }
 import river_bytecode_vm/constants as c;
-import river_bytecode_vm/model(
-, Alerts
-, Cabbage
-, Checksum
-, Farmer
-, Goat
-, Halt_code
-, Moves
-, Pc
-, Snapshot
-, Ticks
-, Waits
-, Wolf
-);
+import river_bytecode_vm/model {
+  type Alerts;
+  type Cabbage;
+  type Checksum;
+  type Farmer;
+  type Goat;
+  type Halt_code;
+  type Moves;
+  type Pc;
+  type Snapshot;
+  type Ticks;
+  type Waits;
+  type Wolf
+}
 import river_bytecode_vm/util as util;
 import river_bytecode_vm/vm as vm;
-import testapi(Bool, I32, String);
-import testapi/arith(eq_i32);
-import testapi/fmt(bool_to_string, int_to_string);
-import testapi/text(string_concat);
+import testapi { type Bool; type I32; type String }
+import testapi/arith { fn eq_i32 }
+import testapi/fmt { fn bool_to_string; fn int_to_string }
+import testapi/text { fn string_concat }
 
 fn status(code: I32) -> String {
   if(eq_i32(code, c.halt_success())) {

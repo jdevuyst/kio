@@ -1,4 +1,4 @@
-package fills_written_callback_missing_result;
+pkg fills_written_callback_missing_result;
 
 build {
   cache "out/.kio-cache/";

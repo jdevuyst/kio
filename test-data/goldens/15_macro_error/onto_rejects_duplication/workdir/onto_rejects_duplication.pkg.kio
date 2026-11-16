@@ -1,4 +1,4 @@
-package onto_rejects_duplication;
+pkg onto_rejects_duplication;
 
 build {
   cache "out/.kio-cache/";

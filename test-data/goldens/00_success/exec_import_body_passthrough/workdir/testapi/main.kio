@@ -1,6 +1,6 @@
-module testapi/main;
+mod testapi/main;
 
-import logger(log_line);
-import testapi(String);
+import logger { fn log_line }
+import testapi { type String }
 
 pub fn main() { log_line("passthrough"[String]) }

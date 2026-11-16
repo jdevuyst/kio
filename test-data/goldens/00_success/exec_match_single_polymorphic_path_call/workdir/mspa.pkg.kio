@@ -1,4 +1,4 @@
-package mspa;
+pkg mspa;
 
 build {
   cache "out/.kio-cache/";

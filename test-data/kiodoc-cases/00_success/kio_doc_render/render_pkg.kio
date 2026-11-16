@@ -1,4 +1,4 @@
-module render_pkg;
+mod render_pkg;
 
 host type S role(str);
 

@@ -1,6 +1,6 @@
-module testapi/factories;
+mod testapi/factories;
 
-import testapi(String);
+import testapi { type String }
 
 pub pure fn first() -> . -> String {
   .() -> String { "first\n"[String] }

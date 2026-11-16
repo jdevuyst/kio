@@ -1,4 +1,4 @@
-package packet_context_before_components;
+pkg packet_context_before_components;
 
 build {
   cache "out/.kio-cache/";

@@ -1,4 +1,4 @@
-module testapi/native;
+mod testapi/native;
 
 /// NATIVE-DOC examples stay presentation only.
 ///

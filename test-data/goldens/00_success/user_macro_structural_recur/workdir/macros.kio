@@ -1,9 +1,9 @@
-module macros;
+mod macros;
 
 import __intrinsics__;
 
 import __comptime__;
-import testapi(String);
+import testapi { type String }
 
 type Elaborator_result = __Checked_term__ | __Diagnostic_text__;
 

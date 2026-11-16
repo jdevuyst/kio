@@ -1,17 +1,17 @@
-module egraph/report;
+mod egraph/report;
 
 import egraph/extract as extract;
 import egraph/graph as graph;
 import egraph/numbers as n;
 import egraph/rewrite as rewrite;
-import macros/control(macro if);
-import macros/match(macro match);
-import macros/row_macros(macro select);
-import testapi(Array, Bool, I32, String);
+import macros/control { macro if }
+import macros/match { macro match }
+import macros/row_macros { macro select }
+import testapi { type Array; type Bool; type I32; type String }
 import testapi/array as arr;
 import testapi/fmt as fmt;
 import testapi/io as io;
-import testapi/iter(loop);
+import testapi/iter { fn loop }
 
 pub fn number(value: I32) { io.print(fmt.int_to_string(value)) }
 

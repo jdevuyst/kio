@@ -1,16 +1,16 @@
-module substitutions;
+mod substitutions;
 
 import list/core as lists;
 import list/list as traversal;
-import macros/match(macro match);
-import macros/row_macros(macro select);
-import macros/spine_macros(macro widen_sum);
+import macros/match { macro match }
+import macros/row_macros { macro select }
+import macros/spine_macros { macro widen_sum }
 import terms as term;
-import testapi(I32, String);
+import testapi { type I32; type String }
 import testapi/arith as arith;
 import testapi/fmt as fmt;
-import testapi/iter(loop);
-import testapi/text(string_concat);
+import testapi/iter { fn loop }
+import testapi/text { fn string_concat }
 
 pub type Binding = { Key: I32; Replacement: term.Term };
 

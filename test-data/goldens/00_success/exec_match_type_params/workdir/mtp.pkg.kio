@@ -1,4 +1,4 @@
-package mtp;
+pkg mtp;
 
 build {
   cache "out/.kio-cache/";

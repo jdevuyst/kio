@@ -1,4 +1,4 @@
-package tefc;
+pkg tefc;
 
 build {
   cache "out/.kio-cache/";

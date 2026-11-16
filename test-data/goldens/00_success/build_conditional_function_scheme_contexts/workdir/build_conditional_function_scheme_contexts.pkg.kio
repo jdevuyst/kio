@@ -1,4 +1,4 @@
-package build_conditional_function_scheme_contexts;
+pkg build_conditional_function_scheme_contexts;
 
 build {
   cache "out/.kio-cache/";

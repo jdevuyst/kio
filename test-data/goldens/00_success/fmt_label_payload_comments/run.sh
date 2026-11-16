@@ -2,7 +2,7 @@
 set -eu
 
 formatted=$("$KIO_BIN" fmt - <<'KIO'
-module fmt_label_payload_comments;
+mod fmt_label_payload_comments;
 type { Ready: . { mk; get } }
 fn construct(ready: .) -> Ready { record { Ready.mk((// construction leading
 ready // construction trailing

@@ -4,17 +4,17 @@
 /// opened first, and an unlit room turns away anyone without a light. Nothing
 /// here prints, and nothing here fails — every way the cellar can say no is an
 /// arm of `Outcome`.
-module cellar/engine;
+mod cellar/engine;
 
 import cellar/command as command;
 import cellar/ids as ids;
 import cellar/outcome as outcome;
 import cellar/state as state;
 import cellar/world as world;
-import macros/control(macro if);
-import macros/match(macro match);
-import macros/row_macros(macro select);
-import testapi(Bool, String);
+import macros/control { macro if }
+import macros/match { macro match }
+import macros/row_macros { macro select }
+import testapi { type Bool; type String }
 
 /// One turn's result: the state the cellar is left in, and what to tell the
 /// player about it.

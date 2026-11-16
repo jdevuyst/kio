@@ -2,22 +2,22 @@
 /// the cells that can observe it. The plan is rebuilt after each edit because
 /// an edit can change the graph itself: replacing a formula can break a
 /// cycle, or close one.
-module sheet/recalc;
+mod sheet/recalc;
 
-import macros/control(macro if);
-import macros/match(macro match);
-import macros/row_macros(macro select);
-import macros/spine_macros(macro widen_sum);
-import sheet/addr(Addr, all_addrs, cell_count, mem);
-import sheet/cells(Sheet, Values, blank_content, cycle_value, empty_values);
-import sheet/cells(formula_content, number_content, set_content, set_value);
-import sheet/eval(eval_cell);
-import sheet/formula(Expr);
-import sheet/graph(Deps, build_deps, cycle_cells, deps_of, topo_order);
-import sheet/list(List, append, cons, filter, len, nil, one);
-import testapi(Bool, I32);
-import testapi/arith(sub_i32);
-import testapi/iter(loop);
+import macros/control { macro if }
+import macros/match { macro match }
+import macros/row_macros { macro select }
+import macros/spine_macros { macro widen_sum }
+import sheet/addr { type Addr; fn all_addrs; fn cell_count; fn mem }
+import sheet/cells { fn formula_content; fn number_content; fn set_content; fn set_value }
+import sheet/cells { type Sheet; type Values; fn blank_content; fn cycle_value; fn empty_values }
+import sheet/eval { fn eval_cell }
+import sheet/formula { type Expr }
+import sheet/graph { type Deps; fn build_deps; fn cycle_cells; fn deps_of; fn topo_order }
+import sheet/list { type List; fn append; fn cons; fn filter; fn len; fn nil; fn one }
+import testapi { type Bool; type I32 }
+import testapi/arith { fn sub_i32 }
+import testapi/iter { fn loop }
 
 pub type Change = { Put_number: I32 } | { Put_formula: Expr } | { Clear: . };
 

@@ -1,4 +1,4 @@
-package ufcs_empty_tail_argument_last;
+pkg ufcs_empty_tail_argument_last;
 
 build {
   cache "out/.kio-cache/";

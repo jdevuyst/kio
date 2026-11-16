@@ -1,4 +1,4 @@
-module source;
+mod source;
 
 host fn tick();
 host fn consume[A](value: A)[B];

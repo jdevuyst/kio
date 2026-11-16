@@ -1,39 +1,39 @@
 /// Pattern-matching macro that lowers tuple clauses over product and sum spines into explicit dispatch.
-module library/macros/match;
+mod library/macros/match;
 
 import __intrinsics__;
 
 import __comptime__;
-import library/macros/macro_util(
-, Dnf_branch
-, Dnf_branch_list
-, Macro_result
-, Slot
-, Slot_list
-, Slot_take
-, Term_mapper
-, Type_list
-, build_product_from_slots
-, dnf_branches
-, err
-, finish_macro_result
-, materialize_dnf_branch
-, ok
-, product_slots
-, product_spine
-, right_fold_product
-, slot_cons
-, slot_nil
-, slot_reverse_by_types
-, slot_term
-, slot_type
-, type_cons
-, type_nil
-, type_prepend_reverse
-, type_reverse
-);
-import library/macros/spine_macros(fit_accepts, fit_or_raw);
-import library/macros/testapi(String);
+import library/macros/macro_util {
+  type Dnf_branch;
+  type Dnf_branch_list;
+  type Macro_result;
+  type Slot;
+  type Slot_list;
+  type Slot_take;
+  type Term_mapper;
+  type Type_list;
+  fn build_product_from_slots;
+  fn dnf_branches;
+  fn err;
+  fn finish_macro_result;
+  fn materialize_dnf_branch;
+  fn ok;
+  fn product_slots;
+  fn product_spine;
+  fn right_fold_product;
+  fn slot_cons;
+  fn slot_nil;
+  fn slot_reverse_by_types;
+  fn slot_term;
+  fn slot_type;
+  fn type_cons;
+  fn type_nil;
+  fn type_prepend_reverse;
+  fn type_reverse
+}
+import library/macros/spine_macros { fn fit_accepts; fn fit_or_raw }
+import library/macros/testapi { type String }
 
 type Type_result = __Type__ | __Diagnostic_text__;
 

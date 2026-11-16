@@ -1,4 +1,4 @@
-package word1_names2;
+pkg word1_names2;
 
 build {
   cache "out/.kio-cache/";

@@ -19,54 +19,83 @@
 /// snapshot ID latched for it last cycle -- and only then does WB write.
 /// Getting that order backwards would hand EX a value a cycle early and
 /// quietly hide a hazard.
-module cpu/pipeline;
+mod cpu/pipeline;
 
-import cpu/hazard(
-, Hit_ex_mem
-, Hit_mem_wb
-, Load_use_stall
-, Proceed
-, Raw_stall
-, Read
-, Value
-, hazard
-, read_source
-);
-import cpu/isa(Add, Beq, Halt, Load, Loadi, Mul, Nop, Store, Sub);
-import cpu/isa(Code, Imm, Instr, Rs, Rt, dest_of, is_halt, is_load, is_store, reg_text, slot_text);
-import cpu/machine(
-, Bubbles
-, Cycle
-, Ex_mem
-, Flushes
-, Forwarding
-, Fwd_ex_mem
-, Fwd_mem_wb
-, Mem
-, Mem_wb
-, Pc
-, Prog
-, Regs
-, Retired
-, Sealed
-, St_ex
-, St_id
-, St_if
-, St_mem
-, St_wb
-, Stalls
-);
-import cpu/machine(Cpu, Machine, empty_stage, pipeline_empty, stage_empty, stage_filled);
-import cpu/num(cat, cat3, int_eq);
-import cpu/report(Event, noted, pipeline_row, quiet);
-import macros/control(macro if);
-import macros/match(macro match);
-import macros/row_macros(macro select, macro with);
-import macros/spine_macros(macro widen_sum);
-import testapi(Array, Bool, I32, String);
-import testapi/arith(add_i32, mul_i32, sub_i32);
-import testapi/array(array_get, array_set);
-import testapi/iter(loop);
+import cpu/hazard {
+  type Hit_ex_mem;
+  type Hit_mem_wb;
+  type Load_use_stall;
+  type Proceed;
+  type Raw_stall;
+  type Read;
+  type Value;
+  fn hazard;
+  fn read_source
+}
+import cpu/isa {
+  type Add;
+  type Beq;
+  type Halt;
+  type Load;
+  type Loadi;
+  type Mul;
+  type Nop;
+  type Store;
+  type Sub
+}
+import cpu/isa {
+  type Code;
+  type Imm;
+  type Instr;
+  type Rs;
+  type Rt;
+  fn dest_of;
+  fn is_halt;
+  fn is_load;
+  fn is_store;
+  fn reg_text;
+  fn slot_text
+}
+import cpu/machine {
+  type Bubbles;
+  type Cycle;
+  type Ex_mem;
+  type Flushes;
+  type Forwarding;
+  type Fwd_ex_mem;
+  type Fwd_mem_wb;
+  type Mem;
+  type Mem_wb;
+  type Pc;
+  type Prog;
+  type Regs;
+  type Retired;
+  type Sealed;
+  type St_ex;
+  type St_id;
+  type St_if;
+  type St_mem;
+  type St_wb;
+  type Stalls
+}
+import cpu/machine {
+  type Cpu;
+  type Machine;
+  fn empty_stage;
+  fn pipeline_empty;
+  fn stage_empty;
+  fn stage_filled
+}
+import cpu/num { fn cat; fn cat3; fn int_eq }
+import cpu/report { type Event; fn noted; fn pipeline_row; fn quiet }
+import macros/control { macro if }
+import macros/match { macro match }
+import macros/row_macros { macro select; macro with }
+import macros/spine_macros { macro widen_sum }
+import testapi { type Array; type Bool; type I32; type String }
+import testapi/arith { fn add_i32; fn mul_i32; fn sub_i32 }
+import testapi/array { fn array_get; fn array_set }
+import testapi/iter { fn loop }
 
 /// A branch's decision, produced in EX.
 type Redirect = { Jump: I32 } | { Straight: . };

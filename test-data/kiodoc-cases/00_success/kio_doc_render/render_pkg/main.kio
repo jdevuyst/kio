@@ -1,7 +1,7 @@
 /// The package's entry module.
 ///
 /// It defines the [`identity`] helper and the [`Pair`] type alias.
-module render_pkg/main;
+mod render_pkg/main;
 
 /// Returns its argument unchanged.
 ///

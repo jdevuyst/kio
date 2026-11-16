@@ -1,4 +1,4 @@
-package ffi_module_alias_scope_collision;
+pkg ffi_module_alias_scope_collision;
 
 build {
   cache "out/.kio-cache/";

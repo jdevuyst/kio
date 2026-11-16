@@ -1,10 +1,10 @@
-module edit_distance_audit/audit;
+mod edit_distance_audit/audit;
 
 import edit_distance_audit/dp as dp;
 import edit_distance_audit/render as render;
 import edit_distance_audit/tokens as tokens;
-import macros/control(macro if);
-import testapi(Bool, I32, String);
+import macros/control { macro if }
+import testapi { type Bool; type I32; type String }
 import testapi/arith as arith;
 import testapi/text as text;
 

@@ -1,4 +1,4 @@
-package qualified_callee_alias_identity;
+pkg qualified_callee_alias_identity;
 
 build {
   target js {

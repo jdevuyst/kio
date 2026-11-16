@@ -1,11 +1,11 @@
-module testapi/main;
+mod testapi/main;
 
-import macros/match(macro match);
-import testapi(Int, String);
-import testapi/arith(add);
-import testapi/fmt(int_to_string, string_to_int);
-import testapi/io(print, read_ascii_line);
-import testapi/text(string_concat);
+import macros/match { macro match }
+import testapi { type Int; type String }
+import testapi/arith { fn add }
+import testapi/fmt { fn int_to_string; fn string_to_int }
+import testapi/io { fn print; fn read_ascii_line }
+import testapi/text { fn string_concat }
 
 fn render_line(line: String | .) -> String {
   match(line) {

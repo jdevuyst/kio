@@ -1,4 +1,4 @@
-package nested_type_binder_identity;
+pkg nested_type_binder_identity;
 
 build {
   cache "out/.kio-cache/";

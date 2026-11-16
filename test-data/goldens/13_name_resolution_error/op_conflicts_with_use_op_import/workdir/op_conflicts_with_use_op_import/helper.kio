@@ -1,6 +1,6 @@
-module op_conflicts_with_use_op_import/helper;
+mod op_conflicts_with_use_op_import/helper;
 
-import op_conflicts_with_use_op_import(A);
+import op_conflicts_with_use_op_import { type A }
 
 pub fn helper_add(a: A, b: A) -> A { a }
 

@@ -1,4 +1,4 @@
-package rank_n_let_values;
+pkg rank_n_let_values;
 
 build {
   cache "out/.kio-cache/";

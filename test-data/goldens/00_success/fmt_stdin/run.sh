@@ -5,7 +5,7 @@
 # spaces, a missing trailing newline); the output is the
 # canonical form (idempotent under a second `kio fmt -`).
 set -u
-input='module x;fn id[A](x:A)->A{x}'
+input='mod x;fn id[A](x:A)->A{x}'
 out=$(printf '%s' "$input" | "$KIO_BIN" fmt -)
 status=$?
 [ "$status" = 0 ] || { printf 'kio fmt - exited %s\n' "$status" >&2; exit 1; }

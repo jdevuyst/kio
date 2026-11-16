@@ -1,4 +1,4 @@
-package build_imported_newtype_adapter;
+pkg build_imported_newtype_adapter;
 
 build {
   cache "out/.kio-cache/";

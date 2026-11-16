@@ -1,4 +1,4 @@
-package exec_scoped_module_fn_import;
+pkg exec_scoped_module_fn_import;
 
 build {
   cache "out/.kio-cache/";

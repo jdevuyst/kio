@@ -231,7 +231,7 @@ suite("Kio extension — activation & highlighting", () => {
   });
 
   test("macro calls follow lexical scope and import edits without a language server", async () => {
-    const source = "module source; import helpers(macro make as choose, macro x1, macro x0); fn run() { choose(()); .(choose: . -> .) { choose(()) }; .x. { x1(()); x0(()) }; ((choose))(()); (,choose,)(()); (,,(choose),,,)(()); choose[A](())[B](()); receiver.>choose[A](()); choose(())(()) { () }; x1(()) }";
+    const source = "mod source; import helpers {macro make as choose; macro x1; macro x0} fn run() { choose(()); .(choose: . -> .) { choose(()) }; .x. { x1(()); x0(()) }; ((choose))(()); (,choose,)(()); (,,(choose),,,)(()); choose[A](())[B](()); receiver.>choose[A](()); choose(())(()) { () }; x1(()) }";
     const doc = await vscode.workspace.openTextDocument({ language: "kio", content: source });
     await vscode.window.showTextDocument(doc);
     await vscode.extensions.getExtension("kio-lang.kio")!.activate();
@@ -278,7 +278,7 @@ suite("Kio extension — activation & highlighting", () => {
   });
 
   test("macro UFCS callees retain their role beside grouped tuple receivers", async () => {
-    const source = `module source; import helpers(macro call);
+    const source = `mod source; import helpers {macro call}
 fn run(left: ., right: .) {
  (left, right).>call(()); (left, right).>>call(());
  call(()).<(left, right); call(()).<<(left, right);
@@ -448,7 +448,7 @@ fn shadow(call: . -> ., left: ., right: .) { (left, right).>call(()) }`;
   }
 
   test("semantic tokens retain roles across incremental delimiter and keyword edits", async () => {
-    const source = "module source; import helpers(macro if); fn run() { id[[*F] F[.] -> F[.]] }";
+    const source = "mod source; import helpers {macro if} fn run() { id[[*F] F[.] -> F[.]] }";
     const doc = await vscode.workspace.openTextDocument({ language: "kio", content: source });
     await vscode.window.showTextDocument(doc);
     const read = async () => {
@@ -485,7 +485,7 @@ fn shadow(call: . -> ., left: ., right: .) { (left, right).>call(()) }`;
     await replace("recur(poly) again(x)", "recur(poly)");
     assert.ok((await read()).some((token) => token.text === "recur" && token.type === 11));
     assert.ok((await read()).some((token) => token.text === "poly" && token.type === 3));
-    const balanced = "module probe; fn run() { .x. { x1 } pub(probe) fn neighbor() { () } }";
+    const balanced = "mod probe; fn run() { .x. { x1 } pub(probe) fn neighbor() { () } }";
     await replace(doc.getText(), balanced);
     assert.ok((await read()).some((token) => token.text === "neighbor" && token.type === 3));
     await replace(balanced, balanced.slice(0, -2));
@@ -537,12 +537,12 @@ suite("Kio extension — real kio lsp", () => {
   test("composed hover and inlay types keep each provider's written binders", async () => {
     const root = path.join(workspaceDir(), "composed-binders");
     fs.mkdirSync(root);
-    fs.writeFileSync(path.join(root, "probe.pkg.kio"), "package probe;\n");
+    fs.writeFileSync(path.join(root, "probe.pkg.kio"), "pkg probe;\n");
     for (const [module, binder] of [["left", "Left"], ["rite", "Rite"]]) {
       fs.writeFileSync(path.join(root, `${module}.kio`),
-        `module ${module};\npub fn make[${binder}](value: ${binder}) -> [${binder}] ${binder} -> ${binder} { .[Item](inner: Item) -> Item { inner } }\n`);
+        `mod ${module};\npub fn make[${binder}](value: ${binder}) -> [${binder}] ${binder} -> ${binder} { .[Item](inner: Item) -> Item { inner } }\n`);
     }
-    const source = "module main;\nimport left as l;\nimport rite as r;\n"
+    const source = "mod main;\nimport left as l;\nimport rite as r;\n"
       + "pub fn run() -> . {\n"
       + "  let forward = (l.make(()), r.make(()));\n"
       + "  let backward = (r.make(()), l.make(()));\n"
@@ -587,10 +587,10 @@ suite("Kio extension — real kio lsp", () => {
       const fixture = `recursive-completion-${name}`;
       const root = path.join(workspaceDir(), fixture);
       fs.mkdirSync(root);
-      fs.writeFileSync(path.join(root, "probe.pkg.kio"), "package probe;\n");
+      fs.writeFileSync(path.join(root, "probe.pkg.kio"), "pkg probe;\n");
       fs.writeFileSync(path.join(root, "support.kio"),
-        "module support; host fn drive[S][R](step: ((S -> R) & S) -> (S | R), state: S) -> R;\n");
-      const source = `module main; import support as host; pub rec(host.drive) fn again(x: .) { let callback = .() -> . { recur(${annotations}) again(x) }; callback() }\n`;
+        "mod support; host fn drive[S][R](step: ((S -> R) & S) -> (S | R), state: S) -> R;\n");
+      const source = `mod main; import support as host; pub rec(host.drive) fn again(x: .) { let callback = .() -> . { recur(${annotations}) again(x) }; callback() }\n`;
       fs.writeFileSync(path.join(root, "main.kio"), source);
       const doc = await openFixture(`${fixture}/main.kio`);
       const errors = (): vscode.Diagnostic[] => vscode.languages.getDiagnostics(doc.uri)
@@ -634,49 +634,49 @@ suite("Kio extension — real kio lsp", () => {
     for (const [name, source, expected, title] of [
       [
         "import",
-        "module main; import support(\n// 😀 preserve this comment\nhepler); pub fn main() { helper() }\n",
-        "module main; import support(\n// 😀 preserve this comment\nhelper); pub fn main() { helper() }\n",
+        "mod main; import support {\n// 😀 preserve this comment\nfn hepler} pub fn main() { helper() }\n",
+        "mod main; import support {\n// 😀 preserve this comment\nfn helper} pub fn main() { helper() }\n",
         "Replace with `helper`",
       ],
       [
         "module-path",
-        "module main; import supprt as chosen; pub fn main() { chosen.helper() }\n",
-        "module main; import support as chosen; pub fn main() { chosen.helper() }\n",
+        "mod main; import supprt as chosen; pub fn main() { chosen.helper() }\n",
+        "mod main; import support as chosen; pub fn main() { chosen.helper() }\n",
         "Replace module path with `support`",
       ],
       [
         "call",
-        "module main; import support as host; pub rec(host.drive) fn again(x: .) { again(x) }\n",
-        "module main; import support as host; pub rec(host.drive) fn again(x: .) { recur again(x) }\n",
+        "mod main; import support as host; pub rec(host.drive) fn again(x: .) { again(x) }\n",
+        "mod main; import support as host; pub rec(host.drive) fn again(x: .) { recur again(x) }\n",
         "Mark recursive call with `recur`",
       ],
       [
         "call-escape",
-        "module main; import support as host; pub rec(host.reenter) fn again(x: .) { let callback = .() -> . { again(x) }; callback() }\n",
-        "module main; import support as host; pub rec(host.reenter) fn again(x: .) { let callback = .() -> . { recur(escape) again(x) }; callback() }\n",
+        "mod main; import support as host; pub rec(host.reenter) fn again(x: .) { let callback = .() -> . { again(x) }; callback() }\n",
+        "mod main; import support as host; pub rec(host.reenter) fn again(x: .) { let callback = .() -> . { recur(escape) again(x) }; callback() }\n",
         "Mark recursive call with `recur(escape)`",
       ],
       [
         "escape-to-cont",
-        "module main; import support as host; rec(host.reenter) { pub fn spin(value: .) -> . { host.after(recur(escape) spin(value)) }; fn saved(value: .) -> . { host.retain(.() { recur(escape) saved(value) }) } }\n",
-        "module main; import support as host; rec(host.reenter) { pub fn spin(value: .) -> . { host.after(recur(cont) spin(value)) }; fn saved(value: .) -> . { host.retain(.() { recur(escape) saved(value) }) } }\n",
+        "mod main; import support as host; rec(host.reenter) { pub fn spin(value: .) -> . { host.after(recur(escape) spin(value)) }; fn saved(value: .) -> . { host.retain(.() { recur(escape) saved(value) }) } }\n",
+        "mod main; import support as host; rec(host.reenter) { pub fn spin(value: .) -> . { host.after(recur(cont) spin(value)) }; fn saved(value: .) -> . { host.retain(.() { recur(escape) saved(value) }) } }\n",
         "Correct recursive call annotations",
       ],
       [
         "qualified-head",
-        "module main; import support as support; pub fn main() { suport. // preserve member\nhelper() }\n",
-        "module main; import support as support; pub fn main() { support. // preserve member\nhelper() }\n",
+        "mod main; import support as support; pub fn main() { suport. // preserve member\nhelper() }\n",
+        "mod main; import support as support; pub fn main() { support. // preserve member\nhelper() }\n",
         "Replace with `support`",
       ],
       [
         "nominal-import",
-        "module main; import support(Mrk); pub fn main() { let _ = Mark.mk(()); () }\n",
-        "module main; import support(Mark); pub fn main() { let _ = Mark.mk(()); () }\n",
+        "mod main; import support {type Mrk} pub fn main() { let _ = Mark.mk(()); () }\n",
+        "mod main; import support {type Mark} pub fn main() { let _ = Mark.mk(()); () }\n",
         "Replace with `Mark`",
       ],
       [
         "definition",
-        "module main; pub fn again(x: .) { recur again(x) }\n",
+        "mod main; pub fn again(x: .) { recur again(x) }\n",
         undefined,
         undefined,
       ],
@@ -684,9 +684,9 @@ suite("Kio extension — real kio lsp", () => {
       const relative = `native-fix-${name}`;
       const root = path.join(workspaceDir(), relative);
       fs.mkdirSync(root);
-      fs.writeFileSync(path.join(root, "probe.pkg.kio"), "package probe;\n");
+      fs.writeFileSync(path.join(root, "probe.pkg.kio"), "pkg probe;\n");
       fs.writeFileSync(path.join(root, "support.kio"),
-        "module support; pub fn helper() { () } pub type { Mark: .; }; host fn drive[S][R](step: S -> (S | R), state: S) -> R; host fn reenter[S][R](step: ((S -> R) & S) -> (S | R), state: S) -> R; host fn after(value: .) -> .; host fn retain(callback: . -> .) -> .;\n");
+        "mod support; pub fn helper() { () } pub type { Mark: .; }; host fn drive[S][R](step: S -> (S | R), state: S) -> R; host fn reenter[S][R](step: ((S -> R) & S) -> (S | R), state: S) -> R; host fn after(value: .) -> .; host fn retain(callback: . -> .) -> .;\n");
       fs.writeFileSync(path.join(root, "main.kio"), source);
       const doc = await openFixture(`${relative}/main.kio`);
       const errors = (): vscode.Diagnostic[] => vscode.languages.getDiagnostics(doc.uri)
@@ -772,10 +772,10 @@ suite("Kio extension — real kio lsp", () => {
   test("nested-call UFCS refactoring applies a whole imported host chain", async () => {
     const root = path.join(workspaceDir(), "ufcs-refactor");
     fs.mkdirSync(path.join(root, "demo"), { recursive: true });
-    fs.writeFileSync(path.join(root, "demo.pkg.kio"), "package demo; bridge { demo/**; }\n");
-    fs.writeFileSync(path.join(root, "demo/provider.kio"), "module demo/provider; host type Text role(str); host fn string_concat(a: Text, b: Text) -> Text;\n");
+    fs.writeFileSync(path.join(root, "demo.pkg.kio"), "pkg demo; bridge { demo/**; }\n");
+    fs.writeFileSync(path.join(root, "demo/provider.kio"), "mod demo/provider; host type Text role(str); host fn string_concat(a: Text, b: Text) -> Text;\n");
     const body = 'p.string_concat("a", string_concat("b", p.string_concat("c", "d")))';
-    const source = `module demo/main; import demo/provider(Text, string_concat); import demo/provider as p; pub fn run() -> Text { ${body} }\n`;
+    const source = `mod demo/main; import demo/provider {type Text; fn string_concat} import demo/provider as p; pub fn run() -> Text { ${body} }\n`;
     fs.writeFileSync(path.join(root, "demo/main.kio"), source);
     const doc = await openFixture("ufcs-refactor/demo/main.kio");
     const start = source.indexOf(body);

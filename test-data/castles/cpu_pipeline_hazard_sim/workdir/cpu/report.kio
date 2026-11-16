@@ -7,35 +7,45 @@
 /// the decision the hazard unit or the branch made *during* that cycle,
 /// so its effect is visible in the row below it, exactly as it would be
 /// on a timing diagram drawn by hand.
-module cpu/report;
+mod cpu/report;
 
-import cpu/isa(Instr, instr_text, reg_text, slot_text);
-import cpu/machine(
-, Bubbles
-, Cycle
-, Flushes
-, Fwd_ex_mem
-, Fwd_mem_wb
-, Retired
-, St_ex
-, St_id
-, St_if
-, St_mem
-, St_wb
-, Stalls
-);
-import cpu/machine(Machine, stage_empty);
-import cpu/num(cat, cat3, digits, div, int_eq, int_lt, left, right, spaces);
-import macros/control(macro if);
-import macros/match(macro match);
-import macros/row_macros(macro select);
-import macros/spine_macros(macro widen_sum);
-import testapi(Array, Bool, I32, String);
-import testapi/arith(add_i32, mul_i32, sub_i32);
-import testapi/array(array_get, array_len);
-import testapi/fmt(int_to_string);
-import testapi/io(print);
-import testapi/iter(loop);
+import cpu/isa { type Instr; fn instr_text; fn reg_text; fn slot_text }
+import cpu/machine {
+  type Bubbles;
+  type Cycle;
+  type Flushes;
+  type Fwd_ex_mem;
+  type Fwd_mem_wb;
+  type Retired;
+  type St_ex;
+  type St_id;
+  type St_if;
+  type St_mem;
+  type St_wb;
+  type Stalls
+}
+import cpu/machine { type Machine; fn stage_empty }
+import cpu/num {
+  fn cat;
+  fn cat3;
+  fn digits;
+  fn div;
+  fn int_eq;
+  fn int_lt;
+  fn left;
+  fn right;
+  fn spaces
+}
+import macros/control { macro if }
+import macros/match { macro match }
+import macros/row_macros { macro select }
+import macros/spine_macros { macro widen_sum }
+import testapi { type Array; type Bool; type I32; type String }
+import testapi/arith { fn add_i32; fn mul_i32; fn sub_i32 }
+import testapi/array { fn array_get; fn array_len }
+import testapi/fmt { fn int_to_string }
+import testapi/io { fn print }
+import testapi/iter { fn loop }
 
 /// What a cycle decided, if it decided anything worth naming. Most cycles
 /// just issue, and a row for one of those ends at the stage columns rather

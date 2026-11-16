@@ -1,4 +1,4 @@
-package ffi_export_type_only_roundtrip;
+pkg ffi_export_type_only_roundtrip;
 
 build {
   target js {

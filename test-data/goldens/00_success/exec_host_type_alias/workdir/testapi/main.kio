@@ -1,5 +1,5 @@
-module testapi/main;
+mod testapi/main;
 
-import lib/show(show);
+import lib/show { fn show }
 
 pub fn main() { show() }

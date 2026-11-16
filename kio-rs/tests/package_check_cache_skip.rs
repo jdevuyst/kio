@@ -137,11 +137,11 @@ fn kio_test(dir: &Path) -> (i32, String) {
 }
 
 fn package_file(name: &str, rest: &str) -> String {
-    format!("package {name};\n\nbuild {{\n  cache \"out/.kio-cache/\";\n}}\n\n{rest}")
+    format!("pkg {name};\n\nbuild {{\n  cache \"out/.kio-cache/\";\n}}\n\n{rest}")
 }
 
 fn package_file_with_cache(name: &str, cache: &str, rest: &str) -> String {
-    format!("package {name};\n\nbuild {{\n  cache \"{cache}\";\n}}\n\n{rest}")
+    format!("pkg {name};\n\nbuild {{\n  cache \"{cache}\";\n}}\n\n{rest}")
 }
 
 fn package_file_with_cache_and_target(
@@ -152,26 +152,26 @@ fn package_file_with_cache_and_target(
     rest: &str,
 ) -> String {
     format!(
-        "package {name};\n\nbuild {{\n  cache \"{cache}\";\n\n  target {target} {{\n    out \"{out}\";\n  }}\n}}\n\n{rest}"
+        "pkg {name};\n\nbuild {{\n  cache \"{cache}\";\n\n  target {target} {{\n    out \"{out}\";\n  }}\n}}\n\n{rest}"
     )
 }
 
 fn package_file_no_cache(name: &str, rest: &str) -> String {
-    format!("package {name};\n\nbuild {{\n  cache ();\n}}\n\n{rest}")
+    format!("pkg {name};\n\nbuild {{\n  cache ();\n}}\n\n{rest}")
 }
 
 fn package_file_no_cache_with_prime_target(name: &str, rest: &str) -> String {
     format!(
-        "package {name};\n\nbuild {{\n  cache ();\n\n  target kio-prime {{\n    out \"out/kio-prime/\";\n  }}\n}}\n\n{rest}"
+        "pkg {name};\n\nbuild {{\n  cache ();\n\n  target kio-prime {{\n    out \"out/kio-prime/\";\n  }}\n}}\n\n{rest}"
     )
 }
 
 fn pkg_root_module() -> &'static str {
-    "module pkg;\n"
+    "mod pkg;\n"
 }
 
 fn pkg_root_string_env_module() -> &'static str {
-    "module pkg;\n\n\
+    "mod pkg;\n\n\
      host type String role(str);\n"
 }
 
@@ -184,7 +184,7 @@ fn package_check_cache_path(root: &Path, package_name: &str) -> PathBuf {
 }
 
 fn identity_user_macro_module() -> &'static str {
-    "module elaborators;\n\n\
+    "mod elaborators;\n\n\
      import __intrinsics__;\n\n\
      import __comptime__;\n\n\
      pub pure fn id_impl(_ct: __Comptime__, _source: __Type__, value: __Checked_term__, _target: __Type__) -> __Checked_term__ {\n\
@@ -194,7 +194,7 @@ fn identity_user_macro_module() -> &'static str {
 }
 
 fn second_value_user_macro_module() -> &'static str {
-    "module elaborators;\n\n\
+    "mod elaborators;\n\n\
      import __intrinsics__;\n\n\
      import __comptime__;\n\n\
      pub pure fn second_impl(_ct: __Comptime__, _first_source: __Type__, _first: __Checked_term__, _second_source: __Type__, second: __Checked_term__, _target: __Type__) -> __Checked_term__ {\n\
@@ -204,7 +204,7 @@ fn second_value_user_macro_module() -> &'static str {
 }
 
 fn natural_identity_user_macro_module() -> &'static str {
-    "module elaborators;\n\n\
+    "mod elaborators;\n\n\
      import __intrinsics__;\n\n\
      import __comptime__;\n\n\
      pub pure fn id_default_impl(_ct: __Comptime__, _source: __Type__, value: __Checked_term__, _target: .) -> __Checked_term__ {\n\
@@ -214,7 +214,7 @@ fn natural_identity_user_macro_module() -> &'static str {
 }
 
 fn unit_identity_user_macro_module() -> &'static str {
-    "module elaborators;\n\n\
+    "mod elaborators;\n\n\
      import __intrinsics__;\n\n\
      import __comptime__;\n\n\
      pub pure fn id_impl(ct: __Comptime__, _source: __Type__, _value: __Checked_term__, _target: __Type__) -> __Checked_term__ {\n\
@@ -224,7 +224,7 @@ fn unit_identity_user_macro_module() -> &'static str {
 }
 
 fn natural_unit_user_macro_module() -> &'static str {
-    "module elaborators;\n\n\
+    "mod elaborators;\n\n\
      import __intrinsics__;\n\n\
      import __comptime__;\n\n\
      pub pure fn id_default_impl(ct: __Comptime__, _source: __Type__, value: __Checked_term__, _target: .) -> __Checked_term__ {\n\
@@ -245,7 +245,7 @@ fn unchanged_package_skips_on_second_check() {
     pkg.write("pkg.kio", pkg_root_module());
     pkg.write(
         "pkg/main.kio",
-        "module pkg/main;\n\npub fn run() -> . { () }\n",
+        "mod pkg/main;\n\npub fn run() -> . { () }\n",
     );
 
     let (code1, log1) = kio_check(pkg.path());
@@ -274,13 +274,13 @@ fn unchanged_package_skips_on_second_check() {
 #[test]
 fn typed_modules_reuse_one_semantic_entry_across_package_names() {
     let root = TempPkg::new();
-    let provider = "module shared;\n\n\
+    let provider = "mod shared;\n\n\
         host type Host_value;\n\n\
         host fn host_value() -> Host_value;\n\n\
         pub type { Token: . { pub mk; pub get; }; };\n\n\
         fn secret() -> . { () }\n\n\
         pub fn run() -> Token { Token.mk(()) }\n";
-    let consumer = "module consumer;\n\n\
+    let consumer = "mod consumer;\n\n\
         import shared as s;\n\n\
         pub fn call() -> s.Token { s.run() }\n";
     root.write(
@@ -309,7 +309,7 @@ fn typed_modules_reuse_one_semantic_entry_across_package_names() {
     root.write("b/consumer.kio", consumer);
     root.write(
         "b/unrelated.kio",
-        "module unrelated;\n\npub fn extra() -> . { () }\n",
+        "mod unrelated;\n\npub fn extra() -> . { () }\n",
     );
 
     let debug_typed_cache = [
@@ -360,7 +360,7 @@ fn typed_modules_reuse_one_semantic_entry_across_package_names() {
     root.write("visibility/shared.kio", &provider_with_addition);
     root.write(
         "visibility/consumer.kio",
-        "module consumer;\n\n\
+        "mod consumer;\n\n\
          import shared as s;\n\n\
          pub fn expose_secret() -> . { s.secret() }\n",
     );
@@ -406,7 +406,7 @@ fn typed_modules_reuse_one_semantic_entry_across_package_names() {
 #[test]
 fn typed_cache_debug_root_shares_only_explicitly_enabled_package_entries() {
     let root = TempPkg::new();
-    let source = "module shared;\n\npub fn run() -> . { () }\n";
+    let source = "mod shared;\n\npub fn run() -> . { () }\n";
     for (dir, name, cache) in [
         ("a", "package_a", Some("out/a-cache/")),
         ("b", "package_b", Some("out/b-cache/")),
@@ -471,7 +471,7 @@ fn typed_cache_debug_root_ignores_relative_paths() {
         "pkg.pkg.kio",
         &package_file("pkg", "bridge {\n  shared;\n}\n"),
     );
-    root.write("shared.kio", "module shared;\n\npub fn run() -> . { () }\n");
+    root.write("shared.kio", "mod shared;\n\npub fn run() -> . { () }\n");
 
     let relative_root = "relative-typed-cache-root";
     let relative_path = root.path().join(relative_root);
@@ -482,7 +482,7 @@ fn typed_cache_debug_root_ignores_relative_paths() {
     ];
     let (code, log) = kio_check_with_extra_env(root.path(), false, &env);
 
-    assert_eq!(code, 0, "package should typecheck: {log}");
+    assert_eq!(code, 0, "pkg should typecheck: {log}");
     assert!(
         log.contains("typed-cache: write pkg shared"),
         "ignoring the invalid override must retain the configured package cache: {log}"
@@ -502,15 +502,15 @@ fn imported_operator_callable_edit_invalidates_an_importing_consumer() {
     );
     root.write(
         "provider.kio",
-        "module provider;\n\npub fn step(left: ., right: .) -> . { left }\n",
+        "mod provider;\n\npub fn step(left: ., right: .) -> . { left }\n",
     );
     root.write(
         "owner.kio",
-        "module owner;\n\nimport provider as provider;\n\npub op _ + _ { impl provider.step; };\n",
+        "mod owner;\n\nimport provider as provider;\n\npub op _ + _ { impl provider.step; };\n",
     );
     root.write(
         "consumer.kio",
-        "module consumer;\n\nimport owner(op _ + _);\n\npub fn run() -> . { () + () }\n",
+        "mod consumer;\n\nimport owner { op _ + _ }\n\npub fn run() -> . { () + () }\n",
     );
     let env = [
         ("KIO_DEBUG_TYPED_CACHE", "1"),
@@ -526,7 +526,7 @@ fn imported_operator_callable_edit_invalidates_an_importing_consumer() {
 
     root.write(
         "provider.kio",
-        "module provider;\n\npub fn step(left: ., right: .) -> . & . { (left, right) }\n",
+        "mod provider;\n\npub fn step(left: ., right: .) -> . & . { (left, right) }\n",
     );
     let (edited_code, edited_log) = kio_check_with_extra_env(root.path(), false, &env);
     assert_eq!(
@@ -552,7 +552,7 @@ fn root_cache_hit_skips_post_parse_frontend_work() {
     pkg.write("pkg.kio", pkg_root_module());
     pkg.write(
         "pkg/main.kio",
-        "module pkg/main;\n\npub fn run() -> . { () }\n",
+        "mod pkg/main;\n\npub fn run() -> . { () }\n",
     );
 
     let (code1, log1) = kio_check(pkg.path());
@@ -584,8 +584,8 @@ fn frontend_scheduler_reports_independent_modules_ready_together() {
         &package_file_no_cache("pkg", "bridge {\n  pkg;\n  pkg/**;\n}\n"),
     );
     pkg.write("pkg.kio", pkg_root_module());
-    pkg.write("pkg/a.kio", "module pkg/a;\n\npub fn a() -> . { () }\n");
-    pkg.write("pkg/b.kio", "module pkg/b;\n\npub fn b() -> . { () }\n");
+    pkg.write("pkg/a.kio", "mod pkg/a;\n\npub fn a() -> . { () }\n");
+    pkg.write("pkg/b.kio", "mod pkg/b;\n\npub fn b() -> . { () }\n");
 
     let (code, log) = kio_check_with_frontend_timing(pkg.path(), true);
     assert_eq!(code, 0, "check should succeed: {log}");
@@ -612,16 +612,16 @@ fn frontend_scheduler_keeps_independent_user_macro_consumers_parallel() {
     pkg.write("elaborators.kio", identity_user_macro_module());
     pkg.write(
         "pkg/a.kio",
-        "module pkg/a;\n\n\
-         import pkg(String);\n\n\
-         import elaborators(macro id_user);\n\n\
+        "mod pkg/a;\n\n\
+         import pkg { type String }\n\n\
+         import elaborators { macro id_user }\n\n\
          pub fn a(s: String) -> String { id_user(s)[String] }\n",
     );
     pkg.write(
         "pkg/b.kio",
-        "module pkg/b;\n\n\
-         import pkg(String);\n\n\
-         import elaborators(macro id_user);\n\n\
+        "mod pkg/b;\n\n\
+         import pkg { type String }\n\n\
+         import elaborators { macro id_user }\n\n\
          pub fn b(s: String) -> String { id_user(s)[String] }\n",
     );
 
@@ -655,9 +655,9 @@ fn user_macro_batch_timing_reports_unique_template_keys() {
     pkg.write("elaborators.kio", identity_user_macro_module());
     pkg.write(
         "pkg/main.kio",
-        "module pkg/main;\n\n\
-         import pkg(String);\n\n\
-         import elaborators(macro id_user);\n\n\
+        "mod pkg/main;\n\n\
+         import pkg { type String }\n\n\
+         import elaborators { macro id_user }\n\n\
          pub fn run(s: String) -> String {\n\
            let first = id_user(s)[String];\n\
            id_user(first)[String]\n\
@@ -686,16 +686,16 @@ fn typed_cache_misses_when_transitive_same_package_surface_moves() {
         &package_file("pkg", "bridge {\n  pkg;\n  pkg/**;\n}\n"),
     );
     pkg.write("pkg.kio", pkg_root_module());
-    pkg.write("pkg/c.kio", "module pkg/c;\n\npub type Shared = .;\n");
+    pkg.write("pkg/c.kio", "mod pkg/c;\n\npub type Shared = .;\n");
     pkg.write(
         "pkg/b.kio",
-        "module pkg/b;\n\nimport pkg/c(Shared);\n\npub fn id_shared(x: Shared) -> Shared { x }\n",
+        "mod pkg/b;\n\nimport pkg/c { type Shared }\n\npub fn id_shared(x: Shared) -> Shared { x }\n",
     );
     pkg.write(
         "pkg/a.kio",
-        "module pkg/a;\n\n\
-         import pkg/c(Shared);\n\n\
-         import pkg/b(id_shared);\n\n\
+        "mod pkg/a;\n\n\
+         import pkg/c { type Shared }\n\n\
+         import pkg/b { fn id_shared }\n\n\
          pub fn use_shared(x: Shared) -> . { id_shared(x) }\n",
     );
 
@@ -710,7 +710,7 @@ fn typed_cache_misses_when_transitive_same_package_surface_moves() {
 
     pkg.write(
         "pkg/c.kio",
-        "module pkg/c;\n\n\
+        "mod pkg/c;\n\n\
          pub type { Box: . { pub mk; pub get; }; };\n\n\
          pub type Shared = Box;\n",
     );
@@ -732,9 +732,9 @@ fn user_macro_template_batch_dedupes_repeated_shape_before_memo_lookup() {
     pkg.write("elaborators.kio", identity_user_macro_module());
     pkg.write(
         "pkg/main.kio",
-        "module pkg/main;\n\n\
-         import pkg(String);\n\n\
-         import elaborators(macro id_user);\n\n\
+        "mod pkg/main;\n\n\
+         import pkg { type String }\n\n\
+         import elaborators { macro id_user }\n\n\
          pub fn run(s: String) -> String {\n\
            let first = id_user(s)[String];\n\
            id_user(first)[String]\n\
@@ -774,17 +774,17 @@ fn user_macro_template_memo_replays_across_forced_modules() {
     pkg.write("elaborators.kio", second_value_user_macro_module());
     pkg.write(
         "pkg/a.kio",
-        "module pkg/a;\n\n\
-         import pkg(String);\n\n\
-         import elaborators(macro second_value);\n\n\
+        "mod pkg/a;\n\n\
+         import pkg { type String }\n\n\
+         import elaborators { macro second_value }\n\n\
          pub fn a(left: String, from_a: String) -> String { second_value(left)(from_a)[String] }\n",
     );
     pkg.write(
         "pkg/b.kio",
-        "module pkg/b;\n\n\
-         import pkg(String);\n\n\
-         import elaborators(macro second_value);\n\n\
-         import pkg/a(a);\n\n\
+        "mod pkg/b;\n\n\
+         import pkg { type String }\n\n\
+         import elaborators { macro second_value }\n\n\
+         import pkg/a { fn a }\n\n\
          pub fn b(left: String, from_b: String) -> String { second_value(a(left, left))(from_b)[String] }\n",
     );
 
@@ -837,8 +837,8 @@ fn user_macro_template_memo_preserves_free_binders_in_both_forced_orders() {
         pkg.write(
             &format!("pkg/{first}.kio"),
             &format!(
-                "module pkg/{first};\n\
-                 import elaborators(macro second_value);\n\
+                "mod pkg/{first};\n\
+                 import elaborators {{ macro second_value }}\n\
                  pub fn {first}{binders}(left: A, from_{first}: B) -> B {{
                      second_value(left)(from_{first})[B]
                  }}\n"
@@ -847,9 +847,9 @@ fn user_macro_template_memo_preserves_free_binders_in_both_forced_orders() {
         pkg.write(
             &format!("pkg/{second}.kio"),
             &format!(
-                "module pkg/{second};\n\
-                 import elaborators(macro second_value);\n\
-                 import pkg/{first}({first});\n\
+                "mod pkg/{second};\n\
+                 import elaborators {{ macro second_value }}\n\
+                 import pkg/{first} {{ fn {first} }}\n\
                  pub fn {second}{binders}(left: A, from_{second}: B) -> {target} {{
                      second_value({first}[A][A](left, left))(from_{second})[{target}]
                  }}\n"
@@ -921,8 +921,8 @@ fn user_macro_template_batch_reuses_the_same_caller_binders() {
     pkg.write("elaborators.kio", second_value_user_macro_module());
     pkg.write(
         "pkg/main.kio",
-        "module pkg/main;\n\
-         import elaborators(macro second_value);\n\
+        "mod pkg/main;\n\
+         import elaborators { macro second_value }\n\
          pub fn run[A][B](left: A, first: B, second: B) -> B {\n\
            let selected = second_value(left)(first)[B];\n\
            second_value(left)(second)[B]\n\
@@ -978,8 +978,8 @@ fn user_macro_natural_result_memo_reuses_the_same_caller_binder() {
     pkg.write("elaborators.kio", natural_identity_user_macro_module());
     pkg.write(
         "pkg/main.kio",
-        "module pkg/main;\n\
-         import elaborators(macro id_default);\n\
+        "mod pkg/main;\n\
+         import elaborators { macro id_default }\n\
          pub fn run[A](first: A, second: A) -> A {\n\
            let first_result = id_default(first)[_];\n\
            let second_result = id_default(second)[_];\n\
@@ -1019,9 +1019,9 @@ fn user_macro_natural_result_memo_hits_repeated_shape() {
     pkg.write("elaborators.kio", natural_identity_user_macro_module());
     pkg.write(
         "pkg/main.kio",
-        "module pkg/main;\n\n\
-         import pkg(String);\n\n\
-         import elaborators(macro id_default);\n\n\
+        "mod pkg/main;\n\n\
+         import pkg { type String }\n\n\
+         import elaborators { macro id_default }\n\n\
          pub fn run(s: String) -> String {\n\
            let first = id_default(s)[_];\n\
            let second = id_default(first)[_];\n\
@@ -1059,9 +1059,9 @@ fn user_macro_rechecks_do_not_write_persistent_template_cache() {
     pkg.write("elaborators.kio", natural_identity_user_macro_module());
     pkg.write(
         "pkg/main.kio",
-        "module pkg/main;\n\n\
-         import pkg(String);\n\n\
-         import elaborators(macro id_default);\n\n\
+        "mod pkg/main;\n\n\
+         import pkg { type String }\n\n\
+         import elaborators { macro id_default }\n\n\
          pub fn run(s: String) -> String { id_default(s)[_] }\n",
     );
 
@@ -1069,9 +1069,9 @@ fn user_macro_rechecks_do_not_write_persistent_template_cache() {
     assert_eq!(code1, 0, "first check should succeed: {log1}");
     pkg.write(
         "pkg/main.kio",
-        "module pkg/main;\n\n\
-         import pkg(String);\n\n\
-         import elaborators(macro id_default);\n\n\
+        "mod pkg/main;\n\n\
+         import pkg { type String }\n\n\
+         import elaborators { macro id_default }\n\n\
          pub fn run(s: String) -> String { id_default(s)[_] }\n\n\
          pub fn force_recheck() -> . { () }\n",
     );
@@ -1099,9 +1099,9 @@ fn typed_cache_misses_when_imported_user_macro_impl_changes() {
     pkg.write("elaborators.kio", identity_user_macro_module());
     pkg.write(
         "pkg/main.kio",
-        "module pkg/main;\n\n\
-         import pkg(String);\n\n\
-         import elaborators(macro id_user);\n\n\
+        "mod pkg/main;\n\n\
+         import pkg { type String }\n\n\
+         import elaborators { macro id_user }\n\n\
          pub fn run(s: String) -> String { id_user(s)[String] }\n",
     );
 
@@ -1138,9 +1138,9 @@ fn typed_cache_misses_when_imported_user_macro_natural_result_changes() {
     pkg.write("elaborators.kio", natural_identity_user_macro_module());
     pkg.write(
         "pkg/main.kio",
-        "module pkg/main;\n\n\
-         import pkg(String);\n\n\
-         import elaborators(macro id_default);\n\n\
+        "mod pkg/main;\n\n\
+         import pkg { type String }\n\n\
+         import elaborators { macro id_default }\n\n\
          pub fn run(s: String) -> String {\n\
            let selected = id_default(s)[_];\n\
            selected\n\
@@ -1178,7 +1178,7 @@ fn disabled_cache_rechecks_without_writing() {
     pkg.write("pkg.kio", pkg_root_module());
     pkg.write(
         "pkg/main.kio",
-        "module pkg/main;\n\npub fn run() -> . { () }\n",
+        "mod pkg/main;\n\npub fn run() -> . { () }\n",
     );
 
     let (code1, log1) = kio_check(pkg.path());
@@ -1212,13 +1212,13 @@ fn source_edit_re_typechecks_the_package() {
     pkg.write("pkg.kio", pkg_root_module());
     pkg.write(
         "pkg/main.kio",
-        "module pkg/main;\n\npub fn run() -> . { () }\n",
+        "mod pkg/main;\n\npub fn run() -> . { () }\n",
     );
     assert_eq!(kio_check(pkg.path()).0, 0);
 
     pkg.write(
         "pkg/main.kio",
-        "module pkg/main;\n\npub fn run() -> . { let x = (); x }\n",
+        "mod pkg/main;\n\npub fn run() -> . { let x = (); x }\n",
     );
     let (code, log) = kio_check(pkg.path());
     assert_eq!(code, 0, "edited package should still typecheck: {log}");
@@ -1254,13 +1254,13 @@ fn cache_hit_never_masks_a_fresh_error() {
     pkg.write("pkg.kio", pkg_root_module());
     pkg.write(
         "pkg/main.kio",
-        "module pkg/main;\n\npub fn run() -> . { () }\n",
+        "mod pkg/main;\n\npub fn run() -> . { () }\n",
     );
     assert_eq!(kio_check(pkg.path()).0, 0);
 
     pkg.write(
         "pkg/main.kio",
-        "module pkg/main;\n\npub fn run() -> . { undefined_name }\n",
+        "mod pkg/main;\n\npub fn run() -> . { undefined_name }\n",
     );
     let (code, log) = kio_check(pkg.path());
     assert_eq!(
@@ -1284,7 +1284,7 @@ fn no_equiv_test_reuses_package_check_cache_when_warm() {
     pkg.write("pkg.kio", pkg_root_module());
     pkg.write(
         "pkg/main.kio",
-        "module pkg/main;\n\npub fn run() -> . { () }\n",
+        "mod pkg/main;\n\npub fn run() -> . { () }\n",
     );
 
     let (code1, log1) = kio_test(pkg.path());
@@ -1319,7 +1319,7 @@ fn no_equiv_test_reuses_cache_warmed_by_check() {
     pkg.write("pkg.kio", pkg_root_module());
     pkg.write(
         "pkg/main.kio",
-        "module pkg/main;\n\npub fn run() -> . { () }\n",
+        "mod pkg/main;\n\npub fn run() -> . { () }\n",
     );
 
     let (code_check, log_check) = kio_check(pkg.path());
@@ -1351,13 +1351,13 @@ fn no_equiv_test_surfaces_fresh_error_not_no_equiv_line() {
     pkg.write("pkg.kio", pkg_root_module());
     pkg.write(
         "pkg/main.kio",
-        "module pkg/main;\n\npub fn run() -> . { () }\n",
+        "mod pkg/main;\n\npub fn run() -> . { () }\n",
     );
     assert_eq!(kio_test(pkg.path()).0, 0);
 
     pkg.write(
         "pkg/main.kio",
-        "module pkg/main;\n\npub fn run() -> . { undefined_name }\n",
+        "mod pkg/main;\n\npub fn run() -> . { undefined_name }\n",
     );
     let (code, log) = kio_test(pkg.path());
     assert_eq!(
@@ -1384,17 +1384,17 @@ fn no_equiv_test_fast_path_still_reports_skipped_dependency_equivs() {
     );
     pkg.write(
         "libdep.dep.kio",
-        "dependency libdep;\n\nsource {\n  path \"../libdep/libdep.pkg.kio\";\n}\n",
+        "dep libdep;\n\nsource {\n  path \"../libdep/libdep.pkg.kio\";\n}\n",
     );
     pkg.write(
         "libdep/lib.kio",
-        "module libdep/lib;\n\n\
+        "mod libdep/lib;\n\n\
          pub fn unit() -> . { () }\n\n\
          equiv lib_unit_law() {\n  unit();\n  ()\n}\n",
     );
     pkg.write(
         "main.kio",
-        "module main;\n\nimport libdep/lib as lib;\n\npub fn run() -> . { lib.unit() }\n",
+        "mod main;\n\nimport libdep/lib as lib;\n\npub fn run() -> . { lib.unit() }\n",
     );
 
     let (code, log) = kio_test(pkg.path());

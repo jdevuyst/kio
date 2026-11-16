@@ -1,4 +1,4 @@
-module main;
+mod main;
 
 pub fn bad() -> [Element] ([Element] Element -> Element) -> . {
   .[Source](value) { let pair = (value, value); pair }

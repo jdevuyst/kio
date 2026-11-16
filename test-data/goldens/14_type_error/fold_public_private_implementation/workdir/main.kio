@@ -1,4 +1,4 @@
-module main;
+mod main;
 
 pub fn empty() { () }
 
@@ -6,4 +6,4 @@ pub fn push(_head: ., tail: .) { tail }
 
 fn finish(value: .) { value }
 
-pub varop [* *] { foldr push empty; finalize finish }
+pub op_var [* *] { foldr push empty; finalize finish }

@@ -1,4 +1,4 @@
-package numlib;
+pkg numlib;
 
 bridge {
   store

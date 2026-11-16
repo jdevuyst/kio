@@ -1,6 +1,6 @@
-module parse_arrow_op_char_adjacent/main;
+mod parse_arrow_op_char_adjacent/main;
 
-import parse_arrow_op_char_adjacent(A);
+import parse_arrow_op_char_adjacent {type A}
 
 // A bottom result can immediately follow the type arrow.
 type Diverge = . ->!;

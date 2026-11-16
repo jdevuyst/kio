@@ -1,4 +1,4 @@
-module greet;
+mod greet;
 
 // Commit-A behavior: return the FIRST of two like-typed values. The
 // run.sh advances `main` to a commit B whose `marker` returns the SECOND

@@ -1,4 +1,4 @@
-package exec_do_block_destructure;
+pkg exec_do_block_destructure;
 
 build {
   cache "out/.kio-cache/";

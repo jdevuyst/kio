@@ -1,9 +1,9 @@
-module testapi/main;
+mod testapi/main;
 
-import testapi(F64, String);
-import testapi/arith(add_f64, mul_f64, sub_f64);
-import testapi/fmt(f64_to_string);
-import testapi/io(print);
+import testapi { type F64; type String }
+import testapi/arith { fn add_f64; fn mul_f64; fn sub_f64 }
+import testapi/fmt { fn f64_to_string }
+import testapi/io { fn print }
 
 // A guest that computes with `F64` — a host scalar `dyn_load_prime`'s interpreter
 // never used to be able to carry. Floats are outside the closed i32 / string

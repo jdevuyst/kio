@@ -1,4 +1,4 @@
-package match_non_exhaustive;
+pkg match_non_exhaustive;
 
 build {
   cache "out/.kio-cache/";

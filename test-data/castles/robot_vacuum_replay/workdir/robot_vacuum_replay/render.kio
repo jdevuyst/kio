@@ -1,43 +1,43 @@
-module robot_vacuum_replay/render;
+mod robot_vacuum_replay/render;
 
-import macros/match(macro match);
-import macros/row_macros(macro select);
-import robot_vacuum_replay/command(
-, Charge_cmd
-, Clean_cmd
-, Command
-, Dock_cmd
-, Left_cmd
-, Pause_cmd
-, Right_cmd
-, Start_cmd
-, Step_cmd
-, Unknown_cmd
-);
-import robot_vacuum_replay/model(
-, Battery
-, Cleaning
-, Commands
-, Direction
-, Dirt
-, Docked
-, East
-, Facing
-, Faults
-, Idle
-, Mode
-, North
-, Paused
-, Run_mode
-, South
-, Vacuum
-, West
-, X
-, Y
-);
-import robot_vacuum_replay/text(cat2, cat3, cat4, cat5, cat6, cat7);
-import testapi(String);
-import testapi/fmt(i32_to_string);
+import macros/match { macro match }
+import macros/row_macros { macro select }
+import robot_vacuum_replay/command {
+  type Charge_cmd;
+  type Clean_cmd;
+  type Command;
+  type Dock_cmd;
+  type Left_cmd;
+  type Pause_cmd;
+  type Right_cmd;
+  type Start_cmd;
+  type Step_cmd;
+  type Unknown_cmd
+}
+import robot_vacuum_replay/model {
+  type Battery;
+  type Cleaning;
+  type Commands;
+  type Direction;
+  type Dirt;
+  type Docked;
+  type East;
+  type Facing;
+  type Faults;
+  type Idle;
+  type Mode;
+  type North;
+  type Paused;
+  type Run_mode;
+  type South;
+  type Vacuum;
+  type West;
+  type X;
+  type Y
+}
+import robot_vacuum_replay/text { fn cat2; fn cat3; fn cat4; fn cat5; fn cat6; fn cat7 }
+import testapi { type String }
+import testapi/fmt { fn i32_to_string }
 
 fn direction_name(d: Direction) -> String {
   match(d) {

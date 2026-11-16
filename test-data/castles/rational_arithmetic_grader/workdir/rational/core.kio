@@ -1,13 +1,13 @@
 /// The number tower: written fractions, the canonical `Rational` they reduce
 /// to, and the one fault that reduction can report.
-module rational/core;
+mod rational/core;
 
-import macros/control(macro if);
-import macros/row_macros(macro select);
-import macros/spine_macros(macro widen_sum);
-import testapi(Bool, I32);
+import macros/control { macro if }
+import macros/row_macros { macro select }
+import macros/spine_macros { macro widen_sum }
+import testapi { type Bool; type I32 }
 import testapi/arith as arith;
-import testapi/iter(loop);
+import testapi/iter { fn loop }
 
 /// A fraction exactly as somebody wrote it down — the pair an exercise author
 /// spelled or a student submitted. Nothing about it is canonical: the

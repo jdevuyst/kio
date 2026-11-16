@@ -1,4 +1,4 @@
-package strict_positivity_mutual;
+pkg strict_positivity_mutual;
 
 build {
   cache "out/.kio-cache/";

@@ -1,10 +1,19 @@
-module queue_backlog_sim/fifo;
+mod queue_backlog_sim/fifo;
 
-import macros/match(macro match);
-import macros/spine_macros(macro widen_sum);
-import queue/core(Queue, back, bool_to, front, is_empty, pop_front, singleton, snoc_into_back);
-import queue/list/core(List, cons, nil, uncons);
-import testapi/iter(loop);
+import macros/match { macro match }
+import macros/spine_macros { macro widen_sum }
+import queue/core {
+  type Queue;
+  fn back;
+  fn bool_to;
+  fn front;
+  fn is_empty;
+  fn pop_front;
+  fn singleton;
+  fn snoc_into_back
+}
+import queue/list/core { type List; fn cons; fn nil; fn uncons }
+import testapi/iter { fn loop }
 
 fn present[A](value: A) -> A | . { widen_sum(value)[A | .] }
 
@@ -26,7 +35,7 @@ pub rec(loop) fn reverse_list[A](source: List[A], carry: List[A]) -> List[A] {
 }
 
 pub fn canonical[A](raw: Queue[A]) -> Queue[A] {
-  let rotated = Queue.mk_unchecked((reverse_list(back(raw), nil[A]), nil[A]));
+  let rotated = Queue.mk((reverse_list(back(raw), nil[A]), nil[A]));
   match(uncons(front(raw))) {
     (.(_pair: A & List[A]) { raw }, .(_empty: .) { rotated })
   }

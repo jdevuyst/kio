@@ -1,7 +1,7 @@
 //! Name resolution for Kio.
 //!
 //! Builds the **top-level scope** of each module (the set of `fn` /
-//! `type` / `literal` / `newtype` names declared at the file top, indexed
+//! type / literal / nominal type names declared at the file top, indexed
 //! for later in-body resolution and type checking) and the
 //! [`Package`] aggregate that holds every module in a single Kio
 //! package plus its optional package file.
@@ -3526,7 +3526,7 @@ fn qualify_type_segments_with<P: Phase>(
     if is_local(head.as_str()) {
         return segments.to_vec();
     }
-    // A selectively-imported item (`import path(Name);`) is a leaf name,
+    // A selectively-imported item (`import path { type Name }`) is a leaf name,
     // never a module-path qualifier. A qualified import may head a longer
     // path, so only that branch appends `tail`.
     if tail.is_empty()
@@ -5005,8 +5005,7 @@ impl<P: ResolvePhase> Package<P> {
                             ),
                         )
                         .with_help(
-                            "break the cycle by removing one of the `import` edges between these \
-                             modules, or move the shared definition into a third module both depend on",
+                            "break the cycle by removing one of the `import` edges between these modules, or move the shared definition into a third module both depend on",
                         ),
                     });
                 }
@@ -5082,7 +5081,7 @@ impl<P: ResolvePhase> Package<P> {
 }
 
 /// Decompose a module file's path *relative to the package root* into
-/// the segment list its `module` declaration must carry. The segments
+/// the segment list its `mod` declaration must carry. The segments
 /// are the relative path's directory components plus the filename stem
 /// (the `.kio` extension stripped). The package name is **not**
 /// prepended — see [`specs/package.md`](../../specs/package.md)
@@ -5189,11 +5188,7 @@ impl<P: ResolvePhase> Package<P> {
                     )
                     .to_string();
                     let hint = format!(
-                        "module declaration `{declared_surface}` does not match the file \
-                         path; expected `module {expected};` for `{rel}` (the declared \
-                         name is the file's path relative to the package root, with `.kio` \
-                         stripped and directory separators written as `/` — the package \
-                         name is not prepended)"
+                        "module declaration `{declared_surface}` does not match the file path; expected `mod {expected};` for `{rel}` (the declared name is the file's path relative to the package root, with `.kio` stripped and directory separators written as `/` — the package name is not prepended)"
                     );
                     return Err(LocatedError {
                         file_path,
@@ -5377,9 +5372,7 @@ impl<P: ResolvePhase> Package<P> {
                     }
                     if !seen.insert((path, name)) {
                         unreachable!(
-                            "duplicate package export `{path}.{name}` — `TopLevelScope::build` \
-                             rejects every same-(module, leaf) duplicate per module before this \
-                             contract check runs (name-res, exit 13)"
+                            "duplicate package export `{path}.{name}` — `TopLevelScope::build` rejects every same-(module, leaf) duplicate per module before this contract check runs (name-res, exit 13)"
                         );
                     }
                 });
@@ -6742,7 +6735,9 @@ impl<'m> Resolver<'m> {
                         meta.span,
                         format!("macro `{name}` is not in scope"),
                     )
-                    .with_help(format!("import it with `import <module>(macro {name});`")));
+                    .with_help(format!(
+                        "import it with `import <module> {{ macro {name} }}`"
+                    )));
                 }
                 for stage in stages {
                     for arg in &stage.args {
@@ -6778,7 +6773,9 @@ impl<'m> Resolver<'m> {
                             head.span,
                             format!("macro `{name}` is not in scope"),
                         )
-                        .with_help(format!("import it with `import <module>(macro {name});`")));
+                        .with_help(format!(
+                            "import it with `import <module> {{ macro {name} }}`"
+                        )));
                     }
                 } else {
                     self.check_expr(callee, locals)?;
@@ -7063,7 +7060,7 @@ mod tests {
     }
 
     fn path(src: &str) -> ModulePath {
-        parse(&format!("module {src};")).expect("module path").path
+        parse(&format!("mod {src};")).expect("module path").path
     }
 
     fn apply_source_fix(source: &str, fix: &Fix) -> String {
@@ -7093,13 +7090,13 @@ mod tests {
 
     #[test]
     fn module_path_typo_fix_preserves_trivia_between_changed_segments() {
-        let source = "module utilx/ // 😀 keep\r\n\thelpe;";
+        let source = "mod utilx/ // 😀 keep\r\n\thelpe;";
         let written = parse(source).unwrap().path;
         let fix = module_path_typo_fix(&written, "utils/helper").unwrap();
         assert_eq!(fix.edits.len(), 2);
         assert_eq!(
             apply_source_fix(source, &fix),
-            "module utils/ // 😀 keep\r\n\thelper;"
+            "mod utils/ // 😀 keep\r\n\thelper;"
         );
     }
 
@@ -7107,8 +7104,7 @@ mod tests {
     fn unresolved_qualified_head_fix_preserves_primary_span_and_suffix() {
         for (expression, primary_width) in [("Alia.mk(())", 7), ("().>Alia.mk", 7)] {
             let source = format!(
-                "module main; type {{ Wrapper: . {{ mk; get; }}; }}; \
-                 type Alias = Wrapper; fn main() -> Wrapper {{ {expression} }}"
+                "mod main; type {{ Wrapper: . {{ mk; get; }}; }}; type Alias = Wrapper; fn main() -> Wrapper {{ {expression} }}"
             );
             let package = pkg(vec![&source]).unwrap();
             let error = package.check_in_body_resolution().unwrap_err().error;
@@ -7138,8 +7134,7 @@ mod tests {
                     "type { Helper: . { mk; get }; }"
                 };
                 let source = format!(
-                    "module main; {declarations} fn main(row: Helper, payload: .) -> . {{ \
-                     let _value = {expression}; () }}"
+                    "mod main; {declarations} fn main(row: Helper, payload: .) -> . {{ let _value = {expression}; () }}"
                 );
                 let package = pkg(vec![&source]).expect("package");
                 let error = package
@@ -7181,11 +7176,10 @@ mod tests {
 
     #[test]
     fn macro_implementation_typo_edits_only_its_qualified_head() {
-        let source = "module main; import support as support; \
-                      macro unit : . -> . { impl suport. // keep member\n helper; };";
-        let provider = "module support; import __comptime__; \
-                        pub pure fn helper(ct: __Comptime__) -> __Checked_term__ { \
-                            __term_unit__(ct) }";
+        let source =
+            "mod main; import support as support; macro unit : . -> . { impl suport. // keep member
+ helper; };";
+        let provider = "mod support; import __comptime__; pub pure fn helper(ct: __Comptime__) -> __Checked_term__ { __term_unit__(ct) }";
         let package = pkg(vec![source, provider]).unwrap();
         let error = package.check_in_body_resolution().unwrap_err().error;
         let diagnostic = error.diagnostic();
@@ -7207,12 +7201,12 @@ mod tests {
     #[test]
     fn module_path_typo_fix_changes_segment_count_only_without_trivia() {
         for (written, replacement) in [("a/bc", "a/b/c"), ("a/b/c", "a/bc"), ("_a", "_b")] {
-            let source = format!("module {written};");
+            let source = format!("mod {written};");
             let fix = module_path_typo_fix(&path(written), replacement).unwrap();
             assert_eq!(fix.edits.len(), 1);
             assert_eq!(
                 apply_source_fix(&source, &fix),
-                format!("module {replacement};")
+                format!("mod {replacement};")
             );
         }
         for written in ["a/ bc", "a /bc", "a/ // keep\nbc", "a / b/c"] {
@@ -7298,7 +7292,7 @@ mod tests {
 
     #[test]
     fn empty_module_has_empty_scope() {
-        let m = parse_module("module x;");
+        let m = parse_module("mod x;");
         let scope = TopLevelScope::build(&m).unwrap();
         assert!(scope.is_empty());
     }
@@ -7306,10 +7300,10 @@ mod tests {
     #[test]
     fn three_distinct_decls_register() {
         let m = parse_module(
-            "module x;\n\
-             fn foo() -> . { () }\n\
-             type Bar = .;\n\
-             type { Baz: . { pub mk; pub get; }; };",
+            "mod x;
+fn foo() -> . { () }
+type Bar = .;
+type { Baz: . { pub mk; pub get; }; };",
         );
         let scope = TopLevelScope::build(&m).unwrap();
         assert_eq!(scope.len(), 3);
@@ -7320,14 +7314,14 @@ mod tests {
 
     #[test]
     fn lookup_unknown_returns_none() {
-        let m = parse_module("module x; fn foo() -> . { () }");
+        let m = parse_module("mod x; fn foo() -> . { () }");
         let scope = TopLevelScope::build(&m).unwrap();
         assert_eq!(scope.lookup("nope"), None);
     }
 
     #[test]
     fn duplicate_fn_def_is_error() {
-        let m = parse_module("module x; fn foo() -> . { () } fn foo() -> . { () }");
+        let m = parse_module("mod x; fn foo() -> . { () } fn foo() -> . { () }");
         let err = TopLevelScope::build(&m).unwrap_err();
         match err {
             Error::NameRes(Diagnostic { message, .. }) => assert!(message.contains("duplicate")),
@@ -7344,7 +7338,7 @@ mod tests {
         // is a parse error). The resolver still rejects it if the parser
         // ever loosened, so we exercise it here by constructing two decls
         // that share an obviously-collidable name.
-        let m = parse_module("module x; fn foo() -> . { () } type Foo = .;");
+        let m = parse_module("mod x; fn foo() -> . { () } type Foo = .;");
         // No collision — `foo` and `Foo` differ in case. Build succeeds.
         let scope = TopLevelScope::build(&m).unwrap();
         assert_eq!(scope.len(), 2);
@@ -7358,7 +7352,7 @@ mod tests {
     #[cfg(feature = "prime")]
     #[test]
     fn resolver_checks_a_prime_module() {
-        let src = "module x; fn id[A](x: A) -> A { x }";
+        let src = "mod x; fn id[A](x: A) -> A { x }";
         let parsed = parse(src).expect("parse");
         let m: crate::ast::Module<crate::ast::Prime> =
             crate::prime::lower::lower_module(parsed).expect("prime::lower");
@@ -7371,7 +7365,7 @@ mod tests {
     #[cfg(feature = "prime")]
     #[test]
     fn resolver_rejects_unbound_name_at_prime() {
-        let src = "module x; fn use_undef() -> . { not_a_thing }";
+        let src = "mod x; fn use_undef() -> . { not_a_thing }";
         let parsed = parse(src).expect("parse");
         let m: crate::ast::Module<crate::ast::Prime> =
             crate::prime::lower::lower_module(parsed).expect("prime::lower");
@@ -7386,9 +7380,9 @@ mod tests {
 
     #[test]
     fn duplicate_newtype_is_error_at_second_decl() {
-        let src = "module x;\n\
-                   type { Foo: . { pub mk; pub get; }; };\n\
-                   type { Foo: . { pub mk; pub get; }; };";
+        let src = "mod x;
+type { Foo: . { pub mk; pub get; }; };
+type { Foo: . { pub mk; pub get; }; };";
         let m = parse_module(src);
         let err = TopLevelScope::build(&m).unwrap_err();
         match err {
@@ -7407,18 +7401,18 @@ mod tests {
     fn top_level_scope_defers_local_import_conflicts() {
         // Package import validation must run before cross-origin name checks,
         // so the module-local declaration index deliberately ignores imports.
-        let src = "module x;\n\
-                   import other(Wrap);\n\
-                   type { Wrap: . { pub mk; pub get; }; };";
+        let src = "mod x;
+import other {type Wrap}
+type { Wrap: . { pub mk; pub get; }; };";
         let m = parse_module(src);
         TopLevelScope::build(&m).expect("cross-origin conflicts are a later package check");
     }
 
     #[test]
     fn top_level_scope_indexes_alias_despite_import_for_later_validation() {
-        let src = "module x;\n\
-                   import other(Tag);\n\
-                   pub type Tag = .;";
+        let src = "mod x;
+import other {type Tag}
+pub type Tag = .;";
         let m = parse_module(src);
         let scope = TopLevelScope::build(&m).expect("scope construction is declaration-only");
         assert!(scope.lookup("Tag").is_some());
@@ -7449,13 +7443,13 @@ mod tests {
 
     #[test]
     fn top_level_scope_uses_optional_shared_type_import_storage() {
-        let empty = TopLevelScope::build(&parse_module("module consumer;"))
-            .expect("empty declaration scope");
+        let empty =
+            TopLevelScope::build(&parse_module("mod consumer;")).expect("empty declaration scope");
         let lowercase =
-            TopLevelScope::build(&parse_module("module consumer; import provider(value);"))
+            TopLevelScope::build(&parse_module("mod consumer; import provider {fn value}"))
                 .expect("value-only import scope");
         let mixed = TopLevelScope::build(&parse_module(
-            "module consumer; import provider(Item, _Item, value); import provider/nested as dep;",
+            "mod consumer; import provider {type Item; type _Item; fn value} import provider/nested as dep;",
         ))
         .expect("mixed import scope");
         let mixed_clone = mixed.clone();
@@ -7476,7 +7470,7 @@ mod tests {
     #[test]
     fn top_level_scope_indexes_written_type_import_edges() {
         let module = parse_module(
-            "module consumer; import provider(Item, _Item, value); import provider/nested as dep;",
+            "mod consumer; import provider {type Item; type _Item; fn value} import provider/nested as dep;",
         );
         let scope = TopLevelScope::build(&module).expect("declaration and import index");
         assert_eq!(
@@ -7524,9 +7518,13 @@ mod tests {
             .map(|index| format!("Type{index}"))
             .collect::<Vec<_>>();
         let source = format!(
-            "module consumer; import {}({});",
+            "mod consumer; import {} {{ {} }}",
             prefix.join("/"),
-            names.join(", ")
+            names
+                .iter()
+                .map(|name| format!("type {name}"))
+                .collect::<Vec<_>>()
+                .join("; ")
         );
         let module = parse_module(&source);
         let scope = TopLevelScope::build(&module).expect("deep selective import scope");
@@ -7547,7 +7545,7 @@ mod tests {
     #[test]
     fn selective_type_index_preserves_first_written_edge_and_source_spans() {
         let module = parse_module(
-            "module consumer; import first/provider(Item); import second/provider(Item);",
+            "mod consumer; import first/provider {type Item} import second/provider {type Item}",
         );
         let first_use = &module.imports[0];
         let ImportKind::Selective { from, .. } = &first_use.kind else {
@@ -7581,10 +7579,11 @@ mod tests {
 
     #[test]
     fn top_level_scope_debug_ignores_derived_import_indexes() {
-        let empty = parse_module("module consumer;");
-        let imported =
-            parse_module("module consumer; import provider(Item); import provider/nested as dep;");
-        let declared = parse_module("module consumer; type Named = .;");
+        let empty = parse_module("mod consumer;");
+        let imported = parse_module(
+            "mod consumer; import provider {type Item} import provider/nested as dep;",
+        );
+        let declared = parse_module("mod consumer; type Named = .;");
         let empty = TopLevelScope::build(&empty).expect("empty declaration scope");
         let imported = TopLevelScope::build(&imported).expect("indexed import declaration scope");
         let declared = TopLevelScope::build(&declared).expect("named declaration scope");
@@ -7622,7 +7621,7 @@ mod tests {
     }
 
     /// Build a package whose modules are placed at filesystem paths
-    /// derived from their `module` declarations, so the path-coherence
+    /// derived from their `mod` declarations, so the path-coherence
     /// check passes. The package root is the empty path.
     fn pkg(srcs: Vec<&str>) -> Result<Package, LocatedError> {
         let parsed: Vec<_> = srcs
@@ -7637,7 +7636,7 @@ mod tests {
         const MODULES: usize = 128;
         let mut modules = BTreeMap::new();
         for index in 0..MODULES {
-            let source = format!("module m{index}; pub type N{index} = .;");
+            let source = format!("mod m{index}; pub type N{index} = .;");
             let module = parse_module(&source);
             let scope = TopLevelScope::build(&module).expect("declaration-only scope");
             modules.insert(
@@ -7687,7 +7686,7 @@ mod tests {
             .into_iter()
             .map(|src| (module_file_path(src), parse_module(src)))
             .collect();
-        let package_file_full = format!("package {package_name};\n{package_body}");
+        let package_file_full = format!("pkg {package_name};\n{package_body}");
         let package_file =
             crate::pass::parser::parse_package_file(&package_file_full, Some(package_name))
                 .expect("parse package file");
@@ -7715,7 +7714,7 @@ mod tests {
         let parsed_desugared = vec![(PathBuf::from(file_path), desugared)];
         let (parsed, _) =
             crate::pass::label_elab::elaborate_package(parsed_desugared, None).expect("elaborate");
-        let package_file_full = format!("package {package_name};\nbridge {{ lib; }}");
+        let package_file_full = format!("pkg {package_name};\nbridge {{ lib; }}");
         let package_file =
             crate::pass::parser::parse_package_file(&package_file_full, Some(package_name))
                 .expect("parse package file");
@@ -7734,7 +7733,7 @@ mod tests {
 
     #[test]
     fn package_indexes_modules_by_declared_path() {
-        let p = pkg(vec!["module pkg/a;", "module pkg/b;"]).unwrap();
+        let p = pkg(vec!["mod pkg/a;", "mod pkg/b;"]).unwrap();
         assert!(p.module("pkg/a").is_some());
         assert!(p.module("pkg/b").is_some());
         assert!(p.module("pkg/c").is_none());
@@ -7742,7 +7741,7 @@ mod tests {
 
     #[test]
     fn duplicate_module_path_is_import_error() {
-        let result = pkg(vec!["module pkg/a;", "module pkg/a;"]);
+        let result = pkg(vec!["mod pkg/a;", "mod pkg/a;"]);
         let err = result.unwrap_err();
         match err.error {
             Error::Import(Diagnostic { message, .. }) => {
@@ -7755,8 +7754,8 @@ mod tests {
     #[test]
     fn pub_in_is_sealed_from_outside_the_subtree() {
         let p = pkg(vec![
-            "module helper/submod; pub(helper) fn secret() -> . { () }",
-            "module main; import helper/submod(secret);",
+            "mod helper/submod; pub(helper) fn secret() -> . { () }",
+            "mod main; import helper/submod {fn secret}",
         ])
         .unwrap();
         let err = p.resolve_imports().unwrap_err();
@@ -7772,8 +7771,8 @@ mod tests {
     #[test]
     fn pub_in_is_visible_within_the_subtree() {
         let p = pkg(vec![
-            "module helper/submod; pub(helper) fn secret() -> . { () }",
-            "module helper/other; import helper/submod(secret);",
+            "mod helper/submod; pub(helper) fn secret() -> . { () }",
+            "mod helper/other; import helper/submod {fn secret}",
         ])
         .unwrap();
         p.resolve_imports()
@@ -7782,7 +7781,7 @@ mod tests {
 
     #[test]
     fn pub_in_restriction_must_be_an_ancestor_of_the_declaring_module() {
-        let p = pkg(vec!["module foo/bar; pub(other) fn x() -> . { () }"]).unwrap();
+        let p = pkg(vec!["mod foo/bar; pub(other) fn x() -> . { () }"]).unwrap();
         let err = p.resolve_imports().unwrap_err();
         match err.error {
             Error::Import(Diagnostic { message, .. }) => {
@@ -7796,7 +7795,7 @@ mod tests {
     fn root_storage_key_is_not_package_prefixed() {
         let p = module_file_pkg_with_export(
             "lib.kio",
-            "module lib; pub fn identity[A](x: A) -> A { x }",
+            "mod lib; pub fn identity[A](x: A) -> A { x }",
             "pkg",
         )
         .unwrap();
@@ -7807,8 +7806,8 @@ mod tests {
     #[test]
     fn import_selective_resolves_against_package() {
         let p = pkg(vec![
-            "module pkg/a; pub fn foo() -> . { () }",
-            "module pkg/b; import pkg/a(foo);",
+            "mod pkg/a; pub fn foo() -> . { () }",
+            "mod pkg/b; import pkg/a {fn foo}",
         ])
         .unwrap();
         p.resolve_imports().unwrap();
@@ -7816,22 +7815,16 @@ mod tests {
 
     #[test]
     fn import_qualified_resolves_against_package() {
-        let p = pkg(vec!["module pkg/a;", "module pkg/b; import pkg/a as a;"]).unwrap();
+        let p = pkg(vec!["mod pkg/a;", "mod pkg/b; import pkg/a as a;"]).unwrap();
         p.resolve_imports().unwrap();
     }
 
     #[test]
     fn newtype_member_heads_follow_only_written_lexical_routes() {
         let p = pkg(vec![
-            "module provider; \
-             pub type { Imported: . { pub mk; pub get; }; }; \
-             pub type { Qualified: . { pub mk; pub get; }; };",
-            "module decoy; \
-             pub type { Qualified: . { pub mk; pub get; }; };",
-            "module main; \
-             import provider(Imported); \
-             import provider as p; \
-             type { Local: . { mk; get; }; };",
+            "mod provider; pub type { Imported: . { pub mk; pub get; }; }; pub type { Qualified: . { pub mk; pub get; }; };",
+            "mod decoy; pub type { Qualified: . { pub mk; pub get; }; };",
+            "mod main; import provider {type Imported} import provider as p; type { Local: . { mk; get; }; };",
         ])
         .expect("package");
         p.resolve_imports().expect("resolve imports");
@@ -7876,7 +7869,7 @@ mod tests {
 
     #[test]
     fn import_unknown_module_is_error() {
-        let p = pkg(vec!["module pkg/a; import pkg/nope(foo);"]).unwrap();
+        let p = pkg(vec!["mod pkg/a; import pkg/nope {fn foo}"]).unwrap();
         let err = p.resolve_imports().unwrap_err();
         match err.error {
             Error::Import(Diagnostic { message, .. }) => assert!(message.contains("not found")),
@@ -7887,8 +7880,8 @@ mod tests {
     #[test]
     fn import_non_pub_item_is_error() {
         let p = pkg(vec![
-            "module pkg/a; fn foo() -> . { () }", // not pub
-            "module pkg/b; import pkg/a(foo);",
+            "mod pkg/a; fn foo() -> . { () }", // not pub
+            "mod pkg/b; import pkg/a {fn foo}",
         ])
         .unwrap();
         let err = p.resolve_imports().unwrap_err();
@@ -7909,9 +7902,9 @@ mod tests {
     fn inaccessible_import_labels_the_exact_provider_declaration() {
         for modifier in ["", "pub(pkg) "] {
             let provider = format!(
-                "module pkg/provider;\n// 😀 source owner\n{modifier}fn secret() -> . {{ () }}\n"
+                "mod pkg/provider;\n// 😀 source owner\n{modifier}fn secret() -> . {{ () }}\n"
             );
-            let caller = "module consumer;\nimport pkg/provider(secret);\n";
+            let caller = "mod consumer;\nimport pkg/provider {fn secret}\n";
             let p = pkg(vec![&provider, caller]).unwrap();
             let error = p.resolve_imports().unwrap_err();
             assert_eq!(error.file_path, module_file_path(caller));
@@ -7930,8 +7923,8 @@ mod tests {
     #[test]
     fn import_unknown_name_in_module_is_error() {
         let p = pkg(vec![
-            "module pkg/a; pub fn foo() -> . { () }",
-            "module pkg/b; import pkg/a(bar);",
+            "mod pkg/a; pub fn foo() -> . { () }",
+            "mod pkg/b; import pkg/a {fn bar}",
         ])
         .unwrap();
         let err = p.resolve_imports().unwrap_err();
@@ -7945,7 +7938,7 @@ mod tests {
 
     #[test]
     fn import_intrinsics_always_succeeds() {
-        let p = pkg(vec!["module pkg/a; import __intrinsics__;"]).unwrap();
+        let p = pkg(vec!["mod pkg/a; import __intrinsics__;"]).unwrap();
         p.resolve_imports().unwrap();
     }
 
@@ -7968,9 +7961,9 @@ mod tests {
     fn selective_import_binding_has_one_source_identity() {
         expect_binding_origin_error(
             vec![
-                "module first; pub fn pick() -> . { () }",
-                "module second; pub fn pick() -> . { () }",
-                "module main; import first(pick); import second(pick);",
+                "mod first; pub fn pick() -> . { () }",
+                "mod second; pub fn pick() -> . { () }",
+                "mod main; import first {fn pick} import second {fn pick}",
             ],
             "pick",
         );
@@ -7980,9 +7973,9 @@ mod tests {
     fn qualified_import_alias_has_one_source_identity() {
         expect_binding_origin_error(
             vec![
-                "module first;",
-                "module second;",
-                "module main; import first as dep; import second as dep;",
+                "mod first;",
+                "mod second;",
+                "mod main; import first as dep; import second as dep;",
             ],
             "dep",
         );
@@ -7992,8 +7985,8 @@ mod tests {
     fn local_alias_and_selective_import_have_distinct_binding_origins() {
         expect_binding_origin_error(
             vec![
-                "module origin; pub type Tag = .;",
-                "module main; import origin(Tag); type Tag = .;",
+                "mod origin; pub type Tag = .;",
+                "mod main; import origin {type Tag} type Tag = .;",
             ],
             "Tag",
         );
@@ -8002,8 +7995,8 @@ mod tests {
     #[test]
     fn identity_alias_and_selective_import_are_distinct_introductions() {
         let p = pkg(vec![
-            "module origin; pub type { Tag: . { mk; get; }; };",
-            "module main; import origin(Tag); import origin as source; type Tag = source.Tag;",
+            "mod origin; pub type { Tag: . { mk; get; }; };",
+            "mod main; import origin {type Tag} import origin as source; type Tag = source.Tag;",
         ])
         .expect("package");
         p.resolve_imports().expect("uses");
@@ -8020,15 +8013,9 @@ mod tests {
     #[test]
     fn identity_aliases_to_nonnewtype_declarations_do_not_merge_introductions_or_gain_members() {
         let p = pkg(vec![
-            "module origin; pub host type Handle; pub type Shape = . & .;",
-            "module host_consumer; \
-             import origin(Handle); \
-             import origin as source; \
-             type Handle = source.Handle;",
-            "module alias_consumer; \
-             import origin(Shape); \
-             import origin as source; \
-             type Shape = source.Shape;",
+            "mod origin; pub host type Handle; pub type Shape = . & .;",
+            "mod host_consumer; import origin {type Handle} import origin as source; type Handle = source.Handle;",
+            "mod alias_consumer; import origin {type Shape} import origin as source; type Shape = source.Shape;",
         ])
         .expect("package");
         p.resolve_imports().expect("uses");
@@ -8048,15 +8035,8 @@ mod tests {
     #[test]
     fn recursive_group_identity_alias_and_import_are_distinct_introductions() {
         let p = pkg(vec![
-            "module origin; \
-             rec { \
-               pub type Tag = Wrap; \
-               pub type { Wrap: (. | Tag) { mk; get; }; }; \
-             }",
-            "module main; \
-             import origin(Tag); \
-             import origin as source; \
-             type Tag = source.Wrap;",
+            "mod origin; rec { pub type Tag = Wrap; pub type { Wrap: (. | Tag) { mk; get; }; }; }",
+            "mod main; import origin {type Tag} import origin as source; type Tag = source.Wrap;",
         ])
         .expect("package");
         p.resolve_imports().expect("uses");
@@ -8072,16 +8052,9 @@ mod tests {
     #[test]
     fn identity_alias_newtype_members_require_full_positional_kind_preservation() {
         let p = pkg(vec![
-            "module origin; \
-             pub type { Pair[A][B]: A & B { pub mk; pub get; }; }; \
-             pub type { Higher[*F]: . { pub mk; pub get; }; };",
-            "module relay; \
-             import origin as source; \
-             pub type Exact[A][B] = source.Pair[A][ B]; \
-             pub type Partial[A] = source.Pair[A]; \
-             pub type Reordered[A][B] = source.Pair[B][ A]; \
-             pub type Wrong_kind[A] = source.Higher[A];",
-            "module facade; import relay as source; pub type Exact[X][Y] = source.Exact[X][ Y];",
+            "mod origin; pub type { Pair[A][B]: A & B { pub mk; pub get; }; }; pub type { Higher[*F]: . { pub mk; pub get; }; };",
+            "mod relay; import origin as source; pub type Exact[A][B] = source.Pair[A][ B]; pub type Partial[A] = source.Pair[A]; pub type Reordered[A][B] = source.Pair[B][ A]; pub type Wrong_kind[A] = source.Higher[A];",
+            "mod facade; import relay as source; pub type Exact[X][Y] = source.Exact[X][ Y];",
         ])
         .expect("package");
         p.resolve_imports().expect("uses");
@@ -8107,11 +8080,10 @@ mod tests {
     #[test]
     fn identity_alias_member_target_requires_a_written_import_edge() {
         let p = pkg(vec![
-            "module provider; \
-             pub type { Tag: . { pub mk; pub get; }; };",
-            "module no_import; pub type Alias = provider.Tag;",
-            "module imported; import provider as source; pub type Alias = source.Tag;",
-            "module unrelated; pub type { Noise: . { mk; get; }; };",
+            "mod provider; pub type { Tag: . { pub mk; pub get; }; };",
+            "mod no_import; pub type Alias = provider.Tag;",
+            "mod imported; import provider as source; pub type Alias = source.Tag;",
+            "mod unrelated; pub type { Noise: . { mk; get; }; };",
         ])
         .expect("package");
 
@@ -8128,8 +8100,7 @@ mod tests {
     #[test]
     fn identity_alias_newtype_index_visits_each_chain_edge_once() {
         const ALIASES: usize = 256;
-        let mut source =
-            String::from("module chain; pub type { Terminal: . { pub mk; pub get; }; };");
+        let mut source = String::from("mod chain; pub type { Terminal: . { pub mk; pub get; }; };");
         for index in 0..ALIASES {
             let target = if index == 0 {
                 "Terminal".to_owned()
@@ -8160,12 +8131,9 @@ mod tests {
     #[test]
     fn surface_identity_alias_index_uses_one_indexed_scope_lookup_per_alias() {
         const ALIASES: usize = 128;
-        let origin = parse(
-            "module origin; \
-             pub type { Terminal: . { pub mk; pub get; }; };",
-        )
-        .expect("parse origin");
-        let mut source = String::from("module relay;");
+        let origin = parse("mod origin; pub type { Terminal: . { pub mk; pub get; }; };")
+            .expect("parse origin");
+        let mut source = String::from("mod relay;");
         for index in 0..ALIASES {
             source.push_str(&format!(" import origin as source{index};"));
         }
@@ -8192,13 +8160,7 @@ mod tests {
     #[test]
     fn surface_identity_alias_index_preserves_local_declaration_order() {
         let module = parse(
-            "module local; \
-             type Later = Target; \
-             pub type { Target: . { pub mk; pub get; }; }; \
-             rec { \
-               type Peer = Wrapped; \
-               type { Wrapped: Peer { mk; get; }; }; \
-             }",
+            "mod local; type Later = Target; pub type { Target: . { pub mk; pub get; }; }; rec { type Peer = Wrapped; type { Wrapped: Peer { mk; get; }; }; }",
         )
         .expect("parse local aliases");
 
@@ -8224,28 +8186,15 @@ mod tests {
     #[test]
     fn surface_identity_alias_index_does_not_import_later_local_targets_early() {
         let qualified = parse(
-            "module qualified; \
-             import qualified as self_module; \
-             type Premature = self_module.Later; \
-             pub type { Later: . { pub mk; pub get; }; }; \
-             type Inscope = self_module.Later;",
+            "mod qualified; import qualified as self_module; type Premature = self_module.Later; pub type { Later: . { pub mk; pub get; }; }; type Inscope = self_module.Later;",
         )
         .expect("parse qualified self import");
         let selective = parse(
-            "module selective; \
-             import selective(Later); \
-             type Premature = Later; \
-             pub type { Later: . { pub mk; pub get; }; }; \
-             type Inscope = Later;",
+            "mod selective; import selective {type Later} type Premature = Later; pub type { Later: . { pub mk; pub get; }; }; type Inscope = Later;",
         )
         .expect("parse selective self import");
         let recursive = parse(
-            "module recursive; \
-             import recursive as self_module; \
-             rec { \
-               type Peer = self_module.Wrapped; \
-               type { Wrapped: Peer { mk; get; }; }; \
-             }",
+            "mod recursive; import recursive as self_module; rec { type Peer = self_module.Wrapped; type { Wrapped: Peer { mk; get; }; }; }",
         )
         .expect("parse recursive self import");
 
@@ -8272,37 +8221,18 @@ mod tests {
 
     #[test]
     fn surface_named_compact_aliases_require_the_exact_positional_lowering_shape() {
-        check(
-            "module valid; \
-             type Reordered[A][B] = { Swapped[B][A]: A & B; };",
-        )
-        .expect("binder permutation is a valid structural alias, just not an identity alias");
+        check("mod valid; type Reordered[A][B] = { Swapped[B][A]: A & B; };")
+            .expect("binder permutation is a valid structural alias, just not an identity alias");
         let standalone = parse(
-            "module standalone; \
-             type Exact[A][B] = { Item[A][B]: A & B; }; \
-             type Reordered[A][B] = { Swapped[B][A]: A & B; }; \
-             type Renamed[A] = { Renamed_item[B]: B; }; \
-             type Partial[A] = { Partial_item: .; };",
+            "mod standalone; type Exact[A][B] = { Item[A][B]: A & B; }; type Reordered[A][B] = { Swapped[B][A]: A & B; }; type Renamed[A] = { Renamed_item[B]: B; }; type Partial[A] = { Partial_item: .; };",
         )
         .expect("parse standalone compact aliases");
         let grouped = parse(
-            "module grouped; \
-             rec { \
-               type Exact[A][B] = { Link[A][B]: Peer[A][ B]; }; \
-               type { Peer[A][B]: Exact[A][ B] { mk; get; }; }; \
-             } \
-             rec { \
-               type Reordered[A][B] = { Back[B][A]: Other[B][ A]; }; \
-               type { Other[A][B]: Reordered[A][ B] { mk; get; }; }; \
-             }",
+            "mod grouped; rec { type Exact[A][B] = { Link[A][B]: Peer[A][ B]; }; type { Peer[A][B]: Exact[A][ B] { mk; get; }; }; } rec { type Reordered[A][B] = { Back[B][A]: Other[B][ A]; }; type { Other[A][B]: Reordered[A][ B] { mk; get; }; }; }",
         )
         .expect("parse recursive compact aliases");
         check(
-            "module valid_group; \
-             rec { \
-               type Reordered[A][B] = { Swapped[B][A]: Peer[B][ A]; }; \
-               type { Peer[A][B]: Reordered[A][ B] { mk; get; }; }; \
-             }",
+            "mod valid_group; rec { type Reordered[A][B] = { Swapped[B][A]: Peer[B][ A]; }; type { Peer[A][B]: Reordered[A][ B] { mk; get; }; }; }",
         )
         .expect("the binder-permuting recursive declaration remains structurally valid");
 
@@ -8332,20 +8262,20 @@ mod tests {
     fn repeated_ordinary_imports_report_the_two_written_introductions() {
         for (source, name, first_start, later_start) in [
             (
-                "module main; import origin(pick); import origin(pick);",
+                "mod main; import origin {fn pick} import origin {fn pick}",
                 "pick",
-                27,
-                48,
+                28,
+                52,
             ),
-            ("module main; import origin(pick, pick);", "pick", 27, 33),
+            ("mod main; import origin {fn pick; fn pick}", "pick", 28, 37),
             (
-                "module main; import origin as dep; import origin as dep;",
+                "mod main; import origin as dep; import origin as dep;",
                 "dep",
-                13,
-                35,
+                10,
+                32,
             ),
         ] {
-            let p = pkg(vec!["module origin; pub fn pick() -> . { () }", source]).unwrap();
+            let p = pkg(vec!["mod origin; pub fn pick() -> . { () }", source]).unwrap();
             p.resolve_imports().unwrap();
             p.check_no_value_cycles().unwrap();
             let error = p
@@ -8367,7 +8297,7 @@ mod tests {
     #[test]
     fn repeated_compiler_block_imports_remain_idempotent() {
         let p = pkg(vec![
-            "module main; import __intrinsics__; import __intrinsics__; import __comptime__; import __comptime__;",
+            "mod main; import __intrinsics__; import __intrinsics__; import __comptime__; import __comptime__;",
         ]).unwrap();
         p.resolve_imports().unwrap();
         p.check_binding_origins()
@@ -8377,8 +8307,7 @@ mod tests {
     #[test]
     fn invalid_import_does_not_create_local_binding() {
         let p = pkg(vec![
-            "module main; import missing(Wrap); \
-             type { Wrap: . { mk; get; }; };",
+            "mod main; import missing {type Wrap} type { Wrap: . { mk; get; }; };",
         ])
         .expect("an unresolved import has no authenticated binding origin");
         let err = p
@@ -8395,8 +8324,8 @@ mod tests {
     fn bridge_validates_binding_origins() {
         let err = pkg_with_package_file(
             vec![
-                "module origin; pub type Tag = .;",
-                "module main; import origin(Tag); type Tag = .;",
+                "mod origin; pub type Tag = .;",
+                "mod main; import origin {type Tag} type Tag = .;",
             ],
             "testpkg",
             "bridge { main; }",
@@ -8412,7 +8341,7 @@ mod tests {
     #[test]
     fn bridge_validates_import_edges() {
         let err = pkg_with_package_file(
-            vec!["module main; import absent(Tag);"],
+            vec!["mod main; import absent {type Tag}"],
             "testpkg",
             "bridge { main; }",
         )
@@ -8427,7 +8356,7 @@ mod tests {
     #[test]
     fn comptime_import_and_local_type_have_distinct_binding_origins() {
         expect_binding_origin_error(
-            vec!["module main; import __comptime__; type Comptime_bool = .;"],
+            vec!["mod main; import __comptime__; type Comptime_bool = .;"],
             "Comptime_bool",
         );
     }
@@ -8438,15 +8367,11 @@ mod tests {
         use crate::pipeline::Pipeline;
         use crate::prime::pipeline::PrimePipeline;
 
-        let ops_source = "module ops; \
-                          pub fn add(_left: ., _right: .) -> . { () } \
-                          pub op _ + _ { impl add; };";
+        let ops_source =
+            "mod ops; pub fn add(_left: ., _right: .) -> . { () } pub op _ + _ { impl add; };";
         let ops = crate::pass::parser::parse(ops_source).expect("parse operator provider");
         let main = crate::pass::parser::parse(
-            "module main; \
-             import ops(op _ + _); \
-             fn _op_gphahd__() -> . { () } \
-             fn run() -> . { () + () }",
+            "mod main; import ops {op _ + _} fn _op_gphahd__() -> . { () } fn run() -> . { () + () }",
         )
         .expect("parse consumer with operator provider");
         let parsed = vec![
@@ -8526,14 +8451,11 @@ mod tests {
     fn operator_generated_alias_is_not_captured_by_nested_value_binder() {
         use crate::pipeline::Pipeline;
 
-        let ops_source = "module ops; \
-                          pub fn add(_left: ., _right: .) -> . { () } \
-                          pub op _ + _ { impl add; };";
+        let ops_source =
+            "mod ops; pub fn add(_left: ., _right: .) -> . { () } pub op _ + _ { impl add; };";
         let ops = crate::pass::parser::parse(ops_source).expect("parse operator provider");
         let main = crate::pass::parser::parse(
-            "module main; \
-             import ops(op _ + _); \
-             fn run(_op_gphahd__: .) -> . { _op_gphahd__; () + () }",
+            "mod main; import ops {op _ + _} fn run(_op_gphahd__: .) -> . { _op_gphahd__; () + () }",
         )
         .expect("parse consumer with operator provider");
         let parsed = vec![
@@ -8551,9 +8473,9 @@ mod tests {
     #[test]
     fn compact_nominal_has_one_source_identity() {
         for declaration in ["type { Foo: .; };", "type { Foo: . { mk; get; }; };"] {
-            let consumer = format!("module main; import source(Foo); {declaration}");
+            let consumer = format!("mod main; import source {{type Foo}} {declaration}");
             let package = full_pkg(&[
-                ("source.kio", "module source; pub type Foo = .;"),
+                ("source.kio", "mod source; pub type Foo = .;"),
                 ("main.kio", &consumer),
             ])
             .expect("package construction defers import collisions");
@@ -8569,10 +8491,10 @@ mod tests {
         }
 
         let package = full_pkg(&[
-            ("source.kio", "module source; pub type Foo = .;"),
+            ("source.kio", "mod source; pub type Foo = .;"),
             (
                 "main.kio",
-                "module main; import source(Foo); type { Bar: .; };",
+                "mod main; import source {type Foo} type { Bar: .; };",
             ),
         ])
         .expect("non-conflicting package");
@@ -8585,9 +8507,7 @@ mod tests {
     #[test]
     fn root_env_names_resolve_in_body() {
         let p = pkg(vec![
-            "module hello; \
-             host type String role(str); host fn print(s: String) -> .; \
-             fn f(s: String) -> . { print(s) }",
+            "mod hello; host type String role(str); host fn print(s: String) -> .; fn f(s: String) -> . { print(s) }",
         ])
         .unwrap();
         p.resolve_imports().unwrap();
@@ -8597,9 +8517,7 @@ mod tests {
     #[test]
     fn root_env_signature_resolves_kio_type() {
         let p = pkg(vec![
-            "module hello; \
-             pub type { Box: . { pub mk; pub get; }; }; \
-             host fn accept(b: Box) -> .;",
+            "mod hello; pub type { Box: . { pub mk; pub get; }; }; host fn accept(b: Box) -> .;",
         ])
         .unwrap();
         p.resolve_imports().unwrap();
@@ -8608,7 +8526,7 @@ mod tests {
 
     #[test]
     fn root_env_signature_unknown_type_is_error() {
-        let p = pkg(vec!["module hello; host fn accept(b: Missing) -> .;"]).unwrap();
+        let p = pkg(vec!["mod hello; host fn accept(b: Missing) -> .;"]).unwrap();
         p.resolve_imports().unwrap();
         let err = p.check_in_body_resolution().unwrap_err();
         match err.error {
@@ -8624,7 +8542,7 @@ mod tests {
         // A bridge glob matching zero modules is almost certainly a typo
         // — the resolver rejects it (the dead-glob check).
         let err = pkg_with_package_file(
-            vec!["module app; pub fn run() -> . { () }"],
+            vec!["mod app; pub fn run() -> . { () }"],
             "app",
             "bridge { nope; }",
         )
@@ -8642,7 +8560,7 @@ mod tests {
         // A bridge glob matching a real module is admitted; the module's
         // `pub` items form the derived contract surface.
         pkg_with_package_file(
-            vec!["module app; host type String role(str); pub fn run(s: String) -> String { s }"],
+            vec!["mod app; host type String role(str); pub fn run(s: String) -> String { s }"],
             "app",
             "bridge { app; }",
         )
@@ -8653,19 +8571,10 @@ mod tests {
     fn public_newtype_host_surfaces_keep_exact_module_identity_and_all_four_states() {
         let package = pkg_with_package_file(
             vec![
-                "module app/left; \
-                 pub type { Shared: . { pub mk; get; }; };",
-                "module app/right; \
-                 pub type { Shared: . { mk; pub get; }; };",
-                "module app/states; \
-                 rec { \
-                   pub type { Opaque: Both { mk; get; }; }; \
-                   pub type { Both: Opaque { \
-                     pub mk; pub get; \
-                   }; }; \
-                 }",
-                "module app/outside; \
-                 pub type { Shared: . { pub mk; pub get; }; };",
+                "mod app/left; pub type { Shared: . { pub mk; get; }; };",
+                "mod app/right; pub type { Shared: . { mk; pub get; }; };",
+                "mod app/states; rec { pub type { Opaque: Both { mk; get; }; }; pub type { Both: Opaque { pub mk; pub get; }; }; }",
+                "mod app/outside; pub type { Shared: . { pub mk; pub get; }; };",
             ],
             "app",
             "bridge { app/left; app/right; app/states; }",
@@ -8704,11 +8613,7 @@ mod tests {
     #[test]
     fn bridge_closure_ignores_all_private_newtype_payload() {
         pkg_with_package_file(
-            vec![
-                "module app; \
-                 type Hidden = .; \
-                 pub type { Opaque: Hidden { mk; get; }; };",
-            ],
+            vec!["mod app; type Hidden = .; pub type { Opaque: Hidden { mk; get; }; };"],
             "app",
             "bridge { app; }",
         )
@@ -8719,12 +8624,7 @@ mod tests {
     fn bridge_closure_ignores_scoped_newtype_member_payload() {
         pkg_with_package_file(
             vec![
-                "module app; \
-                 pub(app) type Scoped = .; \
-                 pub type { Opaque: Scoped { \
-                   pub(app) mk; \
-                   pub(app) get; \
-                 }; };",
+                "mod app; pub(app) type Scoped = .; pub type { Opaque: Scoped { pub(app) mk; pub(app) get; }; };",
             ],
             "app",
             "bridge { app; }",
@@ -8735,11 +8635,7 @@ mod tests {
     #[test]
     fn bridge_closure_checks_payload_exposed_by_one_public_member() {
         let error = pkg_with_package_file(
-            vec![
-                "module app; \
-                 type Hidden = .; \
-                 pub type { Exposed: Hidden { pub mk; get; }; };",
-            ],
+            vec!["mod app; type Hidden = .; pub type { Exposed: Hidden { pub mk; get; }; };"],
             "app",
             "bridge { app; }",
         )
@@ -8760,7 +8656,7 @@ mod tests {
         // `module utils/string;` at `utils/string.kio` (relative to
         // the package root) — the declared path equals the relative
         // file path, with `/` as `.` and `.kio` stripped.
-        let module = parse_module("module utils/string;");
+        let module = parse_module("mod utils/string;");
         let parsed = vec![(PathBuf::from("utils/string.kio"), module)];
         Package::build(Path::new(""), parsed, None).unwrap();
     }
@@ -8769,7 +8665,7 @@ mod tests {
     fn module_decl_root_level_module_builds() {
         // `module main;` directly at `main.kio` (package root). With
         // no package file, no host-namespace check applies.
-        let module = parse_module("module main;");
+        let module = parse_module("mod main;");
         let parsed = vec![(PathBuf::from("main.kio"), module)];
         Package::build(Path::new(""), parsed, None).unwrap();
     }
@@ -8779,7 +8675,7 @@ mod tests {
         // `module foo/bar;` declared in a file living at
         // `subdir/helper.kio` — the file path implies
         // `module subdir/helper;`.
-        let module = parse_module("module foo/bar;");
+        let module = parse_module("mod foo/bar;");
         let parsed = vec![(PathBuf::from("subdir/helper.kio"), module)];
         let err = Package::build(Path::new(""), parsed, None).unwrap_err();
         match err.error {
@@ -8797,7 +8693,7 @@ mod tests {
     #[test]
     fn module_decl_wrong_filename_stem_is_parse_error() {
         // `module main;` declared in a file living at `other.kio`.
-        let module = parse_module("module main;");
+        let module = parse_module("mod main;");
         let parsed = vec![(PathBuf::from("other.kio"), module)];
         let err = Package::build(Path::new(""), parsed, None).unwrap_err();
         match err.error {
@@ -8820,11 +8716,11 @@ mod tests {
         // file would have to move to `pkg/main.kio` for the
         // pkg-prefix form to be coherent). The error is rule (1): the
         // declared segments don't match the file path.
-        let module = parse_module("module pkg/main;");
+        let module = parse_module("mod pkg/main;");
         let parsed = vec![(PathBuf::from("main.kio"), module)];
         let package_file = crate::pass::parser::parse_package_file(
-            "package pkg;\n\
-             bridge { main; }",
+            "pkg pkg;
+bridge { main; }",
             None,
         )
         .and_then(crate::pass::desugar::desugar_package_file)
@@ -8844,7 +8740,7 @@ mod tests {
                     message.contains("does not match the file path"),
                     "got: {message}"
                 );
-                assert!(message.contains("module main;"), "got: {message}");
+                assert!(message.contains("mod main;"), "got: {message}");
             }
             other => panic!("expected Parse, got {other:?}"),
         }
@@ -8852,14 +8748,11 @@ mod tests {
 
     #[test]
     fn root_module_env_builds() {
-        let module = parse_module(
-            "module hello; \
-             host type String role(str);",
-        );
+        let module = parse_module("mod hello; host type String role(str);");
         let parsed = vec![(PathBuf::from("hello.kio"), module)];
         let package_file = crate::pass::parser::parse_package_file(
-            "package hello;\n\
-             bridge { hello; }",
+            "pkg hello;
+bridge { hello; }",
             None,
         )
         .and_then(crate::pass::desugar::desugar_package_file)
@@ -8878,14 +8771,11 @@ mod tests {
 
     #[test]
     fn package_file_does_not_prefix_module_storage_key() {
-        let module = parse_module(
-            "module main; \
-             pub fn id[A](x: A) -> A { x }",
-        );
+        let module = parse_module("mod main; pub fn id[A](x: A) -> A { x }");
         let parsed = vec![(PathBuf::from("main.kio"), module)];
         let package_file = crate::pass::parser::parse_package_file(
-            "package hello;\n\
-             bridge { main; }",
+            "pkg hello;
+bridge { main; }",
             None,
         )
         .and_then(crate::pass::desugar::desugar_package_file)
@@ -8908,8 +8798,8 @@ mod tests {
     #[test]
     fn no_cycle_in_acyclic_package() {
         let p = pkg(vec![
-            "module pkg/a; pub fn x() -> . { () }",
-            "module pkg/b; import pkg/a(x);",
+            "mod pkg/a; pub fn x() -> . { () }",
+            "mod pkg/b; import pkg/a {fn x}",
         ])
         .unwrap();
         p.check_no_value_cycles().unwrap();
@@ -8919,8 +8809,8 @@ mod tests {
     fn direct_cycle_is_detected() {
         // `import` statements come before items per Kio grammar.
         let p = pkg(vec![
-            "module pkg/a; import pkg/b(y); pub fn x() -> . { () }",
-            "module pkg/b; import pkg/a(x); pub fn y() -> . { () }",
+            "mod pkg/a; import pkg/b {fn y} pub fn x() -> . { () }",
+            "mod pkg/b; import pkg/a {fn x} pub fn y() -> . { () }",
         ])
         .unwrap();
         let err = p.check_no_value_cycles().unwrap_err();
@@ -8931,8 +8821,7 @@ mod tests {
                 assert_eq!(
                     diagnostic.help(),
                     Some(
-                        "break the cycle by removing one of the `import` edges between these \
-                         modules, or move the shared definition into a third module both depend on"
+                        "break the cycle by removing one of the `import` edges between these modules, or move the shared definition into a third module both depend on"
                     )
                 );
             }
@@ -8943,10 +8832,10 @@ mod tests {
     #[test]
     fn value_import_topo_levels_put_dependencies_before_consumers() {
         let p = pkg(vec![
-            "module pkg/a; pub fn a() -> . { () }",
-            "module pkg/b; import pkg/a(a); pub fn b() -> . { a() }",
-            "module pkg/c; import pkg/a(a); pub fn c() -> . { a() }",
-            "module pkg/d; import pkg/b(b); import pkg/c(c); pub fn d() -> . { b() }",
+            "mod pkg/a; pub fn a() -> . { () }",
+            "mod pkg/b; import pkg/a {fn a} pub fn b() -> . { a() }",
+            "mod pkg/c; import pkg/a {fn a} pub fn c() -> . { a() }",
+            "mod pkg/d; import pkg/b {fn b} import pkg/c {fn c} pub fn d() -> . { b() }",
         ])
         .unwrap();
         p.resolve_imports().unwrap();
@@ -8989,34 +8878,29 @@ mod tests {
 
     #[test]
     fn empty_module_resolves() {
-        check("module x;").unwrap();
+        check("mod x;").unwrap();
     }
 
     #[test]
     fn fn_def_with_param_reference_resolves() {
-        check("module x; fn id[A](x: A) -> A { x }").unwrap();
+        check("mod x; fn id[A](x: A) -> A { x }").unwrap();
     }
 
     #[test]
     fn fn_def_with_let_binding_resolves() {
-        check("module x; fn f[A](x: A) -> A { let y = x; y }").unwrap();
+        check("mod x; fn f[A](x: A) -> A { let y = x; y }").unwrap();
     }
 
     #[test]
     fn fn_def_calling_earlier_fn_def_resolves() {
-        check(
-            "module x; \
-             fn helper() -> . { () } \
-             fn main() -> . { helper() }",
-        )
-        .unwrap();
+        check("mod x; fn helper() -> . { () } fn main() -> . { helper() }").unwrap();
     }
 
     #[test]
     fn fn_def_self_reference_is_unbound() {
         // `fn` cannot mention itself: its own name is not in scope inside
         // its body.
-        let msg = check_err("module x; fn loop() -> . { loop() }");
+        let msg = check_err("mod x; fn loop() -> . { loop() }");
         assert!(msg.contains("`loop`"));
     }
 
@@ -9024,37 +8908,21 @@ mod tests {
     fn fn_def_forward_reference_is_unbound() {
         // Top-level visibility is order-sensitive: the second `fn`'s name
         // is not in scope inside the first's body.
-        let msg = check_err(
-            "module x; \
-             fn first() -> . { second() } \
-             fn second() -> . { () }",
-        );
+        let msg = check_err("mod x; fn first() -> . { second() } fn second() -> . { () }");
         assert!(msg.contains("`second`"));
     }
 
     #[test]
     fn fn_def_calling_earlier_private_macro_resolves() {
         check(
-            "module x; \
-             import __comptime__; \
-             pure fn unit_impl(ct: __Comptime__) -> __Checked_term__ { \
-               __term_unit__(ct) \
-             } \
-             macro unit : . -> . { impl unit_impl; }; \
-             fn main() -> . { unit() }",
+            "mod x; import __comptime__; pure fn unit_impl(ct: __Comptime__) -> __Checked_term__ { __term_unit__(ct) } macro unit : . -> . { impl unit_impl; }; fn main() -> . { unit() }",
         )
         .unwrap();
     }
 
     #[test]
     fn fn_def_calling_later_private_macro_is_unbound() {
-        let source = "module x; \
-             import __comptime__; \
-             pure fn unit_impl(ct: __Comptime__) -> __Checked_term__ { \
-               __term_unit__(ct) \
-             } \
-             fn main() -> . { unit() } \
-             macro unit : . -> . { impl unit_impl; };";
+        let source = "mod x; import __comptime__; pure fn unit_impl(ct: __Comptime__) -> __Checked_term__ { __term_unit__(ct) } fn main() -> . { unit() } macro unit : . -> . { impl unit_impl; };";
         for call in ["unit()", "().>unit"] {
             let error = check(&source.replace("unit()", call))
                 .expect_err("the later macro is not in scope");
@@ -9068,20 +8936,14 @@ mod tests {
     #[test]
     fn macro_implementation_helper_cannot_call_later_macro() {
         let msg = check_err(
-            "module x; \
-             import __comptime__; \
-             pure fn unit_impl(ct: __Comptime__) -> __Checked_term__ { \
-               unit(); \
-               __term_unit__(ct) \
-             } \
-             macro unit : . -> . { impl unit_impl; };",
+            "mod x; import __comptime__; pure fn unit_impl(ct: __Comptime__) -> __Checked_term__ { unit(); __term_unit__(ct) } macro unit : . -> . { impl unit_impl; };",
         );
         assert!(msg.contains("unit"));
     }
 
     #[test]
     fn type_alias_self_reference_is_an_alias_only_cycle() {
-        let error = check("module x; type Loop = Loop;").expect_err("alias-only cycle");
+        let error = check("mod x; type Loop = Loop;").expect_err("alias-only cycle");
         let Error::Totality(Diagnostic { message, .. }) = error else {
             panic!("expected Totality, got {error:?}");
         };
@@ -9090,28 +8952,20 @@ mod tests {
 
     #[test]
     fn unbound_value_in_body() {
-        let msg = check_err("module x; fn f() -> . { not_a_thing }");
+        let msg = check_err("mod x; fn f() -> . { not_a_thing }");
         assert!(msg.contains("`not_a_thing`"));
     }
 
     #[test]
     fn unbound_type_in_signature() {
-        let msg = check_err("module x; fn f(x: Nope) -> . { () }");
+        let msg = check_err("mod x; fn f(x: Nope) -> . { () }");
         assert!(msg.contains("`Nope`"));
     }
 
     #[test]
     fn recursive_partial_let_annotation_resolves_type_names() {
         let mut module = parse_module(
-            "module x; \
-             host type I32 role(i32); \
-             host fn loop[S][R](step: S -> (S | R), state: S) -> R; \
-             type { Box[A]: A { pub mk; pub get; }; }; \
-             fn choose_box[A](tag: I32, value: Box[A]) -> Box[A] { value } \
-             rec(loop) fn value(n: I32) -> Box[I32] { \
-               let .(result: Box[_]) = choose_box(0, recur(cont) value(0)); \
-               result \
-             }",
+            "mod x; host type I32 role(i32); host fn loop[S][R](step: S -> (S | R), state: S) -> R; type { Box[A]: A { pub mk; pub get; }; }; fn choose_box[A](tag: I32, value: Box[A]) -> Box[A] { value } rec(loop) fn value(n: I32) -> Box[I32] { let .(result: Box[_]) = choose_box(0, recur(cont) value(0)); result }",
         );
 
         struct HideUnboundTypeInRecOrder {
@@ -9155,7 +9009,7 @@ mod tests {
             ".t[provider.Bool]",
         ] {
             let msg = check_err(&format!(
-                "module main; fn f() -> . {{ let value = {literal}; () }}"
+                "mod main; fn f() -> . {{ let value = {literal}; () }}"
             ));
             assert!(msg.contains("`provider`"), "literal `{literal}`: {msg}");
         }
@@ -9163,18 +9017,13 @@ mod tests {
 
     #[test]
     fn intrinsic_without_import_is_unbound() {
-        let msg = check_err("module x; fn f() -> . { __pair__ }");
+        let msg = check_err("mod x; fn f() -> . { __pair__ }");
         assert!(msg.contains("`__pair__`"));
     }
 
     #[test]
     fn intrinsic_with_import_resolves() {
-        check(
-            "module x; \
-             import __intrinsics__; \
-             fn f() -> . { __pair__ }",
-        )
-        .unwrap();
+        check("mod x; import __intrinsics__; fn f() -> . { __pair__ }").unwrap();
     }
 
     #[test]
@@ -9182,22 +9031,17 @@ mod tests {
         // The import validator (Package::resolve_imports) catches whether the
         // target module / name actually exist; the in-body resolver just
         // sees that `helper` is in scope here.
-        check("module x; import other/thing(helper); fn f() -> . { helper() }").unwrap();
+        check("mod x; import other/thing {fn helper} fn f() -> . { helper() }").unwrap();
     }
 
     #[test]
     fn env_fn_is_in_scope() {
-        check(
-            "module x; \
-             host fn print() -> .; \
-             fn f() -> . { print() }",
-        )
-        .unwrap();
+        check("mod x; host fn print() -> .; fn f() -> . { print() }").unwrap();
     }
 
     #[test]
     fn fn_expression_introduces_value_param() {
-        check("module x; fn f() -> . { .(y) { y }(()) }").unwrap();
+        check("mod x; fn f() -> . { .(y) { y }(()) }").unwrap();
     }
 
     #[test]
@@ -9206,62 +9050,45 @@ mod tests {
         // Here the second body references `inside` which is only bound
         // in the first body.
         let msg = check_err(
-            "module x; \
-             fn outer() -> . { let inside = (); inside } \
-             fn other() -> . { inside }",
+            "mod x; fn outer() -> . { let inside = (); inside } fn other() -> . { inside }",
         );
         assert!(msg.contains("`inside`"));
     }
 
     #[test]
     fn nested_let_resolves() {
-        check(
-            "module x; \
-             fn f() -> . { let a = (); let b = a; b }",
-        )
-        .unwrap();
+        check("mod x; fn f() -> . { let a = (); let b = a; b }").unwrap();
     }
 
     // ---- Newtype payloads + self / mutual references --------------------
 
     #[test]
     fn marked_recursive_newtype_resolves_its_own_head() {
-        check(
-            "module x; \
-             rec type { Tree: (. | (Tree)) { pub mk; pub get; }; };",
-        )
-        .unwrap();
+        check("mod x; rec type { Tree: (. | (Tree)) { pub mk; pub get; }; };").unwrap();
     }
 
     #[test]
     fn unmarked_recursive_newtype_resolves_for_deferred_semantic_validation() {
-        check(
-            "module x; \
-             type { Tree: (. | Tree) { pub mk; pub get; }; };",
-        )
-        .expect("the typer reports a missing marker after validating the declaration");
+        check("mod x; type { Tree: (. | Tree) { pub mk; pub get; }; };")
+            .expect("the typer reports a missing marker after validating the declaration");
     }
 
     #[test]
     fn negative_unmarked_recursive_newtype_reaches_semantic_validation() {
-        check("module x; type { Bad: Bad -> . { mk; get; }; };")
+        check("mod x; type { Bad: Bad -> . { mk; get; }; };")
             .expect("resolution defers the marker diagnostic to semantic validation");
     }
 
     #[test]
     fn arity_invalid_unmarked_recursive_newtype_reaches_semantic_validation() {
-        check("module x; type { Bad[A]: Bad { mk; get; }; };")
+        check("mod x; type { Bad[A]: Bad { mk; get; }; };")
             .expect("resolution defers the marker diagnostic to semantic validation");
     }
 
     #[test]
     fn marked_acyclic_newtype_reports_the_redundant_marker() {
-        let error = check(
-            "module x; rec type { Box[A]: A { \
-               pub mk; pub get; \
-             }; };",
-        )
-        .expect_err("redundant marker");
+        let error = check("mod x; rec type { Box[A]: A { pub mk; pub get; }; };")
+            .expect_err("redundant marker");
         let Error::Parse(diagnostic) = error else {
             panic!("expected Parse, got {error:?}");
         };
@@ -9271,16 +9098,13 @@ mod tests {
 
     #[test]
     fn rec_unknown_newtype_is_unbound() {
-        let msg = check_err(
-            "module x; \
-             type { Foo: (Bar) { pub mk; pub get; }; };",
-        );
+        let msg = check_err("mod x; type { Foo: (Bar) { pub mk; pub get; }; };");
         assert!(msg.contains("`Bar`"), "got: {msg}");
     }
 
     #[test]
     fn acyclic_later_type_reports_directed_source_order_error_without_binding_it() {
-        let error = check("module x; type Before = Later; type Later = .;")
+        let error = check("mod x; type Before = Later; type Later = .;")
             .expect_err("ordinary declarations remain source ordered");
         let Error::NameRes(diagnostic) = error else {
             panic!("expected NameRes, got {error:?}");
@@ -9297,9 +9121,7 @@ mod tests {
     #[test]
     fn later_newtype_member_in_function_body_reports_directed_source_order_error() {
         let error = check(
-            "module x; \
-             fn before() { Later.get(Later.mk(())) } \
-             type { Later: . { mk; get; }; };",
+            "mod x; fn before() { Later.get(Later.mk(())) } type { Later: . { mk; get; }; };",
         )
         .expect_err("a later newtype head remains unavailable in a value path");
         let Error::NameRes(diagnostic) = error else {
@@ -9317,10 +9139,7 @@ mod tests {
     #[test]
     fn later_type_alias_member_head_reports_directed_source_order_error() {
         let error = check(
-            "module x; \
-             import provider as imported; \
-             fn before() { Later.make(()) } \
-             type Later = imported.Tag;",
+            "mod x; import provider as imported; fn before() { Later.make(()) } type Later = imported.Tag;",
         )
         .expect_err("a later alias head remains unavailable before member validation");
         let Error::NameRes(diagnostic) = error else {
@@ -9337,10 +9156,7 @@ mod tests {
         );
 
         check(
-            "module x; \
-             import provider as imported; \
-             type Later = imported.Tag; \
-             fn after() { Later.make(()) }",
+            "mod x; import provider as imported; type Later = imported.Tag; fn after() { Later.make(()) }",
         )
         .expect("once visible, the typer—not resolver diagnostics—owns alias member validity");
     }
@@ -9348,9 +9164,7 @@ mod tests {
     #[test]
     fn later_newtype_member_in_ufcs_reports_directed_source_order_error() {
         let error = check(
-            "module x; \
-             fn before() { ().>Later.mk.>Later.get } \
-             type { Later: . { mk; get; }; };",
+            "mod x; fn before() { ().>Later.mk.>Later.get } type { Later: . { mk; get; }; };",
         )
         .expect_err("a later newtype head remains unavailable in a UFCS callee path");
         let Error::NameRes(diagnostic) = error else {
@@ -9367,7 +9181,7 @@ mod tests {
     #[test]
     fn later_singleton_nominal_moves_its_complete_source_declaration() {
         for declaration in ["type { Foo: .; };", "type { Foo: . { mk; get; }; };"] {
-            let source = format!("module x; fn before() {{ Foo.get(Foo.mk(())) }} {declaration}");
+            let source = format!("mod x; fn before() {{ Foo.get(Foo.mk(())) }} {declaration}");
             let error = check(&source).expect_err("later nominal remains unavailable");
             let Error::NameRes(diagnostic) = error else {
                 panic!("expected NameRes, got {error:?}");
@@ -9401,13 +9215,13 @@ mod tests {
     #[test]
     fn later_nominal_move_preserves_owner_and_movement_boundaries() {
         for source in [
-            "module x; type Before = Foo; type { Foo: .; Bar: .; };",
-            "module x; type Before = Foo; type Row = { Foo: .; };",
-            "module x; type Before = Foo; pub type { Foo: .; };",
-            "module x; type Before = Foo; /// Foo docs\ntype { Foo: .; };",
-            "module x; type Before = Foo; rec type { Foo: . | Foo; };",
-            "module x; type Before = Foo; type Dep = .; type { Foo: Dep; };",
-            "module x; type Before = Foo; type Other = Foo; type { Foo: .; };",
+            "mod x; type Before = Foo; type { Foo: .; Bar: .; };",
+            "mod x; type Before = Foo; type Row = { Foo: .; };",
+            "mod x; type Before = Foo; pub type { Foo: .; };",
+            "mod x; type Before = Foo; /// Foo docs\ntype { Foo: .; };",
+            "mod x; type Before = Foo; rec type { Foo: . | Foo; };",
+            "mod x; type Before = Foo; type Dep = .; type { Foo: Dep; };",
+            "mod x; type Before = Foo; type Other = Foo; type { Foo: .; };",
         ] {
             let error = check(source).expect_err("later nominal remains unavailable");
             let Error::NameRes(diagnostic) = error else {
@@ -9426,12 +9240,9 @@ mod tests {
 
     #[test]
     fn unknown_member_on_later_newtype_keeps_the_unbound_path_diagnostic() {
-        let error = check(
-            "module x; \
-             fn before() -> . { Later.missing(()) } \
-             type { Later: . { mk; get; }; };",
-        )
-        .expect_err("an unknown member is not diagnostic evidence for a later type path");
+        let error =
+            check("mod x; fn before() -> . { Later.missing(()) } type { Later: . { mk; get; }; };")
+                .expect_err("an unknown member is not diagnostic evidence for a later type path");
         let Error::NameRes(diagnostic) = error else {
             panic!("expected NameRes, got {error:?}");
         };
@@ -9442,7 +9253,7 @@ mod tests {
 
     #[test]
     fn later_type_move_is_withheld_when_its_dependency_cannot_move_with_it() {
-        let error = check("module x; type Before = Later; type Middle = .; type Later = Middle;")
+        let error = check("mod x; type Before = Later; type Middle = .; type Later = Middle;")
             .expect_err("ordinary declarations remain source ordered");
         let Error::NameRes(diagnostic) = error else {
             panic!("expected NameRes, got {error:?}");
@@ -9452,7 +9263,7 @@ mod tests {
 
     #[test]
     fn later_type_move_is_withheld_for_multiple_dependent_declarations() {
-        let error = check("module x; type First = Later; type Second = Later; type Later = .;")
+        let error = check("mod x; type First = Later; type Second = Later; type Later = .;")
             .expect_err("ordinary declarations remain source ordered");
         let Error::NameRes(diagnostic) = error else {
             panic!("expected NameRes, got {error:?}");
@@ -9463,11 +9274,7 @@ mod tests {
     #[test]
     fn mutual_newtypes_require_and_resolve_an_explicit_group() {
         check(
-            "module x; \
-             rec { \
-               type { A: (. | B) { pub mk; pub get; }; }; \
-               type { B: (. | A) { pub mk; pub get; }; }; \
-             }",
+            "mod x; rec { type { A: (. | B) { pub mk; pub get; }; }; type { B: (. | A) { pub mk; pub get; }; }; }",
         )
         .unwrap();
     }
@@ -9475,9 +9282,7 @@ mod tests {
     #[test]
     fn implicit_later_newtype_scope_is_rejected() {
         let error = check(
-            "module x; \
-             type { A: (. | B) { pub mk; pub get; }; }; \
-             type { B: (. | A) { pub mk; pub get; }; };",
+            "mod x; type { A: (. | B) { pub mk; pub get; }; }; type { B: (. | A) { pub mk; pub get; }; };",
         )
         .expect_err("mutual declarations need a group");
         let Error::NameRes(diagnostic) = error else {
@@ -9496,20 +9301,19 @@ mod tests {
         for (case, source, expected_start) in [
             (
                 "public",
-                "module x; pub type A = B; \
-                 pub type { B: A { mk; get; }; };",
+                "mod x; pub type A = B; pub type { B: A { mk; get; }; };",
                 "pub type A",
             ),
             (
                 "scoped-public",
-                "module x; pub(x) type { A: B { mk; get; }; }; \
-                 pub(x) type { B: A { mk; get; }; };",
+                "mod x; pub(x) type { A: B { mk; get; }; }; pub(x) type { B: A { mk; get; }; };",
                 "pub(x) type { A",
             ),
             (
                 "documented",
-                "module x; /// A docs\ntype A = B; \
-                 /// B docs\ntype { B: A { mk; get; }; };",
+                "mod x; /// A docs
+type A = B; /// B docs
+type { B: A { mk; get; }; };",
                 "/// A docs",
             ),
         ] {
@@ -9534,7 +9338,7 @@ mod tests {
     #[test]
     fn implicit_compact_cycle_fix_owns_the_complete_type_declaration() {
         let source = concat!(
-            "module x; ",
+            "mod x; ",
             "/// type docs\n",
             "type { Foo: Bar; }; ",
             "type { Bar: Foo { mk; get; }; };",
@@ -9563,9 +9367,7 @@ mod tests {
 
     #[test]
     fn implicit_compact_cycle_fix_includes_acyclic_siblings() {
-        let source = "module x; \
-                      type { Other: .; Foo: Bar; }; \
-                      type { Bar: Foo { mk; get; }; };";
+        let source = "mod x; type { Other: .; Foo: Bar; }; type { Bar: Foo { mk; get; }; };";
         let error = check(source).expect_err("mutual declarations need a group");
         let Error::NameRes(diagnostic) = error else {
             panic!("expected NameRes, got {error:?}");
@@ -9582,9 +9384,8 @@ mod tests {
 
     #[test]
     fn implicit_named_sum_cycle_fix_includes_acyclic_arm() {
-        let source = "module x; \
-                      type Tree = { Leaf: .; } | { Branch: Bar; }; \
-                      type { Bar: Tree { mk; get; }; };";
+        let source =
+            "mod x; type Tree = { Leaf: .; } | { Branch: Bar; }; type { Bar: Tree { mk; get; }; };";
         let error = check(source).expect_err("mutual declarations need a group");
         let Error::NameRes(diagnostic) = error else {
             panic!("expected NameRes, got {error:?}");
@@ -9602,10 +9403,7 @@ mod tests {
     #[test]
     fn implicit_compact_cycle_fix_is_withheld_for_two_recursive_components() {
         let error = check(
-            "module x; \
-             type { First: Left_peer; Second: Right_peer; }; \
-             type { Left_peer: First { mk; get; }; }; \
-             type { Right_peer: Second { mk; get; }; };",
+            "mod x; type { First: Left_peer; Second: Right_peer; }; type { Left_peer: First { mk; get; }; }; type { Right_peer: Second { mk; get; }; };",
         );
         let error = error.expect_err("two independent components need separate groups");
         let Error::NameRes(diagnostic) = error else {
@@ -9616,12 +9414,8 @@ mod tests {
 
     #[test]
     fn mutual_group_fix_is_withheld_when_wrapping_would_fail_positivity() {
-        let error = check(
-            "module x; \
-             type { A: B -> . { mk; get; }; }; \
-             type { B: A { mk; get; }; };",
-        )
-        .expect_err("mutual declarations need an explicit group");
+        let error = check("mod x; type { A: B -> . { mk; get; }; }; type { B: A { mk; get; }; };")
+            .expect_err("mutual declarations need an explicit group");
         let Error::NameRes(diagnostic) = error else {
             panic!("expected NameRes, got {error:?}");
         };
@@ -9637,12 +9431,8 @@ mod tests {
 
     #[test]
     fn mutual_group_fix_accepts_matching_higher_kinds() {
-        let valid = check(
-            "module x; \
-             type A[*F] = B[F]; \
-             type { B[*G]: A[G] { mk; get; }; };",
-        )
-        .expect_err("mutual declarations need an explicit group");
+        let valid = check("mod x; type A[*F] = B[F]; type { B[*G]: A[G] { mk; get; }; };")
+            .expect_err("mutual declarations need an explicit group");
         let Error::NameRes(valid) = valid else {
             panic!("expected NameRes, got {valid:?}");
         };
@@ -9652,12 +9442,8 @@ mod tests {
 
     #[test]
     fn mutual_group_fix_rejects_mismatched_higher_kinds() {
-        let invalid = check(
-            "module x; \
-             type A[X] = B[X]; \
-             type { B[*G]: A[.] { mk; get; }; };",
-        )
-        .expect_err("mutual declarations need an explicit group");
+        let invalid = check("mod x; type A[X] = B[X]; type { B[*G]: A[.] { mk; get; }; };")
+            .expect_err("mutual declarations need an explicit group");
         let Error::NameRes(invalid) = invalid else {
             panic!("expected NameRes, got {invalid:?}");
         };
@@ -9670,10 +9456,7 @@ mod tests {
     #[test]
     fn recursive_group_rejects_alias_only_subcycle() {
         let error = elaborate_error(
-            "module x; rec { \
-               type A = B; type B = A | Box; \
-               type { Box: A { mk; get; }; }; \
-             }",
+            "mod x; rec { type A = B; type B = A | Box; type { Box: A { mk; get; }; }; }",
         );
         let Error::Totality(diagnostic) = error else {
             panic!("expected Totality, got {error:?}");
@@ -9684,11 +9467,7 @@ mod tests {
     #[test]
     fn recursive_group_rejects_an_acyclic_member() {
         let error = elaborate_error(
-            "module x; rec { \
-               type Helper = .; \
-               type { A: B { mk; get; }; }; \
-               type { B: A { mk; get; }; }; \
-             }",
+            "mod x; rec { type Helper = .; type { A: B { mk; get; }; }; type { B: A { mk; get; }; }; }",
         );
         let Error::Parse(diagnostic) = error else {
             panic!("expected Parse, got {error:?}");
@@ -9702,7 +9481,7 @@ mod tests {
 
     #[test]
     fn acyclic_group_fix_topologically_orders_dependencies() {
-        let ordered = elaborate_error("module x; rec { type Base = .; type Box = Base; }");
+        let ordered = elaborate_error("mod x; rec { type Base = .; type Box = Base; }");
         let Error::Parse(ordered) = ordered else {
             panic!("expected Parse, got {ordered:?}");
         };
@@ -9712,7 +9491,7 @@ mod tests {
         );
         assert_eq!(ordered.fixes()[0].title, "Fix recursive type groups");
 
-        let source = "module x; rec { type Box = Base; type Base = .; }";
+        let source = "mod x; rec { type Box = Base; type Base = .; }";
         let reversed = elaborate_error(source);
         let Error::Parse(reversed) = reversed else {
             panic!("expected Parse, got {reversed:?}");
@@ -9721,7 +9500,7 @@ mod tests {
         assert_eq!(fix.title, "Fix recursive type groups");
         assert_eq!(fix.edits.len(), 1);
         let repaired = apply_source_fix(source, fix);
-        assert_eq!(repaired, "module x; type Base = .;\ntype Box = Base;");
+        assert_eq!(repaired, "mod x; type Base = .;\ntype Box = Base;");
         check(&repaired).expect("topologically ordered aliases must recheck");
     }
 
@@ -9755,7 +9534,7 @@ mod tests {
     #[test]
     fn implicit_cycle_repairs_inspect_each_independent_component_once() {
         const PAIRS: usize = 128;
-        let mut source = String::from("module x;");
+        let mut source = String::from("mod x;");
         for index in 0..PAIRS {
             source.push_str(&format!(
                 " type {{ Left{index}: Right{index} {{ mk; get; }}; }};\
@@ -9778,7 +9557,7 @@ mod tests {
             .map(|index| format!("T{index}"))
             .collect::<Vec<_>>()
             .join(" | ");
-        let mut source = String::from("module x;");
+        let mut source = String::from("mod x;");
         for index in 0..NODES {
             source.push_str(&format!(" type {{ T{index}: {heads} {{ mk; get; }}; }};"));
         }

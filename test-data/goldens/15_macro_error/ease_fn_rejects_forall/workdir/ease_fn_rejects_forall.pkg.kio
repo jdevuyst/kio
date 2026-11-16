@@ -1,4 +1,4 @@
-package ease_fn_rejects_forall;
+pkg ease_fn_rejects_forall;
 
 build {
   cache "out/.kio-cache/";

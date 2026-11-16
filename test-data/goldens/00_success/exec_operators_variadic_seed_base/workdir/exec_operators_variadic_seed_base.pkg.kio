@@ -1,4 +1,4 @@
-package exec_operators_variadic_seed_base;
+pkg exec_operators_variadic_seed_base;
 
 build {
   cache "out/.kio-cache/";

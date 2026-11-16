@@ -1,4 +1,4 @@
-package calendar_blackout_planner;
+pkg calendar_blackout_planner;
 
 build {
   cache "out/.kio-cache/";

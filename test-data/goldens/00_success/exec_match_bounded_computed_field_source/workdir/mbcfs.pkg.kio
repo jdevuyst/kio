@@ -1,4 +1,4 @@
-package mbcfs;
+pkg mbcfs;
 
 build {
   cache "out/.kio-cache/";

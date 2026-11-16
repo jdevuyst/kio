@@ -1,4 +1,4 @@
-module main;
+mod main;
 
 host type Float role(f64);
 

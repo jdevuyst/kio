@@ -1,4 +1,4 @@
-module core/store;
+mod core/store;
 
 pub rec type { Foo[A]: (Foo[A] -> A) -> A { pub mk; pub get } }
 

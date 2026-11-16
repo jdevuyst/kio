@@ -1,8 +1,8 @@
-module testapi/syntax;
+mod testapi/syntax;
 
-import testapi(String);
+import testapi { type String }
 
-pub literal word = "ok\n";
+pub lit word = "ok\n";
 
 pub type { Message: String { pub mk; pub get } }
 
@@ -14,4 +14,4 @@ pub fn empty() -> String { "" }
 
 pub fn take(value: String, rest: String) -> String { value }
 
-pub varop [* *] { foldr take empty }
+pub op_var [* *] { foldr take empty }

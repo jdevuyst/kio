@@ -1,4 +1,4 @@
-module qualified_provider;
+mod qualified_provider;
 
 host type Bool role(bool);
 

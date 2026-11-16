@@ -1,17 +1,34 @@
 /// The Kio' lexer: source text → a positioned token list, driven by the host `loop`.
-module lex;
+mod lex;
 
-import chars(and2, c_backslash, c_dot, c_minus, c_nl, c_quote, c_slash, or2);
-import chars(is_digit, is_space, is_word_cont, is_word_start);
-import macros/control(macro if);
-import macros/match(macro match);
-import macros/spine_macros(macro widen_sum);
-import testapi(Bool, I32, String);
-import testapi/arith(add_i32, eq_i32, leq_i32, lt_i32, mul_i32);
-import testapi/iter(loop);
-import testapi/text(string_code_at, string_concat, string_len, string_slice);
-import token(Token, Toks);
-import token(tk_num, tk_punct, tk_str, tk_word, toks_cons, toks_nil, un_toks);
+import chars {
+  fn and2;
+  fn c_backslash;
+  fn c_dot;
+  fn c_minus;
+  fn c_nl;
+  fn c_quote;
+  fn c_slash;
+  fn or2
+}
+import chars { fn is_digit; fn is_space; fn is_word_cont; fn is_word_start }
+import macros/control { macro if }
+import macros/match { macro match }
+import macros/spine_macros { macro widen_sum }
+import testapi { type Bool; type I32; type String }
+import testapi/arith { fn add_i32; fn eq_i32; fn leq_i32; fn lt_i32; fn mul_i32 }
+import testapi/iter { fn loop }
+import testapi/text { fn string_code_at; fn string_concat; fn string_len; fn string_slice }
+import token {
+  fn tk_num;
+  fn tk_punct;
+  fn tk_str;
+  fn tk_word;
+  fn toks_cons;
+  fn toks_nil;
+  fn un_toks
+}
+import token { type Token; type Toks }
 
 // `lex.kio` — turn Kio' source text into a positioned token list.
 //

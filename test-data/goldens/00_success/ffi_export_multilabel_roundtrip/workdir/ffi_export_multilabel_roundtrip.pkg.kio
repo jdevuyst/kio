@@ -1,4 +1,4 @@
-package ffi_export_multilabel_roundtrip;
+pkg ffi_export_multilabel_roundtrip;
 
 build {
   cache "out/.kio-cache/";

@@ -1,4 +1,4 @@
-package floatx;
+pkg floatx;
 
 build {
   cache "out/.kio-cache/";

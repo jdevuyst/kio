@@ -1,6 +1,6 @@
-module testapi/main;
+mod testapi/main;
 
-import testapi(String);
+import testapi { type String }
 import testapi/io as io;
 
 fn mark(label: String, value: String) -> String { io.print(label); value }

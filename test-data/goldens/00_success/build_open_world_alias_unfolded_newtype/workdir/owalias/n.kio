@@ -1,6 +1,6 @@
-module owalias/n;
+mod owalias/n;
 
-import owalias(I32);
+import owalias { type I32 }
 
 pub type { X: I32 { pub mk; pub get } }
 

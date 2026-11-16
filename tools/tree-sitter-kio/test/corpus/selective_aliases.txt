@@ -1,7 +1,7 @@
 ================================================================================
 named and full-grammar selective aliases
 ================================================================================
-import source(Item as Local, item as local, op as operation, varop as variadic, op _ + _ as _ ++ _, varop [* *] as [% %]);
+import source {type Item as Local; fn item as local; fn op as operation; fn varop as variadic; op _ + _ as _ ++ _; op_var [* *] as [% %]}
 --------------------------------------------------------------------------------
 
 (source_file
@@ -9,27 +9,31 @@ import source(Item as Local, item as local, op as operation, varop as variadic, 
     (keyword_import)
     (module_path
       (entity_name_module))
-    (bracket_lparen)
+    (bracket_lbrace)
     (import_named_item
+      (keyword_type)
       (identifier)
       (keyword_declaration)
       (identifier))
-    (separator_comma)
+    (separator_semicolon)
     (import_named_item
+      (keyword_fn)
       (identifier)
       (keyword_declaration)
       (identifier))
-    (separator_comma)
+    (separator_semicolon)
     (import_named_item
+      (keyword_fn)
       (identifier)
       (keyword_declaration)
       (identifier))
-    (separator_comma)
+    (separator_semicolon)
     (import_named_item
+      (keyword_fn)
       (identifier)
       (keyword_declaration)
       (identifier))
-    (separator_comma)
+    (separator_semicolon)
     (import_operator_item
       (keyword_op)
       (slot)
@@ -39,7 +43,7 @@ import source(Item as Local, item as local, op as operation, varop as variadic, 
       (slot)
       (operator_run)
       (slot))
-    (separator_comma)
+    (separator_semicolon)
     (import_operator_item
       (keyword_varop)
       (variadic_head
@@ -53,18 +57,17 @@ import source(Item as Local, item as local, op as operation, varop as variadic, 
         (operator_run)
         (operator_run)
         (bracket_rbracket)))
-    (bracket_rparen)
-    (separator_semicolon)))
+    (bracket_rbrace)))
 
 ================================================================================
 operator aliases own whole grouped patterns and boundary comments
 ================================================================================
-import source(
+import source {
   op _ ~ ___ ~
     // local spelling
-    as _ ~~ ___ ~~,
-  value
-);
+    as _ ~~ ___ ~~;
+  fn value
+}
 --------------------------------------------------------------------------------
 
 (source_file
@@ -72,7 +75,7 @@ import source(
     (keyword_import)
     (module_path
       (entity_name_module))
-    (bracket_lparen)
+    (bracket_lbrace)
     (import_operator_item
       (keyword_op)
       (slot)
@@ -85,8 +88,62 @@ import source(
       (operator_run)
       (slot)
       (operator_run))
-    (separator_comma)
+    (separator_semicolon)
     (import_named_item
+      (keyword_fn)
       (identifier))
-    (bracket_rparen)
-    (separator_semicolon)))
+    (bracket_rbrace)))
+
+================================================================================
+selective imports allow separator runs and one outer suffix
+================================================================================
+mod app;
+import provider { ; fn value;; type Item; macro build; ; };
+fn after() { value() }
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl
+    (keyword_module)
+    (module_path
+      (entity_name_module))
+    (separator_semicolon))
+  (import_decl
+    (keyword_import)
+    (module_path
+      (entity_name_module))
+    (bracket_lbrace)
+    (separator_semicolon)
+    (import_named_item
+      (keyword_fn)
+      (identifier))
+    (separator_semicolon)
+    (separator_semicolon)
+    (import_named_item
+      (keyword_type)
+      (identifier))
+    (separator_semicolon)
+    (import_macro_item
+      (keyword_declaration)
+      (entity_name_function))
+    (separator_semicolon)
+    (separator_semicolon)
+    (bracket_rbrace)
+    (separator_semicolon))
+  (function_definition
+    (fn_decl_head
+      (keyword_fn)
+      (entity_name_function)
+      (fn_signature
+        (value_param_group
+          (bracket_lparen)
+          (bracket_rparen))))
+    (expression_block
+      (bracket_lbrace)
+      (call_expr
+        (call_callee
+          (entity_name_function))
+        (expression_arguments
+          (bracket_lparen)
+          (bracket_rparen)))
+      (bracket_rbrace))))

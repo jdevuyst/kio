@@ -1,4 +1,4 @@
-package bridge_glob_bare_type_name;
+pkg bridge_glob_bare_type_name;
 
 build {
   target js {

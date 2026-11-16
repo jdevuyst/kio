@@ -1,4 +1,4 @@
-module testapi;
+mod testapi;
 
 pub fn poly_echo[T](x: T) -> T { x }
 

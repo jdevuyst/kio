@@ -1,4 +1,4 @@
-package newtype_payload_alias_identity;
+pkg newtype_payload_alias_identity;
 
 build {
   cache "out/.kio-cache/";

@@ -1,4 +1,4 @@
-package exec_list_sum;
+pkg exec_list_sum;
 
 build {
   cache "out/.kio-cache/";

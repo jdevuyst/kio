@@ -1,5 +1,5 @@
 /// A `String` host type that the dependency owns.
-module text;
+mod text;
 
 host type String role(str);
 

@@ -1,6 +1,6 @@
 /// The host vocabulary the public list package needs, forwarded to the
 /// plotter's existing capabilities.
-module turtle/list_host;
+mod turtle/list_host;
 
 import testapi as api;
 import testapi/arith as arith;

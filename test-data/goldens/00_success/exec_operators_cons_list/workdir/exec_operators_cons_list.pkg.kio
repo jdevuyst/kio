@@ -1,4 +1,4 @@
-package exec_operators_cons_list;
+pkg exec_operators_cons_list;
 
 build {
   cache "out/.kio-cache/";

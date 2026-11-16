@@ -1,4 +1,4 @@
-package lar;
+pkg lar;
 
 build {
   cache "out/.kio-cache/";

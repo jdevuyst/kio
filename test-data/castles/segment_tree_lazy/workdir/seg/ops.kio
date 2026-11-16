@@ -6,29 +6,29 @@
 /// The covered case is what pays for the whole structure, and the pushed-down
 /// tag is what keeps it honest. A descent combines its children's results
 /// afterwards, so its recursive calls are not tail calls: hence `rec(cont)`.
-module seg/ops;
+mod seg/ops;
 
-import macros/control(macro if);
-import seg/agg(Agg, agg_min, agg_sum, combine, leaf_agg, neutral);
-import seg/tree(
-, Tree
-, apply_tag
-, covers
-, disjoint
-, is_leaf
-, leaf_count
-, left
-, mid_of
-, node_agg
-, push_down
-, right
-, set_agg
-, visit
-);
-import testapi(Array, Bool, I32);
-import testapi/arith(add_i32, leq_i32, sub_i32);
-import testapi/array(array_set);
-import testapi/iter(loop);
+import macros/control { macro if }
+import seg/agg { type Agg; fn agg_min; fn agg_sum; fn combine; fn leaf_agg; fn neutral }
+import seg/tree {
+  type Tree;
+  fn apply_tag;
+  fn covers;
+  fn disjoint;
+  fn is_leaf;
+  fn leaf_count;
+  fn left;
+  fn mid_of;
+  fn node_agg;
+  fn push_down;
+  fn right;
+  fn set_agg;
+  fn visit
+}
+import testapi { type Array; type Bool; type I32 }
+import testapi/arith { fn add_i32; fn leq_i32; fn sub_i32 }
+import testapi/array { fn array_set }
+import testapi/iter { fn loop }
 
 /// Add `x` to every cell of `[l, r]`, returning the node's aggregate so the
 /// parent can pull up from it. A covered node never looks below itself.

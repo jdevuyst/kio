@@ -1,7 +1,7 @@
-module host/m;
+mod host/m;
 
-import host(bar, foo);
-import macros/control(macro scope);
+import host { fn bar; fn foo }
+import macros/control { macro scope }
 
 equiv passes() {
   scope { let x = (); x };

@@ -1,8 +1,8 @@
-module packet_checksum_classifier/report;
+mod packet_checksum_classifier/report;
 
 import packet_checksum_classifier/rules as rules;
 import packet_checksum_classifier/scanner as scan;
-import testapi(String);
+import testapi { type String }
 import testapi/fmt as fmt;
 import testapi/text as text;
 

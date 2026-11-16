@@ -1,4 +1,4 @@
-package before;
+pkg before;
 
 build {
   cache ();

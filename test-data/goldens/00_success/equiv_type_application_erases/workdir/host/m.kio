@@ -1,6 +1,6 @@
-module host/m;
+mod host/m;
 
-import host(A);
+import host { type A }
 
 // Type application / Λ-reduction (specs/formal/equiv.md section 1:
 // type parameters are erased). Kio' has no anonymous type-level

@@ -1,4 +1,4 @@
-package exec_value_demand_preservation;
+pkg exec_value_demand_preservation;
 
 build {
   cache "out/.kio-cache/";

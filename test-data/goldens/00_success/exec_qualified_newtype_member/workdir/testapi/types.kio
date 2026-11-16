@@ -1,5 +1,5 @@
-module testapi/types;
+mod testapi/types;
 
-import testapi(I32);
+import testapi { type I32 }
 
 pub type { Celsius: I32 { pub mk; pub get } }

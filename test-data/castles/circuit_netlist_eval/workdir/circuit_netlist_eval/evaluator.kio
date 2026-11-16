@@ -1,12 +1,12 @@
-module circuit_netlist_eval/evaluator;
+mod circuit_netlist_eval/evaluator;
 
-import circuit_netlist_eval/domain(Stage, State);
+import circuit_netlist_eval/domain { type Stage; type State }
 import circuit_netlist_eval/gates as gates;
-import macros/control(macro if);
-import macros/row_macros(macro select);
-import testapi(Bool, I32);
+import macros/control { macro if }
+import macros/row_macros { macro select }
+import testapi { type Bool; type I32 }
 import testapi/arith as arith;
-import testapi/iter(loop);
+import testapi/iter { fn loop }
 
 fn eval_next(s: State) -> State {
   if(arith.eq_i32(s.>select { Stage.get }, 0)) {

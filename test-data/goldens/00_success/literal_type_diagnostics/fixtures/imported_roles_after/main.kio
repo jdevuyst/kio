@@ -1,6 +1,6 @@
-module main;
+mod main;
 
-import provider(Other_bool, Other_float, Other_int, Other_string);
+import provider { type Other_bool; type Other_float; type Other_int; type Other_string }
 
 host type Int role(i64);
 

@@ -1,4 +1,4 @@
-package exec_array_ffi_parametric;
+pkg exec_array_ffi_parametric;
 
 build {
   cache "out/.kio-cache/";

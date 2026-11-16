@@ -1,6 +1,6 @@
-module testapi/main;
+mod testapi/main;
 
-import macros(macro phantom);
+import macros { macro phantom }
 import testapi/io as io;
 
 fn residual() -> [B] . { phantom(())[.] }

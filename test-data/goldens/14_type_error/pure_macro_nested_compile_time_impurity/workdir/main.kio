@@ -1,5 +1,5 @@
-module main;
+mod main;
 
-import outer(macro outer);
+import outer { macro outer }
 
 fn main() { outer() }

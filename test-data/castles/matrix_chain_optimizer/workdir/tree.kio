@@ -1,16 +1,25 @@
-module tree;
+mod tree;
 
 import chain as chain;
-import chain(Cols, Cost, Evaluation, First, Last, Leaves, Matrix, Rows);
-import macros/control(macro if);
-import macros/match(macro match);
-import macros/row_macros(macro select);
-import macros/spine_macros(macro widen_sum);
-import testapi(Array, Bool, I32, String);
+import chain {
+  type Cols;
+  type Cost;
+  type Evaluation;
+  type First;
+  type Last;
+  type Leaves;
+  type Matrix;
+  type Rows
+}
+import macros/control { macro if }
+import macros/match { macro match }
+import macros/row_macros { macro select }
+import macros/spine_macros { macro widen_sum }
+import testapi { type Array; type Bool; type I32; type String }
 import testapi/arith as math;
 import testapi/array as arrays;
 import testapi/fmt as fmt;
-import testapi/iter(loop);
+import testapi/iter { fn loop }
 import testapi/text as text;
 
 pub rec type Tree = { Leaf: I32 } | { Join: Tree & Tree };

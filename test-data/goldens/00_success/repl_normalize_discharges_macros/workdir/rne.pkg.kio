@@ -1,4 +1,4 @@
-package rne;
+pkg rne;
 
 build {
   cache "out/.kio-cache/";

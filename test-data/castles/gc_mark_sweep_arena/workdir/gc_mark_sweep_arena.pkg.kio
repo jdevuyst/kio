@@ -1,4 +1,4 @@
-package gc_mark_sweep_arena;
+pkg gc_mark_sweep_arena;
 
 build {
   cache "out/.kio-cache/";

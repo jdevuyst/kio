@@ -1,4 +1,4 @@
-dependency units;
+dep units;
 
 source {
   path "../units/units.pkg.kio"

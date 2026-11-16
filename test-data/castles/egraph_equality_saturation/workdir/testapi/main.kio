@@ -1,10 +1,10 @@
-module testapi/main;
+mod testapi/main;
 
 import egraph/graph as graph;
 import egraph/numbers as n;
 import egraph/report as report;
 import egraph/rewrite as rewrite;
-import testapi(Bool, I32, String);
+import testapi { type Bool; type I32; type String }
 import testapi/io as io;
 
 fn congruence() {

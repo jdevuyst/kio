@@ -1,9 +1,9 @@
-module testapi/main;
+mod testapi/main;
 
-import testapi(I128, I64, String, U128, U64);
-import testapi/arith(add_i128, add_i64, add_u128, mul_u64);
-import testapi/fmt(i128_to_string, i64_to_string, u128_to_string, u64_to_string);
-import testapi/io(print);
+import testapi { type I128; type I64; type String; type U128; type U64 }
+import testapi/arith { fn add_i128; fn add_i64; fn add_u128; fn mul_u64 }
+import testapi/fmt { fn i128_to_string; fn i64_to_string; fn u128_to_string; fn u64_to_string }
+import testapi/io { fn print }
 
 fn print_i64(n: I64) { let s = i64_to_string(n); let l = print(s); print("\n"[String]) }
 

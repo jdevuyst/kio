@@ -1,4 +1,4 @@
-module dui/main;
+mod dui/main;
 
 // `derive` is used below without importing the macro; the
 // call site is the standard unresolved-name error.

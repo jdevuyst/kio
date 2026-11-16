@@ -1,27 +1,27 @@
-module roster/scoring;
+mod roster/scoring;
 
-import macros/control(macro if);
-import macros/row_macros(macro select);
+import macros/control { macro if }
+import macros/row_macros { macro select }
 import roster/scenario as scenario;
-import roster/types(
-, Day
-, Demand
-, Fairness_penalty
-, Preference
-, Preference_penalty
-, Rest_conflicts
-, Same_day_conflicts
-, Scorecard
-, Shift
-, Skill
-, Skill_shortfalls
-, Slot
-, Total_score
-, Worker
-);
-import testapi(Bool, I32);
-import testapi/arith(add_i32, eq_i32, leq_i32, lt_i32, mul_i32, sub_i32);
-import testapi/iter(loop);
+import roster/types {
+  type Day;
+  type Demand;
+  type Fairness_penalty;
+  type Preference;
+  type Preference_penalty;
+  type Rest_conflicts;
+  type Same_day_conflicts;
+  type Scorecard;
+  type Shift;
+  type Skill;
+  type Skill_shortfalls;
+  type Slot;
+  type Total_score;
+  type Worker
+}
+import testapi { type Bool; type I32 }
+import testapi/arith { fn add_i32; fn eq_i32; fn leq_i32; fn lt_i32; fn mul_i32; fn sub_i32 }
+import testapi/iter { fn loop }
 
 fn bool_score(value: Bool, yes: I32, no: I32) -> I32 {
   if(value) { yes } else { no }

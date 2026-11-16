@@ -30,7 +30,6 @@ if else fn type literal alias
     (identifier)
     (identifier)))
 
-
 ================================================================================
 callable words
 ================================================================================
@@ -543,7 +542,7 @@ bar
 ================================================================================
 contextual as roles retain comment trivia
 ================================================================================
-module contextual/keywords;
+mod contextual/keywords;
 import app/as // provider leaf
   as // separator
   as;
@@ -594,7 +593,7 @@ fn row(as: .) -> . { as }
 ================================================================================
 selective nominal import is structural
 ================================================================================
-import source(Item, item, Field);
+import source {type Item; fn item; type Field}
 --------------------------------------------------------------------------------
 
 (source_file
@@ -602,22 +601,24 @@ import source(Item, item, Field);
     (keyword_import)
     (module_path
       (entity_name_module))
-    (bracket_lparen)
+    (bracket_lbrace)
     (import_named_item
+      (keyword_type)
       (identifier))
-    (separator_comma)
+    (separator_semicolon)
     (import_named_item
+      (keyword_fn)
       (identifier))
-    (separator_comma)
+    (separator_semicolon)
     (import_named_item
+      (keyword_type)
       (identifier))
-    (bracket_rparen)
-    (separator_semicolon)))
+    (bracket_rbrace)))
 
 ================================================================================
 package-file smoke test
 ================================================================================
-package hello;
+pkg hello;
 
 build {
   cache "out/.kio-cache/";
@@ -669,7 +670,7 @@ bridge {
 ================================================================================
 contextual keywords in module paths and bridge targets
 ================================================================================
-module env/fn/build;
+mod env/fn/build;
 
 bridge { env; }
 --------------------------------------------------------------------------------
@@ -897,7 +898,7 @@ type _FooBar = .;
 callable declaration targets are structural lexical paths
 ================================================================================
 op _ %% _ { impl ops.combine; };
-varop [* *] {
+op_var [* *] {
   foldr1 folds.push folds.empty;
   finalize folds.finish;
 };
@@ -1010,7 +1011,7 @@ op _ %% _ {
   // op terminator
   ;
 };
-varop [* *] {
+op_var [* *] {
   foldr
   folds
   // step separator
@@ -1110,7 +1111,7 @@ macro choose : . -> . {
 ================================================================================
 callable field trivia surrounds fills markers and variadic targets
 ================================================================================
-varop [* *] {
+op_var [* *] {
   foldr1
   // before step
   helper.push

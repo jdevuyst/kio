@@ -1,4 +1,4 @@
-module operator_comments;
+mod operator_comments;
 
 pure fn pick(x: ., y: .) { x }
 

@@ -1,4 +1,4 @@
-package semicolon_runtime_boundaries;
+pkg semicolon_runtime_boundaries;
 
 build {
   target js {

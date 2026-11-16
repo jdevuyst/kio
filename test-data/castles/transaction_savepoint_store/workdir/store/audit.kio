@@ -1,19 +1,19 @@
-module store/audit;
+mod store/audit;
 
 import list/core as cells;
 import list/list as lists;
 import list_host as compare;
-import macros/control(macro if);
-import macros/match(macro match);
-import macros/row_macros(macro select);
+import macros/control { macro if }
+import macros/match { macro match }
+import macros/row_macros { macro select }
 import store/commands as commands;
 import store/history as history;
 import store/transactions as tx;
-import testapi(Bool, I32, String);
+import testapi { type Bool; type I32; type String }
 import testapi/arith as arith;
 import testapi/fmt as fmt;
 import testapi/io as io;
-import testapi/iter(loop);
+import testapi/iter { fn loop }
 import testapi/text as text;
 
 pub type Item = { Item_key: String; Amount: I32 };

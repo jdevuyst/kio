@@ -1,4 +1,4 @@
-package prefop;
+pkg prefop;
 
 build {
   cache "out/.kio-cache/";

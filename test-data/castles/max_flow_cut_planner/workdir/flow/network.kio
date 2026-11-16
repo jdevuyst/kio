@@ -1,12 +1,12 @@
-module flow/network;
+mod flow/network;
 
 import flow/math as math;
-import macros/control(macro if);
-import macros/row_macros(macro select);
-import testapi(Array, Bool, I32);
+import macros/control { macro if }
+import macros/row_macros { macro select }
+import testapi { type Array; type Bool; type I32 }
 import testapi/arith as a;
 import testapi/array as ar;
-import testapi/iter(loop);
+import testapi/iter { fn loop }
 
 pub type Edge = { From: I32; To: I32; Capacity: I32; Reverse: I32; Backward: Bool };
 

@@ -34,7 +34,7 @@ the newest baseline until `kio fmt` pins them to its concrete name. See
 A package emits to Java by declaring a `java` target in `<pkg>.pkg.kio`:
 
 ```kio {variant=package}
-package greeter;
+pkg greeter;
 
 build {
   cache "out/.kio-cache/";
@@ -98,7 +98,7 @@ word-case (`data_api.do_work` → `KioItem_dataApi__doWork`). For a module
 `greeter` declaring `print`:
 
 ```kio {variant=module}
-module greeter;
+mod greeter;
 
 host type String role(str);
 
@@ -153,7 +153,7 @@ reached through `pkg.greeter.KioModule_main.main()`.
 `greeter.pkg.kio`:
 
 ```kio {variant=package}
-package greeter;
+pkg greeter;
 
 build {
   cache "out/.kio-cache/";
@@ -173,7 +173,7 @@ bridge {
 `greeter.kio` declares the host capability:
 
 ```kio {file}
-module greeter;
+mod greeter;
 
 host type String role(str);
 host fn print(p0: String);
@@ -182,7 +182,7 @@ host fn print(p0: String);
 `greeter/main.kio` imports it and exports `main`:
 
 <!--kio {file}
-package greeter;
+pkg greeter;
 
 build {
   cache "out/.kio-cache/";
@@ -199,17 +199,17 @@ bridge {
 -->
 
 <!--kio {harness=greeter_java_main file placeholder="__SNIPPET__"}
-module greeter/main;
+mod greeter/main;
 
-import greeter(String, print);
+import greeter {type String; fn print}
 
 __SNIPPET__
 -->
 
-```kio {@greeter_java_main placeholder={"module greeter/main;":"","import greeter(String, print);":""}}
-module greeter/main;
+```kio {@greeter_java_main placeholder={"mod greeter/main;":"","import greeter {type String; fn print}":""}}
+mod greeter/main;
 
-import greeter(String, print);
+import greeter {type String; fn print}
 
 pub fn main() { print("hello from kio\n") }
 ```

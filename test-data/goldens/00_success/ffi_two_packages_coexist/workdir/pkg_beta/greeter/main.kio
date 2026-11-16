@@ -1,6 +1,6 @@
-module greeter/main;
+mod greeter/main;
 
-import greeter(I32, String, print);
+import greeter { type I32; type String; fn print }
 
 pub fn main() { print("hello\n") }
 

@@ -1,4 +1,4 @@
-module widget/mutual;
+mod widget/mutual;
 
 import core/mutual as _rehost_gdgphcgfcpgnhfhehfgbgm;
 

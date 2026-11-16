@@ -1,4 +1,4 @@
-package late_proof;
+pkg late_proof;
 
 build {
   cache "out/.kio-cache/";

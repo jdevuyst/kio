@@ -1,4 +1,4 @@
-package eqps;
+pkg eqps;
 
 build {
   cache "out/.kio-cache/";

@@ -1,4 +1,4 @@
-module main;
+mod main;
 
 fn wrap(a: .) { a }
 
@@ -8,4 +8,4 @@ fn cons(h: ., _t: .) { h }
 
 op [ _ ] { impl wrap; };
 
-varop [* *] { foldr cons nil; };
+op_var [* *] { foldr cons nil; };

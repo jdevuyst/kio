@@ -1,4 +1,4 @@
-package build_parametric_function_newtype_hkt;
+pkg build_parametric_function_newtype_hkt;
 
 build {
   cache "out/.kio-cache/";

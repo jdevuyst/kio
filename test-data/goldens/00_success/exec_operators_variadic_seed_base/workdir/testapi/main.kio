@@ -1,13 +1,13 @@
-module testapi/main;
+mod testapi/main;
 
-import testapi(String);
-import testapi/io(print);
+import testapi { type String }
+import testapi/io { fn print }
 
 fn nil() -> String { "[]" }
 
 fn take_right(_acc: String, elem: String) -> String { elem }
 
-varop [* *] { foldl take_right nil }
+op_var [* *] { foldl take_right nil }
 
 fn seed(value: String) -> String { value }
 
@@ -23,11 +23,11 @@ fn entry(key: String, value: String) -> String & String { (key, value) }
 
 op _ => _ { impl entry }
 
-varop [+ +] { foldr1 keep_right seed }
+op_var [+ +] { foldr1 keep_right seed }
 
-varop [! !] { foldl1 keep_left seed }
+op_var [! !] { foldl1 keep_left seed }
 
-varop [% %] { foldr1 keep_entry seed_entry }
+op_var [% %] { foldr1 keep_entry seed_entry }
 
 pub fn main() {
   print([* "a", "b", "c" *]);

@@ -1,4 +1,4 @@
-package do_identity_receiver;
+pkg do_identity_receiver;
 
 build {
   target js {

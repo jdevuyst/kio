@@ -1,4 +1,4 @@
-package exec_float_exponent_only;
+pkg exec_float_exponent_only;
 
 build {
   cache "out/.kio-cache/";

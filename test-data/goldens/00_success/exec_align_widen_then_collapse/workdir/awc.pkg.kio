@@ -1,4 +1,4 @@
-package awc;
+pkg awc;
 
 build {
   cache "out/.kio-cache/";

@@ -1,11 +1,11 @@
-module testapi/left;
+mod testapi/left;
 
-import macros/match(macro match);
-import testapi/arith(add_i32);
-import testapi/iter(loop);
+import macros/match { macro match }
+import testapi/arith { fn add_i32 }
+import testapi/iter { fn loop }
 import testapi/model as model;
-import testapi/model(Expr, Leaf, Pair, Summary);
-import testapi/normalize(normalize);
+import testapi/model { type Expr; type Leaf; type Pair; type Summary }
+import testapi/normalize { fn normalize }
 
 fn add_summary(left: Summary, right: Summary) -> Summary {
   let left_value = model.Value.get(left);

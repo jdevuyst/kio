@@ -1,53 +1,96 @@
 /// The dyn-load-prime test driver: load a guest image from the runner, drive it per the case's protocol, and observe its host effects.
-module driver;
+mod driver;
 
-import host_descriptor(Host_fn, Host_type, Host_types, Param_kinds, Role);
-import host_descriptor(base_kind, host_types_cons, host_types_nil, mk_role_host_type);
-import host_descriptor(host_fn_eq, host_fn_id, host_id_eq, host_id_local, host_id_module);
-import host_descriptor(host_type_id, mk_host_fn, mk_host_id);
-import host_descriptor(mk_roleless_host_type, param_kinds_cons, param_kinds_nil, role_from_name);
-import hostrec(serve_default, test_bool_default);
-import loader(
-, Apply
-, Hostfn_in
-, I32_in
-, I32_out
-, Left_in
-, Lookup
-, Pair_in
-, Pair_out
-, Right_in
-, Str_in
-, Str_out
-, Sum_is_left
-, Sum_payload
-, Unit_in
-);
-import loader(Diag, Image, Loaded, Lr_diag, Lr_image, Surface);
-import loader(Host_adapter, Host_fn_binding, Host_fn_bindings, Hostfn, Hostfns);
-import loader(diag_message, image_hostfns, instantiate, mk_diag, un_load_outcome);
-import loader(host_fn_binding_descriptor, host_fn_binding_groups, un_host_fn_bindings);
-import loader(host_fn_bindings_cons, host_fn_bindings_nil, mk_host_adapter, mk_host_fn_binding);
-import loader(hostfn_descriptor, hostfn_groups, un_hostfns);
-import loader/scan(load_package);
-import macros/control(macro if);
-import macros/match(macro match);
-import macros/row_macros(macro select);
-import macros/spine_macros(macro widen_sum);
-import prime(Group_slots, group_slots_cons, group_slots_nil, un_group_slots);
-import result(Call_result, call_done, call_stuck);
-import result(call_apply, call_apply_then, call_fold);
-import testapi(Bool, I32, Scalar, String);
-import testapi/arith(add_i32, eq_i32, leq_i32, sub_i32);
-import testapi/fmt(int_to_string);
-import testapi/io(print);
-import testapi/iter(loop);
-import testapi/scalar(make_scalar, scalar_as_i32, scalar_as_str, scalar_of_bool, scalar_of_i32);
-import testapi/scalar(scalar_of_str);
-import testapi/text(string_concat, string_eq);
-import value(Side, Value, side_select, un_value, value_to_scalar, vhost, vhostfn, vproduct);
-import value(V_closure, V_host, V_hostfn, V_product, V_sum, V_unit);
-import value(vals_nil, vals_push, vunit);
+import host_descriptor {
+  fn host_fn_eq;
+  fn host_fn_id;
+  fn host_id_eq;
+  fn host_id_local;
+  fn host_id_module
+}
+import host_descriptor {
+  fn mk_roleless_host_type;
+  fn param_kinds_cons;
+  fn param_kinds_nil;
+  fn role_from_name
+}
+import host_descriptor {
+  type Host_fn;
+  type Host_type;
+  type Host_types;
+  type Param_kinds;
+  type Role
+}
+import host_descriptor { fn base_kind; fn host_types_cons; fn host_types_nil; fn mk_role_host_type }
+import host_descriptor { fn host_type_id; fn mk_host_fn; fn mk_host_id }
+import hostrec { fn serve_default; fn test_bool_default }
+import loader {
+  fn host_fn_bindings_cons;
+  fn host_fn_bindings_nil;
+  fn mk_host_adapter;
+  fn mk_host_fn_binding
+}
+import loader {
+  type Apply;
+  type Hostfn_in;
+  type I32_in;
+  type I32_out;
+  type Left_in;
+  type Lookup;
+  type Pair_in;
+  type Pair_out;
+  type Right_in;
+  type Str_in;
+  type Str_out;
+  type Sum_is_left;
+  type Sum_payload;
+  type Unit_in
+}
+import loader {
+  type Host_adapter;
+  type Host_fn_binding;
+  type Host_fn_bindings;
+  type Hostfn;
+  type Hostfns
+}
+import loader { fn diag_message; fn image_hostfns; fn instantiate; fn mk_diag; fn un_load_outcome }
+import loader { fn host_fn_binding_descriptor; fn host_fn_binding_groups; fn un_host_fn_bindings }
+import loader { fn hostfn_descriptor; fn hostfn_groups; fn un_hostfns }
+import loader { type Diag; type Image; type Loaded; type Lr_diag; type Lr_image; type Surface }
+import loader/scan { fn load_package }
+import macros/control { macro if }
+import macros/match { macro match }
+import macros/row_macros { macro select }
+import macros/spine_macros { macro widen_sum }
+import prime { type Group_slots; fn group_slots_cons; fn group_slots_nil; fn un_group_slots }
+import result { fn call_apply; fn call_apply_then; fn call_fold }
+import result { type Call_result; fn call_done; fn call_stuck }
+import testapi { type Bool; type I32; type Scalar; type String }
+import testapi/arith { fn add_i32; fn eq_i32; fn leq_i32; fn sub_i32 }
+import testapi/fmt { fn int_to_string }
+import testapi/io { fn print }
+import testapi/iter { fn loop }
+import testapi/scalar {
+  fn make_scalar;
+  fn scalar_as_i32;
+  fn scalar_as_str;
+  fn scalar_of_bool;
+  fn scalar_of_i32
+}
+import testapi/scalar { fn scalar_of_str }
+import testapi/text { fn string_concat; fn string_eq }
+import value {
+  type Side;
+  type Value;
+  fn side_select;
+  fn un_value;
+  fn value_to_scalar;
+  fn vhost;
+  fn vhostfn;
+  fn vproduct
+}
+import value { fn vals_nil; fn vals_push; fn vunit }
+import value { type V_closure; type V_host; type V_hostfn; type V_product; type V_sum; type V_unit }
 
 // `driver.kio` — the host the dyn-load-prime test runner compiles and reuses.
 //

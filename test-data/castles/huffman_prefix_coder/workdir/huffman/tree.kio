@@ -14,17 +14,17 @@
 /// So equal-weight leaves order by symbol code, an equal-weight leaf precedes an
 /// internal node (every leaf key sits below every internal key), and equal
 /// weight internal nodes order by creation. This message exercises all three.
-module huffman/tree;
+mod huffman/tree;
 
-import huffman/freq(Count, Count_freq, Count_symbol);
-import huffman/list(List, cons, nil, of1, reverse);
-import macros/control(macro if);
-import macros/match(macro match);
-import macros/row_macros(macro select);
-import macros/spine_macros(macro widen_sum);
-import testapi(Bool, I32);
-import testapi/arith(add_i32, lt_i32);
-import testapi/iter(loop);
+import huffman/freq { type Count; type Count_freq; type Count_symbol }
+import huffman/list { type List; fn cons; fn nil; fn of1; fn reverse }
+import macros/control { macro if }
+import macros/match { macro match }
+import macros/row_macros { macro select }
+import macros/spine_macros { macro widen_sum }
+import testapi { type Bool; type I32 }
+import testapi/arith { fn add_i32; fn lt_i32 }
+import testapi/iter { fn loop }
 
 rec {
   /// A leaf stores no key of its own: its key *is* its symbol code, so the

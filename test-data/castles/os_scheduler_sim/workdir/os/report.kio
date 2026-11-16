@@ -5,9 +5,9 @@
 /// queued, and blocked; system-wide, every elapsed tick must have been spent
 /// running some process, trapping for one, or idle. A model that lost a tick
 /// anywhere would say so here.
-module os/report;
+mod os/report;
 
-import macros/control(macro if);
+import macros/control { macro if }
 import os/config as config;
 import os/fixture as fixture;
 import os/memory as memory;
@@ -17,11 +17,11 @@ import os/queue as queue;
 import os/sched as sched;
 import os/text as text;
 import os/trace as trace;
-import testapi(Array, Bool, I32, String);
-import testapi/arith(add_i32, leq_i32, sub_i32);
-import testapi/array(array_get, array_len);
-import testapi/io(print);
-import testapi/iter(loop);
+import testapi { type Array; type Bool; type I32; type String }
+import testapi/arith { fn add_i32; fn leq_i32; fn sub_i32 }
+import testapi/array { fn array_get; fn array_len }
+import testapi/io { fn print }
+import testapi/iter { fn loop }
 
 fn line(s: String) { print(text.cat(s, "\n")) }
 

@@ -1,13 +1,13 @@
 /// The exercise expression language and its evaluator.
-module rational/expr;
+mod rational/expr;
 
-import macros/match(macro match);
-import macros/spine_macros(macro widen_sum);
+import macros/match { macro match }
+import macros/spine_macros { macro widen_sum }
 import rational/arith as ops;
 import rational/core as core;
-import rational/core(Division_by_zero, Eval, Fraction, Rational);
-import testapi(I32);
-import testapi/iter(loop);
+import rational/core { type Division_by_zero; type Eval; type Fraction; type Rational }
+import testapi { type I32 }
+import testapi/iter { fn loop }
 
 pub type { Lit: Fraction }
 

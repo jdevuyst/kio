@@ -1,7 +1,7 @@
-module testapi/main;
+mod testapi/main;
 
-import testapi(String);
-import testapi/io(print);
+import testapi { type String }
+import testapi/io { fn print }
 
 // The canonical type constructor: payload is exactly the
 // type-parameter, so `Identity(A)` is its carrier `A`. Lift and

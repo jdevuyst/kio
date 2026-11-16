@@ -1,4 +1,4 @@
-module app;
+mod app;
 
 pub type { Box: . { pub mk; pub get } }
 

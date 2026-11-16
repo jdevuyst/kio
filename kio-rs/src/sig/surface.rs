@@ -110,7 +110,6 @@ where
     Some(match item {
         Item::HostType(host) => {
             let mut host: HostType<Surface> = crate::ast::convert_host_type(host);
-            host.owned = false;
             host.doc = None;
             SigItem::HostType(host)
         }

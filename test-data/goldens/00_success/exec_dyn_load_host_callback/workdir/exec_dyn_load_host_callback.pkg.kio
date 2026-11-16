@@ -1,4 +1,4 @@
-package exec_dyn_load_host_callback;
+pkg exec_dyn_load_host_callback;
 
 build {
   cache "out/.kio-cache/";

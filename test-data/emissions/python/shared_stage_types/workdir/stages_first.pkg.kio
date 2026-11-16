@@ -1,4 +1,4 @@
-package stages_first;
+pkg stages_first;
 
 build {
   target python {

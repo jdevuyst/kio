@@ -1,4 +1,4 @@
-package exec_nested_brand_leading_recursive;
+pkg exec_nested_brand_leading_recursive;
 
 build {
   cache "out/.kio-cache/";

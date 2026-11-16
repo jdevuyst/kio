@@ -3,15 +3,15 @@ set -eu
 
 # Sorting imports preserves statement, item and closing-boundary comments.
 formatted=$("$KIO_BIN" fmt - <<'KIO'
-module fmt_import_comment_boundaries;
+mod fmt_import_comment_boundaries;
 // statement
-import z( // opening selection
-  , // zebra
-    zebra
-  , // alpha
-    alpha
+import z { // opening selection
+   // zebra
+    fn zebra
+  ; // alpha
+    fn alpha
   // closing
-  );
+  }
 import a as a;
 KIO
 )

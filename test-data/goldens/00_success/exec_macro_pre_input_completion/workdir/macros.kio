@@ -1,4 +1,4 @@
-module macros;
+mod macros;
 
 import __comptime__;
 

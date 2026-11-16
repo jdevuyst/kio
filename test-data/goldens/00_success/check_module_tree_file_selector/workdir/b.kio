@@ -1,4 +1,4 @@
-module b;
+mod b;
 
 pub fn idb(x: .) { x }
 

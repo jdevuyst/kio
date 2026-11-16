@@ -1,4 +1,4 @@
-module testapi/types;
+mod testapi/types;
 
 // A 20-hop parametric alias chain: the boundary crossing through the
 // chain's head must be identical to writing `A & B` inline, however

@@ -1,4 +1,4 @@
-package dnf;
+pkg dnf;
 
 build {
   cache "out/.kio-cache/";

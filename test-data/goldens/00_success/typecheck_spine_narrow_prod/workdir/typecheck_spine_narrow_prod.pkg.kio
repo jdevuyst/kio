@@ -1,4 +1,4 @@
-package typecheck_spine_narrow_prod;
+pkg typecheck_spine_narrow_prod;
 
 build {
   cache "out/.kio-cache/";

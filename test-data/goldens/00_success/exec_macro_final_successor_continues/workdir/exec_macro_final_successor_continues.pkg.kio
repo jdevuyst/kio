@@ -1,4 +1,4 @@
-package exec_macro_final_successor_continues;
+pkg exec_macro_final_successor_continues;
 
 build {
   cache "out/.kio-cache/";

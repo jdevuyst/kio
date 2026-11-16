@@ -1,11 +1,11 @@
 /// Loads canonical import-header images and reports their public results.
-module testapi/main;
+mod testapi/main;
 
 import defaults as defaults;
 import imageio as imageio;
 import loader as loader;
 import loader/scan as scan;
-import macros/match(macro match);
+import macros/match { macro match }
 import prime as prime;
 import result as result;
 import testapi as testapi;
@@ -87,17 +87,17 @@ fn report_values(label: testapi.String, source: testapi.String) {
 }
 
 fn provider_image() -> testapi.String {
-  "module provider/names;\nimport hostapi(I32);\npub fn from() -> I32 { "
-  "7[I32] }\npub fn op() -> I32 { 11[I32] }\nmodule hostapi;\nhost type I32 "
+  "mod provider/names;\nimport hostapi {type I32}\npub fn from() -> I32 { "
+  "7[I32] }\npub fn op() -> I32 { 11[I32] }\nmod hostapi;\nhost type I32 "
   "role(i32);\n"[testapi.String]
 }
 
-fn comma_image() -> testapi.String {
+fn semicolon_image() -> testapi.String {
   text.string_concat(
   , provider_image()
-  , "module consumer;\nimport hostapi(I32);\nimport provider/names(\n  , from\n  "
-    ", , op, ,\n);\npub fn first() -> I32 { from() }\npub fn second() -> I32 { "
-    "op() }\npackage header_guest;\nbridge { consumer; hostapi; }\n"[testapi.String]
+  , "mod consumer;\nimport hostapi {type I32}\nimport provider/names {\n  ; fn "
+    "from;\n  ; fn op; ;\n};\npub fn first() -> I32 { from() }\npub fn second() "
+    "-> I32 { op() }\npkg header_guest;\nbridge { consumer; hostapi; }\n"[testapi.String]
   )
 }
 
@@ -105,11 +105,11 @@ fn header_image(header: testapi.String) -> testapi.String {
   text.string_concat(
   , provider_image()
   , text.string_concat(
-    , "module consumer;\n"[testapi.String]
+    , "mod consumer;\n"[testapi.String]
     , text.string_concat(
       , header
-      , "\npub fn run() -> . { () }\npackage header_probe;\nbridge { consumer; "
-        "hostapi; }\n"[testapi.String]
+      , "\npub fn run() -> . { () }\npkg header_probe;\nbridge { consumer; hostapi; "
+        "}\n"[testapi.String]
       )
     )
   )
@@ -128,42 +128,42 @@ fn report_header(label: testapi.String, header: testapi.String) {
 
 pub fn main() {
   report_values("emitted: "[testapi.String], imageio.read_image_stdin());
-  report_values("comma list: "[testapi.String], comma_image());
+  report_values("semicolon list: "[testapi.String], semicolon_image());
   report_header(
   , "selective control: "[testapi.String]
-  , "import provider/names(from, op);"[testapi.String]
+  , "import provider/names { fn from; fn op }"[testapi.String]
   );
   report_header(
   , "alias control: "[testapi.String]
   , "import provider/names as names;"[testapi.String]
   );
   report_header("intrinsics control: "[testapi.String], "import __intrinsics__;"[testapi.String]);
-  report_header("missing provider: "[testapi.String], "import (from, op);"[testapi.String]);
+  report_header("missing provider: "[testapi.String], "import { fn from; fn op }"[testapi.String]);
   report_header(
   , "missing opener: "[testapi.String]
-  , "import provider/names from, op);"[testapi.String]
+  , "import provider/names fn from; fn op }"[testapi.String]
   );
-  report_header("empty list: "[testapi.String], "import provider/names(,,);"[testapi.String]);
+  report_header("empty list: "[testapi.String], "import provider/names { ;; }"[testapi.String]);
   report_header(
   , "missing separator: "[testapi.String]
-  , "import provider/names(from op);"[testapi.String]
+  , "import provider/names { fn from fn op }"[testapi.String]
   );
   report_header(
   , "missing closer: "[testapi.String]
-  , "import provider/names(op, from;"[testapi.String]
+  , "import provider/names { fn op; fn from;"[testapi.String]
   );
   report_header(
-  , "missing semicolon: "[testapi.String]
-  , "import provider/names(from, op)"[testapi.String]
+  , "missing kind: "[testapi.String]
+  , "import provider/names { from; fn op }"[testapi.String]
   );
   report_header("missing alias: "[testapi.String], "import provider/names as ;"[testapi.String]);
   report_header(
   , "selective intrinsics: "[testapi.String]
-  , "import __intrinsics__(from);"[testapi.String]
+  , "import __intrinsics__ { fn from }"[testapi.String]
   );
   report_header(
   , "operator entry: "[testapi.String]
-  , "import provider/names(op _ + _);"[testapi.String]
+  , "import provider/names { op _ + _ }"[testapi.String]
   );
   report_header("comptime import: "[testapi.String], "import __comptime__;"[testapi.String])
 }

@@ -1,4 +1,4 @@
-package derive_specialization_diagnostic_nested_term;
+pkg derive_specialization_diagnostic_nested_term;
 
 build {
   cache "out/.kio-cache/";

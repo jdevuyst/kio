@@ -1,4 +1,4 @@
-package fpr;
+pkg fpr;
 
 build {
   cache "out/.kio-cache/";

@@ -1,4 +1,4 @@
-package lambda_header_literal_context;
+pkg lambda_header_literal_context;
 
 build {
   cache "out/.kio-cache/";

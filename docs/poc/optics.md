@@ -81,10 +81,10 @@ bridge {
   kiodoc;
 }
 
-module kiodoc;
+mod kiodoc;
 
-import match(macro match);
-import spine_macros(macro narrow_prod, macro one_prod, macro widen_sum);
+import match {macro match}
+import spine_macros {macro narrow_prod; macro one_prod; macro widen_sum}
 
 host type Bool role(bool);
 host type I32 role(i32);
@@ -98,9 +98,9 @@ __INSERT_CODE_HERE__
 -->
 
 <!--kio {harness=lens_use placeholder="__INSERT_CODE_HERE__"}
-module kiodoc;
+mod kiodoc;
 
-import optics(compose_lens, fst_lens, snd_lens, view);
+import optics {fn compose_lens; fn fst_lens; fn snd_lens; fn view}
 
 host type I32 role(i32);
 host type String role(str);
@@ -118,10 +118,10 @@ fn check_lens() {
 -->
 
 <!--kio {harness=prism_use placeholder="__INSERT_CODE_HERE__"}
-module kiodoc;
+mod kiodoc;
 
-import optics(left_prism, review);
-import macros/spine_macros(macro widen_sum);
+import optics {fn left_prism; fn review}
+import macros/spine_macros {macro widen_sum}
 
 host type I32 role(i32);
 host type String role(str);
@@ -142,8 +142,8 @@ apart structural types. The library's import block is its whole dependency
 list:
 
 ```kio {ignore}
-import macros/spine_macros(macro flatten_sum, macro narrow_sum, macro one_prod, macro one_sum, macro widen_sum);
-import macros/match(macro match);
+import macros/spine_macros {macro flatten_sum; macro narrow_sum; macro one_prod; macro one_sum; macro widen_sum}
+import macros/match {macro match}
 ```
 
 Two of these carry almost the entire library:
@@ -889,7 +889,7 @@ forward and backward maps through the lens and prism interfaces.
 To reuse the package, create `optics.dep.kio` at your consumer package root:
 
 ```kio {variant=dependency}
-dependency optics;
+dep optics;
 
 source {
   git "https://github.com/jdevuyst/kio/";
@@ -901,7 +901,7 @@ source {
 Run `kio dep fetch` from that package root. This writes `optics.lock.kio`
 and materializes the selected package, including its `macros` dependency,
 under the `optics/` local root. Import the public module with, for example,
-`import optics/optics(Lens, view, set);`. The optic functions themselves are
+`import optics/optics {type Lens; fn view; fn set}`. The optic functions themselves are
 host-capability-free. The POC package bridge also exposes `macros/testapi` host
 requirements, re-rooted as `optics/macros/testapi` in the consumer: `String`
 with role `str`, `I32` and `Int` with role `i32`, and `Bool` with role `bool`.

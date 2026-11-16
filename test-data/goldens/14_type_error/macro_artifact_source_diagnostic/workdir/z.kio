@@ -1,4 +1,4 @@
-module z;
+mod z;
 
 import a as unrelated;
 

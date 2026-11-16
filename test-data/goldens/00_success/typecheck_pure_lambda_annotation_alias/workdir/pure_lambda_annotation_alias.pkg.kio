@@ -1,4 +1,4 @@
-package pure_lambda_annotation_alias;
+pkg pure_lambda_annotation_alias;
 
 build {
   cache "out/.kio-cache/";

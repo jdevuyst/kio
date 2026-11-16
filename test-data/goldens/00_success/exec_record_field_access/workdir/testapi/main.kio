@@ -1,9 +1,9 @@
-module testapi/main;
+mod testapi/main;
 
-import macros/row_macros(macro select);
-import testapi(I32, String);
-import testapi/fmt(int_to_string);
-import testapi/io(print);
+import macros/row_macros { macro select }
+import testapi { type I32; type String }
+import testapi/fmt { fn int_to_string }
+import testapi/io { fn print }
 
 // Two nominal values compose as a `Foo & Bar` product.
 type { Foo: I32 { mk; get }; Bar: String { mk; get } }

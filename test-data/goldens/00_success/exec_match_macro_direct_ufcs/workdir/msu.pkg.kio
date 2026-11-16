@@ -1,4 +1,4 @@
-package msu;
+pkg msu;
 
 build {
   cache "out/.kio-cache/";

@@ -1,4 +1,4 @@
-module main;
+mod main;
 
 type Lens[S][A] = (S -> A) & ((A & S) -> S);
 

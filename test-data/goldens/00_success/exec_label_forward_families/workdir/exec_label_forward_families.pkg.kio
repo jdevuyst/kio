@@ -1,4 +1,4 @@
-package exec_label_forward_families;
+pkg exec_label_forward_families;
 
 build {
   cache "out/.kio-cache/";

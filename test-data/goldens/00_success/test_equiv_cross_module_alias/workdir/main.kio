@@ -1,7 +1,7 @@
-module main;
+mod main;
 
 import helper as h;
-import helper(Alias, wrap);
+import helper { type Alias; fn wrap }
 
 equiv qualified_fn_over_alias(x: h.Alias) {
   h.wrap(x);

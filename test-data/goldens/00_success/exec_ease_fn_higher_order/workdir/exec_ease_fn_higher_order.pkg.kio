@@ -1,4 +1,4 @@
-package exec_ease_fn_higher_order;
+pkg exec_ease_fn_higher_order;
 
 build {
   cache "out/.kio-cache/";

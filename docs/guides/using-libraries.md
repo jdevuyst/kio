@@ -17,7 +17,7 @@ checkout, point `path` at the dependency's package file:
 
 ```kio {variant=dependency}
 // macros.dep.kio
-dependency macros;
+dep macros;
 
 source {
   path "../libs/macros/macros.pkg.kio"
@@ -29,7 +29,7 @@ package manifest's path relative to that repository's root:
 
 ```kio {variant=dependency}
 // macros.dep.kio
-dependency macros;
+dep macros;
 
 source {
   git "https://github.com/jdevuyst/kio/";
@@ -38,7 +38,7 @@ source {
 }
 ```
 
-The filename stem, `dependency` header, and local import root are all `macros`.
+The filename stem, `dep` header, and local import root are all `macros`.
 The dependency package's original name does not have to match it. The Git
 `path` selects that exact package file inside the checkout; a standalone
 `source { path "..." }` instead resolves from the consumer's package root.
@@ -63,16 +63,16 @@ checkout can build without network access.
 ## Re-rooted imports
 
 Materialization places the dependency's module tree below the consumer-chosen
-local name. If the dependency declares `module match;`, a consumer that names
+local name. If the dependency declares `mod match;`, a consumer that names
 it `macros` imports it as `macros/match`:
 
 ```kio {ignore}
-import macros/match(macro match);
-import macros/spine_macros(macro widen_sum, macro one_prod);
+import macros/match {macro match}
+import macros/spine_macros {macro widen_sum; macro one_prod}
 ```
 
 Type imports retain the original declaration identity and its literal-admission
-role. For example, `import numbers(Int as Integer, Float);` introduces those type
+role. For example, `import numbers {type Int as Integer; type Float}` introduces those type
 identities without making them implicit literal candidates. Explicit annotations or
 concrete local context determine carriers; ordinary imports do not create an
 ambient role-bearing candidate pool.
@@ -80,9 +80,9 @@ ambient role-bearing candidate pool.
 Call the selected local name directly:
 
 <!--kio {harness=inject placeholder="__INSERT_CODE_HERE__"}
-module kiodoc;
+mod kiodoc;
 
-import macros/spine_macros(macro widen_sum);
+import macros/spine_macros {macro widen_sum}
 
 __INSERT_CODE_HERE__
 -->
@@ -124,22 +124,22 @@ With a local name matching the package name, typical imports are rooted at its
 public module:
 
 ```kio {ignore}
-import dict/dict(Dict, empty, insert);
-import list/core(List, cons, nil);
-import option/core(Option, none, some);
-import queue/core(Queue, empty);
-import queue/queue(enqueue);
-import result/result(Result, ok, err);
-import vec/vec(Vec, empty, push_back);
+import dict/dict {type Dict; fn empty; fn insert}
+import list/core {type List; fn cons; fn nil}
+import option/core {type Option; fn none; fn some}
+import queue/core {type Queue; fn empty}
+import queue/queue {fn enqueue}
+import result/result {type Result; fn ok; fn err}
+import vec/vec {type Vec; fn empty; fn push_back}
 ```
 
 Select only the names the application uses. The package source and generated
 Kiodoc remain the authority for exact signatures.
 
 For a fallback that should run only when needed, select a macro explicitly:
-`import option/core(macro or_else_lazy, macro unwrap_or_lazy);`,
-`import result/result(macro or_else_lazy, macro unwrap_or_lazy, macro unwrap_err_or_lazy);`,
-or `import dict/dict(macro get_or_lazy);`. Import only the names used in a
+`import option/core {macro or_else_lazy; macro unwrap_or_lazy}`,
+`import result/result {macro or_else_lazy; macro unwrap_or_lazy; macro unwrap_err_or_lazy}`,
+or `import dict/dict {macro get_or_lazy}`. Import only the names used in a
 module; the option and result names coincide, so use an alias if both are needed.
 For example, `unwrap_or_lazy(value) { default_value() }` extracts an option's
 present value or a result's success, invoking the block only on absence or
@@ -155,7 +155,7 @@ All six collection and value packages above live in the same Git repository.
 For example, create `list.dep.kio` at your consumer package root:
 
 ```kio {variant=dependency}
-dependency list;
+dep list;
 
 source {
   git "https://github.com/jdevuyst/kio/";
@@ -165,18 +165,18 @@ source {
 ```
 
 For any other package in this table, name the file `<local>.dep.kio`, replace
-`dependency list;` with `dependency <local>;`, and replace only the `path` value
+`dep list;` with `dep <local>;`, and replace only the `path` value
 with its row. The Git URL and ref stay the same; the import column shows the
 module root and one useful selection after materialization.
 
 | Local name | Git `path` | Example import |
 | --- | --- | --- |
-| `dict` | `test-data/poc/dict/workdir/dict.pkg.kio` | `import dict/dict(Dict, empty, insert);` |
-| `list` | `test-data/poc/list/workdir/list.pkg.kio` | `import list/core(List, cons, nil);` |
-| `option` | `test-data/poc/option/workdir/option.pkg.kio` | `import option/core(Option, none, some);` |
-| `queue` | `test-data/poc/queue/workdir/queue.pkg.kio` | `import queue/core(Queue, empty);` |
-| `result` | `test-data/poc/result/workdir/result.pkg.kio` | `import result/result(Result, ok, err);` |
-| `vec` | `test-data/poc/vec/workdir/vec.pkg.kio` | `import vec/vec(Vec, empty, push_back);` |
+| `dict` | `test-data/poc/dict/workdir/dict.pkg.kio` | `import dict/dict {type Dict; fn empty; fn insert}` |
+| `list` | `test-data/poc/list/workdir/list.pkg.kio` | `import list/core {type List; fn cons; fn nil}` |
+| `option` | `test-data/poc/option/workdir/option.pkg.kio` | `import option/core {type Option; fn none; fn some}` |
+| `queue` | `test-data/poc/queue/workdir/queue.pkg.kio` | `import queue/core {type Queue; fn empty}` |
+| `result` | `test-data/poc/result/workdir/result.pkg.kio` | `import result/result {type Result; fn ok; fn err}` |
+| `vec` | `test-data/poc/vec/workdir/vec.pkg.kio` | `import vec/vec {type Vec; fn empty; fn push_back}` |
 
 Run `kio dep fetch` from the consumer package root after adding each
 dependency declaration. This writes its lock and materialized source under the
@@ -225,7 +225,7 @@ For example, a consumer can total two prices represented as integer cents.
 Use the `list.dep.kio` above and create `invoice.pkg.kio`:
 
 ```kio {variant=package}
-package invoice;
+pkg invoice;
 
 bridge {
   invoice;
@@ -239,7 +239,7 @@ bridge {
 Then create `invoice.kio`:
 
 ```kio {placeholder={"list/core":"core","list/list":"list"}}
-module invoice;
+mod invoice;
 
 import list/core as lists;
 import list/list as traversal;
@@ -324,12 +324,12 @@ a consumer can import a narrow vocabulary:
 For example:
 
 ```kio {ignore}
-import macros/match(macro match);
-import macros/control(Bool, macro if, macro scope);
-import macros/sequence(Bind, Sequence, macro do);
-import macros/lookup(macro contains, macro lookup);
-import macros/spine_macros(macro fit, macro widen_sum);
-import macros/row_macros(macro record, macro record_, macro select, macro with, macro with_);
+import macros/match {macro match}
+import macros/control {type Bool; macro if; macro scope}
+import macros/sequence {type Bind; type Sequence; macro do}
+import macros/lookup {macro contains; macro lookup}
+import macros/spine_macros {macro fit; macro widen_sum}
+import macros/row_macros {macro record; macro record_; macro select; macro with; macro with_}
 ```
 
 `control` declares the concrete `Bool` host type used by its Boolean operations.
@@ -361,7 +361,7 @@ materialized package also consumes the committed dependency closure.
 Import the public module through the chosen root:
 
 ```kio {ignore}
-import optics/optics(Lens, compose_lens, view, set);
+import optics/optics {type Lens; fn compose_lens; fn view; fn set}
 ```
 
 See [The optics library](../poc/optics.md) for the complete executable tour and

@@ -1,4 +1,4 @@
-package packet_checksum_classifier;
+pkg packet_checksum_classifier;
 
 build {
   cache "out/.kio-cache/";

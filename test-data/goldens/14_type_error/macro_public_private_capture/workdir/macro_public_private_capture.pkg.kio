@@ -1,4 +1,4 @@
-package macro_public_private_capture;
+pkg macro_public_private_capture;
 
 build {
   cache "out/.kio-cache/";

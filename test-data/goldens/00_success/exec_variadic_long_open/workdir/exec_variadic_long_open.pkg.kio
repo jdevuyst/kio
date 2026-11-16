@@ -1,4 +1,4 @@
-package exec_variadic_long_open;
+pkg exec_variadic_long_open;
 
 build {
   cache "out/.kio-cache/";

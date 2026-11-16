@@ -1,9 +1,9 @@
-module derive_memo_wide_candidate_set/main;
+mod derive_memo_wide_candidate_set/main;
 
 import __intrinsics__;
 
-import macros/derive(macro derive);
-import testapi(String);
+import macros/derive { macro derive }
+import testapi { type String }
 
 pub type { Cell[A]: A { pub mk; pub get } }
 

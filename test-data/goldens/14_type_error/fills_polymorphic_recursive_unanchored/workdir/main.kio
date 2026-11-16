@@ -1,7 +1,7 @@
-module main;
+mod main;
 
-import host(loop);
-import macros(macro invoke);
+import host { fn loop }
+import macros { macro invoke }
 
 rec(loop) fn run(value: .) {
   invoke(.[A](_value: A) { recur run(value) })

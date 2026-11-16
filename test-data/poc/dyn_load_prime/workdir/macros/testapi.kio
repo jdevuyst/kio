@@ -1,4 +1,4 @@
-module macros/testapi;
+mod macros/testapi;
 
 import list_host as _rehost_gmgjhdhefpgigphdhe;
 

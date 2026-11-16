@@ -1,4 +1,4 @@
-package callable_peer;
+pkg callable_peer;
 
 build {
   target python {

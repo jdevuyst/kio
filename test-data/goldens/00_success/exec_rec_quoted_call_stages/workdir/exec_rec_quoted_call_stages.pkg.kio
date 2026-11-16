@@ -1,4 +1,4 @@
-package exec_rec_quoted_call_stages;
+pkg exec_rec_quoted_call_stages;
 
 build {
   cache "out/.kio-cache/";

@@ -1,7 +1,7 @@
-module robot_vacuum_replay/command;
+mod robot_vacuum_replay/command;
 
-import macros/spine_macros(macro widen_sum);
-import testapi(I32, String);
+import macros/spine_macros { macro widen_sum }
+import testapi { type I32; type String }
 
 pub type Command =
   | { Start_cmd: . }

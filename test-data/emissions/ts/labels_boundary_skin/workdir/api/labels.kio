@@ -1,7 +1,7 @@
-module api/labels;
+mod api/labels;
 
-import api(I32);
-import api(String);
+import api { type I32 }
+import api { type String }
 
 pub type Pair = { Name: String; Counter: I32 };
 

@@ -698,7 +698,7 @@ fn render_body(term: &Term, env: &RenderEnv) -> String {
 
 fn render_module(term: &Term, result: &Ty) -> String {
     format!(
-        "module main;\n\nimport __intrinsics__;\n\npure fn main() -> {} {{ {} }}\n",
+        "mod main;\n\nimport __intrinsics__;\n\npure fn main() -> {} {{ {} }}\n",
         result.render(),
         render_body(term, &RenderEnv::default())
     )
@@ -755,7 +755,7 @@ fn normalization_matches_independent_normal_order_oracle() {
                 })?;
                 let module = render_module(&term, &result);
                 let actual = crate::normalize_source::normalize_source(
-                    "package differential;\n\nbridge { main; }\n",
+                    "pkg differential;\n\nbridge { main; }\n",
                     &module,
                 )
                 .map_err(|error| {

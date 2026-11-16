@@ -1,4 +1,4 @@
-package exec_functor_generic_chain;
+pkg exec_functor_generic_chain;
 
 build {
   cache "out/.kio-cache/";

@@ -1,6 +1,6 @@
-module user_macro_structural_recur_stuck/main;
+mod user_macro_structural_recur_stuck/main;
 
-import macros(macro stuck);
-import user_macro_structural_recur_stuck(String);
+import macros { macro stuck }
+import user_macro_structural_recur_stuck { type String }
 
 fn trigger(s: String) -> String { stuck(s)[String] }

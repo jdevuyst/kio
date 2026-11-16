@@ -1,4 +1,4 @@
-package ffi_swift_exact_host_bindings;
+pkg ffi_swift_exact_host_bindings;
 
 build {
   cache "out/.kio-cache/";

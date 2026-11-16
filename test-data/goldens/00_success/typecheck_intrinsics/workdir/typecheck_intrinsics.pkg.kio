@@ -1,4 +1,4 @@
-package typecheck_intrinsics;
+pkg typecheck_intrinsics;
 
 build {
   cache "out/.kio-cache/";

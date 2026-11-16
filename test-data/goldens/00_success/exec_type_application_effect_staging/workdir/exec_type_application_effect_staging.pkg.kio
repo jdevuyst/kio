@@ -1,4 +1,4 @@
-package exec_type_application_effect_staging;
+pkg exec_type_application_effect_staging;
 
 build {
   cache "out/.kio-cache/";

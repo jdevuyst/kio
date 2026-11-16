@@ -1,4 +1,4 @@
-package exec_ffi_struct_round_trip;
+pkg exec_ffi_struct_round_trip;
 
 build {
   cache "out/.kio-cache/";

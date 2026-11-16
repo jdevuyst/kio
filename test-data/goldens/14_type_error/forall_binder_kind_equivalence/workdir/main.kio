@@ -1,4 +1,4 @@
-module main;
+mod main;
 
 fn phantom_type[A](_value: .) { () }
 

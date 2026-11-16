@@ -1485,7 +1485,7 @@ impl<'a> SubstituteVisitor<'a> {
                 let kept: Vec<ImportItem> = items
                     .iter()
                     .filter(|item| match item {
-                        ImportItem::Name { macro_span, .. } => macro_span.is_none(),
+                        ImportItem::Name { kind, .. } => *kind != crate::ast::ImportNameKind::Macro,
                         ImportItem::OperatorPattern { .. } => true,
                     })
                     .cloned()
@@ -2641,9 +2641,9 @@ mod tests {
 
     #[test]
     fn substitution_erases_explicit_macro_imports_without_provider_discovery() {
-        let mut module = lowered_one("consumer", "module consumer;");
+        let mut module = lowered_one("consumer", "mod consumer;");
         module.imports = parse(
-            "module consumer; import provider(macro choose as pick, value); import other(macro build);",
+            "mod consumer; import provider {macro choose as pick; fn value} import other {macro build}",
         )
         .expect("surface imports")
         .imports;
@@ -2653,7 +2653,7 @@ mod tests {
             panic!("ordinary selected import remains")
         };
         assert!(
-            matches!(items.as_slice(), [ImportItem::Name { name, macro_span: None, .. }] if name == "value")
+            matches!(items.as_slice(), [ImportItem::Name { name, kind: crate::ast::ImportNameKind::Function, .. }] if name == "value")
         );
     }
 
@@ -2714,7 +2714,7 @@ mod tests {
         expected = "an open type-inference goal reached Lowered-to-PrePrime substitution"
     )]
     fn substitution_rejects_a_production_allocated_open_goal() {
-        let mut module = lowered_one("main", "module main; fn target() -> . { () }");
+        let mut module = lowered_one("main", "mod main; fn target() -> . { () }");
         let mut store = GoalStore::new();
         let owner = store
             .begin_owner(
@@ -2742,7 +2742,7 @@ mod tests {
 
     #[test]
     fn a_zonked_production_goal_crosses_substitution_as_an_ordinary_type() {
-        let mut module = lowered_one("main", "module main; fn target() -> . { () }");
+        let mut module = lowered_one("main", "mod main; fn target() -> . { () }");
         let span = Span::new(0, 0);
         let mut store = GoalStore::new();
         let owner = store
@@ -2820,7 +2820,7 @@ mod tests {
     fn checked_substitution_keeps_outer_and_nested_forall_binders_distinct() {
         let module = substitute_one(
             "main",
-            "module main;
+            "mod main;
              fn consume[A](seed: A, f: [X] (A & X) -> A) -> . { () }
              fn annotated[A](seed: A) -> . {
                  consume(seed, .[A](left, right: A) { seed })
@@ -2860,8 +2860,8 @@ mod tests {
     #[test]
     fn substitution_renormalizes_inserted_elaboration_binders() {
         let parsed = parse(
-            "module main;
-             import control(Bool, macro if);
+            "mod main;
+             import control {type Bool; macro if}
 
              fn target[A](condition: Bool) -> [X] X -> X {
                  if (condition) { .[X](value: X) { value } }
@@ -3030,9 +3030,7 @@ mod tests {
     }
 
     fn recursive_generated_binder_fixture() -> &'static str {
-        "module x/main; \
-         host fn loop[S][R](step: S -> (S | R), state: S) -> R; \
-         rec(loop) { fn update(value: .) -> . { recur update(value) }; }"
+        "mod x/main; host fn loop[S][R](step: S -> (S | R), state: S) -> R; rec(loop) { fn update(value: .) -> . { recur update(value) }; }"
     }
 
     fn assert_recursive_fixture_generates_value_binders(source: &str) {
@@ -3271,7 +3269,7 @@ mod tests {
 
     #[test]
     fn replayed_input_without_canonical_types_skips_requalifier_initialization() {
-        let parsed = parse("module owner; host type Hidden[A]; type Kioq0 = .;")
+        let parsed = parse("mod owner; host type Hidden[A]; type Kioq0 = .;")
             .expect("parse owner with reserved names");
         let (modules, _) =
             FullPipeline::lower_package(vec![(module_file_path("owner"), parsed)], None)
@@ -3314,13 +3312,13 @@ mod tests {
 
     #[test]
     fn replayed_input_preserves_ambient_type_binders() {
-        for (selection, binder) in [("String as A", "A"), ("String", "String")] {
+        for (selection, binder) in [("type String as A", "A"), ("type String", "String")] {
             let parsed = parse(&format!(
-                "module owner; import provider as host; import provider({selection});"
+                "mod owner; import provider as host; import provider {{{selection}}}"
             ))
             .expect("parse selective import");
-            let provider = parse("module provider; pub host type String;")
-                .expect("parse imported nominal owner");
+            let provider =
+                parse("mod provider; pub host type String;").expect("parse imported nominal owner");
             let (modules, _) = FullPipeline::lower_package(
                 vec![
                     (module_file_path("owner"), parsed),
@@ -3392,12 +3390,11 @@ mod tests {
     #[test]
     fn replayed_input_requalification_matches_eager_binding_boundaries() {
         let parsed = parse(
-            "module owner; import provider as dep; host type Hidden[A]; \
-             type Kioq0 = .; type Qp0_s0 = .;",
+            "mod owner; import provider as dep; host type Hidden[A]; type Kioq0 = .; type Qp0_s0 = .;",
         )
         .expect("parse owner with import, local nominal and allocator collisions");
-        let provider = parse("module provider; pub host type External;")
-            .expect("parse imported nominal owner");
+        let provider =
+            parse("mod provider; pub host type External;").expect("parse imported nominal owner");
         let (modules, _) = FullPipeline::lower_package(
             vec![
                 (module_file_path("owner"), parsed),
@@ -3717,8 +3714,8 @@ mod tests {
             ),
         ] {
             let source = format!(
-                "module main;
-                import sequence(macro do);
+                "mod main;
+                import sequence {{macro do}}
                 host fn factory() -> [A][B](A & (A -> B)) -> B;
                 host fn touch(value: .) -> .;
                 fn run() -> . {{ {body} }}"
@@ -3742,8 +3739,8 @@ mod tests {
 
     #[test]
     fn do_contract_zero_bind_retains_receiver_in_both_modes() {
-        let source = "module main;
-            import sequence(macro do);
+        let source = "mod main;
+            import sequence {macro do}
             host fn factory() -> [A][B](A & (A -> B)) -> B;
             fn run() -> . { do (factory()) { () } }";
         let module = substitute_sequence_one("main", source);
@@ -3765,7 +3762,7 @@ mod tests {
     #[cfg(feature = "prime")]
     #[test]
     fn generated_local_alias_materialization_uses_allocated_parameter_identity() {
-        let source = "module owner; host type Hidden[A]; type Kioq0 = .; type Qp0_s0 = .;";
+        let source = "mod owner; host type Hidden[A]; type Kioq0 = .; type Qp0_s0 = .;";
         let parsed = parse(source).expect("parse allocator-collision module");
         let (modules, _) =
             FullPipeline::lower_package(vec![(module_file_path("owner"), parsed)], None)
@@ -3862,12 +3859,10 @@ mod tests {
 
     #[test]
     fn generated_host_aliases_follow_their_owners_without_reordering_authored_items() {
-        let source = "module owner; import provider as dep; \
-            host type First[A]; type Uses_first = .; type Between = .; \
-            host type Second[A]; type Uses_second = .;";
+        let source = "mod owner; import provider as dep; host type First[A]; type Uses_first = .; type Between = .; host type Second[A]; type Uses_second = .;";
         let parsed = parse(source).expect("parse host owners and import");
         let provider =
-            parse("module provider; pub host type Imported;").expect("parse imported host owner");
+            parse("mod provider; pub host type Imported;").expect("parse imported host owner");
         let (modules, _) = FullPipeline::lower_package(
             vec![
                 (module_file_path("owner"), parsed),
@@ -3962,7 +3957,7 @@ mod tests {
         // through rather than drop it.
         let module = substitute_one(
             "x",
-            "module x; fn f(g: (. -> .)) -> . { let .(h: (. -> .)) = g; h(()) }",
+            "mod x; fn f(g: (. -> .)) -> . { let .(h: (. -> .)) = g; h(()) }",
         );
         let f = module
             .items
@@ -3988,9 +3983,7 @@ mod tests {
         // into a Prime `let` would fail the standalone Prime verifier.
         let module = substitute_one(
             "x",
-            "module x; \
-             type { Box[A]: A { pub mk; pub get; }; }; \
-             fn f[A](y: A) -> . { let .(h: Box[_]) = Box.mk[A](y); () }",
+            "mod x; type { Box[A]: A { pub mk; pub get; }; }; fn f[A](y: A) -> . { let .(h: Box[_]) = Box.mk[A](y); () }",
         );
         let f = module
             .items
@@ -4108,8 +4101,7 @@ mod tests {
     /// them up from the payload's structure.
     #[test]
     fn existentials_threaded_through_substitute() {
-        let src = "module x/main; \
-                   type { Pack[A]<U>: A & U { pub mk; pub get; }; };";
+        let src = "mod x/main; type { Pack[A]<U>: A & U { pub mk; pub get; }; };";
         let module = substitute_one("x/main", src);
         let Item::Newtype(d) = module
             .items
@@ -4141,10 +4133,7 @@ mod tests {
     /// codegen.
     #[test]
     fn equiv_items_filtered_at_substitution() {
-        let src = "module x/main; \
-                   fn id_unit() -> . { () } \
-                   equiv id_unit_eq { id_unit(); () } \
-                   fn after_equiv() -> . { () }";
+        let src = "mod x/main; fn id_unit() -> . { () } equiv id_unit_eq { id_unit(); () } fn after_equiv() -> . { () }";
         let module = substitute_one("x/main", src);
         // The equiv item dropped; the two fn_defs survive.
         assert_eq!(module.items.len(), 2);
@@ -4158,16 +4147,11 @@ mod tests {
         let prime = substitute_many(vec![
             (
                 "x/util",
-                "module x/util; \
-                 import __comptime__; \
-                 pub type { Refl_box: __Type__ { pub mk; pub get; }; };",
+                "mod x/util; import __comptime__; pub type { Refl_box: __Type__ { pub mk; pub get; }; };",
             ),
             (
                 "x/main",
-                "module x/main; \
-                 import x/util(Refl_box); \
-                 fn helper(value: Refl_box) -> Refl_box { value } \
-                 fn keep() -> . { () }",
+                "mod x/main; import x/util {type Refl_box} fn helper(value: Refl_box) -> Refl_box { value } fn keep() -> . { () }",
             ),
         ]);
         let main = &prime.module("x/main").expect("main module").module;
@@ -4303,12 +4287,7 @@ mod tests {
     fn inferred_function_type_argument_uses_prime_type_expression_abi() {
         let module = substitute_one(
             "main",
-            "module main; \
-             fn delay[X](value: X)[A] -> X { value } \
-             fn caller() -> . { \
-               let source = delay(.[B](left: B, _right: B) -> B { left }); \
-               () \
-             }",
+            "mod main; fn delay[X](value: X)[A] -> X { value } fn caller() -> . { let source = delay(.[B](left: B, _right: B) -> B { left }); () }",
         );
         let Expr::Let { value, .. } = &prime_fn(&module, "caller").body else {
             panic!("caller must bind delay's residual value")
@@ -4353,18 +4332,18 @@ mod tests {
     #[test]
     fn numeric_literal_publication_keeps_lexical_aliases_and_canonical_values() {
         let sources = [
-            ("other", "module other; pub host type Float role(f64);"),
+            ("other", "mod other; pub host type Float role(f64);"),
             (
                 "quoted",
-                "module quoted; import __comptime__; pure fn preserve_impl(ct: __Comptime__, fills: __Fill_ctx__, typ: __Type__, value: __Checked_term__) -> (__Checked_term__ & __Fill_ctx__) { (value, fills) } pub macro preserve : [A] A -> A { impl(fills) preserve_impl; };",
+                "mod quoted; import __comptime__; pure fn preserve_impl(ct: __Comptime__, fills: __Fill_ctx__, typ: __Type__, value: __Checked_term__) -> (__Checked_term__ & __Fill_ctx__) { (value, fills) } pub macro preserve : [A] A -> A { impl(fills) preserve_impl; };",
             ),
             (
                 "numbers",
-                "module numbers; import other as numbers; pub host type Float role(f64); pub type Identity[A] = A; pub pure fn value() -> Float { 42.0[Float] }",
+                "mod numbers; import other as numbers; pub host type Float role(f64); pub type Identity[A] = A; pub pure fn value() -> Float { 42.0[Float] }",
             ),
             (
                 "main",
-                "module main; import numbers as n; import other as numbers; import quoted(macro preserve); type Float = n.Identity[n.Float]; pure fn local() -> Float { let .(value: Float) = 42.0; value } pure fn id[A](value: A) -> A { value } equiv selected() { local(); n.value(); 42.0[n.Float]; id(42.0[n.Float]); preserve[n.Float](42.0[n.Float]) }",
+                "mod main; import numbers as n; import other as numbers; import quoted {macro preserve} type Float = n.Identity[n.Float]; pure fn local() -> Float { let .(value: Float) = 42.0; value } pure fn id[A](value: A) -> A { value } equiv selected() { local(); n.value(); 42.0[n.Float]; id(42.0[n.Float]); preserve[n.Float](42.0[n.Float]) }",
             ),
         ];
         let parsed = sources
@@ -4427,12 +4406,12 @@ mod tests {
         let sources = [
             (
                 "provider",
-                "module provider; pub host type External role(f64);",
+                "mod provider; pub host type External role(f64);",
             ),
-            ("other", "module other; pub host type External role(f64);"),
+            ("other", "mod other; pub host type External role(f64);"),
             (
                 "main",
-                "module main; import provider(External); import other as provider; host type First role(f64); host type Second role(f32);",
+                "mod main; import provider {type External} import other as provider; host type First role(f64); host type Second role(f32);",
             ),
         ];
         let parsed = sources
@@ -4501,7 +4480,7 @@ mod tests {
 
         let module = lowered_one(
             "main",
-            "module main; host type Float role(f64); fn consume(value: Float, later: .) -> . { () } fn good() -> . { consume(42.0, ()) } fn bad() -> . { consume(42.0, 0.0) }",
+            "mod main; host type Float role(f64); fn consume(value: Float, later: .) -> . { () } fn good() -> . { consume(42.0, ()) } fn bad() -> . { consume(42.0, 0.0) }",
         );
         let package = Package::build(
             Path::new(""),
@@ -4560,7 +4539,7 @@ mod tests {
     fn numeric_literal_publication_reuses_existing_spellings_without_module_scans() {
         for count in [16, 64] {
             let mut source =
-                String::from("module numbers; host type Float role(f64); type Selected = Float;");
+                String::from("mod numbers; host type Float role(f64); type Selected = Float;");
             for index in 0..count {
                 source.push_str(&format!(
                     "fn value{index}() -> Float {{ let .(value: Float) = 42.0; value }}"
@@ -4633,7 +4612,7 @@ mod tests {
     #[cfg(feature = "prime")]
     #[test]
     fn comptime_literal_primitive_values_preserve_complete_schemes_in_prime() {
-        let mut source = "module main; import __comptime__; import __intrinsics__; ".to_owned();
+        let mut source = "mod main; import __comptime__; import __intrinsics__; ".to_owned();
         for (index, name) in crate::comptime::PUBLIC_COMPTIME_NAMES.iter().enumerate() {
             let builtin = crate::comptime::ComptimeBuiltin::from_public_name(name).unwrap();
             if builtin.is_value_name() {
@@ -4662,7 +4641,7 @@ mod tests {
 
     #[test]
     fn comptime_literal_types_erase_to_bottom_at_substitution() {
-        let mut src = "module x/main; import __comptime__;".to_owned();
+        let mut src = "mod x/main; import __comptime__;".to_owned();
         for (idx, name) in ["Comptime_bool", "Comptime_str", "__Diagnostic_text__"]
             .iter()
             .enumerate()
@@ -4682,10 +4661,7 @@ mod tests {
     #[cfg(feature = "prime")]
     #[test]
     fn literal_aliases_follow_comptime_erasure_and_reparse() {
-        let source = "module main; import __comptime__; import __intrinsics__; host type Int role(i64); \
-            type Identity[A] = A; type Flag = Identity[Comptime_bool]; \
-            type Text = Comptime_str; \
-            fn value(packet: __Comptime__ & .) -> . { let .(flag: Flag) = __.t__(__fst__(packet)); let .(text: Text) = __\"hello\"__(__fst__(packet)); let number = 42[Int]; () }";
+        let source = "mod main; import __comptime__; import __intrinsics__; host type Int role(i64); type Identity[A] = A; type Flag = Identity[Comptime_bool]; type Text = Comptime_str; fn value(packet: __Comptime__ & .) -> . { let .(flag: Flag) = __.t__(__fst__(packet)); let .(text: Text) = __\"hello\"__(__fst__(packet)); let number = 42[Int]; () }";
         let prime = substitute_one("main", source);
         let emitted = crate::backends::kio_prime::emit_module_for_test(&prime);
         assert!(emitted.contains("host type Int role(i64)"), "{emitted}");
@@ -4713,9 +4689,7 @@ mod tests {
     fn user_bindings_named_like_comptime_roles_do_not_runtime_erase() {
         let nominal = substitute_one(
             "x/main",
-            "module x/main; \
-             type { Comptime_bool: . { mk; get; }; }; \
-             fn keep(value: Comptime_bool) -> Comptime_bool { value }",
+            "mod x/main; type { Comptime_bool: . { mk; get; }; }; fn keep(value: Comptime_bool) -> Comptime_bool { value }",
         );
         let keep = prime_fn(&nominal, "keep");
         let params = value_param_tys(keep);
@@ -4725,9 +4699,7 @@ mod tests {
 
         let binder = substitute_one(
             "x/main",
-            "module x/main; \
-             import __comptime__; \
-             fn keep[Comptime_bool](value: Comptime_bool) -> Comptime_bool { value }",
+            "mod x/main; import __comptime__; fn keep[Comptime_bool](value: Comptime_bool) -> Comptime_bool { value }",
         );
         let keep = prime_fn(&binder, "keep");
         let crate::ast::SignatureParam::Type(bound) = &keep.sig.params[0] else {
@@ -4740,15 +4712,7 @@ mod tests {
 
         let declaration_binders = substitute_one(
             "x/main",
-            "module x/main; \
-             import __comptime__; \
-             type Keep_alias[Comptime_bool] = Comptime_bool; \
-             type { Keep_newtype[Comptime_str]: Comptime_str { mk; get; }; }; \
-             rec { \
-               type Keep_group_alias[Comptime_bool] = Keep_group_newtype[Comptime_bool]; \
-               type { Keep_group_newtype[Comptime_str]: Keep_group_alias[Comptime_str] { mk; get; }; }; \
-             } \
-             host fn keep_host[Comptime_bool](value: Comptime_bool) -> Comptime_bool;",
+            "mod x/main; import __comptime__; type Keep_alias[Comptime_bool] = Comptime_bool; type { Keep_newtype[Comptime_str]: Comptime_str { mk; get; }; }; rec { type Keep_group_alias[Comptime_bool] = Keep_group_newtype[Comptime_bool]; type { Keep_group_newtype[Comptime_str]: Keep_group_alias[Comptime_str] { mk; get; }; }; } host fn keep_host[Comptime_bool](value: Comptime_bool) -> Comptime_bool;",
         );
         let alias = declaration_binders
             .items
@@ -4817,12 +4781,7 @@ mod tests {
     fn later_type_binders_do_not_shadow_earlier_comptime_paths() {
         let module = substitute_one(
             "x/main",
-            "module x/main; \
-             import __comptime__; \
-             fn keep_ordered(before: Comptime_bool)[Comptime_bool](after: Comptime_bool) \
-               -> Comptime_bool { after } \
-             host fn keep_host_ordered(before: Comptime_bool)[Comptime_bool](after: Comptime_bool) \
-               -> Comptime_bool;",
+            "mod x/main; import __comptime__; fn keep_ordered(before: Comptime_bool)[Comptime_bool](after: Comptime_bool) -> Comptime_bool { after } host fn keep_host_ordered(before: Comptime_bool)[Comptime_bool](after: Comptime_bool) -> Comptime_bool;",
         );
 
         let keep = prime_fn(&module, "keep_ordered");
@@ -4862,7 +4821,7 @@ mod tests {
 
     #[test]
     fn comptime_literal_carriers_have_no_runtime_roles() {
-        let parsed = parse("module main; import __comptime__;").expect("parse");
+        let parsed = parse("mod main; import __comptime__;").expect("parse");
         let (modules, _) =
             FullPipeline::lower_package(vec![(module_file_path("main"), parsed)], None)
                 .expect("lower");
@@ -4894,7 +4853,7 @@ mod tests {
             "expected at least one opaque comptime type"
         );
 
-        let mut src = "module x/main; import __comptime__;".to_owned();
+        let mut src = "mod x/main; import __comptime__;".to_owned();
         for (idx, (_, name)) in erased_types.iter().enumerate() {
             src.push_str(&format!(
                 " fn keep_erased{idx}(value: {name}) -> {name} {{ value }}"
@@ -4923,9 +4882,7 @@ mod tests {
         );
         let module = substitute_one(
             "x/main",
-            "module x/main; \
-             import __comptime__; \
-             fn keep_proof(ct: __Comptime__) -> __Comptime__ { ct }",
+            "mod x/main; import __comptime__; fn keep_proof(ct: __Comptime__) -> __Comptime__ { ct }",
         );
         let keep = prime_fn(&module, "keep_proof");
         let params = value_param_tys(keep);
@@ -4938,9 +4895,7 @@ mod tests {
     fn proof_gated_body_erases_to_absurd() {
         let module = substitute_one(
             "x/main",
-            "module x/main; \
-             import __comptime__; \
-             fn proof_only(ct: __Comptime__) -> __Checked_term__ { __term_unit__(ct) }",
+            "mod x/main; import __comptime__; fn proof_only(ct: __Comptime__) -> __Checked_term__ { __term_unit__(ct) }",
         );
         let proof_only = prime_fn(&module, "proof_only");
         assert!(
@@ -4959,9 +4914,7 @@ mod tests {
     fn eval_substitution_preserves_comptime_proof_body() {
         let proof_only = substitute_eval_fn(
             "x/main",
-            "module x/main; \
-             import __comptime__; \
-             fn proof_only(ct: __Comptime__) -> __Checked_term__ { __term_unit__(ct) }",
+            "mod x/main; import __comptime__; fn proof_only(ct: __Comptime__) -> __Checked_term__ { __term_unit__(ct) }",
             "proof_only",
         );
         let params = proof_only
@@ -4990,7 +4943,7 @@ mod tests {
 
     #[test]
     fn later_direct_proof_erases_only_runtime_body_and_retains_signature_order() {
-        let source = "module x/main; import __comptime__; pure fn late(value: .)[A](ct: __Comptime__)(tail: A) -> __Type__ { __type_unit__(ct) }";
+        let source = "mod x/main; import __comptime__; pure fn late(value: .)[A](ct: __Comptime__)(tail: A) -> __Type__ { __type_unit__(ct) }";
         let module = substitute_one("x/main", source);
         let runtime = prime_fn(&module, "late");
         let params = value_param_tys(runtime);
@@ -5027,7 +4980,7 @@ mod tests {
             ".(ct) { __type_unit__(ct) }",
         ] {
             let source = format!(
-                "module x/main; import __comptime__; pure fn factory() -> __Comptime__ -> __Type__ {{ {lambda} }}"
+                "mod x/main; import __comptime__; pure fn factory() -> __Comptime__ -> __Type__ {{ {lambda} }}"
             );
             let module = substitute_one("x/main", &source);
             let runtime = prime_fn(&module, "factory");
@@ -5054,7 +5007,7 @@ mod tests {
             "keep(.(ct) { __type_unit__(ct) })",
         ] {
             let source = format!(
-                "module x/main; import __comptime__; pure fn keep[A](value: A) -> A {{ value }} pure fn factory() -> __Comptime__ -> __Type__ {{ {body} }}"
+                "mod x/main; import __comptime__; pure fn keep[A](value: A) -> A {{ value }} pure fn factory() -> __Comptime__ -> __Type__ {{ {body} }}"
             );
             let module = substitute_one("x/main", &source);
             let runtime = prime_fn(&module, "factory");
@@ -5068,8 +5021,7 @@ mod tests {
 
     #[test]
     fn retained_polymorphic_proof_lambda_keeps_its_local_result_binder() {
-        let source = "module x/main; import __comptime__; pure fn keep[F](value: F) -> F { value } \
-            pure fn factory() -> [A] __Comptime__ -> A -> A { keep(.[A](ct: __Comptime__)(value: A) { value }) }";
+        let source = "mod x/main; import __comptime__; pure fn keep[F](value: F) -> F { value } pure fn factory() -> [A] __Comptime__ -> A -> A { keep(.[A](ct: __Comptime__)(value: A) { value }) }";
         let module = substitute_one("x/main", source);
         let runtime = prime_fn(&module, "factory");
         assert!(contains_call_to(&runtime.body, "__absurd__"));
@@ -5079,9 +5031,7 @@ mod tests {
 
     #[test]
     fn retained_lambda_proof_parameter_uses_its_completed_equations() {
-        let source = "module x/main; import __comptime__; host fn proof() -> __Comptime__; \
-            fn select[A](f: A -> __Type__, value: A) -> A -> __Type__ { f } \
-            fn factory() -> . { let result = select(.(ct) { __type_unit__(ct) }, proof()); () }";
+        let source = "mod x/main; import __comptime__; host fn proof() -> __Comptime__; fn select[A](f: A -> __Type__, value: A) -> A -> __Type__ { f } fn factory() -> . { let result = select(.(ct) { __type_unit__(ct) }, proof()); () }";
         let module = substitute_one("x/main", source);
         let runtime = prime_fn(&module, "factory");
         assert!(contains_call_to(&runtime.body, "__absurd__"));
@@ -5094,9 +5044,7 @@ mod tests {
 
     #[test]
     fn later_lambda_proof_preserves_generic_result_and_creation_effects() {
-        let source = "module x/main; import __comptime__; host fn effect() -> .; \
-            fn factory() -> . -> [A] __Comptime__ -> A -> A { effect(); \
-            .(first: .)[A](ct: __Comptime__)(last: A) { last } }";
+        let source = "mod x/main; import __comptime__; host fn effect() -> .; fn factory() -> . -> [A] __Comptime__ -> A -> A { effect(); .(first: .)[A](ct: __Comptime__)(last: A) { last } }";
         let module = substitute_one("x/main", source);
         let runtime = prime_fn(&module, "factory");
         assert!(contains_call_to(&runtime.body, "effect"));
@@ -5131,7 +5079,7 @@ mod tests {
     fn nonproof_lambda_keeps_its_runtime_body() {
         let module = substitute_one(
             "x/main",
-            "module x/main; fn factory() -> . -> . { .(value: .) { value } }",
+            "mod x/main; fn factory() -> . -> . { .(value: .) { value } }",
         );
         let runtime = prime_fn(&module, "factory");
         let Expr::FnExpr { body, .. } = &runtime.body else {
@@ -5148,22 +5096,11 @@ mod tests {
         let prime = substitute_many(vec![
             (
                 "pkg/refl",
-                "module pkg/refl; \
-                 import __comptime__; \
-                 pub pure fn make_rep_impl(ct: __Comptime__, _rep_type: __Type__, ctor: __Checked_term__, _source: __Type__, _unit: __Checked_term__) -> __Checked_term__ { \
-                   __term_call__(ct, __term_type__(ct, ctor), ctor, __term_unit__(ct)) \
-                 } \
-                 pub type Rep_payload = .; \
-                 pub type { Rep: Rep_payload { pub mk; pub get; }; }; \
-                 pub macro make_rep : [T] . -> Rep { captures (Rep, Rep.mk); impl make_rep_impl; }; \
-                 fn keep() -> . { () }",
+                "mod pkg/refl; import __comptime__; pub pure fn make_rep_impl(ct: __Comptime__, _rep_type: __Type__, ctor: __Checked_term__, _source: __Type__, _unit: __Checked_term__) -> __Checked_term__ { __term_call__(ct, __term_type__(ct, ctor), ctor, __term_unit__(ct)) } pub type Rep_payload = .; pub type { Rep: Rep_payload { pub mk; pub get; }; }; pub macro make_rep : [T] . -> Rep { captures (Rep, Rep.mk); impl make_rep_impl; }; fn keep() -> . { () }",
             ),
             (
                 "pkg/main",
-                "module pkg/main; \
-                 import pkg/refl(Rep); \
-                 import pkg/refl(macro make_rep); \
-                 fn main() -> Rep { make_rep[.](()) }",
+                "mod pkg/main; import pkg/refl {type Rep} import pkg/refl {macro make_rep} fn main() -> Rep { make_rep[.](()) }",
             ),
         ]);
         let main_entry = prime.module("pkg/main").expect("main module");
@@ -5211,9 +5148,7 @@ mod tests {
     /// count, item kinds, and module path / import list survive verbatim.
     #[test]
     fn no_elaborations_passes_through_unchanged() {
-        let src = "module x/main; \
-                   fn id[A](x: A) -> A { x } \
-                   fn use_id(y: .) -> . { id[.](y) }";
+        let src = "mod x/main; fn id[A](x: A) -> A { x } fn use_id(y: .) -> . { id[.](y) }";
         let module = substitute_one("x/main", src);
         assert_eq!(module.items.len(), 2);
         assert_eq!(module.imports.len(), 0);
@@ -5230,18 +5165,7 @@ mod tests {
     fn type_only_unit_domain_eta_materializes_until_unit_is_written() {
         let module = substitute_one(
             "main",
-            "module main; \
-             host type N; \
-             type Unit_alias = .; \
-             fn identity[A](value: A) -> A { value } \
-             fn implicit() -> . { identity() } \
-             fn explicit() -> . { identity(()) } \
-             fn explicit_type_and_value() -> . { identity[.](()) } \
-             fn selected_unit() -> . -> . { identity[.] } \
-             fn selected_unit_alias() -> Unit_alias -> Unit_alias { identity[Unit_alias] } \
-             fn residual() -> N -> N { identity[N] } \
-             fn product[A](value: A, tail: .) -> . { tail } \
-             fn product_residual() -> (. & .) -> . { product[.] }",
+            "mod main; host type N; type Unit_alias = .; fn identity[A](value: A) -> A { value } fn implicit() -> . { identity() } fn explicit() -> . { identity(()) } fn explicit_type_and_value() -> . { identity[.](()) } fn selected_unit() -> . -> . { identity[.] } fn selected_unit_alias() -> Unit_alias -> Unit_alias { identity[Unit_alias] } fn residual() -> N -> N { identity[N] } fn product[A](value: A, tail: .) -> . { tail } fn product_residual() -> (. & .) -> . { product[.] }",
         );
 
         for name in ["implicit", "explicit", "explicit_type_and_value"] {
@@ -5294,9 +5218,7 @@ mod tests {
     fn residual_unit_eta_forwards_its_semantic_argument() {
         let module = substitute_one(
             "main",
-            "module main; \
-             fn producer[A] -> . -> . { .(value: .) { value } } \
-             fn selected() -> . -> . { producer[.] }",
+            "mod main; fn producer[A] -> . -> . { .(value: .) { value } } fn selected() -> . -> . { producer[.] }",
         );
         let Expr::Let { value, body, .. } = &prime_fn(&module, "selected").body else {
             panic!("the consumed type stage must remain an outer binding")
@@ -5323,10 +5245,7 @@ mod tests {
     fn empty_call_preserves_a_returned_forall_layer_before_contextual_instantiation() {
         let module = substitute_one(
             "main",
-            "module main; \
-             host type N; \
-             fn return_poly(_unit: .)[A](value: A) -> A { value } \
-             fn residual() -> N -> N { return_poly() }",
+            "mod main; host type N; fn return_poly(_unit: .)[A](value: A) -> A { value } fn residual() -> N -> N { return_poly() }",
         );
 
         let Expr::Let {
@@ -5377,11 +5296,7 @@ mod tests {
 
     #[test]
     fn multi_layer_staged_call_substitutes_to_nested_prime_calls() {
-        let src = "module main; \
-                   type { A: . { pub mk; pub get; }; }; \
-                   type { B: . { pub mk; pub get; }; }; \
-                   fn foo[A](v1: A)[B](v2: B) -> . { () } \
-                   fn flat() -> . { foo[A](A.mk(()))[B](B.mk(())) }";
+        let src = "mod main; type { A: . { pub mk; pub get; }; }; type { B: . { pub mk; pub get; }; }; fn foo[A](v1: A)[B](v2: B) -> . { () } fn flat() -> . { foo[A](A.mk(()))[B](B.mk(())) }";
         let module = substitute_one("main", src);
         let flat = prime_fn(&module, "flat");
 
@@ -5415,16 +5330,7 @@ mod tests {
 
     #[test]
     fn inferred_two_layer_call_preserves_written_stage_boundaries() {
-        let src = "module main; \
-                   host type I32; \
-                   host type String; \
-                   fn curried[T](first: T)(second: T) -> T { first } \
-                   fn curried_two[A][B](first: A)(second: A) -> A { first } \
-                   fn flat(first: I32, second: I32) -> I32 { curried(first)(second) } \
-                   fn flat_two(first: I32, second: I32) -> I32 { \
-                     curried_two[_][String](first)(second) \
-                   } \
-                   fn ufcs(first: I32, second: I32) -> I32 { (first.>curried)(second) }";
+        let src = "mod main; host type I32; host type String; fn curried[T](first: T)(second: T) -> T { first } fn curried_two[A][B](first: A)(second: A) -> A { first } fn flat(first: I32, second: I32) -> I32 { curried(first)(second) } fn flat_two(first: I32, second: I32) -> I32 { curried_two[_][String](first)(second) } fn ufcs(first: I32, second: I32) -> I32 { (first.>curried)(second) }";
         let module = substitute_one("main", src);
         let flat = prime_fn(&module, "flat");
 
@@ -5597,17 +5503,7 @@ mod tests {
 
     #[test]
     fn bare_and_explicit_unit_ufcs_lower_to_explicit_prime_calls() {
-        let src = "module main; \
-                   fn one(value: .) -> . { value } \
-                   fn two(first: ., _second: .) -> . { first } \
-                   fn bare_receiver_first() -> . { ().>one } \
-                   fn bare_receiver_last() -> . { ().>>one } \
-                   fn bare_argument_last() -> . { one.<() } \
-                   fn bare_argument_first() -> . { one.<<() } \
-                   fn unit_receiver_first() -> . { ().>two(()) } \
-                   fn unit_receiver_last() -> . { ().>>two(()) } \
-                   fn unit_argument_last() -> . { two(()).<() } \
-                   fn unit_argument_first() -> . { two(()).<<() }";
+        let src = "mod main; fn one(value: .) -> . { value } fn two(first: ., _second: .) -> . { first } fn bare_receiver_first() -> . { ().>one } fn bare_receiver_last() -> . { ().>>one } fn bare_argument_last() -> . { one.<() } fn bare_argument_first() -> . { one.<<() } fn unit_receiver_first() -> . { ().>two(()) } fn unit_receiver_last() -> . { ().>>two(()) } fn unit_argument_last() -> . { two(()).<() } fn unit_argument_first() -> . { two(()).<<() }";
         let module = substitute_one("main", src);
 
         for (name, expected_args) in [
@@ -5655,11 +5551,7 @@ mod tests {
 
     #[test]
     fn imported_conditional_recipe_substitutes_to_an_ordinary_intrinsic() {
-        let src = "module x; \
-                   import control(Bool, macro if); \
-                    \
-                   fn pick(c: Bool) -> Bool { if (c) { .t } else { .f } } \
-                   ";
+        let src = "mod x; import control {type Bool; macro if} fn pick(c: Bool) -> Bool { if (c) { .t } else { .f } } ";
         let parsed_module = parse(src).expect("parse module");
         let control = parse(include_str!(
             "../../../../test-data/poc/macros/workdir/control.kio"
@@ -5700,11 +5592,9 @@ mod tests {
     /// `pub fn` (the derived export) survives as an ordinary module item.
     #[test]
     fn package_file_walks_through_bridge_block() {
-        let src = "module x/main; \
-                   pub fn one() -> . { () }";
-        let package_file_src = "package x; \
-                                bridge { x/main; }";
-        let parsed_root = parse("module x;").expect("parse root module");
+        let src = "mod x/main; pub fn one() -> . { () }";
+        let package_file_src = "pkg x; bridge { x/main; }";
+        let parsed_root = parse("mod x;").expect("parse root module");
         let parsed_module = parse(src).expect("parse module");
         let parsed_package_file = crate::pass::parser::parse_package_file(package_file_src, None)
             .expect("parse package file");

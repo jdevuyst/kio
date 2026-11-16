@@ -1,4 +1,4 @@
-module consumer;
+mod consumer;
 
 import __comptime__;
 import provider as p;

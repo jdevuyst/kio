@@ -1,6 +1,6 @@
-module pkg/main;
+mod pkg/main;
 
-import pkg/provider(macro choose);
+import pkg/provider { macro choose }
 
 fn run() {
   choose { () } fallback { () }

@@ -1,4 +1,4 @@
-package equiv_partial_and_over_application;
+pkg equiv_partial_and_over_application;
 
 build {
   cache "out/.kio-cache/";

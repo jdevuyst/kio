@@ -1,4 +1,4 @@
-package wsd;
+pkg wsd;
 
 build {
   cache "out/.kio-cache/";

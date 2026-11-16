@@ -1,4 +1,4 @@
-package fold_later_local_rec_implementation;
+pkg fold_later_local_rec_implementation;
 
 build {
   cache "out/.kio-cache/";

@@ -1,3 +1,3 @@
-module app/types;
+mod app/types;
 
 pub(app) type { Hidden: . { pub(app) mk; pub(app) get } }

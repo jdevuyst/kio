@@ -1,8 +1,8 @@
-module build_alias_function_slots/main;
+mod build_alias_function_slots/main;
 
 import __intrinsics__;
 
-import build_alias_function_slots(I32);
+import build_alias_function_slots { type I32 }
 
 type Mapper = I32 -> I32;
 

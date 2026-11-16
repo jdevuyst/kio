@@ -1,4 +1,4 @@
-module fmtlib/types;
+mod fmtlib/types;
 
 import testapi/adapter as _rehost_hegfhdhegbhagjcpgbgegbhahegfhc;
 

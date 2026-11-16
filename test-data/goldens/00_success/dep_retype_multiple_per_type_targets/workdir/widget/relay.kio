@@ -1,8 +1,8 @@
-module widget/relay;
+mod widget/relay;
 
-import core/a(A);
-import core/b(B);
-import widget/store(C);
+import core/a { type A }
+import core/b { type B }
+import widget/store { type C }
 
 pub fn make_a() -> A { A.mk(()) }
 

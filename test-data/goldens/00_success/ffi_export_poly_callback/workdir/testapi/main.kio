@@ -1,4 +1,4 @@
-module testapi/main;
+mod testapi/main;
 
 // The same polymorphic export shape `exec_host_closure_type_param_leg`
 // declares, exercised here from the host side: the runner's

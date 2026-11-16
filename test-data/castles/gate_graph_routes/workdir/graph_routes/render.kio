@@ -1,11 +1,19 @@
-module graph_routes/render;
+mod graph_routes/render;
 
-import graph_routes/model(Blocked, Df, Dg, Relaxed, Search_state, Visited, inf);
-import macros/row_macros(macro select);
-import testapi(Bool, String);
-import testapi/arith(eq_i32);
-import testapi/fmt(bool_to_string, int_to_string);
-import testapi/text(string_concat);
+import graph_routes/model {
+  type Blocked;
+  type Df;
+  type Dg;
+  type Relaxed;
+  type Search_state;
+  type Visited;
+  fn inf
+}
+import macros/row_macros { macro select }
+import testapi { type Bool; type String }
+import testapi/arith { fn eq_i32 }
+import testapi/fmt { fn bool_to_string; fn int_to_string }
+import testapi/text { fn string_concat }
 
 fn cat(a: String, b: String) -> String { string_concat(a, b) }
 

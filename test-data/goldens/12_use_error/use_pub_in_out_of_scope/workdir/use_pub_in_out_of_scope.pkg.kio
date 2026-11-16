@@ -1,4 +1,4 @@
-package use_pub_in_out_of_scope;
+pkg use_pub_in_out_of_scope;
 
 build {
   cache "out/.kio-cache/";

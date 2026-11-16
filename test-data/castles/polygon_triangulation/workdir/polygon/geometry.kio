@@ -1,10 +1,10 @@
-module polygon/geometry;
+mod polygon/geometry;
 
-import macros/control(macro if);
-import testapi(Array, Bool, I32, String);
+import macros/control { macro if }
+import testapi { type Array; type Bool; type I32; type String }
 import testapi/arith as num;
 import testapi/array as arr;
-import testapi/iter(loop);
+import testapi/iter { fn loop }
 
 pub type Point = I32 & I32;
 

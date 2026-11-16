@@ -1,4 +1,4 @@
-package replica_vector_clock_lab;
+pkg replica_vector_clock_lab;
 
 build {
   target js {

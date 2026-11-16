@@ -1,4 +1,4 @@
-package conditional_checked_term;
+pkg conditional_checked_term;
 
 build {
   target js {

@@ -1,6 +1,6 @@
-module main;
+mod main;
 
-import forms(macro block_pair);
+import forms {macro block_pair}
 
 type Alias[A] = A;
 

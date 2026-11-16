@@ -1,6 +1,6 @@
-module testapi/main;
+mod testapi/main;
 
-import testapi(I32);
+import testapi { type I32 }
 
 pub type { Const[A]: I32 { pub mk; pub get } }
 

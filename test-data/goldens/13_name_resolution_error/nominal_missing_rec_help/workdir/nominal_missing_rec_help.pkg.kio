@@ -1,4 +1,4 @@
-package nominal_missing_rec_help;
+pkg nominal_missing_rec_help;
 
 build {
   target js {

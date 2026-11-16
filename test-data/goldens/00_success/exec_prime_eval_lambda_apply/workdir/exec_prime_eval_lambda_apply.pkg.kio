@@ -1,4 +1,4 @@
-package exec_prime_eval_lambda_apply;
+pkg exec_prime_eval_lambda_apply;
 
 build {
   cache "out/.kio-cache/";

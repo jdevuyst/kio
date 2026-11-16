@@ -1,4 +1,4 @@
-module forward;
+mod forward;
 
 import api as a;
 

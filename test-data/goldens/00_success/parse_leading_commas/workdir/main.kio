@@ -1,4 +1,4 @@
-module main;
+mod main;
 
 // Comma-separated lists accept any number of commas in any
 // position — leading runs (before the first item), interior runs

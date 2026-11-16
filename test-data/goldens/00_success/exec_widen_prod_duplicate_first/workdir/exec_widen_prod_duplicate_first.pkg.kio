@@ -1,4 +1,4 @@
-package exec_widen_prod_duplicate_first;
+pkg exec_widen_prod_duplicate_first;
 
 build {
   cache "out/.kio-cache/";

@@ -2048,10 +2048,6 @@
           "named": true
         },
         {
-          "type": "owned_block",
-          "named": true
-        },
-        {
           "type": "role_annotation",
           "named": true
         },
@@ -2080,11 +2076,11 @@
       "required": true,
       "types": [
         {
-          "type": "bracket_lparen",
+          "type": "bracket_lbrace",
           "named": true
         },
         {
-          "type": "bracket_rparen",
+          "type": "bracket_rbrace",
           "named": true
         },
         {
@@ -2113,10 +2109,6 @@
         },
         {
           "type": "module_path",
-          "named": true
-        },
-        {
-          "type": "separator_comma",
           "named": true
         },
         {
@@ -2188,11 +2180,23 @@
       }
     },
     "children": {
-      "multiple": false,
-      "required": false,
+      "multiple": true,
+      "required": true,
       "types": [
         {
           "type": "keyword_declaration",
+          "named": true
+        },
+        {
+          "type": "keyword_fn",
+          "named": true
+        },
+        {
+          "type": "keyword_literal",
+          "named": true
+        },
+        {
+          "type": "keyword_type",
           "named": true
         }
       ]
@@ -2220,6 +2224,10 @@
         },
         {
           "type": "keyword_op",
+          "named": true
+        },
+        {
+          "type": "keyword_op_macro",
           "named": true
         },
         {
@@ -2592,11 +2600,11 @@
           "named": true
         },
         {
-          "type": "keyword_declaration",
+          "type": "keyword_op",
           "named": true
         },
         {
-          "type": "keyword_op",
+          "type": "keyword_op_macro",
           "named": true
         },
         {
@@ -2835,6 +2843,11 @@
         }
       ]
     }
+  },
+  {
+    "type": "keyword_signature",
+    "named": true,
+    "fields": {}
   },
   {
     "type": "labelled_block",
@@ -4157,11 +4170,11 @@
           "named": true
         },
         {
-          "type": "keyword_declaration",
+          "type": "keyword_op",
           "named": true
         },
         {
-          "type": "keyword_op",
+          "type": "keyword_op_macro",
           "named": true
         },
         {
@@ -4299,29 +4312,6 @@
     "type": "operator_run",
     "named": true,
     "fields": {}
-  },
-  {
-    "type": "owned_block",
-    "named": true,
-    "fields": {},
-    "children": {
-      "multiple": true,
-      "required": true,
-      "types": [
-        {
-          "type": "bracket_lbrace",
-          "named": true
-        },
-        {
-          "type": "bracket_rbrace",
-          "named": true
-        },
-        {
-          "type": "keyword_declaration",
-          "named": true
-        }
-      ]
-    }
   },
   {
     "type": "package_decl",
@@ -5111,45 +5101,6 @@
         },
         {
           "type": "signature_item_reference",
-          "named": true
-        },
-        {
-          "type": "signature_remove_module",
-          "named": true
-        }
-      ]
-    }
-  },
-  {
-    "type": "signature_remove_module",
-    "named": true,
-    "fields": {},
-    "children": {
-      "multiple": true,
-      "required": true,
-      "types": [
-        {
-          "type": "bracket_lbrace",
-          "named": true
-        },
-        {
-          "type": "bracket_rbrace",
-          "named": true
-        },
-        {
-          "type": "identifier",
-          "named": true
-        },
-        {
-          "type": "keyword_module",
-          "named": true
-        },
-        {
-          "type": "module_path",
-          "named": true
-        },
-        {
-          "type": "separator_semicolon",
           "named": true
         }
       ]
@@ -6924,6 +6875,10 @@
     "named": true
   },
   {
+    "type": "keyword_op_macro",
+    "named": true
+  },
+  {
     "type": "keyword_package",
     "named": true
   },
@@ -6949,10 +6904,6 @@
   },
   {
     "type": "keyword_resolved",
-    "named": true
-  },
-  {
-    "type": "keyword_signature",
     "named": true
   },
   {
@@ -6994,6 +6945,10 @@
   {
     "type": "separator_semicolon",
     "named": true
+  },
+  {
+    "type": "sig",
+    "named": false
   },
   {
     "type": "star_open_prefix",

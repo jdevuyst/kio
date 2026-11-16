@@ -1,4 +1,4 @@
-package exec_array_ffi_structural;
+pkg exec_array_ffi_structural;
 
 build {
   cache "out/.kio-cache/";

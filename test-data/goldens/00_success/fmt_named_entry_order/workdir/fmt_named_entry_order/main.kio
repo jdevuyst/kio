@@ -1,6 +1,6 @@
-module fmt_named_entry_order/main;
+mod fmt_named_entry_order/main;
 
-varop [* *] { ; finalize finish; foldl step base // fold tail
+op_var [* *] { ; finalize finish; foldl step base // fold tail
 ; // varop close
 } // varop outer
 ;

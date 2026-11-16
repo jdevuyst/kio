@@ -1,7 +1,7 @@
-module join/model;
+mod join/model;
 
-import list/core(List);
-import testapi(I32, String);
+import list/core { type List }
+import testapi { type I32; type String }
 
 pub type Event = { Id: I32; Key: String; Time: I32 };
 

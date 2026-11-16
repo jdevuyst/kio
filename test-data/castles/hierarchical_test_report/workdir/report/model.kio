@@ -1,8 +1,8 @@
-module report/model;
+mod report/model;
 
 import list/core as cells;
-import macros/row_macros(macro select, macro with);
-import testapi(I32, String);
+import macros/row_macros { macro select; macro with }
+import testapi { type I32; type String }
 import testapi/arith as arith;
 
 pub type Counts = { Passed: I32; Failed: I32; Skipped: I32 };

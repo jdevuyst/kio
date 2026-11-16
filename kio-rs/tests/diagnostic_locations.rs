@@ -17,13 +17,13 @@ fn tabbed_type_mismatch_excerpts_align_without_changing_source_columns() {
             let fixture = TempDir::new().expect("create diagnostic fixture");
             fs::write(
                 fixture.path().join("probe.pkg.kio"),
-                "package probe;\nbridge { main; }\n",
+                "pkg probe;\nbridge { main; }\n",
             )
             .unwrap();
             fs::write(
                 fixture.path().join("main.kio"),
                 format!(
-                    "module main;\ntype {{ W: . {{ mk; get; }} }};\nfn caller() -> {annotation} {{\n{body}\n}}\n"
+                    "mod main;\ntype {{ W: . {{ mk; get; }} }};\nfn caller() -> {annotation} {{\n{body}\n}}\n"
                 ),
             ).unwrap();
             let output = Command::new(&binary)

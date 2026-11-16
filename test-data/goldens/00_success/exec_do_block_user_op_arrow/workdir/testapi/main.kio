@@ -1,8 +1,8 @@
-module testapi/main;
+mod testapi/main;
 
-import macros/sequence(macro do);
-import testapi(String);
-import testapi/io(print);
+import macros/sequence { macro do }
+import testapi { type String }
+import testapi/io { fn print }
 
 // User-defined `<-` operator. `a <- b` calls `arrow`, which
 // returns its second argument (a poor-man's "discard the

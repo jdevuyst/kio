@@ -1,4 +1,4 @@
-module api;
+mod api;
 
 fn apply[A][R](callback: A -> R, value: A) -> R { callback(value) }
 

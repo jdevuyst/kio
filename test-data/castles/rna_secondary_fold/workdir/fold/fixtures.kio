@@ -1,6 +1,6 @@
-module fold/fixtures;
+mod fold/fixtures;
 
-import testapi(Array, I32, String);
+import testapi { type Array; type I32; type String }
 import testapi/array as array;
 
 pub fn empty() -> Array[String] { array.array_make_empty[String](()) }

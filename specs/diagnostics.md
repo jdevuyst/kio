@@ -97,7 +97,7 @@ the admitted string escape sequences.
 
 ### Declaration context and value-shaped type syntax
 
-A malformed module header with adjacent names explains that `module` takes
+A malformed module header with adjacent names explains that `mod` takes
 one slash-separated path, relative to the package root with `.kio` removed,
 without a package-name prefix. Keyword spellings remain legal module path
 segments. A package declaration in a regular module explains that package

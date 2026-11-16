@@ -1,14 +1,14 @@
-module testapi/main;
+mod testapi/main;
 
-import quote(
-, macro marked_omit
-, macro marked_repeat
-, macro marked_share
-, macro omit
-, macro repeat
-, macro share
-);
-import testapi/io(print);
+import quote {
+  macro marked_omit;
+  macro marked_repeat;
+  macro marked_share;
+  macro omit;
+  macro repeat;
+  macro share
+}
+import testapi/io { fn print }
 
 pub fn main() {
   print("late omit: ");

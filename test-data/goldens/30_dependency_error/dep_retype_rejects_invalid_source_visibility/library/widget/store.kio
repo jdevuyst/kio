@@ -1,5 +1,5 @@
-module store;
+mod store;
 
 import provider as p;
 
-pub type { Node: p.Hidden { pub mk; pub get; }; };
+pub type { Node: p.Hidden { pub mk; pub get } }

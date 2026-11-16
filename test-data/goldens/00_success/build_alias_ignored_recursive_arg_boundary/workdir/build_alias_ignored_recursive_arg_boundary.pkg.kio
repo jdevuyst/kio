@@ -1,4 +1,4 @@
-package build_alias_ignored_recursive_arg_boundary;
+pkg build_alias_ignored_recursive_arg_boundary;
 
 build {
   cache "out/.kio-cache/";

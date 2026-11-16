@@ -1,6 +1,6 @@
-module testapi/api;
+mod testapi/api;
 
-import testapi(I32);
+import testapi { type I32 }
 
 pub type { Child: I32 { pub mk; pub get } }
 

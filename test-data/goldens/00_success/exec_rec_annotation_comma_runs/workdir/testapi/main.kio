@@ -1,8 +1,8 @@
-module testapi/main;
+mod testapi/main;
 
-import macros/control(macro if);
+import macros/control {macro if}
 import testapi as host;
-import testapi(Bool);
+import testapi {type Bool}
 import testapi/arith as arith;
 import testapi/fmt as fmt;
 import testapi/io as io;

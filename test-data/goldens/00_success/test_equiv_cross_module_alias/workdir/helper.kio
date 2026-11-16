@@ -1,4 +1,4 @@
-module helper;
+mod helper;
 
 pub type { T: . { pub mk; pub get } }
 

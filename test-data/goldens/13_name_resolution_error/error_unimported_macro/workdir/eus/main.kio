@@ -1,6 +1,6 @@
-module eus/main;
+mod eus/main;
 
-import eus(String);
+import eus { type String }
 
 // `widen_prod` is called without importing the macro, so
 // the call site is an unresolved-name error (exit 13).

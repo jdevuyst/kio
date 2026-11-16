@@ -1,12 +1,12 @@
 input.md: snippet at line 19: `kio check` exited 0 but 14 was expected (via `check_exit_code=14`)
 --- assembled file (kiodoc.pkg.kio) ---
-package kiodoc;
+pkg kiodoc;
 
 bridge {
   kiodoc;
 }
 --- assembled file (kiodoc.kio) ---
-module kiodoc;
+mod kiodoc;
 
 host type S role(str);
 

@@ -1,4 +1,4 @@
-module fmt_doc_comments;
+mod fmt_doc_comments;
 
 /// Docs for host type.
 host type String role(str);
@@ -6,7 +6,7 @@ host type String role(str);
 /// Docs for host fn.
 host fn print(s: String);
 /// Module-level doc-comment.
-module fmt_doc_comments/main;
+mod fmt_doc_comments/main;
 
 /// Docs for fn.
 fn hello(s: String) { print(s) }
@@ -28,7 +28,7 @@ op ! _ { impl hello }
 
 // A regular line comment — not a doc-comment.
 fn no_doc() { () }
-package fmt_doc_comments;
+pkg fmt_doc_comments;
 
 build {
   cache "out/.kio-cache/";
@@ -48,7 +48,7 @@ bridge {
   fmt_doc_comments;
   fmt_doc_comments/**
 }
-module fmt_doc_comments;
+mod fmt_doc_comments;
 
 /// Docs for host type.
 host type String role(str);
@@ -56,7 +56,7 @@ host type String role(str);
 /// Docs for host fn.
 host fn print(s: String);
 /// Module-level doc-comment.
-module fmt_doc_comments/main;
+mod fmt_doc_comments/main;
 
 /// Docs for fn.
 fn hello(s: String) { print(s) }
@@ -78,7 +78,7 @@ op ! _ { impl hello }
 
 // A regular line comment — not a doc-comment.
 fn no_doc() { () }
-package fmt_doc_comments;
+pkg fmt_doc_comments;
 
 build {
   cache "out/.kio-cache/";

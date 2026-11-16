@@ -1,4 +1,4 @@
-package exec_intrinsic_function_values;
+pkg exec_intrinsic_function_values;
 
 build {
   cache "out/.kio-cache/";

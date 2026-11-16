@@ -1,6 +1,6 @@
-module app/main;
+mod app/main;
 
-import app/syntax(op _ / _);
+import app/syntax { op _ / _ }
 import app/value as value;
 
 fn left() { () }

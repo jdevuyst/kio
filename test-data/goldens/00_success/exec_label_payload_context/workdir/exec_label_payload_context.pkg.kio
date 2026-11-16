@@ -1,4 +1,4 @@
-package exec_label_payload_context;
+pkg exec_label_payload_context;
 
 build {
   cache "out/.kio-cache/";

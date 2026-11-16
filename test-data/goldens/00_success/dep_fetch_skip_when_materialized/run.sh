@@ -63,7 +63,7 @@ bare="$scratch/greetlib.git"
 git clone --quiet --bare "$src" "$bare" || fail "cannot make bare repo"
 
 cat > "$scratch/consumer/greetlib.dep.kio" <<EOF
-dependency greetlib;
+dep greetlib;
 
 source {
   git "$bare";

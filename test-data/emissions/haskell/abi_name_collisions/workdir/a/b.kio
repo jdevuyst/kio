@@ -1,4 +1,4 @@
-module a/b;
+mod a/b;
 
 host type Token;
 

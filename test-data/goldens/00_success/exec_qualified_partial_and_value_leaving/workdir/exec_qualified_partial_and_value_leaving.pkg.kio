@@ -1,4 +1,4 @@
-package exec_qualified_partial_and_value_leaving;
+pkg exec_qualified_partial_and_value_leaving;
 
 build {
   cache "out/.kio-cache/";

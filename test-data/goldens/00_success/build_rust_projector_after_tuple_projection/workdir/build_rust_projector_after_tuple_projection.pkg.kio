@@ -1,4 +1,4 @@
-package build_rust_projector_after_tuple_projection;
+pkg build_rust_projector_after_tuple_projection;
 
 build {
   cache "out/.kio-cache/";

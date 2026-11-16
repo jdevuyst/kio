@@ -1,4 +1,4 @@
-module build_rust_label_type_arg_function/main;
+mod build_rust_label_type_arg_function/main;
 
 type { Greet: . { mk; get } }
 

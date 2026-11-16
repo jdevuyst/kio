@@ -1,4 +1,4 @@
-package exec_if_literal_common_result;
+pkg exec_if_literal_common_result;
 
 build {
   cache "out/.kio-cache/";

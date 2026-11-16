@@ -1,5 +1,5 @@
-module app;
+mod app;
 
-import helper(tick);
+import helper { fn tick }
 
 pub fn run() { tick() }

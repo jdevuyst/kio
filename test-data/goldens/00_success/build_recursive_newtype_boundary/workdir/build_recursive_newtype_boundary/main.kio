@@ -1,8 +1,8 @@
-module build_recursive_newtype_boundary/main;
+mod build_recursive_newtype_boundary/main;
 
 import __intrinsics__;
 
-import build_recursive_newtype_boundary(I32);
+import build_recursive_newtype_boundary { type I32 }
 
 rec {
   pub type { Tree: I32 | Forest { pub mk; pub get } };

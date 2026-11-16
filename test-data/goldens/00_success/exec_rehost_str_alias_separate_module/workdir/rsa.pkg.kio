@@ -1,4 +1,4 @@
-package rsa;
+pkg rsa;
 
 build {
   cache "out/.kio-cache/";

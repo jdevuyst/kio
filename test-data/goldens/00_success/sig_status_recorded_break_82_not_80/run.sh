@@ -41,23 +41,23 @@ expect_exit 0 "$KIO_BIN" sig commit
 expect_exit 0 "$KIO_BIN" sig status
 
 # Break: remove `alpha` (api) AND `gamma` (core) — two sibling sections.
-printf 'module api;\n\npub fn beta() -> . { () }\n' > api.kio
-printf 'module core;\n\npub fn delta() -> . { () }\n' > core.kio
+printf 'mod api;\n\npub fn beta() -> . { () }\n' > api.kio
+printf 'mod core;\n\npub fn delta() -> . { () }\n' > core.kio
 
 # Hand-write a recorded break draft in NON-CANONICAL order: the v(2)
 # remove block lists `core` before `api`. A semantic (order-insensitive)
 # recorded-equality check reads this as recorded -> 82.
 cat > app.sig.kio <<'SIG'
-signature app v(2);
+sig app v(2);
 
 v(1) {
   nonbreaking {
     add {
-      module api {
+      mod api {
         pub fn alpha() -> .;
         pub fn beta() -> .;
       };
-      module core {
+      mod core {
         pub fn delta() -> .;
         pub fn gamma() -> .;
       }
@@ -68,12 +68,8 @@ v(1) {
 v(2) {
   breaking {
     remove {
-      module core {
-        gamma;
-      };
-      module api {
-        alpha;
-      }
+      core.gamma;
+      api.alpha
     }
   }
 }
@@ -89,14 +85,14 @@ expect_exit 0 "$KIO_BIN" sig status
 # compatible export WITHOUT recording it. The recorded break outranks the
 # unrecorded compatible drift -> 82, not 80.
 rm -f app.sig.kio
-printf 'module api;\n\npub fn alpha() -> . { () }\n\npub fn beta() -> . { () }\n' > api.kio
-printf 'module core;\n\npub fn gamma() -> . { () }\n\npub fn delta() -> . { () }\n' > core.kio
+printf 'mod api;\n\npub fn alpha() -> . { () }\n\npub fn beta() -> . { () }\n' > api.kio
+printf 'mod core;\n\npub fn gamma() -> . { () }\n\npub fn delta() -> . { () }\n' > core.kio
 expect_exit 0 "$KIO_BIN" sig stage --force
 expect_exit 0 "$KIO_BIN" sig commit
 # Break: drop `alpha`; force-record it.
-printf 'module api;\n\npub fn beta() -> . { () }\n' > api.kio
+printf 'mod api;\n\npub fn beta() -> . { () }\n' > api.kio
 expect_exit 0 "$KIO_BIN" sig stage --force
 expect_exit 82 "$KIO_BIN" sig status
 # Now ALSO add a compatible export, unrecorded.
-printf 'module api;\n\npub fn beta() -> . { () }\n\npub fn extra() -> . { () }\n' > api.kio
+printf 'mod api;\n\npub fn beta() -> . { () }\n\npub fn extra() -> . { () }\n' > api.kio
 expect_exit 82 "$KIO_BIN" sig status

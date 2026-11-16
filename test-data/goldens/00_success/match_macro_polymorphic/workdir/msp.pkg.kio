@@ -1,4 +1,4 @@
-package msp;
+pkg msp;
 
 build {
   cache "out/.kio-cache/";

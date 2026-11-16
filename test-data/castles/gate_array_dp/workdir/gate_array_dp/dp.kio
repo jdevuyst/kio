@@ -1,11 +1,11 @@
-module gate_array_dp/dp;
+mod gate_array_dp/dp;
 
-import gate_array_dp/constants(days, inf, max_age, states, table_size);
-import macros/control(macro if);
-import testapi(Array, Bool, I32);
-import testapi/arith(add_i32, leq_i32, mul_i32, sub_i32);
-import testapi/array(array_get, array_make_filled, array_set);
-import testapi/iter(loop);
+import gate_array_dp/constants { fn days; fn inf; fn max_age; fn states; fn table_size }
+import macros/control { macro if }
+import testapi { type Array; type Bool; type I32 }
+import testapi/arith { fn add_i32; fn leq_i32; fn mul_i32; fn sub_i32 }
+import testapi/array { fn array_get; fn array_make_filled; fn array_set }
+import testapi/iter { fn loop }
 
 pub fn table_index(day: I32, age: I32) -> I32 { add_i32(mul_i32(day, states()), age) }
 

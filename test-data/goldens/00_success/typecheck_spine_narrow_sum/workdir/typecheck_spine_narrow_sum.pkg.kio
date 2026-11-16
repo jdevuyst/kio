@@ -1,4 +1,4 @@
-package typecheck_spine_narrow_sum;
+pkg typecheck_spine_narrow_sum;
 
 build {
   cache "out/.kio-cache/";

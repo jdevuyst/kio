@@ -16,14 +16,14 @@
 ///   be a multiset — when `depot` ends, `vault`'s 7 has to survive;
 /// - nothing at all stands between x=9 and x=12, so the silhouette must return
 ///   to ground level across the gap.
-module skyline/city;
+mod skyline/city;
 
-import macros/match(macro match);
-import macros/row_macros(macro select);
+import macros/match { macro match }
+import macros/row_macros { macro select }
 import skyline/list as lst;
 import skyline/logic as logic;
-import testapi(I32, String);
-import testapi/iter(loop);
+import testapi { type I32; type String }
+import testapi/iter { fn loop }
 
 pub type Building = { Name: String; Left: I32; Right: I32; Height: I32 };
 

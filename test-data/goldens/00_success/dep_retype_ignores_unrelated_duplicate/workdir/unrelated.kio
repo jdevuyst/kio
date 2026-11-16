@@ -1,4 +1,4 @@
-module unrelated;
+mod unrelated;
 
 type Duplicate = .;
 

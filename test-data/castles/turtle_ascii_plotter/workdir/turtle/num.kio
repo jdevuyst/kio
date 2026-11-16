@@ -4,11 +4,11 @@
 /// derived from the antisymmetry of `<=`. `Bool` arrives with no combinators
 /// at all, so conjunction, disjunction, and negation are written against
 /// `if` / `else`.
-module turtle/num;
+mod turtle/num;
 
-import macros/control(macro if);
-import testapi(Bool, I32);
-import testapi/arith(leq_i32);
+import macros/control { macro if }
+import testapi { type Bool; type I32 }
+import testapi/arith { fn leq_i32 }
 
 pub fn and(a: Bool, b: Bool) -> Bool {
   if(a) { b } else { .f }

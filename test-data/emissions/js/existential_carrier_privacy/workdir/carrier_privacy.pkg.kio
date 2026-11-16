@@ -1,4 +1,4 @@
-package carrier_privacy;
+pkg carrier_privacy;
 
 build {
   target js {

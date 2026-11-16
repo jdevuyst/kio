@@ -1,6 +1,6 @@
-module main;
+mod main;
 
-import macros/algebraic_macros(macro onto);
+import macros/algebraic_macros { macro onto }
 
 type { A: . { pub mk; pub get } }
 

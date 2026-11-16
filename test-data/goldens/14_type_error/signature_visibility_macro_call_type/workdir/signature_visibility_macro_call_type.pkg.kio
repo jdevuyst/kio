@@ -1,4 +1,4 @@
-package signature_visibility_macro_call_type;
+pkg signature_visibility_macro_call_type;
 
 build {
   cache "out/.kio-cache/";

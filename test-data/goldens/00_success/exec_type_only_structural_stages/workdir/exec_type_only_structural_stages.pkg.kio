@@ -1,4 +1,4 @@
-package exec_type_only_structural_stages;
+pkg exec_type_only_structural_stages;
 
 build {
   cache "out/.kio-cache/";

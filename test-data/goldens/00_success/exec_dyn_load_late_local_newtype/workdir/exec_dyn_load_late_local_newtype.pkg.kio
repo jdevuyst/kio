@@ -1,4 +1,4 @@
-package exec_dyn_load_late_local_newtype;
+pkg exec_dyn_load_late_local_newtype;
 
 build {
   cache "out/.kio-cache/";

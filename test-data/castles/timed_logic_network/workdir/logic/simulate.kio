@@ -1,16 +1,16 @@
-module logic/simulate;
+mod logic/simulate;
 
 import list/core as lists;
 import list/list as traversal;
 import logic/model as model;
 import logic/queue as queue;
 import logic/report as report;
-import macros/control(macro if);
-import macros/match(macro match);
-import macros/row_macros(macro select, macro with);
-import testapi(Bool, I32);
+import macros/control { macro if }
+import macros/match { macro match }
+import macros/row_macros { macro select; macro with }
+import testapi { type Bool; type I32 }
 import testapi/arith as arith;
-import testapi/iter(loop);
+import testapi/iter { fn loop }
 
 rec(loop) fn cancellation_report(now: I32, canceled: lists.List[model.Event]) {
   match(lists.uncons(canceled)) {

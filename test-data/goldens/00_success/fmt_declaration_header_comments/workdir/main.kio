@@ -1,4 +1,4 @@
-module main;
+mod main;
 
 /// Function documentation.
 pub // marker_1
@@ -31,4 +31,4 @@ type Forward = Ready;
 
 /// Literal documentation.
 pub // marker_16
-literal answer = 42;
+lit answer = 42;

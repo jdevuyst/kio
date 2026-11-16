@@ -1,4 +1,4 @@
-module testapi/main;
+mod testapi/main;
 
 host fn produce(_unit: .) -> [A] .;
 

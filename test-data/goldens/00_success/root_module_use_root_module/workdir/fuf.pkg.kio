@@ -1,4 +1,4 @@
-package fuf;
+pkg fuf;
 
 build {
   cache "out/.kio-cache/";

@@ -1,9 +1,9 @@
-module testapi/main;
+mod testapi/main;
 
-import macros/spine_macros(macro one_prod);
-import testapi(I32, String);
-import testapi/io(print);
-import testapi/text(string_concat);
+import macros/spine_macros { macro one_prod }
+import testapi { type I32; type String }
+import testapi/io { fn print }
+import testapi/text { fn string_concat }
 
 // A `Lens(s, a)` is a getter paired with a setter. `fst_lens` focuses
 // the first component of a pair `a & b`, viewing `a` — its binder `b`

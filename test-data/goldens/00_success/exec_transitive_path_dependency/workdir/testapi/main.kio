@@ -1,8 +1,8 @@
-module testapi/main;
+mod testapi/main;
 
-import geo/area(Boxed, box, unbox);
-import testapi(String);
-import testapi/io(print);
+import geo/area { type Boxed; fn box; fn unbox }
+import testapi { type String }
+import testapi/io { fn print }
 
 // Thread a host `String` through a depth-2 path-dependency closure. The
 // consumer depends on `geo` (its `geo.dep.kio`), which is itself a

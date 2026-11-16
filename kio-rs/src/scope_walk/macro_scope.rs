@@ -24,7 +24,7 @@ impl MacroScope {
                     if matches!(
                         item,
                         ImportItem::Name {
-                            macro_span: Some(_),
+                            kind: crate::ast::ImportNameKind::Macro,
                             ..
                         }
                     ) {

@@ -2067,7 +2067,7 @@ mod tests {
     #[test]
     fn rec_order_join_is_commutative_idempotent_and_pending_neutral() {
         let package = package(
-            "module main;
+            "mod main;
              host type N;
              type Alias = N;",
         );
@@ -2176,7 +2176,7 @@ mod tests {
 
     #[test]
     fn rec_order_join_rejects_distinct_unused_forall_binder_kinds() {
-        let package = package("module main; host type N;");
+        let package = package("mod main; host type N;");
         let module = &package.module("main").expect("main module").module;
         let env = super::super::super::ModuleEnv::build(module, None, None, Some(&package))
             .expect("module environment");
@@ -2212,7 +2212,7 @@ mod tests {
     #[test]
     fn rec_order_join_canonicalizes_aliases_nested_in_function_types() {
         let package = package(
-            "module main;
+            "mod main;
              host type N;
              type Alias = N;",
         );
@@ -2248,7 +2248,7 @@ mod tests {
     #[test]
     fn rec_order_join_preserves_forall_shadowing_while_unfolding_nested_aliases() {
         let package = package(
-            "module main;
+            "mod main;
              host type N;
              type Alias = N;
              type Other = N;",
@@ -2320,7 +2320,7 @@ mod tests {
     #[test]
     fn rec_order_join_canonicalizes_aliases_in_applied_type_arguments() {
         let package = package(
-            "module main;
+            "mod main;
              host type N;
              host type Box[A];
              type Alias = N;",
@@ -2359,7 +2359,7 @@ mod tests {
 
     #[test]
     fn rec_order_join_canonicalizes_function_abi_metadata_in_every_order() {
-        let package = package("module main; host type N;");
+        let package = package("mod main; host type N;");
         let module = &package.module("main").expect("main module").module;
         let env = super::super::super::ModuleEnv::build(module, None, None, Some(&package))
             .expect("module environment");
@@ -2436,7 +2436,7 @@ mod tests {
     #[test]
     fn rec_order_join_preserves_an_ambient_binder_shadowing_a_module_alias() {
         let package = package(
-            "module main;
+            "mod main;
              host type N;
              type A = N;",
         );
@@ -2480,7 +2480,7 @@ mod tests {
     #[test]
     fn rec_order_join_canonicalizes_applied_alias_of_an_ambient_binder() {
         let package = package(
-            "module main;
+            "mod main;
              host type N;
              type A = N;
              type Id[X] = X;",
@@ -2522,7 +2522,7 @@ mod tests {
     #[test]
     fn rec_order_join_alpha_presentation_is_independent_of_interner_history() {
         fn join_after_interning(first_binder: &str, second_binder: &str) -> InternedType<Lowered> {
-            let package = package("module main;");
+            let package = package("mod main;");
             let module = &package.module("main").expect("main module").module;
             let env = super::super::super::ModuleEnv::build(module, None, None, Some(&package))
                 .expect("module environment");
@@ -2552,7 +2552,7 @@ mod tests {
 
     #[test]
     fn rec_order_forwarding_rejects_distinct_entered_origins() {
-        let package = package("module main;");
+        let package = package("mod main;");
         let module = &package.module("main").expect("main module").module;
         let env = super::super::super::ModuleEnv::build(module, None, None, Some(&package))
             .expect("module environment");
@@ -2627,7 +2627,7 @@ mod tests {
 
     #[test]
     fn rec_order_root_singleton_uses_a_fresh_alpha_normalized_type() {
-        let package = package("module main;");
+        let package = package("mod main;");
         let module = &package.module("main").expect("main module").module;
         let env = super::super::super::ModuleEnv::build(module, None, None, Some(&package))
             .expect("module environment");
@@ -2669,7 +2669,7 @@ mod tests {
 
     #[test]
     fn rec_order_root_singleton_canonicalizes_function_abi_metadata() {
-        let package = package("module main; host type N;");
+        let package = package("mod main; host type N;");
         let module = &package.module("main").expect("main module").module;
         let env = super::super::super::ModuleEnv::build(module, None, None, Some(&package))
             .expect("module environment");
@@ -2711,7 +2711,7 @@ mod tests {
 
     #[test]
     fn rec_order_root_singleton_canonicalizes_nested_function_abi_metadata() {
-        let package = package("module main; host type N;");
+        let package = package("mod main; host type N;");
         let module = &package.module("main").expect("main module").module;
         let env = super::super::super::ModuleEnv::build(module, None, None, Some(&package))
             .expect("module environment");
@@ -2766,7 +2766,7 @@ mod tests {
             swap_observations: bool,
             unchecked_header_first: bool,
         ) -> (InternedType<Lowered>, bool) {
-            let package = package("module main;");
+            let package = package("mod main;");
             let module = &package.module("main").expect("main module").module;
             let env = super::super::super::ModuleEnv::build(module, None, None, Some(&package))
                 .expect("module environment");
@@ -2904,7 +2904,7 @@ mod tests {
 
     #[test]
     fn header_export_gather_retains_the_child_lexical_scope() {
-        let package = package("module main;");
+        let package = package("mod main;");
         let module = &package.module("main").expect("main module").module;
         let env = super::super::super::ModuleEnv::build(module, None, None, Some(&package))
             .expect("module environment");
@@ -2962,7 +2962,7 @@ mod tests {
 
     #[test]
     fn rec_order_child_filters_irrelevant_shadow_before_to_owner_transfer() {
-        let package = package("module main; host type N;");
+        let package = package("mod main; host type N;");
         let module = &package.module("main").expect("main module").module;
         let env = super::super::super::ModuleEnv::build(module, None, None, Some(&package))
             .expect("module environment");
@@ -3033,7 +3033,7 @@ mod tests {
 
     #[test]
     fn rec_order_prepared_child_retains_observation_until_root_commit() {
-        let package = package("module main; host type N;");
+        let package = package("mod main; host type N;");
         let module = &package.module("main").expect("main module").module;
         let env = super::super::super::ModuleEnv::build(module, None, None, Some(&package))
             .expect("module environment");
@@ -3119,7 +3119,7 @@ mod tests {
 
     #[test]
     fn rec_order_prepared_child_rejects_child_only_binder_before_commit() {
-        let package = package("module main;");
+        let package = package("mod main;");
         let module = &package.module("main").expect("main module").module;
         let env = super::super::super::ModuleEnv::build(module, None, None, Some(&package))
             .expect("module environment");
@@ -3206,7 +3206,7 @@ mod tests {
 
     #[test]
     fn rec_order_connected_child_rejects_a_child_only_binder_before_commit() {
-        let package = package("module main;");
+        let package = package("mod main;");
         let module = &package.module("main").expect("main module").module;
         let env = super::super::super::ModuleEnv::build(module, None, None, Some(&package))
             .expect("module environment");
@@ -3275,7 +3275,7 @@ mod tests {
 
     #[test]
     fn rec_order_root_callback_and_fold_failures_do_not_commit_side_effects() {
-        let package = package("module main; host type N; host type M;");
+        let package = package("mod main; host type N; host type M;");
         let module = &package.module("main").expect("main module").module;
         let env = super::super::super::ModuleEnv::build(module, None, None, Some(&package))
             .expect("module environment");

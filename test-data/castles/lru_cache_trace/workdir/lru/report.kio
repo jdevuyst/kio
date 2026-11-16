@@ -1,9 +1,9 @@
-module lru/report;
+mod lru/report;
 
 import lru/cache as cache;
-import lru/cache(Cache);
+import lru/cache { type Cache }
 import lru/text as text;
-import testapi(I32, String);
+import testapi { type I32; type String }
 
 pub fn header() -> String {
   let capacity_line =

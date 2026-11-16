@@ -1,4 +1,4 @@
-package inventory_cycle_counter;
+pkg inventory_cycle_counter;
 
 build {
   cache "out/.kio-cache/";

@@ -1,4 +1,4 @@
-module core;
+mod core;
 
 host type Raw role(i32);
 

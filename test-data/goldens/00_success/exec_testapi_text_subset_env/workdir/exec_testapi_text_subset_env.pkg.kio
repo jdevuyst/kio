@@ -1,4 +1,4 @@
-package exec_testapi_text_subset_env;
+pkg exec_testapi_text_subset_env;
 
 build {
   cache "out/.kio-cache/";

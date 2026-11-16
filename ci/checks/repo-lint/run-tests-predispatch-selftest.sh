@@ -413,7 +413,7 @@ EOF
   esac
   if [ "$mc_targets" != none ]; then
     {
-      printf 'package %s;\n\n' "$mc_name"
+      printf 'pkg %s;\n\n' "$mc_name"
       if [ "$mc_targets" != no-build ]; then
         printf 'build {\n'
         for mc_target in $mc_targets; do
@@ -442,7 +442,7 @@ make_case g_manifest_symlink custom none
 : >"$scratch/cases/bucket/g_manifest_symlink/RUN_EARLY"
 
 cat >"$scratch/symlink-target.pkg.kio" <<'EOF'
-package decoy;
+pkg decoy;
 
 build {
   target js {
@@ -481,7 +481,7 @@ ln -s "$scratch/symlink-target.pkg.kio" \
 make_package_shape_case nested
 mkdir -p "$scratch/package-shape/nested/case/workdir/child"
 cat >"$scratch/package-shape/nested/case/workdir/child/child.pkg.kio" <<'EOF'
-package child;
+pkg child;
 
 build {
   target js {
@@ -492,7 +492,7 @@ EOF
 
 make_package_shape_case multiple
 cat >"$scratch/package-shape/multiple/case/workdir/first.pkg.kio" <<'EOF'
-package first;
+pkg first;
 
 build {
   target js {
@@ -501,7 +501,7 @@ build {
 }
 EOF
 cat >"$scratch/package-shape/multiple/case/workdir/second.pkg.kio" <<'EOF'
-package second;
+pkg second;
 
 build {
   target js {
@@ -514,7 +514,7 @@ make_package_shape_case workdir-symlink
 rm -rf "$scratch/package-shape/workdir-symlink/case/workdir"
 mkdir -p "$scratch/package-shape/workdir-symlink/linked-workdir"
 cat >"$scratch/package-shape/workdir-symlink/linked-workdir/root.pkg.kio" <<'EOF'
-package root;
+pkg root;
 
 build {
   target js {
@@ -527,7 +527,7 @@ ln -s "$scratch/package-shape/workdir-symlink/linked-workdir" \
 
 make_package_shape_case generated-control
 cat >"$scratch/package-shape/generated-control/case/workdir/root.pkg.kio" <<'EOF'
-package root;
+pkg root;
 
 build {
   target js {
@@ -600,7 +600,7 @@ EOF
 chmod +x "$scratch/package-shape/custom-multiple/case/run.sh"
 
 cat >"$scratch/bad/invalid/workdir/.invalid.pkg.kio" <<'EOF'
-package invalid;
+pkg invalid;
 EOF
 : >"$scratch/bad/invalid/run.args"
 printf '0\n' >"$scratch/bad/invalid/expected.exit"
@@ -1186,7 +1186,7 @@ unknown_target_dir=$scratch/package-shape/unknown-target
 rm "$unknown_target_dir/case/run.args"
 printf '40\n' >"$unknown_target_dir/case/expected.exit"
 cat >"$unknown_target_dir/case/workdir/unknown.pkg.kio" <<'EOF'
-package unknown;
+pkg unknown;
 build {
   target wasm { out "out/wasm/" }
 }
@@ -1267,7 +1267,7 @@ for unknown_target_invalid in standard success no-target no-build-marker no-mani
       ;;
     success) printf '0\n' >"$unknown_target_dir/case/expected.exit" ;;
     no-target)
-      printf 'package unknown;\n' >"$unknown_target_dir/case/workdir/unknown.pkg.kio"
+      printf 'pkg unknown;\n' >"$unknown_target_dir/case/workdir/unknown.pkg.kio"
       unknown_target_error='declares no `build` block'
       ;;
     no-build-marker)
@@ -1307,7 +1307,7 @@ for target_prefix_kind in plain single repeated tight named; do
   make_package_shape_case "$target_prefix_label"
   target_prefix_dir=$scratch/package-shape/$target_prefix_label
   {
-    printf 'package prefix;\n\nbuild {\n'
+    printf 'pkg prefix;\n\nbuild {\n'
     if [ "$target_prefix_kind" = named ]; then
       printf '%starget (js, "web") {\n    out "out/web/"\n  };\n' "$target_prefix"
       printf '%starget (js, "worker") {\n    out "out/worker/"\n  };\n' "$target_prefix"

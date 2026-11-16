@@ -1,9 +1,9 @@
-module testapi/main;
+mod testapi/main;
 
 import __comptime__;
-import testapi(Bool);
+import testapi { type Bool }
 import testapi/io as io;
-import testapi/iter(loop);
+import testapi/iter { fn loop }
 
 pure fn construct(ct: __Comptime__, fills: __Fill_ctx__, callback: __Checked_term__) ->
   __Checked_term__ & __Fill_ctx__

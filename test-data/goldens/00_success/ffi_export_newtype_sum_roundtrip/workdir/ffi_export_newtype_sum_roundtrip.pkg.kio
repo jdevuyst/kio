@@ -1,4 +1,4 @@
-package ffi_export_newtype_sum_roundtrip;
+pkg ffi_export_newtype_sum_roundtrip;
 
 build {
   cache "out/.kio-cache/";

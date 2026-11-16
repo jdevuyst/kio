@@ -1,7 +1,7 @@
 #!/bin/sh
 # A root module's `host fn` signatures may name a Kio-defined type
 # declared in the root's OWN submodule, brought into scope by a
-# `import env_use_own_submodule/sub(Int, Wrap);` clause. The submodule
+# `import env_use_own_submodule/sub {type Int; type Wrap}` clause. The submodule
 # declares both the host type `Int` and the `Wrap` newtype over it, so
 # the dependency runs root -> submodule only; the submodule does not
 # import the root back, so no module cycle forms.

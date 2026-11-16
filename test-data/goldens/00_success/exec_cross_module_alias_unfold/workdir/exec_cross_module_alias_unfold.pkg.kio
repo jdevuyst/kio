@@ -1,4 +1,4 @@
-package exec_cross_module_alias_unfold;
+pkg exec_cross_module_alias_unfold;
 
 build {
   cache "out/.kio-cache/";

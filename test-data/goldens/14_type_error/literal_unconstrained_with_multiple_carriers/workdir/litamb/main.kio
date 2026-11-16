@@ -1,6 +1,6 @@
-module litamb/main;
+mod litamb/main;
 
-import litamb(I32, I64);
+import litamb { type I32; type I64 }
 
 // The let initializer has no expected type; the later return does not supply one.
 fn ambiguous() -> I32 { let n = 100; n }

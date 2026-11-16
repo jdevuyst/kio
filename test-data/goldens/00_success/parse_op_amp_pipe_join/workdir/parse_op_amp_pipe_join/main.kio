@@ -1,6 +1,6 @@
-module parse_op_amp_pipe_join/main;
+mod parse_op_amp_pipe_join/main;
 
-import parse_op_amp_pipe_join(A);
+import parse_op_amp_pipe_join {type A}
 
 fn op_double(a: A, b: A) -> A { a }
 

@@ -607,7 +607,7 @@ mod tests {
             token.kind == TokenKind::CommentDocAttribute
                 && &source[token.span.start as usize..token.span.end as usize] == "{@}"
         }));
-        let module = "/// ```kio\n/// module sample;\n/// fn entry() { () }\n/// ```";
+        let module = "/// ```kio\n/// mod sample;\n/// fn entry() { () }\n/// ```";
         assert!(
             roles(module)
                 .iter()
@@ -640,7 +640,7 @@ mod tests {
             "let value = ();\nvalue",
             "let value =",
             "let(())",
-            "}\nmodule escaped;",
+            "}\nmod escaped;",
             "\"unterminated",
         ] {
             let tokens = crate::tokens::dump_doc_code(source, true);
@@ -738,7 +738,7 @@ mod tests {
     #[test]
     fn physical_ranges_partition_doc_lines_without_prefix_or_unicode_drift() {
         let source =
-            "/// é [`😀`].\r\n\t/// [`@source x`]  \r\nmodule app; // [`ordinary`]\n/// [`eof`]";
+            "/// é [`😀`].\r\n\t/// [`@source x`]  \r\nmod app; // [`ordinary`]\n/// [`eof`]";
         let (tokens, trailing) = lex_with_trailing(source).unwrap();
         for doc in DocSource::from_tokens(source, &tokens, &trailing) {
             let classified = classify(&doc);

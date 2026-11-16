@@ -1,4 +1,4 @@
-package build_newtype_under_exact_f_controls;
+pkg build_newtype_under_exact_f_controls;
 
 build {
   cache "out/.kio-cache/";

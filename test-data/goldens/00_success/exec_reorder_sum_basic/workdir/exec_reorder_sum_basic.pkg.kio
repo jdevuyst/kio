@@ -1,4 +1,4 @@
-package exec_reorder_sum_basic;
+pkg exec_reorder_sum_basic;
 
 build {
   cache "out/.kio-cache/";

@@ -1,74 +1,74 @@
 /// The matching engine: one arriving event at a time, against the book.
-module book/engine;
+mod book/engine;
 
-import book/book(
-, Book
-, asks_of
-, at
-, bids_of
-, facing_queue
-, index_of_id
-, insert_ranked
-, is_empty
-, is_found
-, new_book
-, note_cancelled
-, note_entered
-, note_reduced
-, note_unfilled
-, own_queue
-, record_trade
-, remove_at
-, set_at
-, take_id
-, tape_len
-);
-import book/event(
-, Amend
-, Amend_req
-, Cancel
-, Event
-, Limit
-, Limit_req
-, Market
-, Market_req
-, amend_id
-, amend_of
-, amend_qty
-, arrivals
-, cancel_of
-, event_at
-, event_count
-, limit_of
-, limit_price
-, limit_qty
-, limit_side
-, market_of
-, market_qty
-, market_side
-);
-import book/num(int_lt, is_positive, min_int, not);
-import book/order(
-, Cap
-, Order
-, Side
-, crosses
-, id_of
-, no_cap
-, order
-, price_cap
-, price_of
-, remaining_of
-, trade
-, with_remaining
-);
+import book/book {
+  type Book;
+  fn asks_of;
+  fn at;
+  fn bids_of;
+  fn facing_queue;
+  fn index_of_id;
+  fn insert_ranked;
+  fn is_empty;
+  fn is_found;
+  fn new_book;
+  fn note_cancelled;
+  fn note_entered;
+  fn note_reduced;
+  fn note_unfilled;
+  fn own_queue;
+  fn record_trade;
+  fn remove_at;
+  fn set_at;
+  fn take_id;
+  fn tape_len
+}
+import book/event {
+  type Amend;
+  type Amend_req;
+  type Cancel;
+  type Event;
+  type Limit;
+  type Limit_req;
+  type Market;
+  type Market_req;
+  fn amend_id;
+  fn amend_of;
+  fn amend_qty;
+  fn arrivals;
+  fn cancel_of;
+  fn event_at;
+  fn event_count;
+  fn limit_of;
+  fn limit_price;
+  fn limit_qty;
+  fn limit_side;
+  fn market_of;
+  fn market_qty;
+  fn market_side
+}
+import book/num { fn int_lt; fn is_positive; fn min_int; fn not }
+import book/order {
+  type Cap;
+  type Order;
+  type Side;
+  fn crosses;
+  fn id_of;
+  fn no_cap;
+  fn order;
+  fn price_cap;
+  fn price_of;
+  fn remaining_of;
+  fn trade;
+  fn with_remaining
+}
 import book/report as report;
-import macros/control(macro if);
-import macros/match(macro match);
-import testapi(Array, Bool, I32, String);
-import testapi/arith(add_i32, leq_i32, sub_i32);
-import testapi/io(print);
-import testapi/iter(loop);
+import macros/control { macro if }
+import macros/match { macro match }
+import testapi { type Array; type Bool; type I32; type String }
+import testapi/arith { fn add_i32; fn leq_i32; fn sub_i32 }
+import testapi/io { fn print }
+import testapi/iter { fn loop }
 
 /// Cross an aggressive order against the facing queue while the prices
 /// still overlap, and hand back whatever is left of it.

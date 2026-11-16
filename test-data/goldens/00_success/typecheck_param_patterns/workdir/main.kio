@@ -1,6 +1,6 @@
-module main;
+mod main;
 
-import macros/spine_macros(macro one_prod);
+import macros/spine_macros { macro one_prod }
 
 // Bare destructuring with explicit slot types.
 pub fn project_first_explicit[A][B]((x: A, _: B)) -> A { x }

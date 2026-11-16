@@ -1,4 +1,4 @@
-package exec_derive_host_type_boundary;
+pkg exec_derive_host_type_boundary;
 
 build {
   cache "out/.kio-cache/";

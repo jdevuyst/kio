@@ -1,4 +1,4 @@
-package litann;
+pkg litann;
 
 build {
   cache "out/.kio-cache/";

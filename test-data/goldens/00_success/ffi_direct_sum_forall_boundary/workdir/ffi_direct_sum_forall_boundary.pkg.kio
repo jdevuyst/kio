@@ -1,4 +1,4 @@
-package ffi_direct_sum_forall_boundary;
+pkg ffi_direct_sum_forall_boundary;
 
 build {
   cache "out/.kio-cache/";

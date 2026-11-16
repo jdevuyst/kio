@@ -1,4 +1,4 @@
-package exec_let_as_pattern;
+pkg exec_let_as_pattern;
 
 build {
   cache "out/.kio-cache/";

@@ -4,16 +4,16 @@
 /// Items follow the classic world-model shape — an item is always *somewhere*,
 /// either lying in a room or held by the player — so the inventory is derived
 /// from item locations rather than stored a second time and kept in step.
-module cellar/state;
+mod cellar/state;
 
 import cellar/ids as ids;
 import cellar/world as world;
-import macros/control(macro if);
-import macros/match(macro match);
-import macros/row_macros(macro select);
-import macros/spine_macros(macro widen_sum);
-import testapi(Bool, I32, String);
-import testapi/arith(add, mul, sub);
+import macros/control { macro if }
+import macros/match { macro match }
+import macros/row_macros { macro select }
+import macros/spine_macros { macro widen_sum }
+import testapi { type Bool; type I32; type String }
+import testapi/arith { fn add; fn mul; fn sub }
 
 pub type Loc = { In_room: ids.Room_id } | { Held: . };
 

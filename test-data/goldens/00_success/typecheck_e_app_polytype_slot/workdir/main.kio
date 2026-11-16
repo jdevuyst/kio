@@ -1,4 +1,4 @@
-module main;
+mod main;
 
 // A top-level polymorphic `fn`. Its declared scheme is the
 // polytype `∀U. U -> U`.

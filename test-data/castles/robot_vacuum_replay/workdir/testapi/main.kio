@@ -1,5 +1,5 @@
-module testapi/main;
+mod testapi/main;
 
-import robot_vacuum_replay/replay(run);
+import robot_vacuum_replay/replay { fn run }
 
 pub fn main() { run() }

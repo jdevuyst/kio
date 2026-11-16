@@ -1,10 +1,10 @@
-module fmt_operator_field_receiver;
+mod fmt_operator_field_receiver;
 
 fn prefix_impl(value: Formtype) -> Formtype { value }
 
 op - __ { impl prefix_impl }
 
-varop [% %] { foldr form_push form_empty }
+op_var [% %] { foldr form_push form_empty }
 
 fn normal_access() { (- form_value).>select }
 

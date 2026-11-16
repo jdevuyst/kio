@@ -4,7 +4,7 @@ set -eu
 "$KIO_BIN" fmt --check workdir/app.sig.kio
 
 formatted=$("$KIO_BIN" fmt - <<'KIO'
-module fmt_type_declaration_headers;
+mod fmt_type_declaration_headers;
 host type // host name
 String // host role
 role(// role start

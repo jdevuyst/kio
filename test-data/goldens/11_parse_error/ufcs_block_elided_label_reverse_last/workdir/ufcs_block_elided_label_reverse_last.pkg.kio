@@ -1,4 +1,4 @@
-package ufcs_block_elided_label_reverse_last;
+pkg ufcs_block_elided_label_reverse_last;
 
 build {
   cache "out/.kio-cache/";

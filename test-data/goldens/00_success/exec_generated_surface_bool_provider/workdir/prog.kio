@@ -1,8 +1,8 @@
-module prog;
+mod prog;
 
 import __intrinsics__;
 
-import control(Bool);
+import control { type Bool }
 
 host type I8 role(i8);
 

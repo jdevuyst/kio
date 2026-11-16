@@ -1,4 +1,4 @@
-module feature/target;
+mod feature/target;
 
 pub(feature) type { Box[B]: B { pub(feature) mk; pub(feature) get } }
 

@@ -1,43 +1,58 @@
 /// `prime_eval`: a tree-walking evaluator over the erased Kio' term AST, producing a universal value.
-module eval;
+mod eval;
 
-import host_descriptor(Host_fn, Host_type);
-import macros/control(macro if);
-import macros/match(macro match);
-import macros/spine_macros(macro widen_sum);
-import prime(
-, T_absurd
-, T_app
-, T_either
-, T_fst
-, T_hostfn
-, T_ite
-, T_lam
-, T_left
-, T_let
-, T_lit
-, T_pair
-, T_right
-, T_snd
-, T_unit
-, T_var
-);
-import prime(Group_slots, Nat, Term, Term_node);
-import prime(lit_text, lit_type);
-import prime(un_group_slots, un_nat, un_term);
-import result(Call_result, Ev_apply, Ev_apply_then, Ev_done, Ev_fold, Ev_stuck);
-import result(Eval_result, ev_done, ev_stuck);
-import result(stuck_reason);
-import testapi(Bool, I32, Scalar, String);
-import testapi/arith(eq_i32, leq_i32, sub_i32);
-import testapi/iter(loop);
-import value(Env, Side, Vals, Value, Value_shape);
-import value(V_closure, V_host, V_hostfn, V_product, V_sum, V_unit);
-import value(env_nil, env_push);
-import value(s_left, s_right, side_select);
-import value(un_env, un_value);
-import value(un_vals, vals_push);
-import value(vclosure, vhostfn, vhostfn_fresh, vleft, vproduct, vright, vunit);
+import host_descriptor { type Host_fn; type Host_type }
+import macros/control { macro if }
+import macros/match { macro match }
+import macros/spine_macros { macro widen_sum }
+import prime {
+  type T_absurd;
+  type T_app;
+  type T_either;
+  type T_fst;
+  type T_hostfn;
+  type T_ite;
+  type T_lam;
+  type T_left;
+  type T_let;
+  type T_lit;
+  type T_pair;
+  type T_right;
+  type T_snd;
+  type T_unit;
+  type T_var
+}
+import prime { fn lit_text; fn lit_type }
+import prime { fn un_group_slots; fn un_nat; fn un_term }
+import prime { type Group_slots; type Nat; type Term; type Term_node }
+import result {
+  type Call_result;
+  type Ev_apply;
+  type Ev_apply_then;
+  type Ev_done;
+  type Ev_fold;
+  type Ev_stuck
+}
+import result { fn stuck_reason }
+import result { type Eval_result; fn ev_done; fn ev_stuck }
+import testapi { type Bool; type I32; type Scalar; type String }
+import testapi/arith { fn eq_i32; fn leq_i32; fn sub_i32 }
+import testapi/iter { fn loop }
+import value {
+  fn vclosure;
+  fn vhostfn;
+  fn vhostfn_fresh;
+  fn vleft;
+  fn vproduct;
+  fn vright;
+  fn vunit
+}
+import value { fn env_nil; fn env_push }
+import value { fn s_left; fn s_right; fn side_select }
+import value { fn un_env; fn un_value }
+import value { fn un_vals; fn vals_push }
+import value { type Env; type Side; type Vals; type Value; type Value_shape }
+import value { type V_closure; type V_host; type V_hostfn; type V_product; type V_sum; type V_unit }
 
 // `eval.kio` — `prime_eval`, the tree-walking evaluator over the erased
 // Kio' term AST (`prime.kio`), producing a universal value

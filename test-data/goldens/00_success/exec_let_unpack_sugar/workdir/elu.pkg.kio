@@ -1,4 +1,4 @@
-package elu;
+pkg elu;
 
 build {
   cache "out/.kio-cache/";

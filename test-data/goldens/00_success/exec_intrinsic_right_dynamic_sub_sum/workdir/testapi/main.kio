@@ -1,10 +1,10 @@
-module testapi/main;
+mod testapi/main;
 
 import __intrinsics__;
 
-import testapi(Int, String);
-import testapi/fmt(int_to_string);
-import testapi/io(print);
+import testapi { type Int; type String }
+import testapi/fmt { fn int_to_string }
+import testapi/io { fn print }
 
 // `__right__(L, R, r)` where `R` is structurally a sum and `r` is
 // a *dynamic* `R`-value (not a static `__left__` / `__right__`

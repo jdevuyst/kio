@@ -1,6 +1,6 @@
-module testapi/fmt;
+mod testapi/fmt;
 
-import testapi(I128, I64, String, U128, U64);
+import testapi { type I128; type I64; type String; type U128; type U64 }
 
 host fn i64_to_string(p0: I64) -> String;
 

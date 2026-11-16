@@ -3,7 +3,7 @@
 //! Walks each module's expressions, looks up every `Expr::OpChain`
 //! placeholder in the module's operator scope (built from the
 //! module's own `Item::Op` entries plus the cross-module operator
-//! bindings selected by full grammar in `import provider(op ...);`), and
+//! bindings selected by full grammar in `import provider { op ... }`), and
 //! replaces the placeholder with an ordinary `Expr::Call` or selected
 //! `Expr::UserMacro`. The pass
 //! runs between parsing and desugar; after it completes, no
@@ -509,7 +509,7 @@ fn resolve_bare_impl_path(
             let macro_selected = matches!(
                 item,
                 ImportItem::Name {
-                    macro_span: Some(_),
+                    kind: crate::ast::ImportNameKind::Macro,
                     ..
                 }
             );
@@ -641,7 +641,9 @@ fn resolve_qualified_impl_path(
         if from_path == module_path_str(&context.module.path) {
             return resolve_local_module_callable(context, member);
         }
-        if let Some(target) = context.package.named_callable_target(&from_path, member) {
+        if let Some(target) = context.package.named_callable_target(&from_path, member)
+            && target.kind == FixedOperatorKind::Function
+        {
             return Some(resolved_named_target(
                 &target.vis,
                 path,
@@ -1637,7 +1639,7 @@ fn build_module_scope(
                     ),
                 )
                 .with_help(format!(
-                    "import {from_path}({});",
+                    "import {from_path} {{ {} }}",
                     provided_grammar.render()
                 )));
             }
@@ -1862,7 +1864,8 @@ impl RoutedBuiltinImports {
                         span: *span,
                     },
                     items: vec![ImportItem::Name {
-                        macro_span: Some(*span),
+                        kind: crate::ast::ImportNameKind::Macro,
+                        kind_span: None,
                         name: name.clone(),
                         span: *span,
                         alias: Some(crate::ast::ImportAlias {
@@ -2597,13 +2600,13 @@ mod tests {
                     let initializer = if seeded { "seed" } else { "base" };
                     let finalizer = if finalize { " finalize finish;" } else { "" };
                     let provider = p(&format!(
-                        "module syntax;
+                        "mod syntax;
                         pub fn base() -> . & . {{ ((), ()) }}
                         pub fn seed(entry: . & .) -> . & . {{ entry }}
                         pub fn step(a: . & ., b: . & .) -> . & . {{ a }}
                         pub fn finish(value: . & .) -> (. & .) & . & . {{ (value, value) }}
                         pub fn entry(key: ., value: .) -> . & . {{ (key, value) }}
-                        pub varop [% %] {{ {mode} step {initializer};{finalizer} }};
+                        pub op_var [% %] {{ {mode} step {initializer};{finalizer} }};
                         pub op _ => _ {{ impl entry; }};"
                     ));
                     let literal = packets[..count]
@@ -2612,8 +2615,8 @@ mod tests {
                         .collect::<Vec<_>>()
                         .join(", ");
                     let mut consumer = p(&format!(
-                        "module consumer;
-                        import syntax(varop [% %], op _ => _);
+                        "mod consumer;
+                        import syntax {{op_var [% %]; op _ => _}}
                         fn run(a: ., b: ., c: ., d: ., e: ., f: .) -> {} {{ [% {literal} %] }}",
                         if finalize { "(. & .) & . & ." } else { ". & ." }
                     ));
@@ -2741,19 +2744,19 @@ mod tests {
     #[cfg(feature = "lsp")]
     #[test]
     fn operator_use_capture_records_exact_bindings_without_changing_folding() {
-        let provider = p("module syntax;
+        let provider = p("mod syntax;
              pub fn combine(left: ., right: .) -> . { left }
              pub fn empty() -> . { () }
              pub op _ + _ { impl combine; };
              pub op _ - _ { impl combine; };
-             pub varop [% %] { foldl combine empty; };");
-        let source = "module consumer;
-             import syntax(op _ + _, op _ - _, varop [% %]);
+             pub op_var [% %] { foldl combine empty; };");
+        let source = "mod consumer;
+             import syntax {op _ + _; op _ - _; op_var [% %]}
              fn local(left: ., right: .) -> . { left }
              fn empty() -> . { () }
              op _ * _ { impl local; };
              op _ / _ { impl local; };
-             varop [! !] { foldr local empty; };
+             op_var [! !] { foldr local empty; };
              fn imported_fixed(combine: ., right: .) -> . { combine + right }
              fn local_fixed(local: ., right: .) -> . { local * right }
              fn imported_fold() -> . { [% (), () %] }
@@ -2786,13 +2789,13 @@ mod tests {
             (
                 "[% (), () %]",
                 ResolvedOperatorOrigin::Import {
-                    import_span: span("varop [% %]"),
+                    import_span: span("op_var [% %]"),
                 },
             ),
             (
                 "[! (), () !]",
                 ResolvedOperatorOrigin::Local {
-                    declaration_span: span("varop [! !] { foldr local empty; }"),
+                    declaration_span: span("op_var [! !] { foldr local empty; }"),
                 },
             ),
         ]
@@ -2853,11 +2856,11 @@ mod tests {
     #[cfg(feature = "lsp")]
     #[test]
     fn operator_use_capture_discards_failed_module_observations() {
-        let mut module = p("module main;
+        let mut module = p("mod main;
              fn combine(left: ., right: .) -> . { left }
              fn seed(value: .) -> . { value }
              op _ + _ { impl combine; };
-             varop [% %] { foldl1 combine seed; };
+             op_var [% %] { foldl1 combine seed; };
              fn first() -> . { () + () }
              fn rejected() -> . { [% %] }");
         let package = PackageOpScope::from_modules_named(
@@ -2879,11 +2882,11 @@ mod tests {
     #[cfg(feature = "lsp")]
     #[test]
     fn operator_use_capture_records_only_successful_resolution() {
-        let module = p("module main;
+        let module = p("mod main;
              fn combine(left: ., right: .) -> . { left }
              fn seed(value: .) -> . { value }
              op _ + _ { impl combine; };
-             varop [% %] { foldl1 combine seed; };
+             op_var [% %] { foldl1 combine seed; };
              fn fixed() -> . { () + () }
              fn variadic() -> . { [% %] }");
         let package = PackageOpScope::from_modules_named(
@@ -2959,9 +2962,7 @@ mod tests {
     #[cfg(feature = "lsp")]
     #[test]
     fn package_scope_reuses_validated_callable_declaration_facts() {
-        let module = p("module x; \
-             fn add[A](left: A, right: A) -> A { left } \
-             op _ + _ { impl add; };");
+        let module = p("mod x; fn add[A](left: A, right: A) -> A { left } op _ + _ { impl add; };");
         let scope = PackageOpScope::from_modules_named(&[(PathBuf::from("x.kio"), module)], None)
             .expect("callable declarations validate");
 
@@ -2992,14 +2993,11 @@ mod tests {
     #[cfg(feature = "lsp")]
     #[test]
     fn alias_member_callable_facts_keep_source_head_and_terminal_member_identities() {
-        let origin = p("module origin; \
-             pub type { Terminal: . { pub mk; pub get; }; };");
-        let relay = p("module relay; import origin as source; \
-             pub type Alias = source.Terminal;");
-        let consumer = p("module consumer; import relay as r; \
-             op + _ { impl r.Alias.mk; }; \
-             varop [* *] { foldr r.Alias.get r.Alias.mk; }; \
-             macro demo : . -> . { impl r.Alias.mk; };");
+        let origin = p("mod origin; pub type { Terminal: . { pub mk; pub get; }; };");
+        let relay = p("mod relay; import origin as source; pub type Alias = source.Terminal;");
+        let consumer = p(
+            "mod consumer; import relay as r; op + _ { impl r.Alias.mk; }; op_var [* *] { foldr r.Alias.get r.Alias.mk; }; macro demo : . -> . { impl r.Alias.mk; };",
+        );
         let scope = PackageOpScope::from_modules_named(
             &[
                 (PathBuf::from("origin.kio"), origin),
@@ -3034,12 +3032,9 @@ mod tests {
 
     #[test]
     fn operator_target_routing_leaves_macro_schedules_and_paths_unchanged() {
-        let mut module = p("module x; \
-             pure fn apply(left: ., right: .) -> . { left } \
-             macro late : . -> . { impl apply; }; \
-             macro fills : . -> . { impl(fills) apply; }; \
-             op _ + _ { impl apply; }; \
-             fn run(apply: .) -> . { () + () }");
+        let mut module = p(
+            "mod x; pure fn apply(left: ., right: .) -> . { left } macro late : . -> . { impl apply; }; macro fills : . -> . { impl(fills) apply; }; op _ + _ { impl apply; }; fn run(apply: .) -> . { () + () }",
+        );
         let package =
             PackageOpScope::from_modules_named(&[(PathBuf::from("x.kio"), module.clone())], None)
                 .expect("declaration callables validate");
@@ -3068,7 +3063,7 @@ mod tests {
             .map(|index| {
                 let name = format!("unrelated{index}");
                 let source = format!(
-                    "module {name}; fn add(left: ., right: .) -> . {{ left }} \
+                    "mod {name}; fn add(left: ., right: .) -> . {{ left }} \
                      op _ + _ {{ impl add; }};"
                 );
                 (PathBuf::from(format!("{name}.kio")), p(&source))
@@ -3076,8 +3071,7 @@ mod tests {
             .collect::<Vec<_>>();
         modules.push((
             PathBuf::from("target.kio"),
-            p("module target; fn add(left: ., right: .) -> . { left } \
-               op _ + _ { impl add; };"),
+            p("mod target; fn add(left: ., right: .) -> . { left } op _ + _ { impl add; };"),
         ));
         let scope = PackageOpScope::from_modules_named(&modules, None)
             .expect("callable declarations validate");
@@ -3113,11 +3107,8 @@ mod tests {
 
     #[test]
     fn public_operator_rejects_private_function_implementation() {
-        let message = fold_error(
-            "module x; \
-             fn add(a: A, b: A) -> A { a } \
-             pub op _ + _ { impl add; };",
-        );
+        let message =
+            fold_error("mod x; fn add(a: A, b: A) -> A { a } pub op _ + _ { impl add; };");
         assert!(
             message.contains("function `add` must be at least as visible as operator `op _ + _`"),
             "got: {message}"
@@ -3126,17 +3117,15 @@ mod tests {
 
     #[test]
     fn private_operator_accepts_private_function_implementation() {
-        fold(p("module x; \
-             fn add(a: A, b: A) -> A { a } \
-             op _ + _ { impl add; };"));
+        fold(p(
+            "mod x; fn add(a: A, b: A) -> A { a } op _ + _ { impl add; };",
+        ));
     }
 
     #[test]
     fn public_operator_rejects_private_newtype_member_implementation() {
         let message = fold_error(
-            "module x; \
-             pub type { Box[A]: A { mk; pub get; }; }; \
-             pub op + _ { impl Box.mk; };",
+            "mod x; pub type { Box[A]: A { mk; pub get; }; }; pub op + _ { impl Box.mk; };",
         );
         assert!(
             message.contains(
@@ -3148,15 +3137,13 @@ mod tests {
 
     #[test]
     fn declaration_callable_visibility_names_alias_heads_separately_from_newtypes() {
-        let provider = p("module origin; \
-             pub type { Token: . { pub mk; pub get; }; };");
+        let provider = p("mod origin; pub type { Token: . { pub mk; pub get; }; };");
         for declaration in [
             "pub op + _ { impl Tag.mk; };",
-            "pub varop [* *] { foldr Tag.get Tag.mk; };",
+            "pub op_var [* *] { foldr Tag.get Tag.mk; };",
         ] {
             let consumer = p(&format!(
-                "module consumer; import origin as imported; \
-                 type Tag = imported.Token; {declaration}"
+                "mod consumer; import origin as imported; type Tag = imported.Token; {declaration}"
             ));
             let message = validation_message(
                 validate_against_modules(&consumer, std::slice::from_ref(&provider))
@@ -3169,9 +3156,7 @@ mod tests {
         }
 
         let literal = fold_error(
-            "module literal; \
-             type { Token: . { pub mk; pub get; }; }; \
-             pub op + _ { impl Token.mk; };",
+            "mod literal; type { Token: . { pub mk; pub get; }; }; pub op + _ { impl Token.mk; };",
         );
         assert!(
             literal.contains("newtype `Token` must be at least as visible"),
@@ -3182,15 +3167,11 @@ mod tests {
     #[test]
     fn public_fold_checks_every_named_callable_visibility() {
         let message = fold_error(
-            "module x; \
-             pub fn nil() -> A { let r = (); r } \
-             pub fn step(x: A, acc: A) -> A { x } \
-             fn finish(x: A) -> A { x } \
-             pub varop [* *] { foldr step nil; finalize finish; };",
+            "mod x; pub fn nil() -> A { let r = (); r } pub fn step(x: A, acc: A) -> A { x } fn finish(x: A) -> A { x } pub op_var [* *] { foldr step nil; finalize finish; };",
         );
         assert!(
             message.contains(
-                "function `finish` must be at least as visible as operator `varop [* *]`"
+                "function `finish` must be at least as visible as operator `op_var [* *]`"
             ),
             "got: {message}"
         );
@@ -3198,11 +3179,8 @@ mod tests {
 
     #[test]
     fn qualified_alias_checks_the_actual_function_leaf() {
-        let provider = p("module a/b; \
-             fn step(a: A, b: A) -> A { a }");
-        let consumer = p("module x; \
-             import a/b as provider; \
-             pub op _ + _ { impl provider.step; };");
+        let provider = p("mod a/b; fn step(a: A, b: A) -> A { a }");
+        let consumer = p("mod x; import a/b as provider; pub op _ + _ { impl provider.step; };");
         let message = validation_message(
             validate_against_modules(&consumer, &[provider])
                 .expect_err("private alias-qualified endpoint must fail visibility validation"),
@@ -3215,21 +3193,15 @@ mod tests {
 
     #[test]
     fn qualified_alias_accepts_visible_function() {
-        let provider = p("module a/b; \
-             pub fn step(a: A, b: A) -> A { a }");
-        let consumer = p("module x; \
-             import a/b as provider; \
-             pub op _ + _ { impl provider.step; };");
+        let provider = p("mod a/b; pub fn step(a: A, b: A) -> A { a }");
+        let consumer = p("mod x; import a/b as provider; pub op _ + _ { impl provider.step; };");
         validate_against_modules(&consumer, &[provider]).expect("visible alias-qualified endpoint");
     }
 
     #[test]
     fn qualified_alias_function_is_validated_at_its_target() {
-        let provider = p("module a/b; \
-             fn step(a: A, b: A) -> A { a }");
-        let consumer = p("module x; \
-             import a/b as h; \
-             pub op _ + _ { impl h.step; };");
+        let provider = p("mod a/b; fn step(a: A, b: A) -> A { a }");
+        let consumer = p("mod x; import a/b as h; pub op _ + _ { impl h.step; };");
         let message = validation_message(
             validate_against_modules(&consumer, &[provider])
                 .expect_err("private alias-qualified endpoint must fail"),
@@ -3239,11 +3211,8 @@ mod tests {
 
     #[test]
     fn selective_function_import_is_validated_at_its_target() {
-        let provider = p("module a/b; \
-             fn step(a: A, b: A) -> A { a }");
-        let consumer = p("module x; \
-             import a/b(step); \
-             pub op _ + _ { impl step; };");
+        let provider = p("mod a/b; fn step(a: A, b: A) -> A { a }");
+        let consumer = p("mod x; import a/b {fn step} pub op _ + _ { impl step; };");
         let message = validation_message(
             validate_against_modules(&consumer, &[provider])
                 .expect_err("private selectively imported endpoint must fail"),
@@ -3262,13 +3231,13 @@ mod tests {
             ),
             (
                 "selectively imported",
-                Some("module provider; pub fn target(a: A, b: A) -> A { a }"),
-                "import provider(target);",
+                Some("mod provider; pub fn target(a: A, b: A) -> A { a }"),
+                "import provider {fn target}",
                 "target",
             ),
             (
                 "module alias",
-                Some("module provider; pub fn target(a: A, b: A) -> A { a }"),
+                Some("mod provider; pub fn target(a: A, b: A) -> A { a }"),
                 "import provider as helpers;",
                 "helpers.target",
             ),
@@ -3280,21 +3249,13 @@ mod tests {
             ),
             (
                 "alias-qualified newtype member",
-                Some(
-                    "module provider; \
-                     pub type { Box[A]: A { pub mk; pub get; }; };",
-                ),
+                Some("mod provider; pub type { Box[A]: A { pub mk; pub get; }; };"),
                 "import provider as helpers;",
                 "helpers.Box.mk",
             ),
         ] {
             let consumer_source = format!(
-                "module consumer; \
-                 {declarations} \
-                 op _ + _ {{ impl {target}; }}; \
-                 varop [* *] {{ \
-                   foldr {target} {target}; finalize {target}; \
-                 }};"
+                "mod consumer; {declarations} op _ + _ {{ impl {target}; }}; op_var [* *] {{ foldr {target} {target}; finalize {target}; }};"
             );
             let consumer = p(&consumer_source);
             let providers = provider.into_iter().map(p).collect::<Vec<_>>();
@@ -3306,8 +3267,8 @@ mod tests {
 
     #[test]
     fn callable_resolution_does_not_search_unimported_modules() {
-        let coincidental = p("module provider; pub fn target(a: A, b: A) -> A { a }");
-        let consumer = p("module consumer; op _ + _ { impl target; };");
+        let coincidental = p("mod provider; pub fn target(a: A, b: A) -> A { a }");
+        let consumer = p("mod consumer; op _ + _ { impl target; };");
         let message = expect_name_error(validate_against_modules(&consumer, &[coincidental]));
         assert!(
             message.contains("target") && message.contains("does not resolve"),
@@ -3317,8 +3278,8 @@ mod tests {
 
     #[test]
     fn unknown_operator_implementation_endpoint_is_rejected() {
-        let provider = p("module a/b; pub fn other(a: A) -> A { a }");
-        let consumer = p("module x; import a/b as provider; op + _ { impl provider.missing; };");
+        let provider = p("mod a/b; pub fn other(a: A) -> A { a }");
+        let consumer = p("mod x; import a/b as provider; op + _ { impl provider.missing; };");
         let message = expect_name_error(validate_against_modules(&consumer, &[provider]));
         assert!(
             message.contains(
@@ -3330,9 +3291,8 @@ mod tests {
 
     #[test]
     fn unknown_newtype_member_is_rejected() {
-        let consumer = p("module x; \
-             type { Box[A]: A { pub mk; pub get; }; }; \
-             op + _ { impl Box.missing; };");
+        let consumer =
+            p("mod x; type { Box[A]: A { pub mk; pub get; }; }; op + _ { impl Box.missing; };");
         let message = expect_name_error(validate_against_modules(&consumer, &[]));
         assert!(
             message.contains("`Box.missing` does not resolve"),
@@ -3342,9 +3302,7 @@ mod tests {
 
     #[test]
     fn operator_rejects_later_function_implementation() {
-        let consumer = p("module x; \
-             op + _ { impl later; }; \
-             fn later(a: A) -> A { a }");
+        let consumer = p("mod x; op + _ { impl later; }; fn later(a: A) -> A { a }");
         let message = expect_name_error(validate_against_modules(&consumer, &[]));
         assert!(
             message.contains("`later` does not resolve"),
@@ -3354,9 +3312,7 @@ mod tests {
 
     #[test]
     fn operator_rejects_unimported_dotted_head_even_when_it_matches_the_module_name() {
-        let consumer = p("module x; \
-             op + _ { impl x.later; }; \
-             fn later(a: A) -> A { a }");
+        let consumer = p("mod x; op + _ { impl x.later; }; fn later(a: A) -> A { a }");
         let message = expect_name_error(validate_against_modules(&consumer, &[]));
         assert!(
             message.contains("`x.later` does not resolve"),
@@ -3366,10 +3322,9 @@ mod tests {
 
     #[test]
     fn operator_rejects_later_self_alias_qualified_function_implementation() {
-        let consumer = p("module x; \
-             import x as self_module; \
-             op + _ { impl self_module.later; }; \
-             fn later(a: A) -> A { a }");
+        let consumer = p(
+            "mod x; import x as self_module; op + _ { impl self_module.later; }; fn later(a: A) -> A { a }",
+        );
         let message = expect_name_error(validate_against_modules(&consumer, &[]));
         assert!(
             message.contains("`self_module.later` does not resolve"),
@@ -3379,21 +3334,16 @@ mod tests {
 
     #[test]
     fn fold_rejects_later_rec_member_implementation() {
-        let consumer = p("module x; \
-             varop [* *] { foldr cons nil; }; \
-             rec(loop) { \
-               fn nil() -> A { () }; \
-               fn cons(a: A, b: A) -> A { a } \
-             }");
+        let consumer = p(
+            "mod x; op_var [* *] { foldr cons nil; }; rec(loop) { fn nil() -> A { () }; fn cons(a: A, b: A) -> A { a } }",
+        );
         let message = expect_name_error(validate_against_modules(&consumer, &[]));
         assert!(message.contains("`nil` does not resolve"), "got: {message}");
     }
 
     #[test]
     fn operator_rejects_later_newtype_member_implementation() {
-        let consumer = p("module x; \
-             op + _ { impl Box.mk; }; \
-             type { Box[A]: A { mk; get; }; };");
+        let consumer = p("mod x; op + _ { impl Box.mk; }; type { Box[A]: A { mk; get; }; };");
         let message = expect_name_error(validate_against_modules(&consumer, &[]));
         assert!(
             message.contains("`Box.mk` does not resolve"),
@@ -3403,9 +3353,8 @@ mod tests {
 
     #[test]
     fn fold_rejects_later_newtype_member_implementation() {
-        let consumer = p("module x; \
-             varop [* *] { foldr Box.get Box.mk; }; \
-             type { Box[A]: A { mk; get; }; };");
+        let consumer =
+            p("mod x; op_var [* *] { foldr Box.get Box.mk; }; type { Box[A]: A { mk; get; }; };");
         let message = expect_name_error(validate_against_modules(&consumer, &[]));
         assert!(
             message.contains("`Box.mk` does not resolve"),
@@ -3415,9 +3364,8 @@ mod tests {
 
     #[test]
     fn macro_rejects_later_newtype_member_implementation() {
-        let consumer = p("module x; \
-             macro demo : . -> . { impl Later.mk; }; \
-             type { Later: . { mk; get; }; };");
+        let consumer =
+            p("mod x; macro demo : . -> . { impl Later.mk; }; type { Later: . { mk; get; }; };");
         let message = expect_name_error(validate_against_modules(&consumer, &[]));
         assert!(
             message.contains("`Later.mk` does not resolve"),
@@ -3427,20 +3375,18 @@ mod tests {
 
     #[test]
     fn operator_accepts_earlier_self_alias_qualified_newtype_member() {
-        let consumer = p("module x; \
-             import x as self_module; \
-             type { Box[A]: A { mk; get; }; }; \
-             op + _ { impl self_module.Box.mk; };");
+        let consumer = p(
+            "mod x; import x as self_module; type { Box[A]: A { mk; get; }; }; op + _ { impl self_module.Box.mk; };",
+        );
         validate_against_modules(&consumer, &[])
             .expect("self-alias qualification preserves an earlier local newtype member");
     }
 
     #[test]
     fn operator_rejects_later_self_alias_qualified_newtype_member() {
-        let consumer = p("module x; \
-             import x as self_module; \
-             op + _ { impl self_module.Later.mk; }; \
-             type { Later[A]: A { mk; get; }; };");
+        let consumer = p(
+            "mod x; import x as self_module; op + _ { impl self_module.Later.mk; }; type { Later[A]: A { mk; get; }; };",
+        );
         let message = expect_name_error(validate_against_modules(&consumer, &[]));
         assert!(
             message.contains("`self_module.Later.mk` does not resolve"),
@@ -3450,10 +3396,9 @@ mod tests {
 
     #[test]
     fn operator_rejects_later_self_selectively_imported_newtype_member() {
-        let consumer = p("module x; \
-             import x(Later); \
-             op + _ { impl Later.mk; }; \
-             type { Later[A]: A { mk; get; }; };");
+        let consumer = p(
+            "mod x; import x {type Later} op + _ { impl Later.mk; }; type { Later[A]: A { mk; get; }; };",
+        );
         let message = expect_name_error(validate_against_modules(&consumer, &[]));
         assert!(
             message.contains("`Later.mk` does not resolve"),
@@ -3463,24 +3408,18 @@ mod tests {
 
     #[test]
     fn fold_accepts_earlier_self_alias_qualified_compact_nominal_member() {
-        let consumer = p("module x; \
-             import x as self_module; \
-             type { Box: A; }; \
-             varop [* *] { \
-               foldr self_module.Box.mk self_module.Box.mk; \
-             };");
+        let consumer = p(
+            "mod x; import x as self_module; type { Box: A; }; op_var [* *] { foldr self_module.Box.mk self_module.Box.mk; };",
+        );
         validate_against_modules(&consumer, &[])
             .expect("self-alias qualification preserves an earlier compact nominal member");
     }
 
     #[test]
     fn fold_rejects_later_self_alias_qualified_compact_nominal_member() {
-        let consumer = p("module x; \
-             import x as self_module; \
-             varop [* *] { \
-               foldr self_module.Box.mk self_module.Box.mk; \
-             }; \
-             type { Box: A; };");
+        let consumer = p(
+            "mod x; import x as self_module; op_var [* *] { foldr self_module.Box.mk self_module.Box.mk; }; type { Box: A; };",
+        );
         let message = expect_name_error(validate_against_modules(&consumer, &[]));
         assert!(
             message.contains("`self_module.Box.mk` does not resolve"),
@@ -3490,9 +3429,7 @@ mod tests {
 
     #[test]
     fn impure_operator_accepts_earlier_local_host_function() {
-        let mut consumer = p("module x; \
-             host fn host_add(a: A) -> A; \
-             op + _ { impl host_add; };");
+        let mut consumer = p("mod x; host fn host_add(a: A) -> A; op + _ { impl host_add; };");
         let modules = [(PathBuf::from("x.kio"), consumer.clone())];
         let package = PackageOpScope::from_modules_named(&modules, None)
             .expect("operator declaration validates");
@@ -3501,9 +3438,7 @@ mod tests {
 
     #[test]
     fn impure_operator_rejects_later_local_host_function() {
-        let consumer = p("module x; \
-             op + _ { impl host_add; }; \
-             host fn host_add(a: A) -> A;");
+        let consumer = p("mod x; op + _ { impl host_add; }; host fn host_add(a: A) -> A;");
         let modules = [(PathBuf::from("x.kio"), consumer)];
         let (_, error) = PackageOpScope::from_modules_named(&modules, None)
             .err()
@@ -3519,14 +3454,14 @@ mod tests {
     fn host_source_order_callable_rejects_later_host_in_every_slot() {
         for declaration in [
             "op + _ { impl target; };",
-            "varop [* *] { foldr earlier target; };",
-            "varop [* *] { foldr target earlier; };",
-            "varop [* *] { foldr earlier earlier; finalize target; };",
+            "op_var [* *] { foldr earlier target; };",
+            "op_var [* *] { foldr target earlier; };",
+            "op_var [* *] { foldr earlier earlier; finalize target; };",
             "macro demo : . -> . { impl target; };",
             "macro demo : . -> . { impl(fills) target; };",
         ] {
             let source =
-                format!("module x; host fn earlier() -> .; {declaration} host fn target() -> .;");
+                format!("mod x; host fn earlier() -> .; {declaration} host fn target() -> .;");
             let consumer = p(&source);
             let error = validate_against_modules(&consumer, &[])
                 .expect_err("a callable's local host target must precede it");
@@ -3545,20 +3480,22 @@ mod tests {
 
     #[test]
     fn host_source_order_callable_preserves_prior_and_imported_hosts() {
-        let provider = p("module provider; host fn target() -> .;");
+        let provider = p("mod provider; host fn target() -> .;");
         for declaration in [
             "op + _ { impl target; };",
-            "varop [* *] { foldr target target; finalize target; };",
+            "op_var [* *] { foldr target target; finalize target; };",
             "macro demo : . -> . { impl target; };",
             "macro demo : . -> . { impl(fills) target; };",
         ] {
-            let prior = p(&format!("module x; host fn target() -> .; {declaration}"));
+            let prior = p(&format!("mod x; host fn target() -> .; {declaration}"));
             validate_against_modules(&prior, &[]).expect("preceding host target resolves");
-            let imported = p(&format!("module x; import provider(target); {declaration}"));
+            let imported = p(&format!(
+                "mod x; import provider {{ fn target }} {declaration}"
+            ));
             validate_against_modules(&imported, std::slice::from_ref(&provider))
                 .expect("a selective import retains its host target");
             let qualified = p(&format!(
-                "module x; import provider as p; {}",
+                "mod x; import provider as p; {}",
                 declaration.replace("target", "p.target")
             ));
             validate_against_modules(&qualified, std::slice::from_ref(&provider))
@@ -3568,53 +3505,40 @@ mod tests {
 
     #[test]
     fn operator_accepts_private_member_of_earlier_multi_rec_group() {
-        let consumer = p("module x; \
-             host fn loop[S][R](step: S -> (S | R), state: S) -> R; \
-             rec(loop) { \
-               fn hidden(a: A) -> A { recur other(a) }; \
-               fn other(a: A) -> A { recur hidden(a) } \
-             } \
-             op + _ { impl hidden; };");
+        let consumer = p(
+            "mod x; host fn loop[S][R](step: S -> (S | R), state: S) -> R; rec(loop) { fn hidden(a: A) -> A { recur other(a) }; fn other(a: A) -> A { recur hidden(a) } } op + _ { impl hidden; };",
+        );
         validate_against_modules(&consumer, &[])
             .expect("private rec member remains an ordinary module item");
     }
 
     #[test]
     fn operator_accepts_public_member_of_earlier_multi_rec_group() {
-        let consumer = p("module x; \
-             host fn loop[S][R](step: S -> (S | R), state: S) -> R; \
-             rec(loop) { \
-               pub fn visible(a: A) -> A { recur hidden(a) }; \
-               fn hidden(a: A) -> A { recur visible(a) } \
-             } \
-             op + _ { impl visible; };");
+        let consumer = p(
+            "mod x; host fn loop[S][R](step: S -> (S | R), state: S) -> R; rec(loop) { pub fn visible(a: A) -> A { recur hidden(a) }; fn hidden(a: A) -> A { recur visible(a) } } op + _ { impl visible; };",
+        );
         validate_against_modules(&consumer, &[]).expect("public rec member is a callable target");
     }
 
     #[test]
     fn operator_accepts_private_singleton_rec_function() {
-        let consumer = p("module x; \
-             host fn loop[S][R](step: S -> (S | R), state: S) -> R; \
-             rec(loop) fn recursive(a: A) -> A { a } \
-             op + _ { impl recursive; };");
+        let consumer = p(
+            "mod x; host fn loop[S][R](step: S -> (S | R), state: S) -> R; rec(loop) fn recursive(a: A) -> A { a } op + _ { impl recursive; };",
+        );
         validate_against_modules(&consumer, &[])
             .expect("private singleton rec function remains an ordinary module item");
     }
 
     #[test]
     fn impure_operator_accepts_imported_host_function() {
-        let provider = p("module host; host fn host_add(a: A) -> A;");
-        let consumer = p("module x; \
-             import host(host_add); \
-             op + _ { impl host_add; };");
+        let provider = p("mod host; host fn host_add(a: A) -> A;");
+        let consumer = p("mod x; import host {fn host_add} op + _ { impl host_add; };");
         validate_against_modules(&consumer, &[provider]).expect("imported host fn target");
     }
 
     #[test]
     fn operator_accepts_local_compact_nominal_member() {
-        let mut consumer = p("module x; \
-             type { Box: A; }; \
-             op + _ { impl Box.mk; };");
+        let mut consumer = p("mod x; type { Box: A; }; op + _ { impl Box.mk; };");
         let modules = [(PathBuf::from("x.kio"), consumer.clone())];
         let package = PackageOpScope::from_modules_named(&modules, None)
             .expect("operator declaration validates");
@@ -3623,9 +3547,7 @@ mod tests {
 
     #[test]
     fn operator_rejects_later_local_compact_nominal_member() {
-        let consumer = p("module x; \
-             op + _ { impl Box.mk; }; \
-             type { Box: A; };");
+        let consumer = p("mod x; op + _ { impl Box.mk; }; type { Box: A; };");
         let message = expect_name_error(validate_against_modules(&consumer, &[]));
         assert!(
             message.contains("`Box.mk` does not resolve"),
@@ -3635,79 +3557,59 @@ mod tests {
 
     #[test]
     fn operator_accepts_local_recursive_group_newtype_member() {
-        let consumer = p("module x; \
-             rec { \
-               type { A: (. | B) { mk; get; }; }; \
-               type { B: (. | A) { mk; get; }; }; \
-             } \
-             op + _ { impl A.mk; };");
+        let consumer = p(
+            "mod x; rec { type { A: (. | B) { mk; get; }; }; type { B: (. | A) { mk; get; }; }; } op + _ { impl A.mk; };",
+        );
         validate_against_modules(&consumer, &[])
             .expect("an earlier recursive-group newtype member is a callable target");
     }
 
     #[test]
     fn operator_accepts_imported_recursive_group_newtype_member() {
-        let provider = p("module types; \
-             rec { \
-               pub type { A: (. | B) { pub mk; pub get; }; }; \
-               pub type { B: (. | A) { pub mk; pub get; }; }; \
-             }");
-        let consumer = p("module x; \
-             import types(A); \
-             pub op + _ { impl A.mk; };");
+        let provider = p(
+            "mod types; rec { pub type { A: (. | B) { pub mk; pub get; }; }; pub type { B: (. | A) { pub mk; pub get; }; }; }",
+        );
+        let consumer = p("mod x; import types {type A} pub op + _ { impl A.mk; };");
         validate_against_modules(&consumer, &[provider])
             .expect("an imported recursive-group newtype member is a callable target");
     }
 
     #[test]
     fn operator_accepts_local_recursive_compact_nominal_member() {
-        let consumer = p("module x; \
-             rec { \
-               type A = { To_b: B; }; \
-               type { B: A { mk; get; }; }; \
-             } \
-             op + _ { impl To_b.mk; };");
+        let consumer = p(
+            "mod x; rec { type A = { To_b: B; }; type { B: A { mk; get; }; }; } op + _ { impl To_b.mk; };",
+        );
         validate_against_modules(&consumer, &[])
             .expect("a recursive compact entry's nominal member is a callable target");
     }
 
     #[test]
     fn declaration_callables_accept_named_compact_identity_alias_members() {
-        let local = p("module local; \
-             import local as self_module; \
-             type Tree[A][B] = { Branch[A][B]: A & B; }; \
-             op + _ { impl Tree.mk; }; \
-             varop [* *] { foldr Tree.get self_module.Tree.mk; }; \
-             macro demo : . -> . { impl self_module.Tree.mk; };");
+        let local = p(
+            "mod local; import local as self_module; type Tree[A][B] = { Branch[A][B]: A & B; }; op + _ { impl Tree.mk; }; op_var [* *] { foldr Tree.get self_module.Tree.mk; }; macro demo : . -> . { impl self_module.Tree.mk; };",
+        );
         validate_against_modules(&local, &[])
             .expect("a named one-entry compact alias exposes its nominal member");
 
-        let recursive = p("module recursive; \
-             rec { \
-               pub type Tree = { Branch: Bar; }; \
-               pub type { Bar: Tree { pub mk; pub get; }; }; \
-             } \
-             pub op + _ { impl Tree.mk; };");
+        let recursive = p(
+            "mod recursive; rec { pub type Tree = { Branch: Bar; }; pub type { Bar: Tree { pub mk; pub get; }; }; } pub op + _ { impl Tree.mk; };",
+        );
         validate_against_modules(&recursive, &[])
             .expect("a named compact alias inside a recursive type group exposes its member");
 
-        let provider = p("module provider; pub type Tree = { Branch: .; };");
-        let consumer = p("module consumer; \
-             import provider(Tree); \
-             import provider as p; \
-             pub op + _ { impl Tree.mk; }; \
-             pub varop [* *] { foldr Tree.get p.Tree.mk; };");
+        let provider = p("mod provider; pub type Tree = { Branch: .; };");
+        let consumer = p(
+            "mod consumer; import provider {type Tree} import provider as p; pub op + _ { impl Tree.mk; }; pub op_var [* *] { foldr Tree.get p.Tree.mk; };",
+        );
         validate_against_modules(&consumer, &[provider])
             .expect("selective and qualified imports preserve the named compact alias member");
     }
 
     #[test]
     fn declaration_callables_reject_nonidentity_named_compact_alias_members() {
-        let standalone = p("module standalone; \
-             type Reordered[A][B] = { Swapped[B][A]: A & B; }; \
-             type Renamed[A] = { Renamed_item[B]: B; }; \
-             type Partial[A] = { Partial_item: .; }; \
-             op + _ { impl Reordered.mk; };");
+        let standalone = p(
+            "mod standalone; type Reordered[A][B] = { Swapped[B][A]: A & B; }; type Renamed[A] = { Renamed_item[B]: B; }; type Partial[A] = { Partial_item: .; }; op + _ { impl Reordered.mk; };",
+        );
         let message = expect_name_error(validate_against_modules(&standalone, &[]));
         assert!(
             message.contains("`Reordered.mk` does not resolve"),
@@ -3719,7 +3621,7 @@ mod tests {
             ("Partial", "type Partial[A] = { Partial_item: .; };"),
         ] {
             let consumer = p(&format!(
-                "module negative; {declaration} op + _ {{ impl {alias}.mk; }};"
+                "mod negative; {declaration} op + _ {{ impl {alias}.mk; }};"
             ));
             let message = expect_name_error(validate_against_modules(&consumer, &[]));
             assert!(
@@ -3728,12 +3630,9 @@ mod tests {
             );
         }
 
-        let grouped = p("module grouped; \
-             rec { \
-               type Reordered[A][B] = { Swapped[B][A]: Peer[B][ A]; }; \
-               type { Peer[A][B]: Reordered[A][ B] { mk; get; }; }; \
-             } \
-             varop [* *] { foldr Reordered.get Reordered.mk; };");
+        let grouped = p(
+            "mod grouped; rec { type Reordered[A][B] = { Swapped[B][A]: Peer[B][ A]; }; type { Peer[A][B]: Reordered[A][ B] { mk; get; }; }; } op_var [* *] { foldr Reordered.get Reordered.mk; };",
+        );
         let message = expect_name_error(validate_against_modules(&grouped, &[]));
         assert!(
             message.contains("`Reordered.mk` does not resolve"),
@@ -3743,20 +3642,18 @@ mod tests {
 
     #[test]
     fn declaration_callables_reject_later_named_compact_identity_alias_members() {
-        let local = p("module local; \
-             import local as self_module; \
-             op + _ { impl Tree.mk; }; \
-             type Tree = { Branch: .; };");
+        let local = p(
+            "mod local; import local as self_module; op + _ { impl Tree.mk; }; type Tree = { Branch: .; };",
+        );
         let message = expect_name_error(validate_against_modules(&local, &[]));
         assert!(
             message.contains("`Tree.mk` does not resolve"),
             "got: {message}"
         );
 
-        let qualified = p("module local; \
-             import local as self_module; \
-             op + _ { impl self_module.Tree.mk; }; \
-             type Tree = { Branch: .; };");
+        let qualified = p(
+            "mod local; import local as self_module; op + _ { impl self_module.Tree.mk; }; type Tree = { Branch: .; };",
+        );
         let message = expect_name_error(validate_against_modules(&qualified, &[]));
         assert!(
             message.contains("`self_module.Tree.mk` does not resolve"),
@@ -3766,49 +3663,37 @@ mod tests {
 
     #[test]
     fn operator_accepts_imported_compact_nominal_member() {
-        let provider = p("module labels; pub type { Box: A; };");
-        let consumer = p("module x; \
-             import labels(Box); \
-             op + _ { impl Box.mk; };");
+        let provider = p("mod labels; pub type { Box: A; };");
+        let consumer = p("mod x; import labels {type Box} op + _ { impl Box.mk; };");
         validate_against_modules(&consumer, &[provider]).expect("compact nominal imported member");
     }
 
     #[test]
     fn operator_and_fold_accept_identity_alias_newtype_members() {
-        let origin = p("module origin; \
-             pub type { Box[A]: A { pub mk; pub get; }; };");
-        let relay = p("module relay; \
-             import origin as imported; \
-             pub type Box[A] = imported.Box[A];");
-        let consumer = p("module x; \
-             import relay(Box); \
-             op + _ { impl Box.mk; }; \
-             varop [* *] { foldr Box.get Box.mk; };");
+        let origin = p("mod origin; pub type { Box[A]: A { pub mk; pub get; }; };");
+        let relay = p("mod relay; import origin as imported; pub type Box[A] = imported.Box[A];");
+        let consumer = p(
+            "mod x; import relay {type Box} op + _ { impl Box.mk; }; op_var [* *] { foldr Box.get Box.mk; };",
+        );
         validate_against_modules(&consumer, &[origin, relay])
             .expect("op and fold callables resolve through an imported identity alias");
 
-        let local = p("module local; \
-             import origin as imported; \
-             import local as self_module; \
-             type Box[A] = imported.Box[A]; \
-             op + _ { impl Box.mk; }; \
-             op - _ { impl self_module.Box.mk; }; \
-             macro demo : . -> . { impl self_module.Box.mk; };");
+        let local = p(
+            "mod local; import origin as imported; import local as self_module; type Box[A] = imported.Box[A]; op + _ { impl Box.mk; }; op - _ { impl self_module.Box.mk; }; macro demo : . -> . { impl self_module.Box.mk; };",
+        );
         validate_against_modules(
             &local,
-            &[p("module origin; \
-             pub type { Box[A]: A { pub mk; pub get; }; };")],
+            &[p(
+                "mod origin; pub type { Box[A]: A { pub mk; pub get; }; };",
+            )],
         )
         .expect("an earlier local identity alias exposes the terminal member");
     }
 
     #[test]
     fn declaration_callable_identity_alias_requires_a_written_import_edge() {
-        let provider = p("module provider; \
-             pub type { Tag: . { pub mk; pub get; }; };");
-        let consumer = p("module consumer; \
-             type Alias = provider.Tag; \
-             op + _ { impl Alias.mk; };");
+        let provider = p("mod provider; pub type { Tag: . { pub mk; pub get; }; };");
+        let consumer = p("mod consumer; type Alias = provider.Tag; op + _ { impl Alias.mk; };");
         let message = expect_name_error(validate_against_modules(&consumer, &[provider]));
         assert!(
             message.contains("`Alias.mk` does not resolve"),
@@ -3818,12 +3703,10 @@ mod tests {
 
     #[test]
     fn operator_rejects_later_or_nonidentity_alias_member_heads() {
-        let origin = p("module origin; \
-             pub type { Pair[A][B]: A & B { pub mk; pub get; }; };");
-        let later = p("module x; \
-             import origin as imported; \
-             op + _ { impl Later.mk; }; \
-             type Later[A][B] = imported.Pair[A][ B];");
+        let origin = p("mod origin; pub type { Pair[A][B]: A & B { pub mk; pub get; }; };");
+        let later = p(
+            "mod x; import origin as imported; op + _ { impl Later.mk; }; type Later[A][B] = imported.Pair[A][ B];",
+        );
         let message = expect_name_error(validate_against_modules(
             &later,
             std::slice::from_ref(&origin),
@@ -3832,11 +3715,9 @@ mod tests {
             message.contains("`Later.mk` does not resolve"),
             "got: {message}"
         );
-        let later_qualified = p("module x; \
-             import origin as imported; \
-             import x as self_module; \
-             op + _ { impl self_module.Later.mk; }; \
-             type Later[A][B] = imported.Pair[A][ B];");
+        let later_qualified = p(
+            "mod x; import origin as imported; import x as self_module; op + _ { impl self_module.Later.mk; }; type Later[A][B] = imported.Pair[A][ B];",
+        );
         let message = expect_name_error(validate_against_modules(
             &later_qualified,
             std::slice::from_ref(&origin),
@@ -3846,33 +3727,27 @@ mod tests {
             "got: {message}"
         );
 
-        let alias_body_qualified = p("module x; \
-             import x as self_module; \
-             type Alias = self_module.Later; \
-             op + _ { impl Alias.mk; }; \
-             type { Later: . { mk; get; }; };");
+        let alias_body_qualified = p(
+            "mod x; import x as self_module; type Alias = self_module.Later; op + _ { impl Alias.mk; }; type { Later: . { mk; get; }; };",
+        );
         let message = expect_name_error(validate_against_modules(&alias_body_qualified, &[]));
         assert!(
             message.contains("`Alias.mk` does not resolve"),
             "a self-qualified alias body cannot import its later local target: {message}"
         );
 
-        let alias_body_selective = p("module x; \
-             import x(Later); \
-             type Alias = Later; \
-             op + _ { impl Alias.mk; }; \
-             type { Later: . { mk; get; }; };");
+        let alias_body_selective = p(
+            "mod x; import x {type Later} type Alias = Later; op + _ { impl Alias.mk; }; type { Later: . { mk; get; }; };",
+        );
         let message = expect_name_error(validate_against_modules(&alias_body_selective, &[]));
         assert!(
             message.contains("`Alias.mk` does not resolve"),
             "a selectively self-imported alias body cannot import its later local target: {message}"
         );
 
-        let alias_body_in_scope = p("module x; \
-             import x as self_module; \
-             type { Earlier: . { mk; get; }; }; \
-             type Alias = self_module.Earlier; \
-             op + _ { impl Alias.mk; };");
+        let alias_body_in_scope = p(
+            "mod x; import x as self_module; type { Earlier: . { mk; get; }; }; type Alias = self_module.Earlier; op + _ { impl Alias.mk; };",
+        );
         validate_against_modules(&alias_body_in_scope, &[])
             .expect("a self-qualified alias body retains an earlier local target");
 
@@ -3882,9 +3757,7 @@ mod tests {
             ("partial", "imported.Pair[A]"),
         ] {
             let consumer = p(&format!(
-                "module x; import origin as imported; \
-                 type Alias[A][B] = {body}; \
-                 op + _ {{ impl Alias.mk; }};"
+                "mod x; import origin as imported; type Alias[A][B] = {body}; op + _ {{ impl Alias.mk; }};"
             ));
             let message = expect_name_error(validate_against_modules(
                 &consumer,
@@ -3899,11 +3772,9 @@ mod tests {
 
     #[test]
     fn qualified_alias_missing_member_does_not_fall_back_to_direct_module() {
-        let aliased = p("module a/b; pub fn other(a: A) -> A { a }");
-        let coincidental = p("module h; pub fn step(a: A) -> A { a }");
-        let consumer = p("module x; \
-             import a/b as h; \
-             op + _ { impl h.step; };");
+        let aliased = p("mod a/b; pub fn other(a: A) -> A { a }");
+        let coincidental = p("mod h; pub fn step(a: A) -> A { a }");
+        let consumer = p("mod x; import a/b as h; op + _ { impl h.step; };");
         let message = expect_name_error(validate_against_modules(
             &consumer,
             &[aliased, coincidental],
@@ -3950,7 +3821,7 @@ mod tests {
 
     #[test]
     fn delayed_operands_wrap_complete_grouped_expressions_once() {
-        let source = "module m;
+        let source = "mod m;
             fn choose(left: . -> ., right: . -> .) -> . { left() }
             op ._ && .__ { impl choose; }
             fn run(left: ., middle: ., right: .) -> . { left && middle && right }";
@@ -3983,12 +3854,12 @@ mod tests {
 
     #[test]
     fn macro_operator_routes_exact_target_and_preserves_one_product_stage() {
-        let provider = p("module syntax;
+        let provider = p("mod syntax;
             pure fn keep(_ct: ., value: .) -> . { value }
             pub macro echo : [A] A -> A { impl keep; }
-            pub op macro ._ && .__ { impl echo; }");
+            pub op_macro ._ && .__ { impl echo; }");
         let consumer = p(
-            "module consumer; import syntax(op macro ._ && .__ as ._ %% .__);
+            "mod consumer; import syntax {op_macro ._ && .__ as ._ %% .__}
             fn run(echo: ., right: .) { echo %% right }",
         );
         let folded = fold_package(vec![
@@ -4018,7 +3889,7 @@ mod tests {
         assert!(consumer.imports.iter().any(|import| match &import.kind {
             ImportKind::Selective { from, items } if module_path_str(from) == "syntax" =>
                 items.iter().any(|item| matches!(item,
-                ImportItem::Name { name: selected, macro_span: Some(_), alias: Some(alias), .. }
+                ImportItem::Name { name: selected, kind: crate::ast::ImportNameKind::Macro, alias: Some(alias), .. }
                     if selected == "echo" && &alias.local == name)),
             _ => false,
         }));
@@ -4026,12 +3897,12 @@ mod tests {
 
     #[test]
     fn operator_kind_and_delay_mismatches_reject_without_body_uses() {
-        for selected in ["op _ && __", "op macro _ && __", "op ._ && .__"] {
-            let provider = p("module syntax;
+        for selected in ["op _ && __", "op_macro _ && __", "op ._ && .__"] {
+            let provider = p("mod syntax;
                 pure fn keep(value: .) -> . { value }
                 pub macro echo : . -> . { impl keep; }
-                pub op macro _ && .__ { impl echo; }");
-            let consumer = p(&format!("module consumer; import syntax({selected});"));
+                pub op_macro _ && .__ { impl echo; }");
+            let consumer = p(&format!("mod consumer; import syntax {{{selected}}}"));
             let (_, error) = fold_package(vec![
                 (PathBuf::from("syntax.kio"), provider),
                 (PathBuf::from("consumer.kio"), consumer),
@@ -4039,9 +3910,9 @@ mod tests {
             .unwrap_err();
             assert!(matches!(error, Error::Import(_)), "{error:?}");
         }
-        for declaration in ["op _ && _ { impl echo; }", "op macro _ && _ { impl keep; }"] {
+        for declaration in ["op _ && _ { impl echo; }", "op_macro _ && _ { impl keep; }"] {
             let module = p(&format!(
-                "module m; pure fn keep(value: .) -> . {{ value }} macro echo : . -> . {{ impl keep; }} {declaration}"
+                "mod m; pure fn keep(value: .) -> . {{ value }} macro echo : . -> . {{ impl keep; }} {declaration}"
             ));
             let (_, error) = fold_package(vec![(PathBuf::from("m.kio"), module)]).unwrap_err();
             assert!(matches!(error, Error::NameRes(_)), "{error:?}");
@@ -4151,10 +4022,7 @@ mod tests {
     #[test]
     fn fold_binary_op_to_call() {
         let body = folded_fn_def_body(
-            "module x; \
-             fn add(a: A, b: A) -> A { a } \
-             op _ + _ { impl add; }; \
-             fn use_op(x: A, y: A) -> A { x + y }",
+            "mod x; fn add(a: A, b: A) -> A { a } op _ + _ { impl add; }; fn use_op(x: A, y: A) -> A { x + y }",
             2,
         );
         match body {
@@ -4174,10 +4042,7 @@ mod tests {
     #[test]
     fn fold_prefix_op_to_call() {
         let body = folded_fn_def_body(
-            "module x; \
-             fn neg(a: A) -> A { a } \
-             op - __ { impl neg; }; \
-             fn use_op(x: A) -> A { -x }",
+            "mod x; fn neg(a: A) -> A { a } op - __ { impl neg; }; fn use_op(x: A) -> A { -x }",
             2,
         );
         match body {
@@ -4189,12 +4054,7 @@ mod tests {
     #[test]
     fn fold_grouped_prefix_then_binary_composes() {
         let body = folded_fn_def_body(
-            "module x; \
-             fn neg(a: A) -> A { a } \
-             fn add(a: A, b: A) -> A { a } \
-             op - __ { impl neg; }; \
-             op _ + __ { impl add; }; \
-             fn use_op(a: A, b: A) -> A { (- a) + b }",
+            "mod x; fn neg(a: A) -> A { a } fn add(a: A, b: A) -> A { a } op - __ { impl neg; }; op _ + __ { impl add; }; fn use_op(a: A, b: A) -> A { (- a) + b }",
             4,
         );
         match body {
@@ -4227,10 +4087,7 @@ mod tests {
     #[test]
     fn fold_ternary_to_call() {
         let body = folded_fn_def_body(
-            "module x; \
-             fn cond(a: A, b: A, c: A) -> A { a } \
-             op _ ? _ : __ { impl cond; }; \
-             fn use_op(p: A, t: A, e: A) -> A { p ? t : e }",
+            "mod x; fn cond(a: A, b: A, c: A) -> A { a } op _ ? _ : __ { impl cond; }; fn use_op(p: A, t: A, e: A) -> A { p ? t : e }",
             2,
         );
         match body {
@@ -4242,11 +4099,7 @@ mod tests {
     #[test]
     fn fold_variadic_to_nested_calls() {
         let body = folded_fn_def_body(
-            "module x; \
-             fn nil() -> A { let r = (); r } \
-             fn cat(x: A, acc: A) -> A { x } \
-             varop [* *] { foldr cat nil; }; \
-             fn use_op(a: A, b: A) -> A { [* a, b *] }",
+            "mod x; fn nil() -> A { let r = (); r } fn cat(x: A, acc: A) -> A { x } op_var [* *] { foldr cat nil; }; fn use_op(a: A, b: A) -> A { [* a, b *] }",
             3,
         );
         match body {
@@ -4280,11 +4133,7 @@ mod tests {
     #[test]
     fn foldr1_consumes_the_last_element() {
         let body = folded_fn_def_body(
-            "module x; \
-             fn seed(value: A) -> A { value } \
-             fn keep_seed(value: A, acc: A) -> A { acc } \
-             varop [* *] { foldr1 keep_seed seed; }; \
-             fn use_op(a: A, b: A, c: A) -> A { [* a, b, c *] }",
+            "mod x; fn seed(value: A) -> A { value } fn keep_seed(value: A, acc: A) -> A { acc } op_var [* *] { foldr1 keep_seed seed; }; fn use_op(a: A, b: A, c: A) -> A { [* a, b, c *] }",
             3,
         );
 
@@ -4299,11 +4148,7 @@ mod tests {
     #[test]
     fn foldl1_consumes_the_first_element() {
         let body = folded_fn_def_body(
-            "module x; \
-             fn seed(value: A) -> A { value } \
-             fn keep_seed(acc: A, value: A) -> A { acc } \
-             varop [* *] { foldl1 keep_seed seed; }; \
-             fn use_op(a: A, b: A, c: A) -> A { [* a, b, c *] }",
+            "mod x; fn seed(value: A) -> A { value } fn keep_seed(acc: A, value: A) -> A { acc } op_var [* *] { foldl1 keep_seed seed; }; fn use_op(a: A, b: A, c: A) -> A { [* a, b, c *] }",
             3,
         );
 
@@ -4317,13 +4162,7 @@ mod tests {
 
     #[test]
     fn foldr1_initializer_consumes_one_complete_terminal_pair_expression() {
-        let source = "module x; \
-             fn seed(entry: A & B) -> A & B { entry } \
-             fn keep_seed(entry: A & B, acc: A & B) -> A & B { acc } \
-             fn entry(key: A, value: B) -> A & B { (key, value) } \
-             op _ => _ { impl entry; }; \
-             varop [% %] { foldr1 keep_seed seed; }; \
-             fn use_op(a: A, b: B, c: A, d: B) -> A & B { [% a => b, c => d %] }";
+        let source = "mod x; fn seed(entry: A & B) -> A & B { entry } fn keep_seed(entry: A & B, acc: A & B) -> A & B { acc } fn entry(key: A, value: B) -> A & B { (key, value) } op _ => _ { impl entry; }; op_var [% %] { foldr1 keep_seed seed; }; fn use_op(a: A, b: B, c: A, d: B) -> A & B { [% a => b, c => d %] }";
         let parsed = p(source);
         let Item::FnDef(use_op) = &parsed.items[5] else {
             panic!("expected use_op function");
@@ -4351,12 +4190,7 @@ mod tests {
 
     #[test]
     fn one_element_seeded_fold_skips_step_and_finalizes_the_base() {
-        let source = "module x; \
-             fn seed(value: A) -> A { value } \
-             fn step(value: A, acc: A) -> A { value } \
-             fn finish(acc: A) -> A { acc } \
-             varop [* *] { foldr1 step seed; finalize finish; }; \
-             fn use_op(a: A) -> A { [* a *] }";
+        let source = "mod x; fn seed(value: A) -> A { value } fn step(value: A, acc: A) -> A { value } fn finish(acc: A) -> A { acc } op_var [* *] { foldr1 step seed; finalize finish; }; fn use_op(a: A) -> A { [* a *] }";
         let parsed = p(source);
         let Item::FnDef(use_op) = &parsed.items[4] else {
             panic!("expected use_op function");
@@ -4377,14 +4211,7 @@ mod tests {
 
     #[test]
     fn right_fold_call_spans_anchor_every_pair_step_to_its_element_end() {
-        let src = "module x; \
-             fn base() -> C { () } \
-             fn step(_entry: A & B, acc: C) -> C { acc } \
-             fn finish(acc: C) -> C { acc } \
-             fn entry(key: A, value: B) -> A & B { (key, value) } \
-             op _ => _ { impl entry; }; \
-             varop [% %] { foldr step base; finalize finish; }; \
-             fn use_op(a: A, b: B, c: A, d: B) -> C { [% a => b, c => d %] }";
+        let src = "mod x; fn base() -> C { () } fn step(_entry: A & B, acc: C) -> C { acc } fn finish(acc: C) -> C { acc } fn entry(key: A, value: B) -> A & B { (key, value) } op _ => _ { impl entry; }; op_var [% %] { foldr step base; finalize finish; }; fn use_op(a: A, b: B, c: A, d: B) -> C { [% a => b, c => d %] }";
         let parsed = p(src);
         let Item::FnDef(use_op) = &parsed.items[6] else {
             panic!("expected use_op function");
@@ -4424,12 +4251,7 @@ mod tests {
 
     #[test]
     fn left_fold_call_spans_anchor_every_step_to_its_slot() {
-        let src = "module x; \
-             fn base() -> C { () } \
-             fn step(acc: C, _value: A) -> C { acc } \
-             fn finish(acc: C) -> C { acc } \
-             varop [! !] { foldl step base; finalize finish; }; \
-             fn use_op(a: A, b: A) -> C { [! a, b !] }";
+        let src = "mod x; fn base() -> C { () } fn step(acc: C, _value: A) -> C { acc } fn finish(acc: C) -> C { acc } op_var [! !] { foldl step base; finalize finish; }; fn use_op(a: A, b: A) -> C { [! a, b !] }";
         let parsed = p(src);
         let Item::FnDef(use_op) = &parsed.items[4] else {
             panic!("expected use_op function");
@@ -4460,14 +4282,7 @@ mod tests {
 
     #[test]
     fn nested_element_uses_the_enclosing_fold_opening_for_identity() {
-        let src = "module x; \
-             fn inner_base() -> C { () } \
-             fn inner_step(_value: A, acc: C) -> C { acc } \
-             varop [* *] { foldr inner_step inner_base; }; \
-             fn outer_base() -> D { () } \
-             fn outer_step(_value: C, acc: D) -> D { acc } \
-             varop [% %] { foldr outer_step outer_base; }; \
-             fn use_op(a: A) -> D { [% [* a *] %] }";
+        let src = "mod x; fn inner_base() -> C { () } fn inner_step(_value: A, acc: C) -> C { acc } op_var [* *] { foldr inner_step inner_base; }; fn outer_base() -> D { () } fn outer_step(_value: C, acc: D) -> D { acc } op_var [% %] { foldr outer_step outer_base; }; fn use_op(a: A) -> D { [% [* a *] %] }";
         let parsed = p(src);
         let Item::FnDef(use_op) = &parsed.items[6] else {
             panic!("expected use_op function");
@@ -4508,17 +4323,7 @@ mod tests {
 
     #[test]
     fn finalizing_nested_element_keeps_inner_and_enclosing_calls_distinct() {
-        let src = "module x; \
-             fn inner_base() -> C { () } \
-             fn inner_step(_value: A, acc: C) -> C { acc } \
-             fn inner_finish(acc: C) -> C { acc } \
-             varop [+ +] { \
-               foldr inner_step inner_base; finalize inner_finish; \
-             }; \
-             fn outer_base() -> D { () } \
-             fn outer_step(_value: C, acc: D) -> D { acc } \
-             varop [% %] { foldr outer_step outer_base; }; \
-             fn use_op(a: A) -> D { [% [+ a +] %] }";
+        let src = "mod x; fn inner_base() -> C { () } fn inner_step(_value: A, acc: C) -> C { acc } fn inner_finish(acc: C) -> C { acc } op_var [+ +] { foldr inner_step inner_base; finalize inner_finish; }; fn outer_base() -> D { () } fn outer_step(_value: C, acc: D) -> D { acc } op_var [% %] { foldr outer_step outer_base; }; fn use_op(a: A) -> D { [% [+ a +] %] }";
         let parsed = p(src);
         let Item::FnDef(use_op) = &parsed.items[7] else {
             panic!("expected use_op function");
@@ -4559,14 +4364,7 @@ mod tests {
 
     #[test]
     fn empty_nested_element_keeps_inner_base_and_enclosing_step_distinct() {
-        let src = "module x; \
-             fn inner_base() -> C { () } \
-             fn inner_step(_value: A, acc: C) -> C { acc } \
-             varop [* *] { foldr inner_step inner_base; }; \
-             fn outer_base() -> D { () } \
-             fn outer_step(_value: C, acc: D) -> D { acc } \
-             varop [% %] { foldr outer_step outer_base; }; \
-             fn use_op() -> D { [% [* *] %] }";
+        let src = "mod x; fn inner_base() -> C { () } fn inner_step(_value: A, acc: C) -> C { acc } op_var [* *] { foldr inner_step inner_base; }; fn outer_base() -> D { () } fn outer_step(_value: C, acc: D) -> D { acc } op_var [% %] { foldr outer_step outer_base; }; fn use_op() -> D { [% [* *] %] }";
         let parsed = p(src);
         let Item::FnDef(use_op) = &parsed.items[6] else {
             panic!("expected use_op function");
@@ -4596,11 +4394,7 @@ mod tests {
 
     #[test]
     fn variadic_fold_commas_do_not_create_phantom_elements() {
-        let source = "module x; \
-             fn base() -> . { () } \
-             fn step(_value: ., acc: .) -> . { acc } \
-             varop [* *] { foldr step base; }; \
-             fn use_op() -> . { [* ,,, *] }";
+        let source = "mod x; fn base() -> . { () } fn step(_value: ., acc: .) -> . { acc } op_var [* *] { foldr step base; }; fn use_op() -> . { [* ,,, *] }";
         let parsed = p(source);
         let Item::FnDef(use_op) = &parsed.items[3] else {
             panic!("expected use_op function");
@@ -4615,11 +4409,9 @@ mod tests {
 
     #[test]
     fn foldr1_rejects_an_empty_literal() {
-        let m = p("module x; \
-             fn singleton(x: A) -> A { x } \
-             fn cat(x: A, acc: A) -> A { x } \
-             varop [* *] { foldr1 cat singleton; }; \
-             fn use_op(x: A) -> A { [* *] }");
+        let m = p(
+            "mod x; fn singleton(x: A) -> A { x } fn cat(x: A, acc: A) -> A { x } op_var [* *] { foldr1 cat singleton; }; fn use_op(x: A) -> A { [* *] }",
+        );
         let modules = [(PathBuf::from("x.kio"), m.clone())];
         let pkg =
             PackageOpScope::from_modules_named(&modules, None).expect("fold declaration validates");
@@ -4644,13 +4436,13 @@ mod tests {
             ("_ ? ___", "op _ ? __", "a ? b"),
         ] {
             let provider = p(&format!(
-                "module syntax;
+                "mod syntax;
                  pub fn target(a: ., b: ., c: .) -> . {{ a }}
                  pub fn empty() -> . {{ () }}
                  pub op {declared} {{ impl target; }};"
             ));
             let consumer_source = format!(
-                "module consumer; import syntax({selected});
+                "mod consumer; import syntax {{{selected}}}
                  fn run(a: ., b: .) -> . {{ {body} }}"
             );
             let consumer = p(&consumer_source);
@@ -4701,10 +4493,10 @@ mod tests {
             "op variadic <% _ => _ ; ... %>",
             "op variadic <% _ -> _ , ... %>",
             "op variadic <% _ => _ , ... !>",
-            "varop [% _ => _ , ... %]",
-            "varop [% !]",
+            "op_var [% _ => _ , ... %]",
+            "op_var [% !]",
         ] {
-            let source = format!("module consumer; import syntax({selected});");
+            let source = format!("mod consumer; import syntax {{{selected}}}");
             assert!(parse(&source).is_err(), "{selected}");
             assert!(
                 crate::pass::parser::parse_lazy(&source).is_err(),
@@ -4715,12 +4507,8 @@ mod tests {
 
     #[test]
     fn fold_cross_module_binary_op() {
-        let source = p("module m; \
-             pub fn add(a: A, b: A) -> A { a } \
-             pub op _ + _ { impl add; };");
-        let consumer = p("module x; \
-             import m(op _ + _); \
-             fn use_op(x: A, y: A) -> A { x + y }");
+        let source = p("mod m; pub fn add(a: A, b: A) -> A { a } pub op _ + _ { impl add; };");
+        let consumer = p("mod x; import m {op _ + _} fn use_op(x: A, y: A) -> A { x + y }");
         let modules = vec![
             (PathBuf::from("x.kio"), consumer),
             (PathBuf::from("m.kio"), source),
@@ -4736,7 +4524,7 @@ mod tests {
         if let ImportKind::Qualified { path, .. } = &synthetic.kind {
             assert_eq!(path.segments, vec!["m"]);
         }
-        // The original `import m(op _ + _);` clause was stripped from
+        // The original `import m { op _ + _ }` clause was stripped from
         // `module.imports` after op-fold consumed its operator-pattern
         // item.
         let stale = consumer.imports.iter().find(|u| {
@@ -4767,23 +4555,15 @@ mod tests {
 
     #[test]
     fn imported_named_callables_keep_their_resolved_owner() {
-        let definitions = p("module d; \
-             pub fn combine(_a: ., _b: .) -> . { () } \
-             pub fn begin() -> . { () } \
-             pub fn accumulate(_a: ., _b: .) -> . { () } \
-             pub fn finish(_a: .) -> . { () }");
-        let syntax = p("module p; \
-             import d(combine, finish); \
-             import d as definitions; \
-             pub op _ %+ _ { impl combine; }; \
-             pub varop [* *] { \
-               foldr definitions.accumulate definitions.begin; \
-               finalize finish; \
-             };");
-        let consumer = p("module x; \
-             import p(op _ %+ _, varop [* *]); \
-             fn use_op(a: ., b: .) -> . { a %+ b } \
-             fn use_fold(a: ., b: .) -> . { [* a, b *] }");
+        let definitions = p(
+            "mod d; pub fn combine(_a: ., _b: .) -> . { () } pub fn begin() -> . { () } pub fn accumulate(_a: ., _b: .) -> . { () } pub fn finish(_a: .) -> . { () }",
+        );
+        let syntax = p(
+            "mod p; import d {fn combine; fn finish} import d as definitions; pub op _ %+ _ { impl combine; }; pub op_var [* *] { foldr definitions.accumulate definitions.begin; finalize finish; };",
+        );
+        let consumer = p(
+            "mod x; import p {op _ %+ _; op_var [* *]} fn use_op(a: ., b: .) -> . { a %+ b } fn use_fold(a: ., b: .) -> . { [* a, b *] }",
+        );
         let modules = vec![
             (PathBuf::from("x.kio"), consumer),
             (PathBuf::from("p.kio"), syntax),
@@ -4846,19 +4626,12 @@ mod tests {
 
     #[test]
     fn imported_builtin_callables_keep_their_import_class_and_bare_name() {
-        let syntax = p("module p; \
-             import __intrinsics__; \
-             import __comptime__; \
-             pub op _ ** _ { impl __pair__; }; \
-             pub varop [+ +] { \
-               foldr __term_call__ __term_unit__; \
-               finalize __term_type__; \
-             };");
-        let consumer = p("module x; \
-             import __intrinsics__; \
-             import p(op _ ** _, varop [+ +]); \
-             fn use_op(a: ., b: .) -> . { a ** b } \
-             fn use_fold(a: ., b: .) -> . { [+ a, b +] }");
+        let syntax = p(
+            "mod p; import __intrinsics__; import __comptime__; pub op _ ** _ { impl __pair__; }; pub op_var [+ +] { foldr __term_call__ __term_unit__; finalize __term_type__; };",
+        );
+        let consumer = p(
+            "mod x; import __intrinsics__; import p {op _ ** _; op_var [+ +]} fn use_op(a: ., b: .) -> . { a ** b } fn use_fold(a: ., b: .) -> . { [+ a, b +] }",
+        );
         let modules = vec![
             (PathBuf::from("x.kio"), consumer),
             (PathBuf::from("p.kio"), syntax),
@@ -4930,12 +4703,8 @@ mod tests {
         // imports `+ _` from `m`; the source declares a prefix-shaped
         // `op + _ { impl pos; };` and the consumer's use-site `+ x` folds
         // into the synthetic qualified call through the same alias.
-        let source = p("module m; \
-             pub fn pos(a: A) -> A { a } \
-             pub op + _ { impl pos; };");
-        let consumer = p("module x; \
-             import m(op + _); \
-             fn use_op(x: A) -> A { + x }");
+        let source = p("mod m; pub fn pos(a: A) -> A { a } pub op + _ { impl pos; };");
+        let consumer = p("mod x; import m {op + _} fn use_op(x: A) -> A { + x }");
         let modules = vec![
             (PathBuf::from("x.kio"), consumer),
             (PathBuf::from("m.kio"), source),
@@ -4961,12 +4730,8 @@ mod tests {
 
     #[test]
     fn fold_imported_binary_op() {
-        let arith = pf("module arith; \
-             pub fn add(a: A, b: A) -> A { a } \
-             pub op _ + _ { impl add; };");
-        let consumer = p("module x; \
-             import arith(op _ + _); \
-             fn use_op(x: A, y: A) -> A { x + y }");
+        let arith = pf("mod arith; pub fn add(a: A, b: A) -> A { a } pub op _ + _ { impl add; };");
+        let consumer = p("mod x; import arith {op _ + _} fn use_op(x: A, y: A) -> A { x + y }");
 
         let modules = vec![
             (PathBuf::from("x.kio"), consumer),
@@ -4985,7 +4750,7 @@ mod tests {
             assert_eq!(path.segments, vec!["arith"]);
         }
 
-        // The original `import arith(op _ + _);` operator-pattern item
+        // The original `import arith { op _ + _ }` operator-pattern item
         // was stripped after op-fold consumed it.
         let stale = consumer.imports.iter().find(|u| {
             matches!(
@@ -5016,10 +4781,8 @@ mod tests {
 
     #[test]
     fn fold_imported_no_matching_op_errors() {
-        let consumer = p("module x; \
-             import arith(op _ + _); \
-             fn use_op(x: A, y: A) -> A { x + y }");
-        let arith = pf("module arith; pub fn add(a: A, b: A) -> A { a }");
+        let consumer = p("mod x; import arith {op _ + _} fn use_op(x: A, y: A) -> A { x + y }");
+        let arith = pf("mod arith; pub fn add(a: A, b: A) -> A { a }");
 
         let modules = vec![
             (PathBuf::from("x.kio"), consumer),

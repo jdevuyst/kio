@@ -1,4 +1,4 @@
-module queue_host;
+mod queue_host;
 
 import testapi as api;
 import testapi/arith as arithmetic;

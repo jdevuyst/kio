@@ -1,4 +1,4 @@
-package pure_macro_nested_compile_time_impurity;
+pkg pure_macro_nested_compile_time_impurity;
 
 build {
   cache "out/.kio-cache/";

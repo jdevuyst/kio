@@ -1,4 +1,4 @@
-module main;
+mod main;
 
 type Event =
   | Click_event_kind_one_pretty_long_name
@@ -6,7 +6,7 @@ type Event =
   | Focus_event_kind_three_lengthy
   | Drag_event_kind_four_yet_more
   ;
-module main;
+mod main;
 
 type Event =
   | Click_event_kind_one_pretty_long_name

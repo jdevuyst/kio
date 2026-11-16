@@ -1,11 +1,11 @@
-module testapi/main;
+mod testapi/main;
 
-import macros/control(macro scope);
-import macros/row_macros(macro with_);
-import quotation(macro duplicate);
-import testapi(Bool);
-import testapi/io(print);
-import testapi/iter(loop);
+import macros/control { macro scope }
+import macros/row_macros { macro with_ }
+import quotation { macro duplicate }
+import testapi { type Bool }
+import testapi/io { fn print }
+import testapi/iter { fn loop }
 
 type Fields = { Flag: Bool { mk; get } };
 

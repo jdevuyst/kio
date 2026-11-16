@@ -1,4 +1,4 @@
-module widget/feature/store;
+mod widget/feature/store;
 
 import widget/feature/target as _rehost_hhgjgeghgfhecpgggfgbhehfhcgfcphegbhcghgfhe;
 

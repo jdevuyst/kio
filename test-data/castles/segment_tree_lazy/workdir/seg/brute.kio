@@ -5,20 +5,20 @@
 /// It is *obviously* correct, which is the entire point: the segment tree's
 /// answers are checked against this one, operation by operation. One unit of
 /// work here is one element read or written.
-module seg/brute;
+mod seg/brute;
 
-import macros/control(macro if);
-import macros/row_macros(macro select);
-import seg/meter(Meter, bump_work, new_meter, work);
-import seg/num(int_eq, int_min);
-import testapi(Array, Bool, I32);
-import testapi/arith(add_i32, leq_i32);
-import testapi/array(array_clone, array_get, array_len, array_set);
-import testapi/iter(loop);
+import macros/control { macro if }
+import macros/row_macros { macro select }
+import seg/meter { type Meter; fn bump_work; fn new_meter; fn work }
+import seg/num { fn int_eq; fn int_min }
+import testapi { type Array; type Bool; type I32 }
+import testapi/arith { fn add_i32; fn leq_i32 }
+import testapi/array { fn array_clone; fn array_get; fn array_len; fn array_set }
+import testapi/iter { fn loop }
 
 /// Larger than any range sum this package can reach, so it survives every
 /// `int_min` as the identity for the minimum.
-literal unreachable_high = 1000000;
+lit unreachable_high = 1000000;
 
 pub type Brute = { Cells: Array[I32]; Touched: Meter };
 

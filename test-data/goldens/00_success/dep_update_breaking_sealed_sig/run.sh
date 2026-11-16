@@ -75,7 +75,7 @@ sha_a=$(git --git-dir="$bare" rev-parse HEAD) || fail "cannot read commit A"
 
 # --- Pin the consumer to commit A. ---
 cat > "$scratch/consumer/greetlib.dep.kio" <<EOF
-dependency greetlib;
+dep greetlib;
 
 source {
   git "$bare";

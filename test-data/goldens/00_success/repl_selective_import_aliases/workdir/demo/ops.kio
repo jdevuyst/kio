@@ -1,4 +1,4 @@
-module demo/ops;
+mod demo/ops;
 
 pub fn choose(left: ., _right: .) { left }
 
@@ -6,4 +6,4 @@ pub fn empty() { () }
 
 pub op _ + _ { impl choose }
 
-pub varop [* *] { foldr choose empty }
+pub op_var [* *] { foldr choose empty }

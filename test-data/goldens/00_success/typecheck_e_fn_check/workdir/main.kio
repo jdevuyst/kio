@@ -1,4 +1,4 @@
-module main;
+mod main;
 
 // Rank-2 sink: takes a polymorphic identity. The receiving slot
 // is the polytype `[U] U -> U`; the value-arg lambda literal

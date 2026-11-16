@@ -1,15 +1,15 @@
-module testapi/main;
+mod testapi/main;
 
-import testapi(String);
-import testapi/io(print);
+import testapi { type String }
+import testapi/io { fn print }
 
 fn nil() -> String { "[]" }
 
 fn cat(head: String, tail: String) -> String { head }
 
-varop [! !] { foldr cat nil }
+op_var [! !] { foldr cat nil }
 
-varop [%? ?%] { foldr cat nil }
+op_var [%? ?%] { foldr cat nil }
 
 pub fn main() {
   print([! "a", "b", "c" !]);

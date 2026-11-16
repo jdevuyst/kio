@@ -1,4 +1,4 @@
-package derive_memo_deep_stack;
+pkg derive_memo_deep_stack;
 
 build {
   cache "out/.kio-cache/";

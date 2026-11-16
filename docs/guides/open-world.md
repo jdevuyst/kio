@@ -20,25 +20,25 @@ Kio forbids that kind of import-all rule. A module either selects the names it
 wants from one named provider:
 
 <!--kio {file}
-module cats;
+mod cats;
 
 pub fn speak() { () }
 -->
 
 <!--kio {file}
-module dogs;
+mod dogs;
 
 pub fn speak() { () }
 -->
 
 <!--kio {harness=selective_import file placeholder="__SNIPPET__"}
-module examples/selective;
+mod examples/selective;
 
 __SNIPPET__
 -->
 
 ```kio {@selective_import}
-import cats(speak);
+import cats { fn speak }
 
 fn announce() { speak() }
 ```
@@ -46,7 +46,7 @@ fn announce() { speak() }
 or keeps providers qualified:
 
 <!--kio {harness=qualified_import file placeholder="__SNIPPET__"}
-module examples/qualified;
+mod examples/qualified;
 
 __SNIPPET__
 -->
@@ -63,7 +63,7 @@ explicitly. Adding another declaration elsewhere cannot change what an
 existing name refers to. The same separation applies to operator bindings:
 importing a function does not silently import syntax associated with it. A
 consumer that wants both names imports both, for example
-`import list(push, op _ :: __);` when the provider declares
+`import list {fn push; op _ :: __}` when the provider declares
 that complete operator grammar.
 
 Each ordinary imported name or qualified module alias is introduced once.
@@ -123,9 +123,9 @@ bridge {
   kiodoc;
 }
 
-module kiodoc;
+mod kiodoc;
 
-import derive(macro derive);
+import derive {macro derive}
 
 host type String role(str);
 
@@ -189,7 +189,7 @@ When the copies are deliberately the same boundary, the consumer can record
 that fact in the dependency declaration used for materialization:
 
 ```kio {variant=dependency}
-dependency widget;
+dep widget;
 
 source {
   path "../widget/widget.pkg.kio"

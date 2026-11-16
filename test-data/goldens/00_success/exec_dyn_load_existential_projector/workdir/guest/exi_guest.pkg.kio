@@ -1,4 +1,4 @@
-package exi_guest;
+pkg exi_guest;
 
 build {
   cache "out/.kio-cache/";

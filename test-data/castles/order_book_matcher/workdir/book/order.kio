@@ -4,15 +4,15 @@
 /// Two decisions live here because both are pure price arithmetic and
 /// neither needs the book: which of two orders ranks ahead of the other,
 /// and whether an aggressor is willing to trade against a resting order.
-module book/order;
+mod book/order;
 
-import book/num(int_lt);
-import macros/control(macro if);
-import macros/match(macro match);
-import macros/row_macros(macro select, macro with);
-import macros/spine_macros(macro widen_sum);
-import testapi(Bool, I32, String);
-import testapi/arith(leq_i32);
+import book/num { fn int_lt }
+import macros/control { macro if }
+import macros/match { macro match }
+import macros/row_macros { macro select; macro with }
+import macros/spine_macros { macro widen_sum }
+import testapi { type Bool; type I32; type String }
+import testapi/arith { fn leq_i32 }
 
 pub type Side = { Buy: . } | { Sell: . };
 

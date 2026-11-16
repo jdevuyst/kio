@@ -16,7 +16,7 @@ bridge {
   kiodoc;
 }
 
-module kiodoc;
+mod kiodoc;
 
 host type Int role(i32);
 host type String role(str);
@@ -30,12 +30,12 @@ bridge {
   kiodoc;
 }
 
-module kiodoc;
+mod kiodoc;
 
-import control(Bool, macro if);
-import match(macro match);
-import sequence(macro do);
-import spine_macros(macro widen_sum);
+import control {type Bool; macro if}
+import match {macro match}
+import sequence {macro do}
+import spine_macros {macro widen_sum}
 
 host type Int role(i32);
 host type String role(str);
@@ -332,7 +332,7 @@ later uses do not infer an earlier action backward. See
 
 Add the [macro library](using-libraries.md#the-macro-library) as an
 `macros` dependency, follow the [dependency workflow](using-libraries.md#the-minimal-dependency-workflow)
-to fetch it, and write `import macros/match(macro match);` in your module.
+to fetch it, and write `import macros/match {macro match}` in your module.
 
 `match` follows the same common-result rule. Its clause parameters first
 identify the input branches; the clause results then agree on one output type.
@@ -450,7 +450,7 @@ A scalar literal needs one concrete carrier. An explicit annotation such as
 argument or binding type can determine it through ordinary local inference:
 
 ```kio {}
-module literal_choices;
+mod literal_choices;
 
 host type Int role(i32);
 

@@ -1,4 +1,4 @@
-package nominal_scope;
+pkg nominal_scope;
 
 build {
   cache "out/.kio-cache/";

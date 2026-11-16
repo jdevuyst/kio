@@ -1,4 +1,4 @@
-module retained_macro_closed_abi/macros;
+mod retained_macro_closed_abi/macros;
 
 import __comptime__;
 

@@ -1,6 +1,6 @@
-module testapi/main;
+mod testapi/main;
 
-import alphabet(Card);
+import alphabet { type Card }
 import message as msg;
 import render as card;
 

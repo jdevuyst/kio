@@ -2,10 +2,10 @@
 //! `*.sig.kio` source text.
 //!
 //! The emitted text is the inverse of
-//! [`crate::pass::parser::parse_signature_file`]: a `signature <pkg>
+//! [`crate::pass::parser::parse_signature_file`]: a `sig <pkg>
 //! v(<N>);` header followed by oldest-first per-version blocks, each
 //! partitioning its changes into `breaking` / `nonbreaking` sections
-//! of `add` / `modify` / `remove` blocks, with braced `module <path> {
+//! of `add` / `modify` / `remove` blocks, with braced `mod <path> {
 //! … }` sections inside `add` / `modify`.
 //!
 //! Declarations are rendered through the regular-module pretty-printer
@@ -15,8 +15,8 @@
 //! suffix-free declarations and sections after canonical ordering.
 
 use crate::ast::{
-    Import, Item, SigChangeSet, SigItem, SigItemRef, SigModuleSection, SigRemoveModule, SigVersion,
-    SignatureFile, Surface, TypeRecMember,
+    Import, Item, SigChangeSet, SigItem, SigItemRef, SigModuleSection, SigVersion, SignatureFile,
+    Surface, TypeRecMember,
 };
 use crate::pass::lexer::Trivia;
 
@@ -42,7 +42,7 @@ impl SignatureRenderer {
     fn emit_file(&self, file: &SignatureFile<Surface>) -> String {
         let mut out = String::new();
         self.emit_comments(&mut out, file.meta.leading_trivia.as_slice(), 0);
-        out.push_str(&format!("signature {} v({});\n", file.pkg, file.version));
+        out.push_str(&format!("sig {} v({});\n", file.pkg, file.version));
 
         // Versions are emitted oldest-first regardless of in-memory order,
         // matching the parser's presentational ordering.
@@ -142,7 +142,6 @@ impl SignatureRenderer {
             && set.add_refs.is_empty()
             && set.modify.is_empty()
             && set.modify_refs.is_empty()
-            && set.remove.is_empty()
             && set.remove_refs.is_empty()
         {
             return;
@@ -175,11 +174,10 @@ impl SignatureRenderer {
                 )
             }));
         }
-        if !set.remove.is_empty() || !set.remove_refs.is_empty() {
+        if !set.remove_refs.is_empty() {
             entries.push(self.render_entry(|out| {
                 self.emit_remove_block(
                     out,
-                    &set.remove,
                     &set.remove_refs,
                     &set.remove_leading_trivia,
                     &set.remove_trailing_trivia,
@@ -267,7 +265,7 @@ impl SignatureRenderer {
         let pad = INDENT.repeat(depth);
         let path = module_path_str(&section.path);
         self.emit_comments(out, &section.leading_trivia, depth);
-        out.push_str(&format!("{pad}module {path} {{\n"));
+        out.push_str(&format!("{pad}mod {path} {{\n"));
         let inner = INDENT.repeat(depth + 1);
         // `import` clauses render in canonical order (the imported head/alias),
         // so a reordered set of clauses emits identically — the recompute
@@ -342,7 +340,6 @@ impl SignatureRenderer {
     fn emit_remove_block(
         &self,
         out: &mut String,
-        removes: &[SigRemoveModule],
         refs: &[SigItemRef],
         leading: &[Trivia],
         trailing: &[Trivia],
@@ -351,23 +348,10 @@ impl SignatureRenderer {
         let pad = INDENT.repeat(depth);
         self.emit_comments(out, leading, depth);
         out.push_str(&format!("{pad}remove {{\n"));
-        // Canonical output uses exact FQNs even when the parsed input used the
-        // legacy nested-module removal spelling.
         let mut names = refs
             .iter()
             .map(|reference| (item_ref_str(reference), reference.leading_trivia.clone()))
             .collect::<Vec<_>>();
-        for remove in removes {
-            let path = module_path_str(&remove.path);
-            names.extend(remove.names.iter().enumerate().map(|(index, name)| {
-                let mut trivia = Vec::new();
-                if index == 0 {
-                    trivia.extend_from_slice(&remove.leading_trivia);
-                }
-                trivia.extend_from_slice(&name.leading_trivia);
-                (format!("{path}.{}", name.name), trivia)
-            }));
-        }
         names.sort_by(|a, b| a.0.cmp(&b.0));
         let inner = INDENT.repeat(depth + 1);
         self.emit_entries(
@@ -382,9 +366,6 @@ impl SignatureRenderer {
                 })
                 .collect(),
         );
-        for remove in removes {
-            self.emit_comments(out, &remove.trailing_trivia, depth + 1);
-        }
         self.emit_comments(out, trailing, depth + 1);
         out.push_str(&format!("{pad}}}"));
     }
@@ -599,8 +580,8 @@ mod tests {
 
     #[test]
     fn type_only_exports_roundtrip_without_synthesizing_unit_stages() {
-        let source = "signature app v(1);
-            v(1) { nonbreaking { add { module api {
+        let source = "sig app v(1);
+            v(1) { nonbreaking { add { mod api {
                 pub pure fn direct[A] -> .;
                 pub fn delayed[A]() -> .;
                 pub fn adjacent[A][B] -> .;
@@ -628,8 +609,8 @@ mod tests {
 
     #[test]
     fn type_only_exports_do_not_relax_signature_host_group_policy() {
-        let source = "signature app v(1);
-            v(1) { breaking { add { module api {
+        let source = "sig app v(1);
+            v(1) { breaking { add { mod api {
                 host fn required[A] -> .;
             } } } }";
         assert!(matches!(
@@ -640,11 +621,11 @@ mod tests {
 
     #[test]
     fn signature_import_aliases_keep_source_and_local_spellings() {
-        let source = "signature app v(1); v(1) { with { module provider { host type T; } }; breaking { add { module api { import provider(T as Alias, T as Other); pub fn keep(value: Alias) -> Other; } } } }";
+        let source = "sig app v(1); v(1) { with { mod provider { host type T; } }; breaking { add { mod api { import provider {type T as Alias; type T as Other}; pub fn keep(value: Alias) -> Other; } } } }";
         let parsed = crate::pass::parser::parse_signature_file(source, None).unwrap();
         let rendered = emit_signature_file(&parsed);
         assert!(
-            rendered.contains("import provider(T as Alias, T as Other)"),
+            rendered.contains("import provider { type T as Alias; type T as Other }"),
             "{rendered}"
         );
         let reparsed = crate::pass::parser::parse_signature_file(&rendered, None).unwrap();
@@ -653,15 +634,15 @@ mod tests {
 
     #[test]
     fn signature_semicolons_join_sorted_sections_imports_and_declarations() {
-        let source = "signature demo v(1);
+        let source = "sig demo v(1);
             v(1) { ;
-                with { ; module z { type Z = .; }; module a { type A = .; }; };
+                with { ; mod z { type Z = .; }; mod a { type A = .; }; };
                 breaking { ;
-                    add { ; z.Z; module y { type Y = .; }; };
-                    modify { ; module x { type X = .; }; };
+                    add { ; z.Z; mod y { type Y = .; }; };
+                    modify { ; mod x { type X = .; }; };
                     remove { ; z.old; a.old; };
                 };
-                nonbreaking { ; add { ; module m {
+                nonbreaking { ; add { ; mod m {
                     import z as z;
                     import a as a;
                     host type Z;
@@ -676,9 +657,9 @@ mod tests {
         assert_eq!(rendered, emit_signature_file(&reparsed));
         for expected in [
             "type A = .\n",
-            "    };\n    module z",
+            "    };\n    mod z",
             "  };\n  breaking",
-            "      z.Z;\n      module y",
+            "      z.Z;\n      mod y",
             "    };\n    modify",
             "    };\n    remove",
             "      a.old;\n      z.old\n",
@@ -695,11 +676,11 @@ mod tests {
     #[test]
     fn signature_semicolon_comments_survive_sorted_children_and_each_closer() {
         let source = "// header note
-            signature demo v(1);
+            sig demo v(1);
             // version note
             v(1) { ; // with note
                 with { ; // context note
-                    module context { ; type Context = .; // context closer
+                    mod context { ; type Context = .; // context closer
                     }; // with closer
                 }; // partition note
                 nonbreaking { ; // add note
@@ -708,7 +689,7 @@ mod tests {
                         // a note
                         a.A;
                         // module note
-                        module m { ; // declaration note
+                        mod m { ; // declaration note
                             type Item = .;
                             // export note
                             pub fn run(value: Item) -> Item;

@@ -37,7 +37,7 @@ write_artifact() {
 write_prime() {
   mkdir -p __kio_roundtrip_prime
   cp ./*.pkg.kio FIXTURE_MODE __kio_roundtrip_prime/
-  printf 'module main;\n' >__kio_roundtrip_prime/main.kio
+  printf 'mod main;\n' >__kio_roundtrip_prime/main.kio
 }
 
 if [ "${1:-}" = debug ] &&
@@ -59,9 +59,9 @@ if [ "${1:-}" = debug ] &&
       ;;
   esac
   [ "$mode" != inapplicable ] || exit 0
-  package_name=$(sed -n 's/^package \([^;]*\);$/\1/p' "$pkg_path")
+  package_name=$(sed -n 's/^pkg \([^;]*\);$/\1/p' "$pkg_path")
   [ -n "$package_name" ] || exit 78
-  printf 'package %s;\n\nbuild {\n  cache ();\n\n  target (%s, "__kio_roundtrip_target") {\n' \
+  printf 'pkg %s;\n\nbuild {\n  cache ();\n\n  target (%s, "__kio_roundtrip_target") {\n' \
     "$package_name" "$selected_target"
   if grep -Fq '// }' "$pkg_path"; then
     printf '    // }\n'
@@ -178,7 +178,7 @@ make_case() {
   mkdir -p "$case_dir/workdir"
   printf '%s\n' "$mode" >"$case_dir/workdir/FIXTURE_MODE"
   cat >"$case_dir/workdir/$name.pkg.kio" <<EOF
-package $name;
+pkg $name;
 
 build {
   target $manifest_target {

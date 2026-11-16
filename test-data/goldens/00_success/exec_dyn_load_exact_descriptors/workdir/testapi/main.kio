@@ -1,58 +1,122 @@
 /// Loads a guest that uses same-leaf host declarations from two modules and
 /// checks exact identities through canonicalization, preflight, and execution.
-module testapi/main;
+mod testapi/main;
 
-import defaults(eval_default);
-import eval(prime_apply);
-import host_descriptor(Conflicting_host_function, Conflicting_host_type, Host_fn, Host_type);
-import host_descriptor(Found_host_function, Found_host_type);
-import host_descriptor(Host_function_lookup, Host_type_lookup);
-import host_descriptor(Host_types);
-import host_descriptor(Missing_host_function, Missing_host_type);
-import host_descriptor(base_kind, higher_kind, i32_role, i64_role, str_role);
-import host_descriptor(find_host_function, find_host_type, host_fn_eq, host_id_eq, host_id_render);
-import host_descriptor(host_functions_cons, host_functions_nil, host_types_cons, host_types_nil);
-import host_descriptor(host_type_eq, host_type_id);
-import host_descriptor(mk_host_fn, mk_host_id, mk_role_host_type, mk_roleless_host_type);
-import host_descriptor(param_kinds_cons, param_kinds_nil);
-import hostrec(make_lit_default, serve_default, test_bool_default);
-import imageio(read_image_stdin);
-import loader(
-, Contract
-, Diag
-, Export_info
-, Export_infos
-, Host_adapter
-, Host_fn_binding
-, Host_fn_bindings
-);
-import loader(Apply, Hostfn_in, I32_in, I32_out, Lookup, Pair_in, Str_out, Unit_in);
-import loader(Hostfn, Hostfns, Image, Loaded, Lr_diag, Lr_image, Surface);
-import loader(contract_check, contract_cons, contract_nil, diag_message);
-import loader(export_info_name, export_info_sig, export_term, mk_expect);
-import loader(host_contract_functions, host_contract_types, image_host_requirements);
-import loader(host_fn_binding_descriptor, host_fn_binding_groups, un_host_fn_bindings);
-import loader(host_fn_bindings_cons, host_fn_bindings_nil);
-import loader(image_exports, image_hostfns, instantiate, mk_host_adapter, mk_host_fn_binding);
-import loader(un_export_infos, un_hostfns, un_load_outcome);
-import loader/scan(load_package);
-import macros/control(macro if);
-import macros/match(macro match);
-import macros/row_macros(macro select);
-import macros/spine_macros(macro widen_sum);
-import prime(Group_slots, Term, group_slots_cons, group_slots_nil, un_group_slots);
-import result(Call_result, call_done, call_stuck);
-import result(Ev_done, Ev_stuck);
-import testapi(Bool, I32, Scalar, String);
-import testapi/arith(eq_i32, sub_i32);
-import testapi/fmt(int_to_string);
-import testapi/io(print);
-import testapi/iter(loop);
-import testapi/scalar(make_scalar, scalar_as_i32, scalar_as_str, scalar_of_i32, scalar_of_str);
-import testapi/text(string_concat);
-import testapi/text(string_eq);
-import value(V_closure, V_host, V_hostfn, V_product, V_sum, V_unit, Value);
-import value(un_value, value_to_scalar, vhost, vhostfn_fresh, vproduct, vunit);
+import defaults { fn eval_default }
+import eval { fn prime_apply }
+import host_descriptor {
+  fn find_host_function;
+  fn find_host_type;
+  fn host_fn_eq;
+  fn host_id_eq;
+  fn host_id_render
+}
+import host_descriptor {
+  fn host_functions_cons;
+  fn host_functions_nil;
+  fn host_types_cons;
+  fn host_types_nil
+}
+import host_descriptor {
+  fn mk_host_fn;
+  fn mk_host_id;
+  fn mk_role_host_type;
+  fn mk_roleless_host_type
+}
+import host_descriptor {
+  type Conflicting_host_function;
+  type Conflicting_host_type;
+  type Host_fn;
+  type Host_type
+}
+import host_descriptor { fn base_kind; fn higher_kind; fn i32_role; fn i64_role; fn str_role }
+import host_descriptor { fn host_type_eq; fn host_type_id }
+import host_descriptor { fn param_kinds_cons; fn param_kinds_nil }
+import host_descriptor { type Found_host_function; type Found_host_type }
+import host_descriptor { type Host_function_lookup; type Host_type_lookup }
+import host_descriptor { type Host_types }
+import host_descriptor { type Missing_host_function; type Missing_host_type }
+import hostrec { fn make_lit_default; fn serve_default; fn test_bool_default }
+import imageio { fn read_image_stdin }
+import loader {
+  fn image_exports;
+  fn image_hostfns;
+  fn instantiate;
+  fn mk_host_adapter;
+  fn mk_host_fn_binding
+}
+import loader {
+  type Apply;
+  type Hostfn_in;
+  type I32_in;
+  type I32_out;
+  type Lookup;
+  type Pair_in;
+  type Str_out;
+  type Unit_in
+}
+import loader {
+  type Contract;
+  type Diag;
+  type Export_info;
+  type Export_infos;
+  type Host_adapter;
+  type Host_fn_binding;
+  type Host_fn_bindings
+}
+import loader {
+  type Hostfn;
+  type Hostfns;
+  type Image;
+  type Loaded;
+  type Lr_diag;
+  type Lr_image;
+  type Surface
+}
+import loader { fn contract_check; fn contract_cons; fn contract_nil; fn diag_message }
+import loader { fn export_info_name; fn export_info_sig; fn export_term; fn mk_expect }
+import loader { fn host_contract_functions; fn host_contract_types; fn image_host_requirements }
+import loader { fn host_fn_binding_descriptor; fn host_fn_binding_groups; fn un_host_fn_bindings }
+import loader { fn host_fn_bindings_cons; fn host_fn_bindings_nil }
+import loader { fn un_export_infos; fn un_hostfns; fn un_load_outcome }
+import loader/scan { fn load_package }
+import macros/control { macro if }
+import macros/match { macro match }
+import macros/row_macros { macro select }
+import macros/spine_macros { macro widen_sum }
+import prime {
+  type Group_slots;
+  type Term;
+  fn group_slots_cons;
+  fn group_slots_nil;
+  fn un_group_slots
+}
+import result { type Call_result; fn call_done; fn call_stuck }
+import result { type Ev_done; type Ev_stuck }
+import testapi { type Bool; type I32; type Scalar; type String }
+import testapi/arith { fn eq_i32; fn sub_i32 }
+import testapi/fmt { fn int_to_string }
+import testapi/io { fn print }
+import testapi/iter { fn loop }
+import testapi/scalar {
+  fn make_scalar;
+  fn scalar_as_i32;
+  fn scalar_as_str;
+  fn scalar_of_i32;
+  fn scalar_of_str
+}
+import testapi/text { fn string_concat }
+import testapi/text { fn string_eq }
+import value {
+  type V_closure;
+  type V_host;
+  type V_hostfn;
+  type V_product;
+  type V_sum;
+  type V_unit;
+  type Value
+}
+import value { fn un_value; fn value_to_scalar; fn vhost; fn vhostfn_fresh; fn vproduct; fn vunit }
 
 fn describe_host_type_lookup(result: Host_type_lookup) -> String {
   match(result) {
@@ -86,12 +150,12 @@ fn describe_duplicate_image(source: String) -> String {
 fn print_duplicate_image_results() {
   print(string_concat(
   , "duplicate module identity: "[String]
-  , string_concat(describe_duplicate_image("module same;\nmodule same;\n"[String]), "\n"[String])
+  , string_concat(describe_duplicate_image("mod same;\nmod same;\n"[String]), "\n"[String])
   ));
   print(string_concat(
   , "duplicate host declaration identity: "[String]
   , string_concat(
-    , describe_duplicate_image("module same;\nhost type Value role(i32);\nhost type Value role(i32);\n"[String])
+    , describe_duplicate_image("mod same;\nhost type Value role(i32);\nhost type Value role(i32);\n"[String])
     , "\n"[String]
     )
   ))
@@ -100,10 +164,7 @@ fn print_duplicate_image_results() {
 fn print_malformed_host_descriptor_results() {
   print(string_concat(
   , "malformed host type binder: "[String]
-  , string_concat(
-    , describe_duplicate_image("module same;\nhost type Box[A;\n"[String])
-    , "\n"[String]
-    )
+  , string_concat(describe_duplicate_image("mod same;\nhost type Box[A;\n"[String]), "\n"[String])
   ))
 }
 
@@ -114,150 +175,145 @@ fn source_result_line(label: String, source: String) -> String {
 fn print_source_derivation_results() {
   print(source_result_line(
   , "later local host type in literal: "[String]
-  , "module later_literal;\nimport __intrinsics__;\npub fn literal() -> . { let "
-    "n = 1[Number]; () }\nhost type Number role(i32);\n"[String]
+  , "mod later_literal;\nimport __intrinsics__;\npub fn literal() -> . { let n "
+    "= 1[Number]; () }\nhost type Number role(i32);\n"[String]
   ));
   print(source_result_line(
   , "later local host type in host function signature: "[String]
-  , "module later_host_signature;\nhost fn consume(x: Number) -> .;\nhost type "
+  , "mod later_host_signature;\nhost fn consume(x: Number) -> .;\nhost type "
     "Number role(i32);\n"[String]
   ));
   print(source_result_line(
   , "alias reaching later local host type: "[String]
-  , "module later_alias;\ntype Number_alias = Number;\nhost fn consume(x: "
+  , "mod later_alias;\ntype Number_alias = Number;\nhost fn consume(x: "
     "Number_alias) -> .;\nhost type Number role(i32);\n"[String]
   ));
   print(source_result_line(
   , "earlier local host function: "[String]
-  , "module earlier_function;\nhost fn ping() -> .;\npub fn call() -> . { "
-    "ping() }\n"[String]
+  , "mod earlier_function;\nhost fn ping() -> .;\npub fn call() -> . { ping() }\n"[String]
   ));
   print(source_result_line(
   , "later local host function: "[String]
-  , "module later_function;\npub fn call() -> . { ping() }\nhost fn ping() -> "
-    ".;\n"[String]
+  , "mod later_function;\npub fn call() -> . { ping() }\nhost fn ping() -> .;\n"[String]
   ));
   print(source_result_line(
   , "omitted host result: "[String]
-  , "module unit_default;\nhost fn effect();\n"[String]
+  , "mod unit_default;\nhost fn effect();\n"[String]
   ));
   print(source_result_line(
   , "unterminated declaration type binders: "[String]
-  , "module bad;\npub fn broken[A)() -> . { () }\n"[String]
+  , "mod bad;\npub fn broken[A)() -> . { () }\n"[String]
   ));
   print(source_result_line(
   , "unterminated lambda type binders: "[String]
-  , "module bad;\npub fn broken() -> . { .[A)() { () } }\n"[String]
+  , "mod bad;\npub fn broken() -> . { .[A)() { () } }\n"[String]
   ));
   print(source_result_line(
   , "type-only lambda: "[String]
-  , "module valid;\npub fn returned() -> [A] . { .[A] { () } }\n"[String]
+  , "mod valid;\npub fn returned() -> [A] . { .[A] { () } }\n"[String]
   ));
   print(source_result_line(
   , "bare transparent alias: "[String]
-  , "module alias_bare;\ntype Pair[A][B] = A & B;\nhost fn rejected(x: Pair) -> "
-    ".;\n"[String]
+  , "mod alias_bare;\ntype Pair[A][B] = A & B;\nhost fn rejected(x: Pair) -> .;\n"[String]
   ));
   print(source_result_line(
   , "local undersaturated transparent alias: "[String]
-  , "module alias_partial;\ntype { Higher[*F]: . { mk; get; }; };\ntype "
-    "Pair[A][B] = A & B;\nhost fn rejected(x: Higher[Pair[.]]) -> .;\n"[String]
+  , "mod alias_partial;\ntype { Higher[*F]: . { mk; get; }; };\ntype Pair[A][B] "
+    "= A & B;\nhost fn rejected(x: Higher[Pair[.]]) -> .;\n"[String]
   ));
   print(source_result_line(
   , "selective undersaturated transparent alias: "[String]
-  , "module selective_decoy;\npub type Pair[A] = A;\nmodule selective_provider;\n"
-    "pub type Pair[A][B] = A & B;\nmodule selective_consumer;\nimport "
-    "selective_provider(Pair);\nimport selective_decoy as decoy;\ntype { "
+  , "mod selective_decoy;\npub type Pair[A] = A;\nmod selective_provider;\npub "
+    "type Pair[A][B] = A & B;\nmod selective_consumer;\nimport "
+    "selective_provider {type Pair}\nimport selective_decoy as decoy;\ntype { "
     "Higher[*F]: . { mk; get; }; };\nhost fn rejected(x: Higher[Pair[.]]) -> "
     ".;\n"[String]
   ));
   print(source_result_line(
   , "qualified undersaturated transparent alias: "[String]
-  , "module qualified_provider;\npub type Pair[A][B] = A & B;\nmodule "
+  , "mod qualified_provider;\npub type Pair[A][B] = A & B;\nmod "
     "qualified_consumer;\nimport qualified_provider as provider;\ntype Pair[A] "
     "= A;\ntype { Higher[*F]: . { mk; get; }; };\nhost fn rejected(x: "
     "Higher[provider.Pair[.]]) -> .;\n"[String]
   ));
   print(source_result_line(
   , "saturated transparent alias: "[String]
-  , "module alias_saturated;\npub type Pair[A][B] = A & B;\nhost fn accepted(x: "
+  , "mod alias_saturated;\npub type Pair[A][B] = A & B;\nhost fn accepted(x: "
     "Pair[.][.]) -> .;\n"[String]
   ));
   print(source_result_line(
   , "partially applied newtype: "[String]
-  , "module nominal_partial;\npub type { Higher[*F]: . { mk; get; }; };\npub "
-    "type { Pair[A][B]: A & B { pub mk; pub get; }; };\nhost fn accepted(x: "
-    "Higher[Pair[.]]) -> .;\npackage nominal_partial;\nbridge { "
-    "nominal_partial; }\n"[String]
+  , "mod nominal_partial;\npub type { Higher[*F]: . { mk; get; }; };\npub type "
+    "{ Pair[A][B]: A & B { pub mk; pub get; }; };\nhost fn accepted(x: "
+    "Higher[Pair[.]]) -> .;\npkg nominal_partial;\nbridge { nominal_partial; }\n"[String]
   ));
   print(source_result_line(
   , "opaque nominal with private payload: "[String]
-  , "module guest;\ntype { Hidden: . { mk; get; }; };\npub type { Box: Hidden { "
-    "mk; get; }; };\npub fn keep(value: Box) -> Box { value }\npackage guest;\n"
+  , "mod guest;\ntype { Hidden: . { mk; get; }; };\npub type { Box: Hidden { "
+    "mk; get; }; };\npub fn keep(value: Box) -> Box { value }\npkg guest;\n"
     "bridge { guest; }\n"[String]
   ));
   print(source_result_line(
   , "opaque self-shadowing nominal header: "[String]
-  , "module guest;\npub type { A[A]: . { mk; get; }; };\npackage guest;\nbridge "
-    "{ guest; }\n"[String]
+  , "mod guest;\npub type { A[A]: . { mk; get; }; };\npkg guest;\nbridge { "
+    "guest; }\n"[String]
   ));
   print(source_result_line(
   , "construct-only self-shadowing nominal header: "[String]
-  , "module guest;\npub type { B[B]: . { pub mk; get; }; };\npackage guest;\n"
-    "bridge { guest; }\n"[String]
+  , "mod guest;\npub type { B[B]: . { pub mk; get; }; };\npkg guest;\nbridge { "
+    "guest; }\n"[String]
   ));
   print(source_result_line(
   , "inspect-only self-shadowing nominal header: "[String]
-  , "module guest;\npub type { C[C]: . { mk; pub get; }; };\npackage guest;\n"
-    "bridge { guest; }\n"[String]
+  , "mod guest;\npub type { C[C]: . { mk; pub get; }; };\npkg guest;\nbridge { "
+    "guest; }\n"[String]
   ));
   print(source_result_line(
   , "public-member self-shadowing nominal header: "[String]
-  , "module guest;\npub type { D[D]: . { pub mk; pub get; }; };\npackage guest;\n"
-    "bridge { guest; }\n"[String]
+  , "mod guest;\npub type { D[D]: . { pub mk; pub get; }; };\npkg guest;\nbridge "
+    "{ guest; }\n"[String]
   ));
   print(source_result_line(
   , "ambient-decoy self-shadowing nominal header: "[String]
-  , "module guest;\ntype { Zzcps_n: . { mk; get; }; };\npub type { E[E]: . { "
-    "pub mk; pub get; }; };\npackage guest;\nbridge { guest; }\n"[String]
+  , "mod guest;\ntype { Zzcps_n: . { mk; get; }; };\npub type { E[E]: . { pub "
+    "mk; pub get; }; };\npkg guest;\nbridge { guest; }\n"[String]
   ));
   print(source_result_line(
   , "malformed opaque nominal header: "[String]
-  , "module guest;\npub type { Box[A B]: . { mk; get; }; };\npackage guest;\n"
-    "bridge { guest; }\n"[String]
+  , "mod guest;\npub type { Box[A B]: . { mk; get; }; };\npkg guest;\nbridge { "
+    "guest; }\n"[String]
   ));
   print(source_result_line(
   , "private nominal in export signature: "[String]
-  , "module guest;\ntype { Hidden: . { mk; get; }; };\npub fn expose(value: "
-    "Hidden) -> Hidden { value }\npackage guest;\nbridge { guest; }\n"[String]
+  , "mod guest;\ntype { Hidden: . { mk; get; }; };\npub fn expose(value: "
+    "Hidden) -> Hidden { value }\npkg guest;\nbridge { guest; }\n"[String]
   ));
   print(source_result_line(
   , "scoped nominal in export signature: "[String]
-  , "module guest;\npub(guest) type { Hidden: . { mk; get; }; };\npub fn "
-    "expose(value: Hidden) -> Hidden { value }\npackage guest;\nbridge { guest; "
-    "}\n"[String]
+  , "mod guest;\npub(guest) type { Hidden: . { mk; get; }; };\npub fn "
+    "expose(value: Hidden) -> Hidden { value }\npkg guest;\nbridge { guest; }\n"[String]
   ));
   print(source_result_line(
   , "unbridged nominal in export signature: "[String]
-  , "module hidden;\npub type { Hidden: . { pub mk; pub get; }; };\nmodule "
-    "guest;\nimport hidden(Hidden);\npub fn expose(value: Hidden) -> Hidden { "
-    "value }\npackage guest;\nbridge { guest; }\n"[String]
+  , "mod hidden;\npub type { Hidden: . { pub mk; pub get; }; };\nmod guest;\n"
+    "import hidden {type Hidden}\npub fn expose(value: Hidden) -> Hidden { "
+    "value }\npkg guest;\nbridge { guest; }\n"[String]
   ));
   print(source_result_line(
   , "private nominal in member signature: "[String]
-  , "module guest;\ntype { Hidden: . { mk; get; }; };\npub type { Box: Hidden { "
-    "pub mk; pub get; }; };\npackage guest;\nbridge { guest; }\n"[String]
+  , "mod guest;\ntype { Hidden: . { mk; get; }; };\npub type { Box: Hidden { "
+    "pub mk; pub get; }; };\npkg guest;\nbridge { guest; }\n"[String]
   ));
   print(source_result_line(
   , "scoped nominal in member signature: "[String]
-  , "module guest;\npub(guest) type { Hidden: . { mk; get; }; };\npub type { "
-    "Box: Hidden { pub mk; pub get; }; };\npackage guest;\nbridge { guest; }\n"[String]
+  , "mod guest;\npub(guest) type { Hidden: . { mk; get; }; };\npub type { Box: "
+    "Hidden { pub mk; pub get; }; };\npkg guest;\nbridge { guest; }\n"[String]
   ));
   print(source_result_line(
   , "unbridged nominal in member signature: "[String]
-  , "module hidden;\npub type { Hidden: . { pub mk; pub get; }; };\nmodule "
-    "guest;\nimport hidden(Hidden);\npub type { Box: Hidden { pub mk; pub get; "
-    "}; };\npackage guest;\nbridge { guest; }\n"[String]
+  , "mod hidden;\npub type { Hidden: . { pub mk; pub get; }; };\nmod guest;\n"
+    "import hidden {type Hidden}\npub type { Box: Hidden { pub mk; pub get; }; "
+    "};\npkg guest;\nbridge { guest; }\n"[String]
   ));
   ()
 }
@@ -301,8 +357,8 @@ fn bindings_match_group(bindings: Host_fn_bindings, descriptor: Host_fn, expecte
 
 fn group_shape_result() -> String {
   let source =
-    "module shape;\nhost type A;\nhost type B;\nhost type C;\npub type Unit_alias "
-    "= .;\nhost fn one(x: A & B) -> .;\nhost fn two(x: A, y: B) -> .;\nhost fn "
+    "mod shape;\nhost type A;\nhost type B;\nhost type C;\npub type Unit_alias = "
+    ".;\nhost fn one(x: A & B) -> .;\nhost fn two(x: A, y: B) -> .;\nhost fn "
     "zero(x: Unit_alias) -> .;\nhost fn left(x: (A & B) & C) -> .;\nhost fn "
     "right(x: A & (B & C)) -> .;\n"[String];
   match(un_load_outcome(load_package(source))) {
@@ -1461,12 +1517,12 @@ fn source_host_type_matches(source: String, expected: Host_type) -> Bool {
 fn owned_descriptor_result() -> String {
   let role_neutral =
     source_host_type_matches(
-    , "module owned;\nhost type Text role(str) { owned };\n"[String]
+    , "mod owned;\nhost type Text role(str) ;\n"[String]
     , mk_role_host_type(mk_host_id("owned"[String], "Text"[String]), str_role())
     );
   let roleless_neutral =
     source_host_type_matches(
-    , "module owned;\nhost type Box[A] { owned };\n"[String]
+    , "mod owned;\nhost type Box[A] ;\n"[String]
     , mk_roleless_host_type(
       , mk_host_id("owned"[String], "Box"[String])
       , param_kinds_cons(base_kind(), param_kinds_nil())

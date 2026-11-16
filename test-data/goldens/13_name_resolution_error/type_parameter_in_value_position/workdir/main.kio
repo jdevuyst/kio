@@ -1,4 +1,4 @@
-module main;
+mod main;
 
 fn outer[A](value: A) {
   let inner = .[A](other: A) -> . { A };

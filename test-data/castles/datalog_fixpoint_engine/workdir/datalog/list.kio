@@ -5,14 +5,14 @@
 /// the database and every rule body are a `List(Atom)`, and solving a
 /// body hands back a `List(Subst)`. The walks below are therefore written
 /// once, polymorphically, and reused at each of them.
-module datalog/list;
+mod datalog/list;
 
-import macros/control(macro if);
-import macros/match(macro match);
-import macros/spine_macros(macro widen_sum);
-import testapi(Bool, I32);
-import testapi/arith(add_i32);
-import testapi/iter(loop);
+import macros/control { macro if }
+import macros/match { macro match }
+import macros/spine_macros { macro widen_sum }
+import testapi { type Bool; type I32 }
+import testapi/arith { fn add_i32 }
+import testapi/iter { fn loop }
 
 /// The nominal type grounds the recursion an anonymous sum cannot express.
 pub rec type { List[A]: . | (A & List[A]) { pub mk; pub get } }

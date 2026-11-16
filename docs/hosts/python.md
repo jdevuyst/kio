@@ -26,7 +26,7 @@ the newest baseline until `kio fmt` pins them to its concrete name. See
 A package emits to Python by declaring a `python` target in `<pkg>.pkg.kio`:
 
 ```kio {variant=package}
-package greeter;
+pkg greeter;
 
 build {
   cache "out/.kio-cache/";
@@ -111,7 +111,7 @@ and `/` as `_s`. Thus `foo/bar` and `foo_bar` use distinct `foo_bar` and
 (`do_work` → `doWork`). For module `greeter`, the host capability lives under `greeter`:
 
 ```kio {variant=module}
-module greeter;
+mod greeter;
 
 host type String role(str);
 
@@ -161,7 +161,7 @@ runs survive word casing. An export `main` from module
 `greeter.pkg.kio`:
 
 ```kio {variant=package}
-package greeter;
+pkg greeter;
 
 build {
   cache "out/.kio-cache/";
@@ -181,7 +181,7 @@ bridge {
 `greeter.kio` declares the host capability:
 
 ```kio {file}
-module greeter;
+mod greeter;
 
 host type String role(str);
 host fn print(p0: String);
@@ -190,7 +190,7 @@ host fn print(p0: String);
 `greeter/main.kio` imports it and exports `main`:
 
 <!--kio {file}
-package greeter;
+pkg greeter;
 
 build {
   cache "out/.kio-cache/";
@@ -207,17 +207,17 @@ bridge {
 -->
 
 <!--kio {harness=greeter_python_main file placeholder="__SNIPPET__"}
-module greeter/main;
+mod greeter/main;
 
-import greeter(String, print);
+import greeter {type String; fn print}
 
 __SNIPPET__
 -->
 
-```kio {@greeter_python_main placeholder={"module greeter/main;":"","import greeter(String, print);":""}}
-module greeter/main;
+```kio {@greeter_python_main placeholder={"mod greeter/main;":"","import greeter {type String; fn print}":""}}
+mod greeter/main;
 
-import greeter(String, print);
+import greeter {type String; fn print}
 
 pub fn main() { print("hello from kio\n") }
 ```

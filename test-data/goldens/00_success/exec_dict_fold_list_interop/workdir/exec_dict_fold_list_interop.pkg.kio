@@ -1,4 +1,4 @@
-package exec_dict_fold_list_interop;
+pkg exec_dict_fold_list_interop;
 
 build {
   cache "out/.kio-cache/";

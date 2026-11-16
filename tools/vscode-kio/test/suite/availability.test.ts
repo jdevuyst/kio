@@ -172,7 +172,7 @@ suite("Kio extension — availability and recovery", () => {
   async function documentWithDiagnostic(running: Awaited<ReturnType<typeof host>>) {
     await until(() => runningStatus(running), running.logs.join("\n"));
     const file = path.join(directory, "example.kio");
-    fs.writeFileSync(file, "module example;\n");
+    fs.writeFileSync(file, "mod example;\n");
     const document = await vscode.workspace.openTextDocument(file);
     await until(() => vscode.languages.getDiagnostics(document.uri).some((diagnostic) => diagnostic.source === "availability-fixture"), "recovered server publishes diagnostics");
     return document;

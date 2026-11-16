@@ -376,7 +376,7 @@ mod tests {
 
     #[test]
     fn grouping_obeys_trivia_not_physical_proximity() {
-        let source = "/// one\n/// two\n\n/// three\n// ordinary\n/// four\nmodule app;\n/// five\nfn f() -> . { () }\n/// eof";
+        let source = "/// one\n/// two\n\n/// three\n// ordinary\n/// four\nmod app;\n/// five\nfn f() -> . { () }\n/// eof";
         let runs = DocSource::all(source);
         assert_eq!(
             runs.iter().map(|run| run.text.as_str()).collect::<Vec<_>>(),
@@ -413,7 +413,7 @@ mod tests {
     fn multiline_plain_edit_preserves_framing_and_program_tokens() {
         for newline in ["\n", "\r\n"] {
             let source = format!(
-                "module app;{newline}\t/// before 😀 tail{newline}\t/// second{newline}fn f() -> () {{ () }}{newline}"
+                "mod app;{newline}\t/// before 😀 tail{newline}\t/// second{newline}fn f() -> () {{ () }}{newline}"
             );
             let runs = DocSource::all(&source);
             let doc = &runs[0];
@@ -446,7 +446,7 @@ mod tests {
 
     #[test]
     fn same_line_code_prefix_is_never_replicated() {
-        let source = "module app; /// trailing\nfn f() -> () { () }";
+        let source = "mod app; /// trailing\nfn f() -> () { () }";
         let runs = DocSource::all(source);
         let doc = &runs[0];
         assert_eq!(doc.lines[0].prefix, None);
@@ -482,10 +482,10 @@ mod tests {
 
     #[test]
     fn eof_insertion_and_crlf_input_remain_documentation() {
-        let source = "module app;\n  /// end";
+        let source = "mod app;\n  /// end";
         let runs = DocSource::all(source);
         let changed = apply(source, &runs[0].plain_edit(3..3, "\r\nmore").unwrap());
-        assert_eq!(changed, "module app;\n  /// end\n  /// more");
+        assert_eq!(changed, "mod app;\n  /// end\n  /// more");
         assert_eq!(program_tokens(&changed), program_tokens(source));
     }
 
@@ -531,7 +531,7 @@ mod tests {
             ("/// end\r", true),
         ] {
             let suffix = if at_eof { "" } else { "\nfn f() -> . { () }" };
-            let source = format!("module app;\n{body}{suffix}");
+            let source = format!("mod app;\n{body}{suffix}");
             let runs = DocSource::all(&source);
             let doc = &runs[0];
             let boundaries = doc
@@ -579,7 +579,7 @@ mod tests {
     #[test]
     fn existing_line_index_supplies_utf16_coordinates() {
         use crate::lsp::positions::{LineIndex, LspPosition};
-        let source = "module app;\r\n\t/// é😀 tail\r\n";
+        let source = "mod app;\r\n\t/// é😀 tail\r\n";
         let index = LineIndex::new(source);
         let runs = DocSource::all(source);
         let doc = &runs[0];

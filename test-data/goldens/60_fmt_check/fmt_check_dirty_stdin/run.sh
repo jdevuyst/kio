@@ -10,7 +10,7 @@
 # `:`, no trailing newline), so the formatter would rewrite it;
 # --check reports that without writing.
 set -u
-input='module x;fn id[A](x:A)->A{x}'
+input='mod x;fn id[A](x:A)->A{x}'
 out=$(printf '%s' "$input" | "$KIO_BIN" fmt --check -)
 status=$?
 # Pin the dirty marker line on stdout (`<stdin>`, stable across

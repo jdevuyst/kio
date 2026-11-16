@@ -1,5 +1,5 @@
 /// Sequencing through an explicitly supplied bind function.
-module optics/macros/sequence;
+mod optics/macros/sequence;
 
 import __comptime__;
 

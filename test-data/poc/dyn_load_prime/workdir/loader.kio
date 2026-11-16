@@ -1,72 +1,139 @@
 /// The resolved-image and instantiation core: resolve scanned package records,
 /// evaluate exports, and pack them behind an existential surface.
-module loader;
+mod loader;
 
-import eval(default_fuel, env_lookup, prime_apply, prime_apply_fuel, prime_eval, prime_eval_in);
-import host_descriptor(
-, Conflicting_host_type
-, Found_host_type
-, Host_fn
-, Host_id
-, Host_type
-, Host_types
-, Missing_host_type
-);
-import host_descriptor(
-, Host_type_shape
-, Param_kind
-, Param_kinds
-, Role
-, Role_host_type
-, Roleless_host_type
-, base_kind
-, higher_kind
-);
-import host_descriptor(
-, find_host_type
-, host_fn_eq
-, host_fn_id
-, host_id_eq
-, host_id_local
-, host_id_module
-);
-import host_descriptor(host_fn_signature);
-import host_descriptor(host_id_render, mk_host_fn, mk_host_id);
-import host_descriptor(host_type_eq, host_type_id, un_host_types);
-import host_descriptor(host_type_shape, param_kind_eq, un_param_kind, un_param_kinds);
-import host_descriptor(host_types_cons, host_types_nil);
-import host_descriptor(mk_role_host_type, mk_roleless_host_type, param_kinds_cons, param_kinds_nil);
-import host_descriptor(role_from_name);
-import lex(Lex_err, ascii_char, lex, lex_err_message, lex_err_pos);
-import list/core(List, cons, nil, uncons);
-import list/list(append, elem, length, reverse);
-import macros/control(macro if);
-import macros/match(macro match);
-import macros/row_macros(macro record);
-import macros/spine_macros(macro widen_sum);
-import parse(Nt_entry, Nt_info, Ntab, P_err, P_ok, Perr, Pnl, Pres, Scope, Type_scope);
-import parse(nt_ctor, nt_existential, nt_proj);
-import parse(nt_entry_info);
-import parse(ntab_cons_visible, ntab_lookup, ntab_nil, un_ntab);
-import parse(parse_toks_scope_ntab, perr_message, perr_pos, scope_nil, scope_push);
-import parse(pnl_cons, pnl_nil, pnl_one, scope_push_names);
-import parse(scope_with_signature_types);
-import prime(Group_slots, Nat, Term, app, fst, lam, let_, ns, nz, snd, var);
-import prime(group_slots_cons, group_slots_nil, hostfn_ref, un_group_slots);
-import result(Call_result, Ev_done, Ev_stuck, Eval_result, stuck_reason);
-import testapi(Bool, F64, I32, Scalar, String);
-import testapi/arith(add_i32, eq_i32, leq_i32, lt_i32, sub_i32);
-import testapi/fmt(int_to_string);
-import testapi/iter(loop);
-import testapi/scalar(scalar_as_bool, scalar_as_f64, scalar_as_i32, scalar_as_str);
-import testapi/scalar(scalar_of_bool, scalar_of_f64, scalar_of_i32, scalar_of_str);
-import testapi/text(string_code_at, string_concat, string_eq, string_len, string_slice);
-import token(Tk_num, Tk_punct, Tk_str, Tk_word, Token, Token_shape, Toks);
-import token(tk_punct, tk_word, toks_cons, toks_nil);
-import token(un_token, un_toks);
-import value(Env, Side, V_closure, V_host, V_hostfn, V_product, V_sum, V_unit);
-import value(Value, side_select, value_to_scalar, vhost, vproduct);
-import value(env_nil, env_push, un_value, vclosure, vhostfn_fresh, vleft, vright, vunit);
+import eval {
+  fn default_fuel;
+  fn env_lookup;
+  fn prime_apply;
+  fn prime_apply_fuel;
+  fn prime_eval;
+  fn prime_eval_in
+}
+import host_descriptor {
+  fn find_host_type;
+  fn host_fn_eq;
+  fn host_fn_id;
+  fn host_id_eq;
+  fn host_id_local;
+  fn host_id_module
+}
+import host_descriptor {
+  fn mk_role_host_type;
+  fn mk_roleless_host_type;
+  fn param_kinds_cons;
+  fn param_kinds_nil
+}
+import host_descriptor {
+  type Conflicting_host_type;
+  type Found_host_type;
+  type Host_fn;
+  type Host_id;
+  type Host_type;
+  type Host_types;
+  type Missing_host_type
+}
+import host_descriptor {
+  type Host_type_shape;
+  type Param_kind;
+  type Param_kinds;
+  type Role;
+  type Role_host_type;
+  type Roleless_host_type;
+  fn base_kind;
+  fn higher_kind
+}
+import host_descriptor { fn host_fn_signature }
+import host_descriptor { fn host_id_render; fn mk_host_fn; fn mk_host_id }
+import host_descriptor { fn host_type_eq; fn host_type_id; fn un_host_types }
+import host_descriptor { fn host_type_shape; fn param_kind_eq; fn un_param_kind; fn un_param_kinds }
+import host_descriptor { fn host_types_cons; fn host_types_nil }
+import host_descriptor { fn role_from_name }
+import lex { type Lex_err; fn ascii_char; fn lex; fn lex_err_message; fn lex_err_pos }
+import list/core { type List; fn cons; fn nil; fn uncons }
+import list/list { fn append; fn elem; fn length; fn reverse }
+import macros/control { macro if }
+import macros/match { macro match }
+import macros/row_macros { macro record }
+import macros/spine_macros { macro widen_sum }
+import parse {
+  type Nt_entry;
+  type Nt_info;
+  type Ntab;
+  type P_err;
+  type P_ok;
+  type Perr;
+  type Pnl;
+  type Pres;
+  type Scope;
+  type Type_scope
+}
+import parse { fn nt_ctor; fn nt_existential; fn nt_proj }
+import parse { fn nt_entry_info }
+import parse { fn ntab_cons_visible; fn ntab_lookup; fn ntab_nil; fn un_ntab }
+import parse { fn parse_toks_scope_ntab; fn perr_message; fn perr_pos; fn scope_nil; fn scope_push }
+import parse { fn pnl_cons; fn pnl_nil; fn pnl_one; fn scope_push_names }
+import parse { fn scope_with_signature_types }
+import prime {
+  type Group_slots;
+  type Nat;
+  type Term;
+  fn app;
+  fn fst;
+  fn lam;
+  fn let_;
+  fn ns;
+  fn nz;
+  fn snd;
+  fn var
+}
+import prime { fn group_slots_cons; fn group_slots_nil; fn hostfn_ref; fn un_group_slots }
+import result { type Call_result; type Ev_done; type Ev_stuck; type Eval_result; fn stuck_reason }
+import testapi { type Bool; type F64; type I32; type Scalar; type String }
+import testapi/arith { fn add_i32; fn eq_i32; fn leq_i32; fn lt_i32; fn sub_i32 }
+import testapi/fmt { fn int_to_string }
+import testapi/iter { fn loop }
+import testapi/scalar { fn scalar_as_bool; fn scalar_as_f64; fn scalar_as_i32; fn scalar_as_str }
+import testapi/scalar { fn scalar_of_bool; fn scalar_of_f64; fn scalar_of_i32; fn scalar_of_str }
+import testapi/text {
+  fn string_code_at;
+  fn string_concat;
+  fn string_eq;
+  fn string_len;
+  fn string_slice
+}
+import token {
+  type Tk_num;
+  type Tk_punct;
+  type Tk_str;
+  type Tk_word;
+  type Token;
+  type Token_shape;
+  type Toks
+}
+import token { fn tk_punct; fn tk_word; fn toks_cons; fn toks_nil }
+import token { fn un_token; fn un_toks }
+import value {
+  fn env_nil;
+  fn env_push;
+  fn un_value;
+  fn vclosure;
+  fn vhostfn_fresh;
+  fn vleft;
+  fn vright;
+  fn vunit
+}
+import value {
+  type Env;
+  type Side;
+  type V_closure;
+  type V_host;
+  type V_hostfn;
+  type V_product;
+  type V_sum;
+  type V_unit
+}
+import value { type Value; fn side_select; fn value_to_scalar; fn vhost; fn vproduct }
 
 // `loader.kio` — the resolved-image and instantiation core of
 // `dyn_load_prime`.
@@ -477,7 +544,7 @@ fn decls_find(ds: Decls, name: String) -> . | Decl {
 //
 // `Imports` is the import map: a cons-list of
 // `(local-name, original-name, source-module)` entries, one per name in each
-// selective `import m(…);` header. The declaration
+// selective `import m { fn f }` header. The declaration
 // satisfies that entry only when its visibility admits the importing module:
 // plain `pub`, or a matching `pub(path)`. The emit's other import form, the
 // module alias `import m as a;`, is recorded separately (`Aliases` below); it
@@ -5080,41 +5147,6 @@ fn host_param_kinds(bs: Binders) -> Param_kinds {
   )
 }
 
-// Parse an exact optional `{ owned }` suffix: false when absent, true when
-// present, and unit when malformed. Ownership is a backend rendering hint,
-// not part of a host type's dynamic identity.
-fn parse_owned_suffix(ts: Toks) -> . | Bool {
-  if(toks_empty(ts)) {
-    widen_sum(.f[Bool])[. | Bool]
-  } else if(sig_head_is(ts, 123[I32])) {
-    let after_open = sig_rest(ts);
-    match(sig_head_word(after_open)) {
-      (
-      , .(word: String) {
-          let after_word = sig_rest(after_open);
-          if(string_eq(word, "owned"[String])) {
-            if(sig_head_is(after_word, 125[I32])) {
-              let after_close = sig_rest(after_word);
-              if(toks_empty(after_close)) {
-                widen_sum(.t[Bool])[. | Bool]
-              } else {
-                widen_sum(())[. | Bool]
-              }
-            } else {
-              widen_sum(())[. | Bool]
-            }
-          } else {
-            widen_sum(())[. | Bool]
-          }
-        }
-      , .(_notword: .) { widen_sum(())[. | Bool] }
-      )
-    }
-  } else {
-    widen_sum(())[. | Bool]
-  }
-}
-
 fn malformed_host_type(id: Host_id, detail: String) -> Host_type | Diag {
   widen_sum(mk_diag(string_concat(
   , "dyn_load_prime: malformed host type `"[String]
@@ -5131,7 +5163,11 @@ fn parse_role_host_type(id: Host_id, binders: Binders, ts: Toks) -> Host_type | 
         , .(role_spelling: String) {
             let after_name = sig_rest(after_open);
             if(sig_head_is(after_name, 41[I32])) {
-              match(parse_owned_suffix(sig_rest(after_name))) {
+              match(if(toks_empty(sig_rest(after_name))) {
+                widen_sum(.f[Bool])[. | Bool]
+              } else {
+                widen_sum(())[. | Bool]
+              }) {
                 (
                 , .(_owned: Bool) {
                     match(role_from_name(role_spelling)) {
@@ -5171,8 +5207,7 @@ fn parse_role_host_type(id: Host_id, binders: Binders, ts: Toks) -> Host_type | 
 
 // Parse the retained header of one host type. The two admitted shapes are
 // disjoint: an ordered base-kind binder list without a role, or one closed
-// role without binders. The optional Rust ownership block is a backend
-// rendering hint and carries no dynamic descriptor identity.
+// role without binders.
 fn parse_host_type_descriptor(module_name: String, header: Host_header) -> Host_type | Diag {
   let id = mk_host_id(module_name, host_header_name(header));
   match(parse_host_binders(host_header_tokens(header))) {
@@ -5180,7 +5215,11 @@ fn parse_host_type_descriptor(module_name: String, header: Host_header) -> Host_
     , .(done: Host_binders_done) {
         match(Host_binders_done.get(done)) {
           .(binders: Binders, after_binders: Toks) {
-            match(parse_owned_suffix(after_binders)) {
+            match(if(toks_empty(after_binders)) {
+              widen_sum(.f[Bool])[. | Bool]
+            } else {
+              widen_sum(())[. | Bool]
+            }) {
               (
               , .(_owned: Bool) {
                   if(binders_have_base_kind(binders)) {

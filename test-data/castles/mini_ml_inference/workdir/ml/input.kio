@@ -1,15 +1,15 @@
-module ml/input;
+mod ml/input;
 
 import list/core as lists;
 import list/list as walk;
-import macros/control(macro if);
-import macros/match(macro match);
-import macros/spine_macros(macro widen_sum);
-import testapi(Bool, I32, String);
+import macros/control { macro if }
+import macros/match { macro match }
+import macros/spine_macros { macro widen_sum }
+import testapi { type Bool; type I32; type String }
 import testapi/arith as arith;
 import testapi/fmt as fmt;
 import testapi/io as io;
-import testapi/iter(loop);
+import testapi/iter { fn loop }
 
 pub fn count() -> I32 | String {
   match(io.read_ascii_line()) {

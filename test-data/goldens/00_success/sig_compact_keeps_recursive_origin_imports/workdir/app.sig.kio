@@ -1,15 +1,15 @@
-signature app v(3);
+sig app v(3);
 
 v(1) {
   with {
-    module api {
+    mod api {
       import left as dep;
       pub rec type { Left: dep.Token | Left { pub mk; pub get } }
     }
   };
   breaking {
     add {
-      module left {
+      mod left {
         host type Token
       }
     }
@@ -23,14 +23,14 @@ v(1) {
 
 v(2) {
   with {
-    module api {
+    mod api {
       import right as dep;
       pub rec type { Right: dep.Token | Right { pub mk; pub get } }
     }
   };
   breaking {
     add {
-      module right {
+      mod right {
         host type Token
       }
     }

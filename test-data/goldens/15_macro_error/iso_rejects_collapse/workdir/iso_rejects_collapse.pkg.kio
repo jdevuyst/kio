@@ -1,4 +1,4 @@
-package iso_rejects_collapse;
+pkg iso_rejects_collapse;
 
 build {
   cache "out/.kio-cache/";

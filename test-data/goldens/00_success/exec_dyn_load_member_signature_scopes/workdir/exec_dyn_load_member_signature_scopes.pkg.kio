@@ -1,4 +1,4 @@
-package exec_dyn_load_member_signature_scopes;
+pkg exec_dyn_load_member_signature_scopes;
 
 build {
   cache "out/.kio-cache/";

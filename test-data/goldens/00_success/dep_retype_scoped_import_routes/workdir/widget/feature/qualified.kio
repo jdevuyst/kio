@@ -1,4 +1,4 @@
-module widget/feature/qualified;
+mod widget/feature/qualified;
 
 import widget/feature/store as source;
 

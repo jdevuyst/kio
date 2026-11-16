@@ -1,4 +1,4 @@
-dependency w1;
+dep w1;
 
 source {
   path "../library/w1/w1.pkg.kio"

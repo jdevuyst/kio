@@ -550,7 +550,7 @@ fn parse_analysis_modules(analysis: &LspAnalysis) -> BTreeMap<PathBuf, Module<Su
 /// - Anything that produces a non-`Ident` token (operators, literals, …).
 ///
 /// Note: Kio does **not** have hard reserved keywords — `fn`, `let`,
-/// `module`, etc. lex as plain `Ident` tokens and are disambiguated by
+/// `mod`, etc. lex as plain `Ident` tokens and are disambiguated by
 /// the parser based on position. A rename to `fn` or `let` is
 /// syntactically valid (the token is an `Ident`), though it may produce
 /// confusing source in practice. The lexer-level check is the right
@@ -1220,8 +1220,8 @@ mod tests {
     #[test]
     fn selective_alias_tooling_keeps_local_and_provider_identities_in_full_and_focused_analysis() {
         let root = test_file_path("/virtual/selective-alias-tooling");
-        let provider = "module provider; import __comptime__; pub fn foo() { () } host fn external(); host type Int role(i32); pub type { Box: . { pub mk; pub get }; } pub type { Foo: .; }; pub literal token = 1; pure fn identity_impl(_ct: __Comptime__, _source: __Type__, value: __Checked_term__) -> __Checked_term__ { value } pub macro identity : [Source] Source -> Source { impl identity_impl }";
-        let source = "module main; import provider(foo as foo, foo as local, external as invoke, Box as Parcel, Int as Number, token as count, macro identity as preserve); type Capture[B] = Number; fn bar() { () } pub fn run() { local(); foo(); invoke(); preserve(()); Parcel.get(Parcel.mk(())) } fn numeral() -> Number { count[Number] }";
+        let provider = "mod provider; import __comptime__; pub fn foo() { () } host fn external(); host type Int role(i32); pub type { Box: . { pub mk; pub get }; } pub type { Foo: .; }; pub lit token = 1; pure fn identity_impl(_ct: __Comptime__, _source: __Type__, value: __Checked_term__) -> __Checked_term__ { value } pub macro identity : [Source] Source -> Source { impl identity_impl }";
+        let source = "mod main; import provider {fn foo as foo; fn foo as local; fn external as invoke; type Box as Parcel; type Int as Number; lit token as count; macro identity as preserve} type Capture[B] = Number; fn bar() { () } pub fn run() { local(); foo(); invoke(); preserve(()); Parcel.get(Parcel.mk(())) } fn numeral() -> Number { count[Number] }";
         let main_file = root.join("main.kio");
         let provider_file = root.join("provider.kio");
         let overlay = crate::package_collection::SourceOverlay::complete(
@@ -1229,7 +1229,7 @@ mod tests {
             BTreeMap::from([
                 (
                     root.join("demo.pkg.kio"),
-                    "package demo; bridge { main; provider; }".to_owned(),
+                    "pkg demo; bridge { main; provider; }".to_owned(),
                 ),
                 (main_file.clone(), source.to_owned()),
                 (provider_file.clone(), provider.to_owned()),
@@ -1273,13 +1273,13 @@ mod tests {
                 assert_eq!(location.uri, provider_uri);
             }
             for (source_site, destination_site, use_site) in [
-                ("foo as foo", "foo, foo as local", "foo()"),
-                ("foo as local", "local,", "local()"),
-                ("external as invoke", "invoke,", "invoke()"),
-                ("Box as Parcel", "Parcel,", "Parcel.get"),
-                ("Int as Number", "Number,", "Number;"),
-                ("token as count", "count,", "count[Number]"),
-                ("identity as preserve", "preserve)", "preserve"),
+                ("foo as foo", "foo; fn foo as local", "foo()"),
+                ("foo as local", "local;", "local()"),
+                ("external as invoke", "invoke;", "invoke()"),
+                ("Box as Parcel", "Parcel;", "Parcel.get"),
+                ("Int as Number", "Number; lit", "Number; fn bar"),
+                ("token as count", "count;", "count[Number]"),
+                ("identity as preserve", "preserve}", "preserve"),
             ] {
                 let definitions: Vec<_> = [source_site, destination_site, use_site]
                     .into_iter()
@@ -1311,7 +1311,7 @@ mod tests {
             assert!(
                 handle_rename(
                     &uri,
-                    &position_of(source, "Number;"),
+                    &position_of(source, "Number; fn bar"),
                     "B",
                     analysis,
                     None,
@@ -1335,7 +1335,7 @@ mod tests {
             assert_eq!(location.uri, provider_uri);
             assert_eq!(
                 location.range.start.character,
-                (provider.find("literal token").unwrap() + "literal ".len()) as u32
+                (provider.find("lit token").unwrap() + "lit ".len()) as u32
             );
         }
         let edit = handle_rename(
@@ -1360,8 +1360,7 @@ mod tests {
 
     #[test]
     fn placeholder_family_rename_from_intro_or_reference_preserves_indices_and_controls() {
-        let source = "module main; fn run() { .x. { (x2, x1, m.x1, .x. { x1 }, \
-            .(x1) { x1 }, .() { let x1 = (); x1 }, .() { x1 }) } }";
+        let source = "mod main; fn run() { .x. { (x2, x1, m.x1, .x. { x1 }, .(x1) { x1 }, .() { let x1 = (); x1 }, .() { x1 }) } }";
         let file = test_file_path("/virtual/main.kio");
         let uri = test_file_uri("/virtual/main.kio");
         let analysis = make_package_analysis(vec![(file, "main".into(), source.into())], vec![]);
@@ -1405,8 +1404,7 @@ mod tests {
             }
             assert_eq!(
                 changed,
-                "module main; fn run() { .arg. { (arg2, arg1, m.x1, .x. { x1 }, \
-                .(x1) { x1 }, .() { let x1 = (); x1 }, .() { arg1 }) } }"
+                "mod main; fn run() { .arg. { (arg2, arg1, m.x1, .x. { x1 }, .(x1) { x1 }, .() { let x1 = (); x1 }, .() { arg1 }) } }"
             );
             assert!(parse_surface_module(&changed).is_some());
         }
@@ -1415,9 +1413,9 @@ mod tests {
     #[test]
     fn placeholder_family_rename_refuses_capture_or_invalid_stem() {
         for source in [
-            "module main; fn run() { .x. { .(arg1) { x1 } } }",
-            "module main; fn run() { .x. { (x1, arg2) } }",
-            "module main; fn run() { .x. { (x1, arg01) } }",
+            "mod main; fn run() { .x. { .(arg1) { x1 } } }",
+            "mod main; fn run() { .x. { (x1, arg2) } }",
+            "mod main; fn run() { .x. { (x1, arg01) } }",
         ] {
             let module = parse_surface_module(source).unwrap();
             let family =
@@ -1425,7 +1423,7 @@ mod tests {
             let error = family.rename("arg", &LineIndex::new(source)).unwrap_err();
             assert!(error.contains("ownership or arity"), "{error}");
         }
-        let source = "module main; fn run() { .x. { x1 } }";
+        let source = "mod main; fn run() { .x. { x1 } }";
         let module = parse_surface_module(source).unwrap();
         for name in ["arg1", "arg_", "Arg", "__arg"] {
             let family = placeholder_family_at(&module, source.find("x1").unwrap() as u32).unwrap();
@@ -1441,35 +1439,30 @@ mod tests {
         let root = test_file_path("/virtual/placeholder-tooling");
         for (source, slots) in [
             (
-                "module main; pub fn run() -> ((. -> .) & .) -> . { \
-                .x. { let keep = x1; x2 } }",
+                "mod main; pub fn run() -> ((. -> .) & .) -> . { .x. { let keep = x1; x2 } }",
                 2,
             ),
             (
-                "module main; pub fn run(value: (. -> .) & .) -> . { \
-                let .x. = value; let keep = x1; x2 }",
+                "mod main; pub fn run(value: (. -> .) & .) -> . { let .x. = value; let keep = x1; x2 }",
                 2,
             ),
             (
-                "module main; import sequence(macro do); fn bind[A][B](value: A, next: A -> B) -> B { next(value) } \
-                pub fn run(value: (. -> .) & .) -> . { do(bind) { let .x. <- value; let keep = x1; x2 } }",
+                "mod main; import sequence {macro do} fn bind[A][B](value: A, next: A -> B) -> B { next(value) } pub fn run(value: (. -> .) & .) -> . { do(bind) { let .x. <- value; let keep = x1; x2 } }",
                 2,
             ),
             (
-                "module main; pub fn run(value: (. -> .) & .) -> . { \
-                .() { let .x. = value; let keep = x1; x2 }() }",
+                "mod main; pub fn run(value: (. -> .) & .) -> . { .() { let .x. = value; let keep = x1; x2 }() }",
                 2,
             ),
             (
-                "module main; pub fn run(value: . -> .) -> . { \
-                .() { let .x. = value; x1() }() }",
+                "mod main; pub fn run(value: . -> .) -> . { .() { let .x. = value; x1() }() }",
                 1,
             ),
         ] {
             let files = BTreeMap::from([
                 (
                     root.join("demo.pkg.kio"),
-                    "package demo; bridge { main; }".to_owned(),
+                    "pkg demo; bridge { main; }".to_owned(),
                 ),
                 (root.join("main.kio"), source.to_owned()),
                 (
@@ -1721,7 +1714,7 @@ mod tests {
 
     #[test]
     fn validate_name_accepts_contextual_keywords() {
-        // `fn`, `let`, `module` etc. lex as Ident in Kio — they're
+        // `fn`, `let`, `mod` etc. lex as Ident in Kio — they're
         // contextual keywords, not hard reserved words.
         assert!(validate_new_name("fn").is_ok());
         assert!(validate_new_name("let").is_ok());
@@ -1730,11 +1723,12 @@ mod tests {
 
     #[test]
     fn rename_conflict_scope_includes_all_rec_members_and_current_params() {
-        let source = "module pkg/main;\n\
-rec(loop) {\n\
-  fn first(x: .) -> . { recur second(x) };\n\
-  fn second(y: .) -> . { recur first(y) }\n\
-}\n";
+        let source = "mod pkg/main;
+rec(loop) {
+fn first(x: .) -> . { recur second(x) };
+fn second(y: .) -> . { recur first(y) }
+}
+";
         let module = crate::pass::parser::parse(source).expect("fixture parses");
         let offset = source.find("recur first(").expect("marker") as u32;
         let mut names = Vec::new();
@@ -1749,7 +1743,7 @@ rec(loop) {\n\
 
     #[test]
     fn ordinary_rename_conflict_scope_includes_nominal_and_alias_names() {
-        let source = "module source; type { Foo: .; }; type Field = Foo; fn keep() -> . { () }";
+        let source = "mod source; type { Foo: .; }; type Field = Foo; fn keep() -> . { () }";
         let module = crate::pass::parser::parse(source).expect("alias source");
         let mut names = Vec::new();
         collect_module_scope(&module, source.len() as u32, &mut names);
@@ -1780,7 +1774,7 @@ rec(loop) {\n\
 
     #[test]
     fn prepare_rename_returns_none_outside_binder() {
-        let source = "module pkg/main;\n";
+        let source = "mod pkg/main;\n";
         let analysis = make_analysis(vec![(
             "pkg/main",
             Span::new(20, 30),
@@ -1801,13 +1795,11 @@ rec(loop) {\n\
 
     #[test]
     fn prepare_rename_returns_range_on_fn_binder() {
-        // Source: "module pkg/main;\n  run  "
-        // Byte offsets:  "module pkg/main;\n" = 17 bytes (indices 0..16, \n at 16).
-        // Then: space=17, space=18, r=19, u=20, n=21 → "run" is span 19..22.
-        let source = "module pkg/main;\n  run  ";
+        // Source: "mod pkg/main;\n  run  "
+        let source = "mod pkg/main;\n  run  ";
         let analysis = make_analysis(vec![(
             "pkg/main",
-            Span::new(19, 22),
+            Span::new(16, 19),
             ResolvedBinder::Fn {
                 module_path: "pkg/main".to_owned(),
                 name: "run".to_owned(),
@@ -1815,7 +1807,6 @@ rec(loop) {\n\
             source,
         )]);
         let uri = test_file_uri("/tmp/pkg/main.kio");
-        // Cursor on line 1, char 2 → byte 19, inside span 19..22.
         let pos = Position {
             line: 1,
             character: 2,
@@ -1829,9 +1820,9 @@ rec(loop) {\n\
 
     #[test]
     fn prepare_rename_returns_none_for_intrinsic() {
-        // "module pkg/main;\n" = 17 bytes, then "  " = 2 bytes → __pair__ starts at 19.
+        // "mod pkg/main;\n" = 17 bytes, then "  " = 2 bytes → __pair__ starts at 19.
         // "__pair__" is 11 chars → span 19..30.
-        let source = "module pkg/main;\n  __pair__  ";
+        let source = "mod pkg/main;\n  __pair__  ";
         let analysis = make_analysis(vec![(
             "pkg/main",
             Span::new(19, 30),
@@ -1853,7 +1844,7 @@ rec(loop) {\n\
 
     #[test]
     fn rename_returns_none_outside_binder() {
-        let source = "module pkg/main;\n";
+        let source = "mod pkg/main;\n";
         let analysis = make_analysis(vec![(
             "pkg/main",
             Span::new(20, 30),
@@ -1882,8 +1873,8 @@ rec(loop) {\n\
 
     #[test]
     fn rename_invalid_name_returns_error() {
-        // "module pkg/main;\n" = 17 bytes, "  " = 2 → run starts at 19.
-        let source = "module pkg/main;\n  run  ";
+        // "mod pkg/main;\n" = 17 bytes, "  " = 2 → run starts at 19.
+        let source = "mod pkg/main;\n  run  ";
         let analysis = make_analysis(vec![(
             "pkg/main",
             Span::new(19, 22),
@@ -1904,14 +1895,11 @@ rec(loop) {\n\
 
     #[test]
     fn rename_fn_binder_produces_workspace_edit() {
-        // "module pkg/main;\n" = 17 bytes, "  " = 2 → run starts at 19.
-        // "run" = 3 bytes → first span 19..22.
-        // "  " = 2 bytes → second run starts at 24 → span 24..27.
-        let source = "module pkg/main;\n  run  run  ";
+        let source = "mod pkg/main;\n  run  run  ";
         let analysis = make_analysis(vec![
             (
                 "pkg/main",
-                Span::new(19, 22),
+                Span::new(16, 19),
                 ResolvedBinder::Fn {
                     module_path: "pkg/main".to_owned(),
                     name: "run".to_owned(),
@@ -1920,7 +1908,7 @@ rec(loop) {\n\
             ),
             (
                 "pkg/main",
-                Span::new(24, 27),
+                Span::new(21, 24),
                 ResolvedBinder::Fn {
                     module_path: "pkg/main".to_owned(),
                     name: "run".to_owned(),
@@ -1947,9 +1935,9 @@ rec(loop) {\n\
         let package_root = test_file_path("/workspace");
         let provider_path = package_root.join("provider.kio");
         let consumer_path = package_root.join("consumer.kio");
-        let provider = "module provider;\npub fn combine(value: .) -> . { value }\n";
+        let provider = "mod provider;\npub fn combine(value: .) -> . { value }\n";
         let consumer = concat!(
-            "module consumer;\n",
+            "mod consumer;\n",
             "import provider as p;\n",
             "fn run(combined: .) -> . { p.combine(combined) }\n",
         );
@@ -2022,12 +2010,12 @@ rec(loop) {\n\
         let provider_path = package_root.join("provider.kio");
         let consumer_path = package_root.join("consumer.kio");
         let provider = concat!(
-            "module provider;\n",
+            "mod provider;\n",
             "pub type { Wrap: . { pub mk; pub get; }; };\n",
         );
         let consumer = concat!(
-            "module consumer;\n",
-            "import provider(Wrap);\n",
+            "mod consumer;\n",
+            "import provider {type Wrap}\n",
             "fn wrapped(value: .) -> . { value }\n",
             "op + _ { impl Wrap.mk; };\n",
         );
@@ -2100,10 +2088,10 @@ rec(loop) {\n\
         let package_root = test_file_path("/workspace");
         let provider_path = package_root.join("provider.kio");
         let consumer_path = package_root.join("consumer.kio");
-        let provider = "module provider;\npub fn combine(value: .) -> . { value }\n";
+        let provider = "mod provider;\npub fn combine(value: .) -> . { value }\n";
         let consumer = concat!(
-            "module consumer;\n",
-            "import provider(combine);\n",
+            "mod consumer;\n",
+            "import provider {fn combine}\n",
             "fn run(combined: .) -> . { combine(combined) }\n",
         );
         let target = ResolvedBinder::Fn {
@@ -2111,9 +2099,9 @@ rec(loop) {\n\
             name: "combine".to_owned(),
         };
         let import_start = consumer
-            .find("import provider(combine")
+            .find("import provider {fn combine")
             .expect("selective import")
-            + "import provider(".len();
+            + "import provider {fn ".len();
         let call_start = consumer.rfind("combine(").expect("unqualified call");
         let analysis = make_package_analysis(
             vec![
@@ -2166,11 +2154,11 @@ rec(loop) {\n\
         let provider_path = package_root.join("provider.kio");
         let consumer_path = package_root.join("consumer.kio");
         let provider = concat!(
-            "module provider;\n",
+            "mod provider;\n",
             "pub fn combine(value: .) -> . { value }\n",
             "pub fn combined(value: .) -> . { value }\n",
         );
-        let consumer = "module consumer;\nimport provider as p;\nfn run() -> . { p.combine(()) }\n";
+        let consumer = "mod consumer;\nimport provider as p;\nfn run() -> . { p.combine(()) }\n";
         let target = ResolvedBinder::Fn {
             module_path: "provider".to_owned(),
             name: "combine".to_owned(),
@@ -2226,8 +2214,8 @@ rec(loop) {\n\
 
     #[test]
     fn indexed_rename_survives_an_unparseable_live_overlay() {
-        let analyzed_source = "module pkg/main;\n  run  run  ";
-        let overlay_source = "module pkg/main;\n  run  run  \"";
+        let analyzed_source = "mod pkg/main;\n  run  run  ";
+        let overlay_source = "mod pkg/main;\n  run  run  \"";
         assert!(crate::pass::parser::parse_module_file(overlay_source).is_err());
         let binder = ResolvedBinder::Fn {
             module_path: "pkg/main".to_owned(),
@@ -2236,11 +2224,11 @@ rec(loop) {\n\
         let analysis = make_analysis(vec![
             (
                 "pkg/main",
-                Span::new(19, 22),
+                Span::new(16, 19),
                 binder.clone(),
                 analyzed_source,
             ),
-            ("pkg/main", Span::new(24, 27), binder, analyzed_source),
+            ("pkg/main", Span::new(21, 24), binder, analyzed_source),
         ]);
         let uri = test_file_uri("/tmp/pkg/main.kio");
         let position = Position {
@@ -2279,15 +2267,15 @@ rec(loop) {\n\
         let main_path = package_root.join("pkg/main.kio");
         let use_path = package_root.join("pkg/use.kio");
         let syntax_path = package_root.join("pkg/syntax.kio");
-        let main_source = "module pkg/main;\nfn target() -> A { target() }\n";
+        let main_source = "mod pkg/main;\nfn target() -> A { target() }\n";
         let use_source = concat!(
-            "module pkg/use;\n",
-            "import pkg/main(target);\n",
-            "import pkg/syntax(op ? _ : _);\n",
+            "mod pkg/use;\n",
+            "import pkg/main {fn target}\n",
+            "import pkg/syntax {op ? _ : _}\n",
             "fn run(taken: A) -> A { ? target() : taken }\n",
         );
         let syntax_source = concat!(
-            "module pkg/syntax;\n",
+            "mod pkg/syntax;\n",
             "fn choose(left: A, right: A) -> A { left }\n",
             "pub op ? _ : _ { impl choose; };\n",
         );
@@ -2354,24 +2342,24 @@ rec(loop) {\n\
         let directory = tempfile::tempdir().expect("temporary package root");
         let package_root = directory.path().to_path_buf();
         let package_dir = package_root.join("pkg");
-        fs::create_dir_all(&package_dir).expect("package module directory");
+        fs::create_dir_all(&package_dir).expect("pkg module directory");
         let main_path = package_dir.join("main.kio");
         let use_path = package_dir.join("use.kio");
         let syntax_path = package_dir.join("syntax.kio");
-        let main_source = "module pkg/main;\nfn target() -> A { target() }\n";
+        let main_source = "mod pkg/main;\nfn target() -> A { target() }\n";
         let use_source = concat!(
-            "module pkg/use;\n",
-            "import pkg/main(target);\n",
-            "import pkg/syntax(op ? _ : _);\n",
+            "mod pkg/use;\n",
+            "import pkg/main {fn target}\n",
+            "import pkg/syntax {op ? _ : _}\n",
             "fn run(taken: A) -> A { ? target() : taken }\n",
         );
         let analyzed_syntax_source = concat!(
-            "module pkg/syntax;\n",
+            "mod pkg/syntax;\n",
             "fn choose(left: A, right: A) -> A { left }\n",
             "pub op ? _ : _ { impl choose; };\n",
         );
         let changed_syntax_source = concat!(
-            "module pkg/syntax;\n",
+            "mod pkg/syntax;\n",
             "fn identity(value: A) -> A { value }\n",
             "pub op ? _ { impl identity; };\n",
         );
@@ -2435,7 +2423,7 @@ rec(loop) {\n\
             "let .x. = a; print(x1); let .y. = b; pair(x3, y1)",
             "action { let .x. <- a; print(x1); let .y. <- b; pair(x3, y1) }",
         ] {
-            let source = format!("module main; fn run() {{ {body} }}");
+            let source = format!("mod main; fn run() {{ {body} }}");
             let module = parse_surface_module(&source).unwrap();
             for offset in [source.find(".x.").unwrap() + 1, source.find("x3").unwrap()] {
                 let family = placeholder_family_at(&module, offset as u32).unwrap();

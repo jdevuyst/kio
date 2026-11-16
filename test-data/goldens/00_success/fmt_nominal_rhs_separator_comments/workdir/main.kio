@@ -1,4 +1,4 @@
-module main;
+mod main;
 
 type Choice = { // first operand
   First: .

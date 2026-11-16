@@ -1,12 +1,12 @@
-module earley/chart;
+mod earley/chart;
 
 import earley/arrays as numbers;
 import earley/model as model;
-import macros/control(macro if);
-import testapi(Bool, I32);
+import macros/control { macro if }
+import testapi { type Bool; type I32 }
 import testapi/arith as arith;
 import testapi/array as arrays;
-import testapi/iter(loop);
+import testapi/iter { fn loop }
 
 rec(loop) fn has_from(column: model.Column, state: model.Item, index: I32) -> Bool {
   if(arith.leq_i32(arrays.array_len(column), index)) {

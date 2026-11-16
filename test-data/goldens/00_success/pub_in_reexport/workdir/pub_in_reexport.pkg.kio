@@ -1,4 +1,4 @@
-package pub_in_reexport;
+pkg pub_in_reexport;
 
 build {
   cache "out/.kio-cache/";

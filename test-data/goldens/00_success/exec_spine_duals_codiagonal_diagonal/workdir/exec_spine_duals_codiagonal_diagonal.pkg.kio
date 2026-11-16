@@ -1,4 +1,4 @@
-package exec_spine_duals_codiagonal_diagonal;
+pkg exec_spine_duals_codiagonal_diagonal;
 
 build {
   cache "out/.kio-cache/";

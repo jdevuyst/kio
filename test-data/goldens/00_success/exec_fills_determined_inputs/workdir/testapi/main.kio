@@ -1,8 +1,8 @@
-module testapi/main;
+mod testapi/main;
 
 import macros as e;
-import macros(macro fill, macro inspect, macro with_sibling);
-import testapi/io(print);
+import macros { macro fill; macro inspect; macro with_sibling }
+import testapi/io { fn print }
 
 fn explicit_factory() { let result = fill(e.boxed[.](())); result }
 

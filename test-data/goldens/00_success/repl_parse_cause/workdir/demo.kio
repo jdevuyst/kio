@@ -1,7 +1,7 @@
-module demo;
+mod demo;
 
 fn choose(left: ., right: .) { left }
 
 fn empty() { () }
 
-varop [* *] { foldr choose empty }
+op_var [* *] { foldr choose empty }

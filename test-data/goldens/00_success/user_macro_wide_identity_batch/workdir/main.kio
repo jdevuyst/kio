@@ -1,6 +1,6 @@
-module main;
+mod main;
 
-import macros(macro identity_a, macro identity_b, macro identity_c);
+import macros { macro identity_a; macro identity_b; macro identity_c }
 
 type { Shape0: . { mk; get } }
 

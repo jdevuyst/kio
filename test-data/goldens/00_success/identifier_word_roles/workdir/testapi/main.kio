@@ -1,4 +1,4 @@
-module testapi/main;
+mod testapi/main;
 
 import testapi as api;
 import testapi/io as io;

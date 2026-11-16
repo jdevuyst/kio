@@ -1,12 +1,12 @@
-module main;
+mod main;
 
 import __intrinsics__;
 
-import control(macro if);
+import control { macro if }
 
 host type Text role(str);
 
-host type Owned_text role(str) { owned };
+host type Owned_text role(str);
 
 host type Token;
 

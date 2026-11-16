@@ -11,9 +11,9 @@
 /// conflating the two and wrongly accepting this. (`Float` is imported
 /// from the dependency so it is one shared host type — only the `Meters`
 /// argument is at issue, not the `Float` return.)
-module main;
+mod main;
 
-import bdep/meters(Float, dep_len);
+import bdep/meters { type Float; fn dep_len }
 
 pub type { Meters: Float { pub mk; pub get } }
 

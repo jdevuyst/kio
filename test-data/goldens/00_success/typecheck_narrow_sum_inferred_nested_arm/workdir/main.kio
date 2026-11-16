@@ -1,6 +1,6 @@
-module main;
+mod main;
 
-import macros/spine_macros(macro narrow_sum);
+import macros/spine_macros { macro narrow_sum }
 
 // Regression for target inference over a source arm that is itself a
 // sum. The inferred target must keep `(. | .)` as a right-spine arm,

@@ -1,4 +1,4 @@
-module main;
+mod main;
 
 // Polymorphic identity, declared as a top-level fn.
 fn id[X](a: X) -> X { a }

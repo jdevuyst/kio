@@ -1,4 +1,4 @@
-package ecp;
+pkg ecp;
 
 build {
   cache "out/.kio-cache/";

@@ -1,11 +1,11 @@
-module bdd/expression;
+mod bdd/expression;
 
 import bdd/logic as logic;
-import macros/match(macro match);
-import macros/row_macros(macro select);
-import macros/spine_macros(macro widen_sum);
-import testapi(Bool, I32);
-import testapi/iter(loop);
+import macros/match { macro match }
+import macros/row_macros { macro select }
+import macros/spine_macros { macro widen_sum }
+import testapi { type Bool; type I32 }
+import testapi/iter { fn loop }
 
 pub rec type Expression =
   | { Constant: Bool }

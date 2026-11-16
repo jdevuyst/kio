@@ -729,7 +729,7 @@ mod tests {
         use crate::normalization::artifact::tests::lowered_package;
         let artifact = lowered_package(&[(
             "x.kio",
-            "module x; pure fn identity[A](x: A) -> A { x } pure fn forward[B](y: B) -> B { identity[B](y) } pure fn eta[A](f: [B] . -> (. | .)) -> [B] . -> (. | .) { .[B](x: .) -> (. | .) { f[B](x) } }",
+            "mod x; pure fn identity[A](x: A) -> A { x } pure fn forward[B](y: B) -> B { identity[B](y) } pure fn eta[A](f: [B] . -> (. | .)) -> [B] . -> (. | .) { .[B](x: .) -> (. | .) { f[B](x) } }",
         )]);
         let ctx = AuthenticatedEvalCtx::for_module(artifact.prepare_module("x").expect("module"));
         let identity = eval_authenticated(&path_expr("identity"), &Env::new(), &ctx);

@@ -1,4 +1,4 @@
-package flatten_sum_rejects_shallow_source;
+pkg flatten_sum_rejects_shallow_source;
 
 build {
   cache "out/.kio-cache/";

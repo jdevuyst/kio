@@ -1,4 +1,4 @@
-module effects;
+mod effects;
 
 host type String role(str);
 

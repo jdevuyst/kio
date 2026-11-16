@@ -1,4 +1,4 @@
-package exec_effectful_curried_closure;
+pkg exec_effectful_curried_closure;
 
 build {
   cache "out/.kio-cache/";

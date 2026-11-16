@@ -1,4 +1,4 @@
-package build_conditional_field_update_expected;
+pkg build_conditional_field_update_expected;
 
 build {
   cache "out/.kio-cache/";

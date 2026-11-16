@@ -24,7 +24,7 @@ For an operator spelling that delays an operand for a macro, see the
 Create `author.pkg.kio`:
 
 ```kio {file}
-package author;
+pkg author;
 
 bridge {
   author/**;
@@ -40,7 +40,7 @@ build {
 Create the root module, `author.kio`:
 
 ```kio {file}
-module author;
+mod author;
 ```
 
 The following sections give complete files under `author/`. Calls and laws
@@ -68,7 +68,7 @@ parameter, and calls that function with the saved source.
 Create `author/duplicate.kio`:
 
 ```kio {file}
-module author/duplicate;
+mod author/duplicate;
 
 import __comptime__;
 
@@ -115,9 +115,9 @@ with one product parameter have the same reflected domain and result.
 Create `author/duplicate_checks.kio`:
 
 ```kio {file}
-module author/duplicate_checks;
+mod author/duplicate_checks;
 
-import author/duplicate(macro twice, macro twice_block);
+import author/duplicate {macro twice; macro twice_block}
 
 pure fn duplicate[A](saved: A) -> A & A {
   let parameter = saved;
@@ -151,7 +151,7 @@ For a fixed runtime skeleton, write the skeleton in ordinary Kio and capture
 its checked reference. Create `author/template.kio`:
 
 ```kio {file}
-module author/template;
+mod author/template;
 
 import __comptime__;
 
@@ -191,10 +191,10 @@ retain their separate visibility requirement.
 Create `author/template_checks.kio`:
 
 ```kio {file}
-module author/template_checks;
+mod author/template_checks;
 
-import author/duplicate(macro twice);
-import author/template(macro template_twice);
+import author/duplicate {macro twice}
+import author/template {macro template_twice}
 
 pure fn duplicated[A](value: A) -> A & A { template_twice(value) }
 
@@ -253,7 +253,7 @@ remaining five as non-products.
 Create `author/mirror.kio`:
 
 ```kio {file}
-module author/mirror;
+mod author/mirror;
 
 import __intrinsics__;
 
@@ -349,9 +349,9 @@ that term's type. This is different from the marked fill protocol below.
 Create `author/mirror_checks.kio`:
 
 ```kio {file}
-module author/mirror_checks;
+mod author/mirror_checks;
 
-import author/mirror(macro mirror);
+import author/mirror {macro mirror}
 
 pure fn mirrored[A][B][C](a: A, b: B, c: C) -> C & (B & A) { mirror(((a, b), c)) }
 
@@ -384,7 +384,7 @@ This negative example is a separate file, not part of the successful package.
 It invokes the implementation and recurses with its unchanged fuel:
 
 ```kio {check_exit_code=16}
-module bad_recursion;
+mod bad_recursion;
 
 import __comptime__;
 
@@ -419,7 +419,7 @@ Our `first_result` takes two zero-argument functions, requires their results
 to agree, and constructs a call to the first. Create `author/fills.kio`:
 
 ```kio {file}
-module author/fills;
+mod author/fills;
 
 import __comptime__;
 
@@ -458,10 +458,10 @@ whose code is discarded.
 Create `author/fill_checks.kio`:
 
 ```kio {file}
-module author/fill_checks;
+mod author/fill_checks;
 
-import author/fills(macro first_result);
-import author/template(identity);
+import author/fills {macro first_result}
+import author/template {fn identity}
 
 pure fn known_result(value: .) -> . {
   first_result(.() { value })(.() { value })
@@ -497,10 +497,10 @@ the same two declarations. Keep rejected examples outside the successful
 package while you run its laws.
 
 <!--kio {harness=fill_failure file placeholder="__SNIPPET__"}
-module author/fill_failure;
+mod author/fill_failure;
 
-import author/fills(macro first_result);
-import author/template(identity);
+import author/fills {macro first_result}
+import author/template {fn identity}
 
 __SNIPPET__
 -->
@@ -542,7 +542,7 @@ the caller's bind operation. Their implementations construct ordinary calls.
 Create `author/blocks.kio`:
 
 ```kio {file}
-module author/blocks;
+mod author/blocks;
 
 import __comptime__;
 
@@ -588,9 +588,9 @@ Neither implementation evaluates a source block during construction.
 Create `author/block_checks.kio`:
 
 ```kio {file}
-module author/block_checks;
+mod author/block_checks;
 
-import author/blocks(macro scope, macro sequence);
+import author/blocks {macro scope; macro sequence}
 
 type { Box[A]: A; }
 
@@ -635,7 +635,7 @@ This standalone module accepts only unit. Its diagnostic tells the caller
 which operation failed and what it accepts:
 
 ```kio {check_exit_code=15}
-module unit_only;
+mod unit_only;
 
 import __intrinsics__;
 
@@ -666,7 +666,7 @@ This implementation returns checked unit, but its declaration promises a
 pair. Checking the implementation alone cannot detect that dynamic mismatch:
 
 ```kio {check_exit_code=15}
-module wrong_result;
+mod wrong_result;
 
 import __comptime__;
 
@@ -689,7 +689,7 @@ Capturing a host function is allowed. Emitting its call into a pure consumer
 is a separate violation:
 
 ```kio {check_exit_code=14}
-module generated_purity;
+mod generated_purity;
 
 import __comptime__;
 
@@ -708,7 +708,7 @@ An ordinary `fn trigger` can contain that generated host call. A direct
 executable reference in the implementation is rejected instead:
 
 ```kio {check_exit_code=14}
-module direct_host_execution;
+mod direct_host_execution;
 
 import __comptime__;
 
@@ -752,9 +752,9 @@ For a separate negative behavior test, this claim checks successfully but
 gets the mirror's result wrong:
 
 <!--kio {harness=wrong_law file placeholder="__SNIPPET__"}
-module author/wrong_law;
+mod author/wrong_law;
 
-import author/mirror(macro mirror);
+import author/mirror {macro mirror}
 
 __SNIPPET__
 -->

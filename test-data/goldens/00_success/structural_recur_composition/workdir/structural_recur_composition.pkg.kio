@@ -1,4 +1,4 @@
-package structural_recur_composition;
+pkg structural_recur_composition;
 
 build {
   cache "out/.kio-cache/";

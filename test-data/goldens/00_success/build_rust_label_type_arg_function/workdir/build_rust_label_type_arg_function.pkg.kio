@@ -1,4 +1,4 @@
-package build_rust_label_type_arg_function;
+pkg build_rust_label_type_arg_function;
 
 build {
   cache "out/.kio-cache/";

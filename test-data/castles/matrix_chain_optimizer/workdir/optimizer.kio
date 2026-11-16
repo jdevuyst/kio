@@ -1,13 +1,13 @@
-module optimizer;
+mod optimizer;
 
 import chain as chain;
-import chain(Cols, Matrix, Rows);
-import macros/control(macro if);
-import macros/row_macros(macro select);
-import testapi(Array, Bool, I32);
+import chain { type Cols; type Matrix; type Rows }
+import macros/control { macro if }
+import macros/row_macros { macro select }
+import testapi { type Array; type Bool; type I32 }
 import testapi/arith as math;
 import testapi/array as arrays;
-import testapi/iter(loop);
+import testapi/iter { fn loop }
 import tree as tree;
 
 pub type Plan = { Costs: Array[I32]; Splits: Array[I32]; Size: I32 };

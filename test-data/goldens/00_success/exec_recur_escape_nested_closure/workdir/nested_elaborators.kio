@@ -1,9 +1,9 @@
-module nested_elaborators;
+mod nested_elaborators;
 
 import __intrinsics__;
 
 import __comptime__;
-import testapi(I32);
+import testapi { type I32 }
 import testapi/io as io;
 
 pure fn invoke_then_impl(

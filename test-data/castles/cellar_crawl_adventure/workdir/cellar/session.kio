@@ -1,17 +1,17 @@
 /// The stdin loop: read a verb, read its object if that verb takes one, apply
 /// the command, print what happened. `quit` ends the loop, and so does EOF.
-module cellar/session;
+mod cellar/session;
 
 import cellar/command as command;
-import cellar/engine(apply);
+import cellar/engine { fn apply }
 import cellar/outcome as outcome;
 import cellar/report as report;
 import cellar/state as state;
-import macros/control(macro if);
-import macros/match(macro match);
-import testapi(Bool, String);
-import testapi/io(print, read_ascii_line);
-import testapi/iter(loop);
+import macros/control { macro if }
+import macros/match { macro match }
+import testapi { type Bool; type String }
+import testapi/io { fn print; fn read_ascii_line }
+import testapi/iter { fn loop }
 
 /// The object line of a two-line command. A fixture that ends between a verb
 /// and its object leaves an empty object, which the engine refuses like any

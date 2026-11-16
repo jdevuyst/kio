@@ -1,21 +1,21 @@
-module pid/pipeline;
+mod pid/pipeline;
 
-import macros/row_macros(macro select);
-import pid/controller(memory_after, update);
-import pid/model(
-, Calibration_cfg
-, First
-, Gains_cfg
-, Initial_memory
-, Raw_one
-, Raw_three
-, Raw_two
-, Scenario
-, Second
-, Target
-, Third
-, Timeline
-);
+import macros/row_macros { macro select }
+import pid/controller { fn memory_after; fn update }
+import pid/model {
+  type Calibration_cfg;
+  type First;
+  type Gains_cfg;
+  type Initial_memory;
+  type Raw_one;
+  type Raw_three;
+  type Raw_two;
+  type Scenario;
+  type Second;
+  type Target;
+  type Third;
+  type Timeline
+}
 
 pub fn run(scenario: Scenario) -> Timeline {
   let first =

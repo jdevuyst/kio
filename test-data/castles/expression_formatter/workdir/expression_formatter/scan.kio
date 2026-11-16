@@ -1,20 +1,26 @@
-module expression_formatter/scan;
+mod expression_formatter/scan;
 
-import expression_formatter/types(
-, Add_token
-, Binding_token
-, Close_token
-, Eq_token
-, Group_token
-, Left_token
-, Literal_token
-, Mul_token
-, Open_token
-, Source_text
-);
-import expression_formatter/types(Token_depth, Token_kind, Token_start, Token_stop, Token_text);
-import testapi(Int, String);
-import testapi/text(string_slice);
+import expression_formatter/types {
+  type Add_token;
+  type Binding_token;
+  type Close_token;
+  type Eq_token;
+  type Group_token;
+  type Left_token;
+  type Literal_token;
+  type Mul_token;
+  type Open_token;
+  type Source_text
+}
+import expression_formatter/types {
+  type Token_depth;
+  type Token_kind;
+  type Token_start;
+  type Token_stop;
+  type Token_text
+}
+import testapi { type Int; type String }
+import testapi/text { fn string_slice }
 
 fn token(src: String, kind: String, start: Int, stop: Int, depth: Int) ->
   Token_kind & Token_text & Token_start & Token_stop & Token_depth

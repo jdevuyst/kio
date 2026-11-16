@@ -1,4 +1,4 @@
-module hidden;
+mod hidden;
 
 pub type { Hidden_pair: . & . { pub mk; pub get } }
 

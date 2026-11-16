@@ -1,5 +1,5 @@
-module testapi/main;
+mod testapi/main;
 
-import book/engine(run);
+import book/engine { fn run }
 
 pub fn main() { run() }

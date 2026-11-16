@@ -1,6 +1,13 @@
-module main;
+mod main;
 
-import macros/control(Bool, macro and, macro or, not, op macro _ && .__, op macro _ || .__);
+import macros/control {
+  type Bool;
+  fn not;
+  macro and;
+  macro or;
+  op_macro _ && .__;
+  op_macro _ || .__
+}
 
 host fn condition() -> Bool;
 

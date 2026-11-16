@@ -1,4 +1,4 @@
-module main;
+mod main;
 
 host type Int role(i32);
 
@@ -8,7 +8,7 @@ host type Float role(f32);
 
 host type Double role(f64);
 
-literal decimal = 0.1;
+lit decimal = 0.1;
 
 equiv integer_decimal() {
   010[Int];

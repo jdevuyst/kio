@@ -1,13 +1,13 @@
-module fold/validate;
+mod fold/validate;
 
 import fold/bases as bases;
 import fold/numbers as numbers;
-import macros/control(macro if);
-import macros/match(macro match);
-import testapi(Array, Bool, I32, String);
+import macros/control { macro if }
+import macros/match { macro match }
+import testapi { type Array; type Bool; type I32; type String }
 import testapi/arith as arith;
 import testapi/array as array;
-import testapi/iter(loop);
+import testapi/iter { fn loop }
 
 pub type Audit = {
   Legal: Bool;

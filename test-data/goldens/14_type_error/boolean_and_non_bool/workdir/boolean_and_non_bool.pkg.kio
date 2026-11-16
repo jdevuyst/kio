@@ -1,4 +1,4 @@
-package boolean_and_non_bool;
+pkg boolean_and_non_bool;
 
 build {
   cache "out/.kio-cache/";

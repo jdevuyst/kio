@@ -1,13 +1,20 @@
 /// Checks that every visible type contract closes over exact dependencies.
-module testapi/main;
+mod testapi/main;
 
-import loader(Diag, Image, Load_outcome, Lr_diag, Lr_image);
-import loader(contract_check, contract_cons, contract_nil, diag_message, mk_expect, un_load_outcome);
-import loader/scan(load_package);
-import macros/match(macro match);
-import testapi(String);
-import testapi/io(print);
-import testapi/text(string_concat);
+import loader {
+  fn contract_check;
+  fn contract_cons;
+  fn contract_nil;
+  fn diag_message;
+  fn mk_expect;
+  fn un_load_outcome
+}
+import loader { type Diag; type Image; type Load_outcome; type Lr_diag; type Lr_image }
+import loader/scan { fn load_package }
+import macros/match { macro match }
+import testapi { type String }
+import testapi/io { fn print }
+import testapi/text { fn string_concat }
 
 fn describe(outcome: Load_outcome) -> String {
   match(un_load_outcome(outcome)) {
@@ -43,47 +50,47 @@ fn contract_line(label: String, source: String, name: String, signature: String)
 pub fn main() {
   print(line(
   , "private alias in export: "[String]
-  , "module guest;\ntype Secret = .;\npub fn expose(value: Secret) -> . { () }\n"
-    "package guest;\nbridge { guest; }\n"[String]
-  ));
-  print(line(
-  , "unbridged alias in export: "[String]
-  , "module provider;\npub type Public = .;\nmodule guest;\nimport "
-    "provider(Public);\npub fn expose(value: Public) -> . { () }\npackage "
+  , "mod guest;\ntype Secret = .;\npub fn expose(value: Secret) -> . { () }\npkg "
     "guest;\nbridge { guest; }\n"[String]
   ));
   print(line(
+  , "unbridged alias in export: "[String]
+  , "mod provider;\npub type Public = .;\nmod guest;\nimport provider {type "
+    "Public}\npub fn expose(value: Public) -> . { () }\npkg guest;\nbridge { "
+    "guest; }\n"[String]
+  ));
+  print(line(
   , "phantom alias argument: "[String]
-  , "module hidden;\npub type { Hidden: . { pub mk; pub get; }; };\nmodule "
-    "aliases;\npub type Drop[A] = .;\nmodule guest;\nimport hidden(Hidden);\n"
-    "import aliases(Drop);\npub fn expose(value: Drop[Hidden]) -> . { () }\n"
-    "package guest;\nbridge { guest; aliases; }\n"[String]
+  , "mod hidden;\npub type { Hidden: . { pub mk; pub get; }; };\nmod aliases;\n"
+    "pub type Drop[A] = .;\nmod guest;\nimport hidden {type Hidden}\nimport "
+    "aliases {type Drop}\npub fn expose(value: Drop[Hidden]) -> . { () }\npkg "
+    "guest;\nbridge { guest; aliases; }\n"[String]
   ));
   print(line(
   , "private identity-forwarding alias in export: "[String]
-  , "module guest;\npub type Base[A] = A;\ntype Secret[A] = Base[A];\npub fn "
-    "expose(value: Secret[.]) -> . { () }\npackage guest;\nbridge { guest; }\n"[String]
+  , "mod guest;\npub type Base[A] = A;\ntype Secret[A] = Base[A];\npub fn "
+    "expose(value: Secret[.]) -> . { () }\npkg guest;\nbridge { guest; }\n"[String]
   ));
   print(line(
   , "unbridged identity-forwarding alias in export: "[String]
-  , "module base;\npub type Base[A] = A;\nmodule provider;\nimport base(Base);\n"
-    "pub type Public[A] = Base[A];\nmodule guest;\nimport provider(Public);\npub "
-    "fn expose(value: Public[.]) -> . { () }\npackage guest;\nbridge { guest; "
+  , "mod base;\npub type Base[A] = A;\nmod provider;\nimport base {type Base}\n"
+    "pub type Public[A] = Base[A];\nmod guest;\nimport provider {type Public}\n"
+    "pub fn expose(value: Public[.]) -> . { () }\npkg guest;\nbridge { guest; "
     "base; }\n"[String]
   ));
   print(line(
   , "chained identity-forwarding aliases: "[String]
-  , "module guest;\npub type Base[A] = A;\ntype Secret[A] = Base[A];\npub type "
-    "Public[A] = Secret[A];\npub fn expose(value: Public[.]) -> . { () }\n"
-    "package guest;\nbridge { guest; }\n"[String]
+  , "mod guest;\npub type Base[A] = A;\ntype Secret[A] = Base[A];\npub type "
+    "Public[A] = Secret[A];\npub fn expose(value: Public[.]) -> . { () }\npkg "
+    "guest;\nbridge { guest; }\n"[String]
   ));
   print(contract_line(
   , "public bridged identity-forwarding aliases: "[String]
-  , "module base;\nhost type Value;\nmodule first;\nimport base(Value);\npub type "
-    "First = Value;\nmodule second;\nimport first(First);\npub type Second = "
-    "First;\nmodule guest;\nimport second(Second);\npub fn expose(value: Second) "
-    "-> Second { value }\npackage guest;\nbridge { base; first; second; guest; "
-    "}\n"[String]
+  , "mod base;\nhost type Value;\nmod first;\nimport base {type Value}\npub type "
+    "First = Value;\nmod second;\nimport first {type First}\npub type Second = "
+    "First;\nmod guest;\nimport second {type Second}\npub fn expose(value: "
+    "Second) -> Second { value }\npkg guest;\nbridge { base; first; second; "
+    "guest; }\n"[String]
   , "expose"[String]
   , "(h{base.Value}) -> h{base.Value}"[String]
   ))

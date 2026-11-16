@@ -1,4 +1,4 @@
-package user_macro_owner_context;
+pkg user_macro_owner_context;
 
 build {
   cache "out/.kio-cache/";

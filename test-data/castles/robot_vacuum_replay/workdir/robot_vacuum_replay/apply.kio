@@ -1,31 +1,31 @@
-module robot_vacuum_replay/apply;
+mod robot_vacuum_replay/apply;
 
-import macros/match(macro match);
-import macros/row_macros(macro select);
-import robot_vacuum_replay/command(
-, Charge_cmd
-, Clean_cmd
-, Command
-, Dock_cmd
-, Left_cmd
-, Pause_cmd
-, Right_cmd
-, Start_cmd
-, Step_cmd
-, Unknown_cmd
-);
-import robot_vacuum_replay/model(
-, Vacuum
-, apply_charge
-, apply_clean
-, apply_dock
-, apply_left
-, apply_pause
-, apply_right
-, apply_start
-, apply_step
-, apply_unknown
-);
+import macros/match { macro match }
+import macros/row_macros { macro select }
+import robot_vacuum_replay/command {
+  type Charge_cmd;
+  type Clean_cmd;
+  type Command;
+  type Dock_cmd;
+  type Left_cmd;
+  type Pause_cmd;
+  type Right_cmd;
+  type Start_cmd;
+  type Step_cmd;
+  type Unknown_cmd
+}
+import robot_vacuum_replay/model {
+  type Vacuum;
+  fn apply_charge;
+  fn apply_clean;
+  fn apply_dock;
+  fn apply_left;
+  fn apply_pause;
+  fn apply_right;
+  fn apply_start;
+  fn apply_step;
+  fn apply_unknown
+}
 
 pub fn apply_command(state: Vacuum, cmd: Command) -> Vacuum {
   match(cmd) {

@@ -1,12 +1,18 @@
 /// Loads Kio' image text covering legal `pure fn` modifiers, the trusted-body boundary, and malformed placements.
-module testapi/main;
+mod testapi/main;
 
-import loader(Load_outcome, Lr_diag, Lr_image, diag_message, un_load_outcome);
-import loader/scan(load_package);
-import macros/match(macro match);
-import testapi(String);
-import testapi/io(print);
-import testapi/text(string_concat);
+import loader {
+  type Load_outcome;
+  type Lr_diag;
+  type Lr_image;
+  fn diag_message;
+  fn un_load_outcome
+}
+import loader/scan { fn load_package }
+import macros/match { macro match }
+import testapi { type String }
+import testapi/io { fn print }
+import testapi/text { fn string_concat }
 
 fn show(label: String, outcome: Load_outcome) -> String {
   match(un_load_outcome(outcome)) {
@@ -22,47 +28,45 @@ fn show(label: String, outcome: Load_outcome) -> String {
 pub fn main() {
   print(show(
   , "pub pure fn: "[String]
-  , load_package("module a;\n\npub pure fn id(x: .) -> . { x }\n\npackage p;\nbridge { a; }\n"[String])
+  , load_package("mod a;\n\npub pure fn id(x: .) -> . { x }\n\npkg p;\nbridge { a; }\n"[String])
   ));
   print(show(
   , "pure pub fn: "[String]
-  , load_package("module a;\n\npure pub fn id(x: .) -> . { x }\n\npackage p;\nbridge { a; }\n"[String])
+  , load_package("mod a;\n\npure pub fn id(x: .) -> . { x }\n\npkg p;\nbridge { a; }\n"[String])
   ));
   print(show(
   , "pub(scope) pure fn: "[String]
-  , load_package("module a/b;\n\npub(a) pure fn id(x: .) -> . { x }\n\npackage p;\nbridge { "
-                 "a/b; }\n"[String])
+  , load_package("mod a/b;\n\npub(a) pure fn id(x: .) -> . { x }\n\npkg p;\nbridge { a/b; }\n"[String])
   ));
   print(show(
   , "pure pub(scope) fn: "[String]
-  , load_package("module a/b;\n\npure pub(a) fn id(x: .) -> . { x }\n\npackage p;\nbridge { "
-                 "a/b; }\n"[String])
+  , load_package("mod a/b;\n\npure pub(a) fn id(x: .) -> . { x }\n\npkg p;\nbridge { a/b; }\n"[String])
   ));
   print(show(
   , "pure fn: "[String]
-  , load_package("module a;\n\npure fn id(x: .) -> . { x }\n\npackage p;\nbridge { a; }\n"[String])
+  , load_package("mod a;\n\npure fn id(x: .) -> . { x }\n\npkg p;\nbridge { a; }\n"[String])
   ));
   // Loading trusts precompiled bodies; standalone validation rejects this host call from a pure fn.
   print(show(
   , "trusted pure body: "[String]
-  , load_package("module a;\n\nhost fn effect(x: .) -> .;\n\npure fn claimed(x: .) -> . { "
-                 "effect(x) }\n\npackage p;\nbridge { a; }\n"[String])
+  , load_package("mod a;\n\nhost fn effect(x: .) -> .;\n\npure fn claimed(x: .) -> . { "
+                 "effect(x) }\n\npkg p;\nbridge { a; }\n"[String])
   ));
   print(show(
   , "duplicate pure: "[String]
-  , load_package("module a;\n\npure pure fn id(x: .) -> . { x }\n"[String])
+  , load_package("mod a;\n\npure pure fn id(x: .) -> . { x }\n"[String])
   ));
   print(show(
   , "pure host fn: "[String]
-  , load_package("module a;\n\npure host fn effect(x: .) -> .;\n"[String])
+  , load_package("mod a;\n\npure host fn effect(x: .) -> .;\n"[String])
   ));
   print(show(
   , "pure rec: "[String]
-  , load_package("module a;\n\npure rec(loop) { fn again(x: .) -> . { x } }\n"[String])
+  , load_package("mod a;\n\npure rec(loop) { fn again(x: .) -> . { x } }\n"[String])
   ));
-  print(show("pure type: "[String], load_package("module a;\n\npure type Nope = .;\n"[String])));
+  print(show("pure type: "[String], load_package("mod a;\n\npure type Nope = .;\n"[String])));
   print(show(
   , "pure newtype: "[String]
-  , load_package("module a;\n\npure type { Nope: . { mk; get; }; };\n"[String])
+  , load_package("mod a;\n\npure type { Nope: . { mk; get; }; };\n"[String])
   ))
 }

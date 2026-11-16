@@ -1,4 +1,4 @@
-package option_result_form_validator;
+pkg option_result_form_validator;
 
 build {
   cache "out/.kio-cache/";

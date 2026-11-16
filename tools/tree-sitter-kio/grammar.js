@@ -204,7 +204,7 @@ module.exports = grammar({
       prec.right(30,
         seq(
           $.keyword_signature,
-          $.identifier,
+          alias($._identifier_like, $.identifier),
           $.signature_version,
           $.separator_semicolon,
           repeat(seq($.signature_version_block, optional($.separator_semicolon))),
@@ -256,14 +256,7 @@ module.exports = grammar({
     signature_remove_block: ($) =>
       seq(
         $.keyword_remove,
-        semicolonBody($, separated(choice($.signature_item_reference, $.signature_remove_module), $.separator_semicolon)),
-      ),
-
-    signature_remove_module: ($) =>
-      seq(
-        $.keyword_module,
-        $.module_path,
-        semicolonBody($, separated(alias($._identifier_like, $.identifier), $.separator_semicolon)),
+        semicolonBody($, separated($.signature_item_reference, $.separator_semicolon)),
       ),
 
     signature_item_reference: ($) =>
@@ -285,7 +278,7 @@ module.exports = grammar({
       prec.right(30,
         seq(
           $.keyword_dependency,
-          $.identifier,
+          alias($._identifier_like, $.identifier),
           $.separator_semicolon,
           repeat($.dependency_remap),
           $.source_block, optional($.separator_semicolon),
@@ -316,7 +309,10 @@ module.exports = grammar({
       seq(separated($._variant_import, $.separator_semicolon),
         optional(seq($.separator_semicolon, separated($._variant_entry, $.separator_semicolon)))),
     ), { empty: true }),
-    _variant_import: ($) => alias($._import_decl_body, $.import_decl),
+    _variant_import: ($) => alias($._variant_import_body, $.import_decl),
+    _variant_import_body: ($) => seq($.keyword_import, choice(
+      $._import_intrinsics_tail, $._import_qualified_tail, $._import_selective_tail,
+    )),
     _variant_entry: ($) => choice(
       alias($._variant_host_decl, $.host_decl), $.fn_decl_head,
       alias($._type_alias_decl_body, $.type_alias_decl_head),
@@ -371,13 +367,11 @@ module.exports = grammar({
     _host_type_body: ($) => seq(
       $.keyword_type, alias($.uppercase_identifier, $.entity_name_type),
       optional($.type_param_list), optional($.role_annotation),
-      optional($.owned_block),
     ),
     _incomplete_host_type_head: ($) => prec.dynamic(-1, prec.right(seq(
       $.keyword_type, alias($.uppercase_identifier, $.entity_name_type),
       optional($.type_param_list),
       optional(choice($.role_annotation, $.incomplete_role_annotation)),
-      optional($.owned_block),
     ))),
     incomplete_role_annotation: ($) => seq(alias(kw("role"), $.keyword_declaration), $.bracket_lparen),
     role_annotation: ($) => seq(
@@ -385,22 +379,21 @@ module.exports = grammar({
       alias(choice("i8", "i16", "i32", "i64", "i128", "u8", "u16", "u32", "u64", "u128", "f32", "f64", "bool", "str"), $.keyword_declaration),
       $.bracket_rparen,
     ),
-    owned_block: ($) => seq($.bracket_lbrace, alias(kw("owned"), $.keyword_declaration), $.bracket_rbrace),
     host_fn_head: ($) => seq($._host_fn_body, $.separator_semicolon),
     _host_fn_body: ($) => seq(
       $.keyword_fn, alias($._identifier_like, $.entity_name_function),
       $.fn_signature, optional($._fn_return_type),
     ),
 
-    keyword_package: ($) => kw("package"),
+    keyword_package: ($) => kw("pkg"),
     keyword_build: ($) => kw("build"),
     keyword_host: ($) => kw("host"),
     keyword_bridge: ($) => kw("bridge"),
-    keyword_dependency: ($) => kw("dependency"),
+    keyword_dependency: ($) => kw("dep"),
     keyword_source: ($) => kw("source"),
     keyword_lock: ($) => kw("lock"),
     keyword_resolved: ($) => kw("resolved"),
-    keyword_signature: ($) => kw("signature"),
+    keyword_signature: ($) => kw("sig"),
     keyword_with: ($) => kw("with"),
     keyword_breaking: ($) => kw("breaking"),
     keyword_nonbreaking: ($) => kw("nonbreaking"),
@@ -434,6 +427,7 @@ module.exports = grammar({
         $.keyword_bridge,
         $.keyword_import,
         $.keyword_op,
+        $.keyword_op_macro,
         alias($._keyword_variadic, $.identifier),
         $.keyword_as,
         $.keyword_type,
@@ -449,7 +443,7 @@ module.exports = grammar({
         field("path", $.module_path),
         $.separator_semicolon,
       ),
-    keyword_module: ($) => kw("module"),
+    keyword_module: ($) => kw("mod"),
     module_path: ($) =>
       prec.right(seq(
         $._module_segment,
@@ -457,21 +451,22 @@ module.exports = grammar({
       )),
     module_path_sep: ($) => "/",
     _module_segment: ($) => alias($._identifier_like, $.entity_name_module),
-    import_decl: ($) => prec.dynamic(30, seq($._import_decl_body, $.separator_semicolon)),
+    import_decl: ($) => prec.dynamic(30, $._import_decl_body),
     _import_decl_body: ($) =>
       prec.dynamic(30, seq(
           $.keyword_import,
           choice(
-            $._import_intrinsics_tail,
-            $._import_qualified_tail,
-            $._import_selective_tail,
+            seq($._import_intrinsics_tail, $.separator_semicolon),
+            seq($._import_qualified_tail, $.separator_semicolon),
+            prec.right(seq($._import_selective_tail, optional($.separator_semicolon))),
           ),
         )),
 
     keyword_import: ($) => kw("import"),
     incomplete_import_decl: ($) => prec.dynamic(-1, prec.right(seq($.keyword_import, $.module_path))),
     keyword_op: ($) => kw("op"),
-    keyword_varop: ($) => kw("varop"),
+    keyword_op_macro: ($) => kw("op_macro"),
+    keyword_varop: ($) => kw("op_var"),
     _keyword_variadic: ($) => token(prec(3, "variadic")),
     keyword_as: ($) => "as",
     keyword_type: ($) => kw("type"),
@@ -497,17 +492,16 @@ module.exports = grammar({
         1,
         seq(
           $.module_path,
-          $.bracket_lparen,
-          optional(sep1(choice(
+          semicolonBody($, separated(choice(
             $.import_macro_item,
             $.import_operator_item,
             $.import_named_item,
-          ), $.separator_comma)),
-          $.bracket_rparen,
+          ), repeat1($.separator_semicolon)), { runs: true, empty: true }),
         ),
       ),
 
     import_named_item: ($) => prec.right(1, seq(
+      choice($.keyword_fn, $.keyword_type, $.keyword_literal),
       field("source", alias($._identifier_like, $.identifier)),
       optional(seq(alias($.keyword_as, $.keyword_declaration), field("alias", alias($._identifier_like, $.identifier)))),
     )),
@@ -523,7 +517,7 @@ module.exports = grammar({
       prec.dynamic(20,
         // Attach `as` to the complete pattern before ending this import item.
         prec.right(choice(
-          seq($.keyword_op, optional($.keyword_declaration), repeat1($._import_pattern_token),
+          seq(choice($.keyword_op, $.keyword_op_macro), repeat1($._import_pattern_token),
             optional(seq(alias($.keyword_as, $.keyword_declaration), repeat1($._import_pattern_token)))),
           seq($.keyword_varop, choice($.variadic_head, alias($._malformed_varop_head_open, $.variadic_open)),
             optional(seq(alias($.keyword_as, $.keyword_declaration), $.variadic_head))),
@@ -582,7 +576,7 @@ module.exports = grammar({
       alias(kw(choice("mk", "get")), $.entity_name_function),
     ),
 
-    keyword_literal: ($) => kw("literal"),
+    keyword_literal: ($) => kw("lit"),
 
     function_definition: ($) =>
       choice(
@@ -1088,13 +1082,12 @@ module.exports = grammar({
       prec.dynamic(50,
         seq(
           optional($._visibility_modifier),
-          $.keyword_op,
-          optional($.keyword_declaration),
+          choice($.keyword_op, $.keyword_op_macro),
           repeat1($._op_pattern_token),
           $.callable_impl_block,
         ),
       ),
-    incomplete_op_decl: ($) => prec.dynamic(10, prec.right(seq($.keyword_op, choice(seq($.keyword_declaration, repeat($._op_pattern_token), optional($.separator_dot)), repeat1($._op_pattern_token))))),
+    incomplete_op_decl: ($) => prec.dynamic(10, prec.right(seq(choice($.keyword_op, $.keyword_op_macro), repeat1($._op_pattern_token), optional($.separator_dot)))),
 
     _op_pattern_token: ($) =>
       choice(

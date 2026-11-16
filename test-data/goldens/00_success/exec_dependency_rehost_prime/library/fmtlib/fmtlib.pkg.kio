@@ -1,4 +1,4 @@
-package fmtlib;
+pkg fmtlib;
 
 bridge {
   types;

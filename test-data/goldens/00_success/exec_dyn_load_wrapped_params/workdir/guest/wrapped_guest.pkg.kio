@@ -1,4 +1,4 @@
-package wrapped_guest;
+pkg wrapped_guest;
 
 build {
   cache "out/.kio-cache/";

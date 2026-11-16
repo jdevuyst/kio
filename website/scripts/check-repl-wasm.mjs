@@ -52,12 +52,12 @@ try {
   assert.deepEqual(continuation.candidates.map(candidate => candidate.label), ['else'])
   assert.equal(continuation.candidates[0].kind, 'keyword')
   const listing = repl.eval(':ls list').output
-  for (const keyword of ['op', 'varop']) {
+  for (const keyword of ['op', 'op_var']) {
     assert.ok(listing.includes(`\x1b[38;2;229;192;123mpub\x1b[0m \x1b[38;2;229;192;123m${keyword}\x1b[0m`), listing)
   }
   for (const [input, expected] of [
     [':sig list.(op _ ++', 'pub op _ ++ _ { impl append }'],
-    [':sig list.(varop', 'pub varop [] { foldr prepend empty }'],
+    [':sig list.(op_var', 'pub op_var [] { foldr prepend empty }'],
   ]) {
     const result = repl.complete(input, input.length)
     assert.equal(result.replaceStart, 5)

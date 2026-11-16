@@ -1,4 +1,4 @@
-package test_equiv_validates_macro_expanded_pure_body;
+pkg test_equiv_validates_macro_expanded_pure_body;
 
 build {
   cache "out/.kio-cache/";

@@ -1,4 +1,4 @@
-package build_generic_newtype_recursive_sibling_boundary;
+pkg build_generic_newtype_recursive_sibling_boundary;
 
 build {
   cache "out/.kio-cache/";

@@ -1,14 +1,14 @@
-module main;
+mod main;
 
 op _ + _ { impl helpers.add }
 
-varop [] { foldl helpers.step Box.base; finalize helpers.finish }
+op_var [] { foldl helpers.step Box.base; finalize helpers.finish }
 
-varop [* *] { foldr helpers.step Box.base; finalize () }
+op_var [* *] { foldr helpers.step Box.base; finalize () }
 
-varop [% %] { foldl1 helpers.step Box.seed }
+op_var [% %] { foldl1 helpers.step Box.seed }
 
-varop [& &] { foldr1 helpers.step Box.seed }
+op_var [& &] { foldr1 helpers.step Box.seed }
 
 macro inspect : . -> . { captures (source, Box); impl helpers.inspect }
 

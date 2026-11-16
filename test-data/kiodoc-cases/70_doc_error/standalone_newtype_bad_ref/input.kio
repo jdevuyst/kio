@@ -1,4 +1,4 @@
-module pkg;
+mod pkg;
 
 /// See [`missing`].
 pub type { Wrapped: . { mk; get; }; };

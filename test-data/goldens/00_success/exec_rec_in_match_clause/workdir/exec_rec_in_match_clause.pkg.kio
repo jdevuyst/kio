@@ -1,4 +1,4 @@
-package exec_rec_in_match_clause;
+pkg exec_rec_in_match_clause;
 
 build {
   cache "out/.kio-cache/";

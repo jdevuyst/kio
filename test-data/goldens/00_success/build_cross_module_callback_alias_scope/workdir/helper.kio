@@ -1,7 +1,7 @@
-module helper;
+mod helper;
 
 import adapter as adapter;
-import macros/match(macro match);
+import macros/match { macro match }
 
 pub type Bool = adapter.Bool;
 

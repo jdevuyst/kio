@@ -303,11 +303,11 @@ mod tests {
 
     #[test]
     fn local_bindings_win_and_initializers_keep_the_previous_scope() {
-        let source = "module main; import provider(macro weave as selected);\n\
-            fn first() { selected(()) }\n\
-            fn parameter(selected: . -> .) { selected(()) }\n\
-            fn binding() { let selected = selected(()); selected(()) }\n\
-            fn nested() { (.(selected: . -> .) { selected(()) }, selected(())) }";
+        let source = "mod main; import provider {macro weave as selected}
+fn first() { selected(()) }
+fn parameter(selected: . -> .) { selected(()) }
+fn binding() { let selected = selected(()); selected(()) }
+fn nested() { (.(selected: . -> .) { selected(()) }, selected(())) }";
         let expected = ["selected(()) }", "selected(());", "selected(())) }"]
             .map(|needle| (source.find(needle).unwrap(), "selected".to_owned()));
         assert_eq!(selected(source), expected);
@@ -315,9 +315,9 @@ mod tests {
 
     #[test]
     fn grouping_and_ufcs_keep_direct_local_identity() {
-        let source = "module main; import provider(macro weave as selected);\n\
-            fn run(value: .) { let _ = (selected)(value); let _ = ((selected))(value);\n\
-                let _ = value.>selected; let _ = selected.<value; selected(value)(value) }";
+        let source = "mod main; import provider {macro weave as selected}
+fn run(value: .) { let _ = (selected)(value); let _ = ((selected))(value);
+let _ = value.>selected; let _ = selected.<value; selected(value)(value) }";
         let heads = selected(source);
         assert_eq!(heads.len(), 5);
         assert!(heads.iter().all(|(_, name)| name == "selected"));
@@ -325,12 +325,12 @@ mod tests {
 
     #[test]
     fn declaration_order_and_numbered_ownership_are_local() {
-        let source = "module main; import provider(macro x1, macro x2);\n\
-            fn before() { local(()) }\n\
-            macro local: . -> . { impl helper; }\n\
-            fn after() { local(()) }\n\
-            fn numbered() { .x. { (x1(()), .y. { (y1, x1(())) }) } }\n\
-            fn binding() { let .x. = (); (x1(()), x2(())) }";
+        let source = "mod main; import provider {macro x1; macro x2}
+fn before() { local(()) }
+macro local: . -> . { impl helper; }
+fn after() { local(()) }
+fn numbered() { .x. { (x1(()), .y. { (y1, x1(())) }) } }
+fn binding() { let .x. = (); (x1(()), x2(())) }";
         let heads = selected(source);
         assert_eq!(
             heads
@@ -343,7 +343,7 @@ mod tests {
 
     #[test]
     fn same_spelled_ordinary_imports_never_acquire_macro_kind() {
-        let source = "module main; import provider(weave); fn run() { weave(()) }";
+        let source = "mod main; import provider {fn weave} fn run() { weave(()) }";
         assert!(selected(source).is_empty());
     }
 }

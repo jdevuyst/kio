@@ -1,4 +1,4 @@
-package nmr;
+pkg nmr;
 
 build {
   cache "out/.kio-cache/";

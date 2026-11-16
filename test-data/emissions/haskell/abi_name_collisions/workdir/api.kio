@@ -1,4 +1,4 @@
-module api;
+mod api;
 
 pub type { A_b: . { pub mk; get } }
 

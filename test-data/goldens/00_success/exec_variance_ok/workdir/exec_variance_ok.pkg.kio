@@ -1,4 +1,4 @@
-package exec_variance_ok;
+pkg exec_variance_ok;
 
 build {
   cache "out/.kio-cache/";

@@ -2,9 +2,9 @@ use super::*;
 
 fn open_case(source: &str, provider: &str, code: i32) -> (TempDir, LspProcess, String, Value) {
     let dir = TempDir::new("name-fix");
-    dir.write("probe.pkg.kio", "package probe;\n");
+    dir.write("probe.pkg.kio", "pkg probe;\n");
     dir.write("support.kio", provider);
-    let path = dir.write("main.kio", "module main;\n");
+    let path = dir.write("main.kio", "mod main;\n");
     let uri = path_to_file_uri(&path);
     let mut lsp = LspProcess::spawn();
     lsp.initialize(&path_to_file_uri(dir.path()));
@@ -68,10 +68,10 @@ fn assert_repair(
 #[test]
 fn ordinary_value_and_type_alias_ties_keep_help_without_choosing_an_edit() {
     for source in [
-        "module main; fn helper() { () } fn heaper() { () } pub fn main() { heper() }",
-        "module main; pub type Helper = .; pub type Heaper = .; pub fn main(value: Heper) { value }",
+        "mod main; fn helper() { () } fn heaper() { () } pub fn main() { heper() }",
+        "mod main; pub type Helper = .; pub type Heaper = .; pub fn main(value: Heper) { value }",
     ] {
-        let (_dir, mut lsp, uri, diagnostic) = open_case(source, "module support;", 13);
+        let (_dir, mut lsp, uri, diagnostic) = open_case(source, "mod support;", 13);
         assert!(
             diagnostic["data"]["help"]
                 .as_str()
@@ -87,28 +87,28 @@ fn ordinary_value_and_type_alias_ties_keep_help_without_choosing_an_edit() {
 fn ordinary_alias_and_qualified_heads_replace_only_the_selected_identifier() {
     for (source, typo, replacement) in [
         (
-            "module main; pub type Helper = .; pub fn main(value: Hepler) { value }",
+            "mod main; pub type Helper = .; pub fn main(value: Hepler) { value }",
             "Hepler",
             "Helper",
         ),
         (
-            "module main; import support as support; pub fn main() { suport. // 😀 keep member\n helper() }",
+            "mod main; import support as support; pub fn main() { suport. // 😀 keep member\n helper() }",
             "suport",
             "support",
         ),
         (
-            "module main; pub type { Wrapper: . { mk; get; }; }; type Alias = Wrapper; pub fn main() -> Wrapper { Alia.mk(()) }",
+            "mod main; pub type { Wrapper: . { mk; get; }; }; type Alias = Wrapper; pub fn main() -> Wrapper { Alia.mk(()) }",
             "Alia.",
             "Alias.",
         ),
         (
-            "module main; pub type { Wrapper: . { mk; get; }; }; type Alias = Wrapper; pub fn main() -> Wrapper { ().>Alia.mk }",
+            "mod main; pub type { Wrapper: . { mk; get; }; }; type Alias = Wrapper; pub fn main() -> Wrapper { ().>Alia.mk }",
             "Alia.",
             "Alias.",
         ),
     ] {
         let (_dir, mut lsp, uri, diagnostic) =
-            open_case(source, "module support; pub fn helper() { () }", 13);
+            open_case(source, "mod support; pub fn helper() { () }", 13);
         assert_repair(&mut lsp, &uri, &diagnostic, source, typo, replacement);
         assert_eq!(lsp.shutdown(), 0);
     }
@@ -116,8 +116,9 @@ fn ordinary_alias_and_qualified_heads_replace_only_the_selected_identifier() {
 
 #[test]
 fn nominal_reference_ties_keep_help_without_choosing_an_edit() {
-    let source = "module main; pub type { Helper: .; Heaper: . } pub fn main(value: Heper) -> Helper { value }";
-    let (_dir, mut lsp, uri, diagnostic) = open_case(source, "module support;", 13);
+    let source =
+        "mod main; pub type { Helper: .; Heaper: . } pub fn main(value: Heper) -> Helper { value }";
+    let (_dir, mut lsp, uri, diagnostic) = open_case(source, "mod support;", 13);
     assert!(
         diagnostic["data"]["help"]
             .as_str()
@@ -132,29 +133,29 @@ fn nominal_reference_ties_keep_help_without_choosing_an_edit() {
 fn unique_nominal_reference_and_selective_import_edits_apply_and_recheck() {
     for (source, provider, code, typo, replacement) in [
         (
-            "module main; pub type { Helper: . } pub fn main(value: Hepler) -> Helper { value }",
-            "module support;",
+            "mod main; pub type { Helper: . } pub fn main(value: Hepler) -> Helper { value }",
+            "mod support;",
             13,
             "Hepler",
             "Helper",
         ),
         (
-            "module main; import support as support; pub fn main(value: suport.Helper) -> support.Helper { value }",
-            "module support; pub type { Helper: . }",
+            "mod main; import support as support; pub fn main(value: suport.Helper) -> support.Helper { value }",
+            "mod support; pub type { Helper: . }",
             13,
             "suport",
             "support",
         ),
         (
-            "module main; import support as support; pub fn main(value: suport. // 😀 preserve\nHelper) -> support.Helper { value }",
-            "module support; pub type { Helper: . }",
+            "mod main; import support as support; pub fn main(value: suport. // 😀 preserve\nHelper) -> support.Helper { value }",
+            "mod support; pub type { Helper: . }",
             13,
             "suport",
             "support",
         ),
         (
-            "module main;\r\nimport support( // 😀 preserve selection\r\n Hepler // and trailing comment\r\n);\r\npub fn main(value: Helper) -> Helper { value }\r\n",
-            "module support; pub type { Helper: . }",
+            "mod main;\r\nimport support { // 😀 preserve selection\r\n type Hepler // and trailing comment\r\n}\r\npub fn main(value: Helper) -> Helper { value }\r\n",
+            "mod support; pub type { Helper: . }",
             12,
             "Hepler",
             "Helper",
@@ -169,12 +170,12 @@ fn unique_nominal_reference_and_selective_import_edits_apply_and_recheck() {
 #[test]
 fn selective_nominal_import_preserves_visibility_and_tie_boundaries() {
     for provider in [
-        "module support; type { Helper: . }",
-        "module support; pub(support) type { Helper: . }",
-        "module support; pub type { Unrelated: . }",
-        "module support; pub type { Helper: .; Heaper: . }",
+        "mod support; type { Helper: . }",
+        "mod support; pub(support) type { Helper: . }",
+        "mod support; pub type { Unrelated: . }",
+        "mod support; pub type { Helper: .; Heaper: . }",
     ] {
-        let source = "module main; import support(Heper); pub fn main() { () }";
+        let source = "mod main; import support {type Heper} pub fn main() { () }";
         let (_dir, mut lsp, uri, diagnostic) = open_case(source, provider, 12);
         assert_no_eager_fix(&mut lsp, &uri, &diagnostic);
         assert_eq!(lsp.shutdown(), 0);
@@ -183,17 +184,17 @@ fn selective_nominal_import_preserves_visibility_and_tie_boundaries() {
 
 fn provider_growth_rejects_nominal_import_fix(typo: &str, added: &str) {
     let source = format!(
-        "module main; import support({typo}); pub fn main(value: Helper) -> Helper {{ value }}"
+        "mod main; import support {{type {typo}}} pub fn main(value: Helper) -> Helper {{ value }}"
     );
     let (dir, mut lsp, uri, diagnostic) =
-        open_case(&source, "module support; pub type { Helper: . }", 12);
+        open_case(&source, "mod support; pub type { Helper: . }", 12);
     let initial = send_code_action(&mut lsp, &uri, &diagnostic);
     assert_eq!(initial["result"].as_array().unwrap().len(), 1, "{initial}");
     let provider_uri = path_to_file_uri(&dir.path().join("support.kio"));
     lsp.send_notification(
         "textDocument/didOpen",
         json!({"textDocument": {"uri": provider_uri, "languageId": "kio", "version": 1,
-            "text": format!("module support; pub type {{ Helper: .; {added}: . }}")}}),
+            "text": format!("mod support; pub type {{ Helper: .; {added}: . }}")}}),
     );
     for kind in ["quickfix", "source.fixAll"] {
         let response =
@@ -205,10 +206,10 @@ fn provider_growth_rejects_nominal_import_fix(typo: &str, added: &str) {
 
 #[test]
 fn nominal_reference_fix_survives_unrelated_provider_growth() {
-    let source = "module main; import support(Helper); \
+    let source = "mod main; import support {type Helper} \
                   pub fn main(value: Heper) -> Helper { value }";
     let (dir, mut lsp, uri, diagnostic) =
-        open_case(source, "module support; pub type { Helper: . }", 13);
+        open_case(source, "mod support; pub type { Helper: . }", 13);
     let initial = send_code_action(&mut lsp, &uri, &diagnostic);
     let initial_actions = initial["result"].as_array().unwrap();
     assert_eq!(initial_actions.len(), 2, "{initial}");
@@ -238,7 +239,7 @@ fn nominal_reference_fix_survives_unrelated_provider_growth() {
     lsp.send_notification(
         "textDocument/didOpen",
         json!({"textDocument": {"uri": provider_uri, "languageId": "kio", "version": 1,
-            "text": "module support; pub type { Helper: .; Unrelated: . }"}}),
+            "text": "mod support; pub type { Helper: .; Unrelated: . }"}}),
     );
     let after_growth = send_code_action(&mut lsp, &uri, &diagnostic);
     assert_eq!(after_growth["result"], initial["result"]);

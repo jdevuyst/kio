@@ -1,7 +1,7 @@
-module testapi/main;
+mod testapi/main;
 
-import macros/spine_macros(macro widen_sum);
-import testapi(I32, String, produce);
+import macros/spine_macros { macro widen_sum }
+import testapi { type I32; type String; fn produce }
 
 pub type { Inner: I32 & I32 { pub mk; pub get } }
 

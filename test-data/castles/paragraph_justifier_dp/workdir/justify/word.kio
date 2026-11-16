@@ -5,15 +5,15 @@
 /// candidate break. Each width here is the character count of its own text, so
 /// a rendered line is exactly as wide as the model claims and the drawn right
 /// margin can be trusted.
-module justify/word;
+mod justify/word;
 
-import justify/list(List);
-import macros/control(macro if);
-import macros/match(macro match);
-import macros/row_macros(macro select);
-import testapi(Bool, I32, String);
-import testapi/arith(add_i32, leq_i32, lt_i32);
-import testapi/iter(loop);
+import justify/list { type List }
+import macros/control { macro if }
+import macros/match { macro match }
+import macros/row_macros { macro select }
+import testapi { type Bool; type I32; type String }
+import testapi/arith { fn add_i32; fn leq_i32; fn lt_i32 }
+import testapi/iter { fn loop }
 
 pub type Word = { Text: String; Width: I32 };
 

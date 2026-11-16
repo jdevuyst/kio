@@ -12,17 +12,17 @@
 /// (`L(i, j + 1)`), so rows are built from the last one up and each row is
 /// built from its right edge inward — the cell a step needs is always the
 /// head of a list the step already holds.
-module diff3/lcs;
+mod diff3/lcs;
 
 import diff3/list as list;
 import diff3/prim as prim;
-import macros/control(macro if);
-import macros/match(macro match);
-import macros/row_macros(macro record, macro select);
-import testapi(Bool, I32, String);
-import testapi/arith(add_i32, leq_i32);
-import testapi/iter(loop);
-import testapi/text(string_eq);
+import macros/control { macro if }
+import macros/match { macro match }
+import macros/row_macros { macro record; macro select }
+import testapi { type Bool; type I32; type String }
+import testapi/arith { fn add_i32; fn leq_i32 }
+import testapi/iter { fn loop }
+import testapi/text { fn string_eq }
 
 /// One aligned line pair: an index into the base document and the index of
 /// the same line in the other document.

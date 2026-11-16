@@ -1,4 +1,4 @@
-package dict_demo;
+pkg dict_demo;
 
 build {
   cache "out/.kio-cache/";

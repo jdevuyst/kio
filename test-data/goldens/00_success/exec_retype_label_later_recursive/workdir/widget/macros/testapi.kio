@@ -1,4 +1,4 @@
-module widget/macros/testapi;
+mod widget/macros/testapi;
 
 host type String role(str);
 

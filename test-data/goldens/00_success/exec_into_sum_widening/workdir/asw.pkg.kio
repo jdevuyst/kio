@@ -1,4 +1,4 @@
-package asw;
+pkg asw;
 
 build {
   cache "out/.kio-cache/";

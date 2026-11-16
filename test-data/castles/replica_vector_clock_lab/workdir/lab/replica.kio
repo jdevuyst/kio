@@ -1,17 +1,17 @@
-module lab/replica;
+mod lab/replica;
 
 import dict/dict as dict;
 import lab/clock as clock;
 import list/core as core;
 import list/list as lists;
-import macros/control(macro if);
-import macros/match(macro match);
-import macros/row_macros(macro select);
-import macros/spine_macros(macro widen_sum);
+import macros/control { macro if }
+import macros/match { macro match }
+import macros/row_macros { macro select }
+import macros/spine_macros { macro widen_sum }
 import result/result as result;
-import testapi(Bool, I32);
+import testapi { type Bool; type I32 }
 import testapi/arith as arith;
-import testapi/iter(loop);
+import testapi/iter { fn loop }
 
 pub type Version = { Value: I32; Stamp: clock.Clock };
 

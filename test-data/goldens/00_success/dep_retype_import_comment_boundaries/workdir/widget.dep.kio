@@ -1,4 +1,4 @@
-dependency widget;
+dep widget;
 
 source {
   path "../library/widget.pkg.kio"

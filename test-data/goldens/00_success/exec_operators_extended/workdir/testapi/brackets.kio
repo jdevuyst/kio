@@ -1,6 +1,6 @@
-module testapi/brackets;
+mod testapi/brackets;
 
-import testapi(String);
+import testapi { type String }
 
 fn pick(a: String, b: String) -> String { a }
 

@@ -1,4 +1,4 @@
-package exec_narrow_sum_checked_term_scope;
+pkg exec_narrow_sum_checked_term_scope;
 
 build {
   cache "out/.kio-cache/";

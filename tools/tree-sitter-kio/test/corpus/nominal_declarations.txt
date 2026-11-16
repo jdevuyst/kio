@@ -1,7 +1,7 @@
 ================================================================================
 nominal declaration anonymous group and member visibility
 ================================================================================
-module example;
+mod example;
 pub type { Name: .; Box[A] <U>: A & U { mk; pub(example) get; }; }
 --------------------------------------------------------------------------------
 
@@ -60,7 +60,7 @@ pub type { Name: .; Box[A] <U>: A & U { mk; pub(example) get; }; }
 ================================================================================
 nominal declaration algebraic RHS grouping
 ================================================================================
-module example;
+mod example;
 type Result = ({ Success: .; } & Existing) | { Failure: .; };
 --------------------------------------------------------------------------------
 
@@ -104,7 +104,7 @@ type Result = ({ Success: .; } & Existing) | { Failure: .; };
 ================================================================================
 nominal declaration recursive forms
 ================================================================================
-module example;
+mod example;
 rec type { List[A]: . | (A & List[A]); }
 rec type Tree = { Leaf: .; } | { Branch: Tree & Tree; };
 --------------------------------------------------------------------------------
@@ -181,7 +181,7 @@ rec type Tree = { Leaf: .; } | { Branch: Tree & Tree; };
 ================================================================================
 nominal declaration blocks stay outside type arguments
 ================================================================================
-module example;
+mod example;
 type Invalid = List[{ Item: .; }];
 --------------------------------------------------------------------------------
 
@@ -209,7 +209,7 @@ type Invalid = List[{ Item: .; }];
 ================================================================================
 nominal signature declarations
 ================================================================================
-signature example v(1); v(1) { with { module api { pub rec type { Cell: . | Cell { pub mk; pub get; }; }; rec { type Alias = Wrapped; pub type { Wrapped: Alias { pub mk; pub get; }; }; } } }; breaking { remove { api.old; } } }
+sig example v(1); v(1) { with { mod api { pub rec type { Cell: . | Cell { pub mk; pub get; }; }; rec { type Alias = Wrapped; pub type { Wrapped: Alias { pub mk; pub get; }; }; } } }; breaking { remove { api.old; } } }
 --------------------------------------------------------------------------------
 
 (source_file

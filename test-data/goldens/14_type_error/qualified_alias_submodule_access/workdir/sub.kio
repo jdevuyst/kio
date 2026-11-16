@@ -1,4 +1,4 @@
-module sub;
+mod sub;
 
 host type String role(str);
 

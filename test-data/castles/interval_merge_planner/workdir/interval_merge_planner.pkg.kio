@@ -1,4 +1,4 @@
-package interval_merge_planner;
+pkg interval_merge_planner;
 
 build {
   cache "out/.kio-cache/";

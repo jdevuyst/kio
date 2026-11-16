@@ -1,33 +1,33 @@
 /// Persistent vector library with indexed updates, bulk operations, operators, and canonical List interop.
 /// A ready-to-use library module for your own Kio package.
-module vec/vec;
+mod vec/vec;
 
-import vec/core(
-, Bounds
-, Dir
-, Frame
-, Frames
-, Tree
-, branch
-, build_frame
-, descend_step
-, frames_nil
-, frames_push
-, go_left
-, go_right
-, leaf
-, leaf_value
-, no_bnd
-, rebuild_step
-, select
-, split_branch
-, unframes
-, yes_bnd
-);
-import vec/list/core(List, cons, nil, uncons);
-import vec/macros/control(Bool as Control_bool, macro if);
-import vec/macros/match(macro match);
-import vec/macros/spine_macros(macro widen_sum);
+import vec/core {
+  type Bounds;
+  type Dir;
+  type Frame;
+  type Frames;
+  type Tree;
+  fn branch;
+  fn build_frame;
+  fn descend_step;
+  fn frames_nil;
+  fn frames_push;
+  fn go_left;
+  fn go_right;
+  fn leaf;
+  fn leaf_value;
+  fn no_bnd;
+  fn rebuild_step;
+  fn select;
+  fn split_branch;
+  fn unframes;
+  fn yes_bnd
+}
+import vec/list/core { type List; fn cons; fn nil; fn uncons }
+import vec/macros/control { type Bool as Control_bool; macro if }
+import vec/macros/match { macro match }
+import vec/macros/spine_macros { macro widen_sum }
 
 pub type Bool = Control_bool;
 

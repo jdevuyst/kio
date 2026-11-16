@@ -1,4 +1,4 @@
-module core/mutual;
+mod core/mutual;
 
 rec {
   pub type { Left[A]: (Right[A] -> A) -> A { pub mk; pub get } };

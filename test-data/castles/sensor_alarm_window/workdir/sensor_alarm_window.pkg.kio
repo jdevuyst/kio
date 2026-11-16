@@ -1,4 +1,4 @@
-package sensor_alarm_window;
+pkg sensor_alarm_window;
 
 build {
   cache "out/.kio-cache/";

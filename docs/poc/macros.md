@@ -981,7 +981,7 @@ this page only notes what is macro-specific.
 Create `macros.dep.kio` at the root of the consuming package:
 
 ```kio {variant=dependency}
-dependency macros;
+dep macros;
 
 source {
   git "https://github.com/jdevuyst/kio/";
@@ -996,7 +996,7 @@ path and commit. A consumer of `if` uses the concrete Boolean type declared
 by `macros/control`:
 
 ```kio {ignore}
-import macros/control(Bool, macro if);
+import macros/control {type Bool; macro if}
 ```
 
 Use `Bool` for conditions and the host functions that produce them. To share
@@ -1023,8 +1023,8 @@ directly. With `macros` declared under
 the local name `macros`, the modules re-root beneath it:
 
 ```kio {ignore}
-import macros/spine_macros(macro fit);
-import macros/match(macro match);
+import macros/spine_macros {macro fit}
+import macros/match {macro match}
 ```
 
 Select each macro with `macro name`; calls use the local name directly.

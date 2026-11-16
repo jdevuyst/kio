@@ -1,14 +1,14 @@
-module bdd/restrict;
+mod bdd/restrict;
 
 import bdd/store as table;
 import list/core as lists;
 import list/list as walk;
-import macros/control(macro if);
-import macros/match(macro match);
-import macros/row_macros(macro select);
-import testapi(Bool, I32);
+import macros/control { macro if }
+import macros/match { macro match }
+import macros/row_macros { macro select }
+import testapi { type Bool; type I32 }
 import testapi/arith as arith;
-import testapi/iter(loop);
+import testapi/iter { fn loop }
 
 type Cached = table.Node_id & table.Node_id;
 

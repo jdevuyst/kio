@@ -1,9 +1,9 @@
-module petri/fixture;
+mod petri/fixture;
 
-import macros/row_macros(macro select, macro with);
+import macros/row_macros { macro select; macro with }
 import petri/model as model;
-import queue/list/list(varop [] as [* *]);
-import testapi(I32, String);
+import queue/list/list { op_var [] as [* *] }
+import testapi { type I32; type String }
 
 fn transition(name: String, consumes: model.Marking, produces: model.Marking) -> model.Transition {
   (model.Name.mk(name), model.Consumes.mk(consumes), model.Produces.mk(produces))

@@ -1,4 +1,4 @@
-package fold_scoped_narrower_implementation;
+pkg fold_scoped_narrower_implementation;
 
 build {
   cache "out/.kio-cache/";

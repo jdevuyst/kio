@@ -1,10 +1,10 @@
-module testapi/main;
+mod testapi/main;
 
-import macros/control(macro if);
-import testapi(Bool, String);
-import testapi/io(print);
-import testapi/iter(loop);
-import testapi/text(string_concat);
+import macros/control { macro if }
+import testapi { type Bool; type String }
+import testapi/io { fn print }
+import testapi/iter { fn loop }
+import testapi/text { fn string_concat }
 
 rec(loop) fn render(condition: Bool) -> String {
   let children =

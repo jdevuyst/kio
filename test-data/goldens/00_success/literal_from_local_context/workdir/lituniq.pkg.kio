@@ -1,4 +1,4 @@
-package lituniq;
+pkg lituniq;
 
 build {
   cache "out/.kio-cache/";

@@ -1,4 +1,4 @@
-dependency boxlib;
+dep boxlib;
 
 source {
   path "../library/boxlib/boxlib.pkg.kio"

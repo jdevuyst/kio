@@ -1,4 +1,4 @@
-package bigint_vote_rollup;
+pkg bigint_vote_rollup;
 
 build {
   cache "out/.kio-cache/";

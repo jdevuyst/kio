@@ -1,4 +1,4 @@
-package exec_match_polymorphic_inferred_result;
+pkg exec_match_polymorphic_inferred_result;
 
 build {
   cache "out/.kio-cache/";

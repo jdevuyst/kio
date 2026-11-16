@@ -1,6 +1,6 @@
-module store;
+mod store;
 
-import macros/row_macros(macro select);
+import macros/row_macros { macro select }
 
 pub rec type { Foo[A]: (Foo[A] -> A) -> A { pub mk; pub get } }
 

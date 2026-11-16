@@ -1,32 +1,32 @@
 /// Algebraic coercion macros for DNF-level product and sum reshaping in the macro POC.
-module widget/macros/algebraic_macros;
+mod widget/macros/algebraic_macros;
 
 import __intrinsics__;
 
 import __comptime__;
-import widget/macros/macro_util(
-, Dnf_branch
-, Dnf_branch_list
-, Macro_result
-, Slot_list
-, Type_list
-, Type_pair
-, build_product_from_slots
-, build_widen_product_from_slots
-, dnf_branch_slots
-, dnf_branch_spine
-, dnf_branch_type
-, dnf_branches
-, dnf_eliminate_with_use
-, err
-, finish_macro_result
-, macro_result_ok
-, materialize_dnf_branch
-, materialize_dnf_branch_with_spine
-, single_dnf_branch
-, type_multiset_contains_all
-, type_multiset_equal
-);
+import widget/macros/macro_util {
+  type Dnf_branch;
+  type Dnf_branch_list;
+  type Macro_result;
+  type Slot_list;
+  type Type_list;
+  type Type_pair;
+  fn build_product_from_slots;
+  fn build_widen_product_from_slots;
+  fn dnf_branch_slots;
+  fn dnf_branch_spine;
+  fn dnf_branch_type;
+  fn dnf_branches;
+  fn dnf_eliminate_with_use;
+  fn err;
+  fn finish_macro_result;
+  fn macro_result_ok;
+  fn materialize_dnf_branch;
+  fn materialize_dnf_branch_with_spine;
+  fn single_dnf_branch;
+  fn type_multiset_contains_all;
+  fn type_multiset_equal
+}
 
 type Branch_build_flags = Comptime_bool & Comptime_bool;
 

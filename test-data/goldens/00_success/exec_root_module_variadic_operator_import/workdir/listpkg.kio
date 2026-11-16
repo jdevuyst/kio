@@ -1,4 +1,4 @@
-module listpkg;
+mod listpkg;
 
 // host-free fold scaffolding over `()` payloads. `nil`
 // and `cat` shuffle units, exercising the variadic desugaring shape
@@ -9,4 +9,4 @@ pub fn cat(x: ., acc: .) { x }
 
 // The comma-separated right-fold `[* a, b, c *]` becomes
 // `cat(a, cat(b, cat(c, nil())))`.
-pub varop [* *] { foldr cat nil }
+pub op_var [* *] { foldr cat nil }

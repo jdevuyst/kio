@@ -1,2 +1,2 @@
-a dependency declaration is not a module-body declaration
+a dep declaration is not a module-body declaration
 help:.*\*\.dep\.kio

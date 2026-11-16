@@ -1,7 +1,7 @@
-module left;
+mod left;
 
 import host/a as h;
-import host/a(Value);
+import host/a { type Value }
 
 pub type Value_alias = h.Value;
 

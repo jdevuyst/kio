@@ -2,6 +2,6 @@
 ///
 /// This uses an unknown directive: [`@eval foo`].
 /// This is a typo: [`@signaure foo`].
-module baddir/main;
+mod baddir/main;
 
 fn foo() { () }

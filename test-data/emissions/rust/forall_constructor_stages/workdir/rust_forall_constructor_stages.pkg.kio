@@ -1,4 +1,4 @@
-package rust_forall_constructor_stages;
+pkg rust_forall_constructor_stages;
 
 build {
   target rust {

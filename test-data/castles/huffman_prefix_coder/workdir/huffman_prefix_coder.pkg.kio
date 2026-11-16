@@ -1,4 +1,4 @@
-package huffman_prefix_coder;
+pkg huffman_prefix_coder;
 
 build {
   cache "out/.kio-cache/";

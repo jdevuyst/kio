@@ -1,6 +1,6 @@
-module main;
+mod main;
 
-import macros/sequence(macro do);
+import macros/sequence { macro do }
 
 type { Box[A]: A { mk; get } }
 

@@ -1,4 +1,4 @@
-module geo/units/scalar;
+mod geo/units/scalar;
 
 pub type Scaled[A] = A;
 

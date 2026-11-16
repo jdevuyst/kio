@@ -1,4 +1,4 @@
-package literal_type_diagnostics;
+pkg literal_type_diagnostics;
 
 build {
   cache "out/.kio-cache/";

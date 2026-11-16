@@ -6,10 +6,10 @@
 /// elaborator named `repmod` (which would double it to
 /// `repmod.repmod.Rep`). Identity-exact nominal canonicalization is
 /// idempotent on an already-qualified path, so this type-checks.
-module main;
+mod main;
 
 import __intrinsics__;
 
-import repmod(Rep, macro repmod);
+import repmod { type Rep; macro repmod }
 
 pub fn use_rep() -> Rep { Rep.get(repmod(())); Rep.mk(()) }

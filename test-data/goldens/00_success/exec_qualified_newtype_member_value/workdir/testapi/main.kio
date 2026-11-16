@@ -1,8 +1,8 @@
-module testapi/main;
+mod testapi/main;
 
-import testapi(I32);
-import testapi/fmt(int_to_string);
-import testapi/io(print);
+import testapi { type I32 }
+import testapi/fmt { fn int_to_string }
+import testapi/io { fn print }
 import testapi/types as t;
 
 fn build(make: I32 -> t.Celsius, n: I32) -> t.Celsius { make(n) }

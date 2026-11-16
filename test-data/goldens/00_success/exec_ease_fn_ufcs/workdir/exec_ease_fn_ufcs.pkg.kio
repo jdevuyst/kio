@@ -1,4 +1,4 @@
-package exec_ease_fn_ufcs;
+pkg exec_ease_fn_ufcs;
 
 build {
   cache "out/.kio-cache/";

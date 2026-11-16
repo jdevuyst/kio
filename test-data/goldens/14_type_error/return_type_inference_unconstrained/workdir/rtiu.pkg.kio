@@ -1,4 +1,4 @@
-package rtiu;
+pkg rtiu;
 
 build {
   cache "out/.kio-cache/";

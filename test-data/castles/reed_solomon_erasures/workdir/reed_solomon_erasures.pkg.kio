@@ -1,4 +1,4 @@
-package reed_solomon_erasures;
+pkg reed_solomon_erasures;
 
 build {
   cache "out/.kio-cache/";

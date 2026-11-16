@@ -1,4 +1,4 @@
-module source;
+mod source;
 
 type Http_client2_ = .;
 

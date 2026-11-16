@@ -1,4 +1,4 @@
-package right_spine_left_grouping_call;
+pkg right_spine_left_grouping_call;
 
 build {
   cache "out/.kio-cache/";

@@ -3,16 +3,16 @@
 /// A *fact* is an atom whose arguments are all constants. The engine only
 /// ever stores ground atoms, so facts need no separate type: one shape
 /// serves as a stored fact, a rule head, a body goal, and a query.
-module datalog/atom;
+mod datalog/atom;
 
 import datalog/list as list;
-import macros/control(macro if);
-import macros/match(macro match);
-import macros/row_macros(macro select);
-import macros/spine_macros(macro widen_sum);
-import testapi(Bool, I32);
-import testapi/arith(eq_i32);
-import testapi/iter(loop);
+import macros/control { macro if }
+import macros/match { macro match }
+import macros/row_macros { macro select }
+import macros/spine_macros { macro widen_sum }
+import testapi { type Bool; type I32 }
+import testapi/arith { fn eq_i32 }
+import testapi/iter { fn loop }
 
 pub type Term = { T_const: I32 } | { T_var: I32 };
 

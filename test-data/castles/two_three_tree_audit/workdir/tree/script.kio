@@ -4,32 +4,32 @@
 /// tree has; the README lists them against the step that causes each.
 ///
 /// After every operation the tree is audited from scratch and one line goes out.
-module tree/script;
+mod tree/script;
 
-import macros/control(macro if);
-import macros/match(macro match);
-import macros/row_macros(macro select);
-import macros/spine_macros(macro widen_sum);
-import testapi(Bool, I32, String);
-import testapi/arith(add_i32, eq_i32);
-import testapi/io(print);
-import testapi/iter(loop);
-import tree/audit(audit, verdict_word);
-import tree/delete(delete);
-import tree/insert(insert);
-import tree/node(Tree, contains, empty_tree, height, root_of, size_of);
-import tree/tally(
-, Tally
-, borrow_lefts
-, borrow_rights
-, merges
-, root_grows
-, root_shrinks
-, splits
-, tally_add
-, tally_zero
-);
-import tree/text(cat, cat3, cat4, num, pad_num);
+import macros/control { macro if }
+import macros/match { macro match }
+import macros/row_macros { macro select }
+import macros/spine_macros { macro widen_sum }
+import testapi { type Bool; type I32; type String }
+import testapi/arith { fn add_i32; fn eq_i32 }
+import testapi/io { fn print }
+import testapi/iter { fn loop }
+import tree/audit { fn audit; fn verdict_word }
+import tree/delete { fn delete }
+import tree/insert { fn insert }
+import tree/node { type Tree; fn contains; fn empty_tree; fn height; fn root_of; fn size_of }
+import tree/tally {
+  type Tally;
+  fn borrow_lefts;
+  fn borrow_rights;
+  fn merges;
+  fn root_grows;
+  fn root_shrinks;
+  fn splits;
+  fn tally_add;
+  fn tally_zero
+}
+import tree/text { fn cat; fn cat3; fn cat4; fn num; fn pad_num }
 
 type Op_kind = { Put: I32 & String } | { Remove: I32 };
 

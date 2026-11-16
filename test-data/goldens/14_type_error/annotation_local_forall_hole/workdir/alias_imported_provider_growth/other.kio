@@ -1,4 +1,4 @@
-module other;
+mod other;
 
 pub fn noise() { () }
 

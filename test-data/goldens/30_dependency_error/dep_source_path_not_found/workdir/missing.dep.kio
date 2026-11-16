@@ -1,4 +1,4 @@
-dependency missing;
+dep missing;
 
 source {
   path "../library/missing/missing.pkg.kio"

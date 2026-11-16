@@ -1,14 +1,14 @@
 /// The one collection this desk calculator has. The host tier supplies no
 /// array type, so the token stream, the RPN queue, the operator stack, the
 /// value stack, and the fault log are all instantiations of this cons list.
-module desk/list;
+mod desk/list;
 
-import macros/control(macro if);
-import macros/match(macro match);
-import macros/spine_macros(macro widen_sum);
-import testapi(Bool, I32);
-import testapi/arith(add_i32);
-import testapi/iter(loop);
+import macros/control { macro if }
+import macros/match { macro match }
+import macros/spine_macros { macro widen_sum }
+import testapi { type Bool; type I32 }
+import testapi/arith { fn add_i32 }
+import testapi/iter { fn loop }
 
 /// The nominal type ties the recursive knot.
 pub rec type { List[A]: . | (A & List[A]) { mk; pub get } }

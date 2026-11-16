@@ -1,4 +1,4 @@
-package pure_calls_host_fn;
+pkg pure_calls_host_fn;
 
 build {
   cache "out/.kio-cache/";

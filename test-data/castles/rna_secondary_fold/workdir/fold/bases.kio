@@ -1,10 +1,10 @@
-module fold/bases;
+mod fold/bases;
 
-import macros/control(macro if);
-import testapi(Array, Bool, I32, String);
+import macros/control { macro if }
+import testapi { type Array; type Bool; type I32; type String }
 import testapi/arith as arith;
 import testapi/array as array;
-import testapi/iter(loop);
+import testapi/iter { fn loop }
 import testapi/text as text;
 
 pub fn compatible(a: String, b: String) -> Bool {

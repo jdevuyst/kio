@@ -1,4 +1,4 @@
-package qualified_import_private_type_alias;
+pkg qualified_import_private_type_alias;
 
 build {
   cache "out/.kio-cache/";

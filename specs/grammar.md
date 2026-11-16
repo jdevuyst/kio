@@ -6,7 +6,7 @@ It is organized in three layers; the Kio' grammar is syntactically nested inside
 
 1. **[Kio' grammar](#kio-grammar)** — the strict subset of Kio specified by [`prime.md`](prime.md); codegen runs against this subset.
 2. **[Kio surface extensions](#kio-surface-extensions)** — everything the full surface ([`language.md`](language.md)) adds on top of Kio'. Each surface form desugars to Kio' (or runs an elaborator pass that elaborates to Kio') before reaching codegen; see the prose pages for the per-form desugaring.
-3. **[Package files](#package-files)** — the package-root file shapes, described in [`package.md`](package.md). A package file (`<name>.pkg.kio`) is an independent file shape: it starts with `package <name>;`, admits optional `build` and `bridge { … }` blocks in either order; the latter contains module-path globs that select which modules form the package's host boundary. There is no separate build-file shape. A dependency-declaration file (`<local>.dep.kio`) is a second package-root file shape: it starts with `dependency <local>;` and names one cross-package dependency. A dependency lock file (`<local>.lock.kio`) starts with `lock <local>;` and pins the commit a remote `git` dependency's `ref` resolved to.
+3. **[Package files](#package-files)** — the package-root file shapes, described in [`package.md`](package.md). A package file (`<name>.pkg.kio`) is an independent file shape: it starts with `pkg <name>;`, admits optional `build` and `bridge { … }` blocks in either order; the latter contains module-path globs that select which modules form the package's host boundary. There is no separate build-file shape. A dependency-declaration file (`<local>.dep.kio`) is a second package-root file shape: it starts with `dep <local>;` and names one cross-package dependency. A dependency lock file (`<local>.lock.kio`) starts with `lock <local>;` and pins the commit a remote `git` dependency's `ref` resolved to.
 
 A program that parses against the Kio' productions is *syntactically* Kio'. A program that parses against Kio' ∪ Kio surface extensions is *syntactically* Kio. Neither claim implies well-typedness or well-resolvedness — those are separate properties checked by later compiler phases.
 
@@ -28,8 +28,7 @@ its separately specified meaning.
 **Semicolon boundaries.** A complete outer braced declaration or section
 accepts at most one redundant suffix `;`. Nonbraced outer entries retain their
 terminator. Braces inside an entry do not change that classification:
-`host type T { owned };` has a qualifier, and `type N = { X: .; };` has a
-braced operand, not a declaration body. Inside a semicolon-delimited block,
+`type N = { X: .; };` has a braced operand, not a declaration body. Inside a semicolon-delimited block,
 the enclosing sequence owns the separators between entries. Edge separators
 are allowed under the sequence's repeated-separator policy; comma lists and
 expression blocks retain their separately specified rules.
@@ -50,7 +49,7 @@ between entries, with none at either edge; see [style.md](style.md#semicolon-cla
 
 ## Kio' grammar
 
-The Kio' grammar covers the **regular-module** file shape — every `*.kio` file with a `module` declaration. Package boundary files have their own grammars in [§ Package files](#package-files).
+The Kio' grammar covers the **regular-module** file shape — every `*.kio` file with a `mod` declaration. Package boundary files have their own grammars in [§ Package files](#package-files).
 
 ### Lexical structure (Kio')
 
@@ -73,7 +72,7 @@ The Kio' grammar covers the **regular-module** file shape — every `*.kio` file
 
 **No user-operator productions in Kio'.** Kio' shares full Kio's lexical rules and structural delimiters, but has no fixed or variadic declaration, tagged operator import, or operator expression production. Native parsing cannot create such a production.
 
-**Contextual keywords (Kio').** The words `module`, `import`, `as`, `pub`, `pure`, `type`, `fn`, `rec`, `let`, `mk`, `get`, `host`, and the magic phrase `__intrinsics__` lex as ordinary `IDENT` tokens. They are recognized as keywords *only* in the grammatical positions where the productions below show them as literal terminals; in any other position the same spelling is an identifier. `pure` is a modifier only on an ordinary `fn` declaration. `rec` marks either one self-recursive nominal declaration or one mutually recursive type group; it takes no runtime capability in Kio'. `host` is a host-declaration modifier only when immediately followed by `type` or `fn` (optionally with a redundant `pub` between them); elsewhere `host` is an ordinary identifier, so existing code that uses `host` as a name keeps parsing. Package-boundary words such as `package` and `bridge` are recognized only inside the package shapes that admit them. (`file` is not a Kio grammar keyword; it is a kiodoc fence attribute — see [`kiodoc.md`](kiodoc.md).)
+**Contextual keywords (Kio').** The words `mod`, `import`, `as`, `pub`, `pure`, `type`, `fn`, `rec`, `let`, `mk`, `get`, `host`, and the magic phrase `__intrinsics__` lex as ordinary `IDENT` tokens. They are recognized as keywords *only* in the grammatical positions where the productions below show them as literal terminals; in any other position the same spelling is an identifier. `pure` is a modifier only on an ordinary `fn` declaration. `rec` marks either one self-recursive nominal declaration or one mutually recursive type group; it takes no runtime capability in Kio'. `host` is a host-declaration modifier only when immediately followed by `type` or `fn` (optionally with a redundant `pub` between them); elsewhere `host` is an ordinary identifier, so existing code that uses `host` as a name keeps parsing. Package-boundary words such as `pkg` and `bridge` are recognized only inside the package shapes that admit them. (`file` is not a Kio grammar keyword; it is a kiodoc fence attribute — see [`kiodoc.md`](kiodoc.md).)
 
 **Comment markers require trailing whitespace.** A comment marker — `//` (line comment) or `///` (doc-comment line) — must be followed immediately by whitespace, end-of-line, or end-of-file. A non-whitespace character flush against the marker is a lex error: `//foo`, `///bar`, and `//=` are all rejected, with no exception for alphanumeric or underscore characters. In particular a fourth slash (`////`, `////////`) is rejected — four or more slashes are **not** a section ruler. This reserves the whole `//…` operator family (`//!`, `//?`, `//=`, …) for future syntax (see [§ Lexical structure (Kio surface)](#lexical-structure-kio-surface) for the matching `op`-pattern reservation).
 
@@ -81,16 +80,17 @@ The Kio' grammar covers the **regular-module** file shape — every `*.kio` file
 
 ### Productions (Kio')
 
-Imports precede module items. Selective lists are nonempty, including when the
-comma-list rule admits commas at their edges. In canonical formatting, the
-opening `(` immediately follows the module path on the introducing line.
+Imports precede module items. Selective lists are nonempty and admit semicolon
+runs at either edge and between selectors. An outer braced import accepts at
+most one redundant suffix semicolon. Canonical formatting keeps the opening
+`{` on the introducing line, uses single separators, and omits the suffix.
 Qualified imports require
 `as` and a value-shaped alias. `__intrinsics__` admits only its builtin block
 form; it is not an ordinary selectively or qualified-importable module.
 
 ```ebnf
 ModuleFile        ::= DocBlock? ModuleDecl Import* Item*
-ModuleDecl        ::= 'module' ModulePath ';'
+ModuleDecl        ::= 'mod' ModulePath ';'
 ModulePath        ::= IDENT ('/' IDENT)*      (* module reference, `/`-separated segments *)
 ValuePath         ::= IDENT ('.' IDENT)*      (* lexical value path; `/` is not admitted *)
 
@@ -99,11 +99,11 @@ DOC_LINE          ::= '///' &(WS | EOL | EOF) <to end of line>
                                               (* `///` must be followed by whitespace / EOL / EOF;
                                                  `////`+ is a lex error, not a comment ruler *)
 
-Import            ::= ImportEntry ';'
+Import            ::= ImportIntrinsics ';' | ImportQualified ';' | ImportSelective ';'?
 ImportEntry       ::= ImportIntrinsics | ImportSelective | ImportQualified
 ImportIntrinsics  ::= 'import' '__intrinsics__'
-ImportSelective   ::= 'import' ModulePath '(' NamedImport (',' NamedImport)* ')'
-NamedImport       ::= IDENT ('as' IDENT)? (* destination preserves identifier class *)
+ImportSelective   ::= 'import' ModulePath '{' SemiRunEntries<NamedImport> '}'
+NamedImport       ::= ('fn' | 'type') IDENT ('as' IDENT)? (* destination preserves identifier class *)
 ImportQualified   ::= 'import' ModulePath 'as' IDENT (* alias is a value name *)
 
 Item              ::= DocBlock? ((FnDef | Newtype | RecursiveNewtype | TypeRecGroup) ';'? | TypeAlias | HostType | HostFn)
@@ -127,11 +127,10 @@ TypeRecGroup      ::= 'rec' '{' SemiEntries<TypeRecMember> '}'  (* at least two 
 TypeRecMember     ::= DocBlock? (TypeAliasBody | Newtype)
 
 HostType          ::= HostTypeBody ';'
-HostTypeBody      ::= 'pub'? 'host' 'pub'? 'type' IDENT TypeParamList? RoleAnnotation? OwnedBlock?
+HostTypeBody      ::= 'pub'? 'host' 'pub'? 'type' IDENT TypeParamList? RoleAnnotation?
 HostFn            ::= HostFnBody ';'
 HostFnBody        ::= 'pub'? 'host' 'pub'? 'fn' IDENT ValueSignature ('->' Type)?
 RoleAnnotation    ::= 'role' '(' IDENT ')'    (* IDENT ∈ i8…i128 / u8…u128 / f32 / f64 / bool / str *)
-OwnedBlock        ::= '{' 'owned' '}'
 
 TypeParamList     ::= TypeBinderGroup+
 Signature         ::= SignatureGroup+                     (* ordinary declaration; type-only groups admitted *)
@@ -213,8 +212,8 @@ FnExpr            ::= '.' FnSignature ('->' Type)? Block
 - `RecursiveNewtype` is the singleton recursive-data spelling. Its `rec` follows visibility (`pub rec type { N: Payload { mk; get; }; }`); a self-recursive newtype requires it, while a marker on an acyclic newtype is rejected as redundant. An ordinary `Newtype` has no own-head or later-declaration scope.
 - `TypeRecGroup` is capability-free and has no group-level visibility. It contains at least two ordinary alias or explicit singleton nominal `type` declarations, with visibility and doc comments attached to each member. The complete member heads are in scope throughout the group. Static validation requires the written group to be exactly one genuinely mutual cyclic component and requires every alias cycle to cross a `newtype` boundary; a one-member, acyclic, multi-component, or alias-only group is rejected. A member does not repeat the singleton `rec` marker.
 - The keyword `'fn'` leads only item declarations. Ordinary declarations and dot-led anonymous functions require at least one type or value group: `fn value[A] { … }` and `.[A] { … }` are admitted alongside `fn value() { … }` and `.() { … }`. No value group is implied by a type-only signature. `host fn`, `RecFnDef`, and a written `Equiv` signature instead use `ValueSignature`, which requires at least one value group. Expression position does not reserve `fn`.
-- A module's `import` clauses all precede its items in one flat run (`ModuleDecl Import* Item*`); there is no `import`-block split. `import m(X);` creates a `→ m` import edge wherever it sits. See the module-cycle rule in [`language.md` § Module system](language.md#module-system).
-- `HostType` and `HostFn` are opaque, signature-only **host declarations** — a `host type` is a nominal type the host supplies, a `host fn` a function whose body the host supplies. They are ordinary module items (not a special block), are always public, and obey ordinary lexical scoping: another module reaches a `host` item through a plain `import`, exactly like any other `pub` item. `host` is a contextual keyword (see § Contextual keywords above). A `host type`'s optional `role(...)` annotation records its literal-admission metadata (see [`language.md` § Literals](language.md#literals)); `role(bool)` also participates in [checked Boolean specialization](language.md#conditionals). `TypeParamList` and `RoleAnnotation` are individually syntactic components, but host type parameters must be unstarred kind-`*` binders and are semantically mutually exclusive with `RoleAnnotation`: a role-bearing `host type` has no type parameters. Violating either restriction is a type error. The optional `{ owned }` block remains accepted and formatted for source compatibility, but selects no alternate representation: the Rust backend renders every `role(str)` facade in owned form at every occurrence (see [`backends/rust.md`](backends/rust.md)). A `host fn`'s value parameters carry the same named, annotated `SignatureParam` shape as an ordinary `FnDef`, and an omitted `-> Type` result defaults to `.`. This is a fixed Unit default, not inference. `pub host` / `host pub` are admitted but redundant — there is no private host item. Host items are part of Kio': they appear in the boundary AST and reduce as opaque primitives. Which modules' host items reach the host is selected by the package file's `bridge` block (see [§ Package files](#package-files)).
+- A module's `import` clauses all precede its items in one flat run (`ModuleDecl Import* Item*`); there is no `import`-block split. `import m {type X}` creates a `→ m` import edge wherever it sits. See the module-cycle rule in [`language.md` § Module system](language.md#module-system).
+- `HostType` and `HostFn` are opaque, signature-only **host declarations** — a `host type` is a nominal type the host supplies, a `host fn` a function whose body the host supplies. They are ordinary module items (not a special block), are always public, and obey ordinary lexical scoping: another module reaches a `host` item through a plain `import`, exactly like any other `pub` item. `host` is a contextual keyword (see § Contextual keywords above). A `host type`'s optional `role(...)` annotation records its literal-admission metadata (see [`language.md` § Literals](language.md#literals)); `role(bool)` also participates in [checked Boolean specialization](language.md#conditionals). `TypeParamList` and `RoleAnnotation` are individually syntactic components, but host type parameters must be unstarred kind-`*` binders and are semantically mutually exclusive with `RoleAnnotation`: a role-bearing `host type` has no type parameters. Violating either restriction is a type error. The Rust backend renders every `role(str)` facade in owned form at every occurrence (see [`backends/rust.md`](backends/rust.md)). A `host fn`'s value parameters carry the same named, annotated `SignatureParam` shape as an ordinary `FnDef`, and an omitted `-> Type` result defaults to `.`. This is a fixed Unit default, not inference. `pub host` / `host pub` are admitted but redundant — there is no private host item. Host items are part of Kio': they appear in the boundary AST and reduce as opaque primitives. Which modules' host items reach the host is selected by the package file's `bridge` block (see [§ Package files](#package-files)).
 
 The `IS_KIO_PRIME` corpus marker (see [`test-data/README.md`](../test-data/README.md)) asserts that every regular-module file in a case parses against the Kio' productions above. The corpus check `ci/checks/orchestrators/golden-tests.sh` verifies acceptance via the standalone `kio-prime-check` tool under [`ci/infra/kio-prime-check-rs/`](../ci/infra/kio-prime-check-rs/).
 
@@ -264,7 +263,7 @@ In addition to Kio''s contextual keywords, Kio surface recognizes:
 - `trailing`, `product`, `thunk`, `sequence` — trailing-block descriptor entries in a macro declaration.
 - `rec` — the recursive-declaration marker. Explicit singleton `rec type { N: Payload { mk; get; }; }` and bare `rec { ... }` retain their Kio' meanings; compact `rec type` declarations and `rec(loop)` are surface additions.
 - `recur` — the surface recursive-call introducer, optionally followed by call annotations and then a group-local callee. Outside that grammatical position it is an ordinary identifier.
-- `type`, `literal`, `macro`, `op`, `varop`, `equiv` — top-level item leads (after declaration modifiers where admitted). A singleton recursive declaration admits leading visibility (`pub rec type` or `pub rec(loop) fn`); either braced `rec` group carries no visibility, so visibility stays on each member.
+- `type`, `lit`, `macro`, `op`, `op_macro`, `op_var`, `equiv` — top-level item leads (after declaration modifiers where admitted). A singleton recursive declaration admits leading visibility (`pub rec type` or `pub rec(loop) fn`); either braced `rec` group carries no visibility, so visibility stays on each member.
 - `__comptime__` — reserved import target, recognized only inside `import __comptime__;` (see [§ Surface import-clause additions](#surface-import-clause-additions)). Never a regular module name. Surface-only — it supplies the compile-time reflection API used by macro implementations.
 
 Macro calls use ordinary direct call syntax. A scoped `macro` selector or an
@@ -289,7 +288,7 @@ NominalRhs     ::= NominalOperand NominalChainTail?
 NominalChainTail ::= ('&' NominalOperand)+ | ('|' NominalOperand)+
 NominalOperand ::= NominalGroup | '(' NominalRhs ')' | TypeAtom
 
-LiteralAlias   ::= Vis? 'literal' IDENT '=' LiteralAliasValue ';'           (* lowercase name only *)
+LiteralAlias   ::= Vis? 'lit' IDENT '=' LiteralAliasValue ';'           (* lowercase name only *)
 LiteralAliasValue ::= INT_LIT | FLOAT_LIT | STR_LIT | BoolLit
 
 MacroItem ::= Vis? 'macro' IDENT ':' Type MacroBody
@@ -312,7 +311,7 @@ RecFnDef       ::= Vis? 'fn' IDENT ValueSignature ('->' Type)? Block
 TypeRecMember += DocBlock? Vis? 'type' NominalGroup
                | DocBlock? Vis? 'type' IDENT TypeParamList? '=' NominalRhs
 
-Op             ::= Vis? 'op' 'macro'? OpBody
+Op             ::= Vis? ('op' | 'op_macro') OpBody
 OpBody         ::= OpPattern '{' SemiEntries<OpEntry> '}'                 (* fixed arity only *)
 OpEntry        ::= 'impl' GroupedValuePath                               (* exactly once *)
 OpPattern      ::= OpSlot? OpWord (OpSlot OpWord)* OpSlot?
@@ -324,7 +323,7 @@ VaropHead      ::= '[' ']' | '[' Marker ReverseMarker ']'
 Marker         ::= OpToken
 ReverseMarker  ::= OpToken                            (* exact character reversal of Marker *)
                     (* a legal fused empty pair is split at its mirrored midpoint *)
-VariadicOperator ::= Vis? 'varop' VaropHead VariadicBody
+VariadicOperator ::= Vis? 'op_var' VaropHead VariadicBody
 VariadicBody      ::= '{' SemiEntries<VariadicEntry> '}'
 VariadicEntry     ::= VariadicPrimary | 'finalize' OptionalCallable
 VariadicPrimary   ::= 'foldl' GroupedValuePath GroupedValuePath      (* step, nullary base *)
@@ -367,7 +366,7 @@ Each compact entry declares a new nominal with an explicit payload type; `_` can
 
 A compact `rec type` introduces exactly its written owner and entries into one atomic recursive scope. Positivity, nominal grounding and minimal recursive partitioning follow the existing recursive-data rules. A recursive alias without a nominal boundary remains rejected. Bare `rec { ... }` groups retain their minimum of two declarations.
 
-A `pub op` or `pub varop` exports its operator binding for module imports via complete tagged operator import selections below (see [`language.md` § Operators — Module-local by default; `pub` exports the binding](language.md#operators)). `Equiv` enforces `N >= 2` arms at parse time. Its arms are semicolon-separated expressions; repeated semicolons are accepted and a final semicolon is ignored.
+A `pub op`, `pub op_macro`, or `pub op_var` exports its operator binding for module imports via complete tagged operator import selections below (see [`language.md` § Operators — Module-local by default; `pub` exports the binding](language.md#operators)). `Equiv` enforces `N >= 2` arms at parse time. Its arms are semicolon-separated expressions; repeated semicolons are accepted and a final semicolon is ignored.
 
 `ValuePath` is the ordinary lexical value-path shape shared by expressions and
 declaration callable targets. Its head may be a local declaration or selective
@@ -396,11 +395,11 @@ imported, not ambient](language.md#macros-are-imported-not-ambient).
 `MacroItem` and both implementation modes are Kio-surface-only.
 The Kio' item grammar has no `macro`, `impl`, or `impl(fills)` production.
 
-`pure` is admitted only on an ordinary `FnDef`, in both Kio and Kio'. It is not admitted on `type`, `macro`, `op`, `literal`, `equiv`, `host` declarations, or any `rec` group/member. `pub` and `pure` may appear in either order on a function, but each may appear at most once; `kio fmt` emits `pub pure fn`.
+`pure` is admitted only on an ordinary `FnDef`, in both Kio and Kio'. It is not admitted on `type`, `macro`, `op`, `lit`, `equiv`, `host` declarations, or any `rec` group/member. `pub` and `pure` may appear in either order on a function, but each may appear at most once; `kio fmt` emits `pub pure fn`.
 
 `OpPattern` requires alternating single words and value slots, with at least one of each. Adjacent slots, adjacent words, zero-slot patterns, and pattern parentheses containing slots are rejected. Arbitrary numbers of `_`, `__`, and `___` are admitted subject to [`language.md` § Operators](language.md#operators): every `__` must be useful, and an operand-ending non-prefix pattern cannot have chain permission at both exposed ends. Dots and square brackets are forbidden in quoted and unquoted words. A word contains at most one `/`; comment spellings do not become operator words.
 
-The `type` declaration is a Kio' type alias. The `literal` declaration is surface-only: it binds a lowercase name to one bare literal token and is expanded by the desugar pass at reference sites. A bare reference expands to the stored literal; `name[Type]` expands to the stored literal carrying that annotation. See [`language.md` § Type and literal aliases](language.md#type-and-literal-aliases).
+The `type` declaration is a Kio' type alias. The `lit` declaration is surface-only: it binds a lowercase name to one bare literal token and is expanded by the desugar pass at reference sites. A bare reference expands to the stored literal; `name[Type]` expands to the stored literal carrying that annotation. See [`language.md` § Type and literal aliases](language.md#type-and-literal-aliases).
 
 ### Surface parameter additions
 
@@ -431,30 +430,22 @@ This is a surface-only extension. The desugar pass eliminates every destructurin
 
 ### Surface import-clause additions
 
-Kio surface widens the parenthesized selection list with explicitly tagged
-operator grammars and macros. An ordinary name selects the value/type
-namespace. Standalone `op` and `varop` selections
-are ordinary identifiers; a tag introduces an operator only when followed by
-its pattern or delimiter pair. A complete `macro IDENT` selector selects a
-macro, with an optional ordinary `as IDENT` destination. `macro` alone or
-`macro as local` selects the ordinary identifier named `macro`;
-`macro as` selects a macro named `as`. Classification follows from the
-complete importing text, without consulting provider contents.
+Kio surface extends the shared braced selection list with literal aliases,
+macros, and operator grammars. Every selector starts with its explicit kind.
+The kind and the following name or complete operator grammar determine parsing
+from the written tokens, without consulting the provider.
 
 ```ebnf
-ImportSelective  ::= 'import' ModulePath '(' ImportItem (',' ImportItem)* ')'
-ImportItem       ::= NamedImport | OperatorImport | MacroImport
+ImportSelective  ::= 'import' ModulePath '{' SemiRunEntries<ImportItem> '}'
+ImportItem       ::= NamedImport | LiteralImport | MacroImport | OperatorImport
+LiteralImport    ::= 'lit' IDENT ('as' IDENT)?
 MacroImport      ::= 'macro' IDENT ('as' IDENT)?
-OperatorImport   ::= 'op' 'macro'? OpPattern ('as' OpPattern)?
-                   | 'varop' VaropHead ('as' VaropHead)?
+OperatorImport   ::= ('op' | 'op_macro') OpPattern ('as' OpPattern)?
+                   | 'op_var' VaropHead ('as' VaropHead)?
 ```
 
-The selection list is nonempty, even when it contains leading or trailing
-commas. In canonical formatting, its opening parenthesis stays on the
-introducing line immediately after the module path. Its broken layout uses the
-ordinary leading-comma rule in
-[style.md](style.md#import-block-ordering). An ordinary module import must have
-such a list or an explicit `as` alias; builtin block imports have neither.
+The selection list is nonempty. An ordinary module import must have such a
+list or an explicit `as` alias; builtin block imports have neither.
 
 A fixed `OperatorImport` carries its function/macro kind and the whole
 `OpPattern`: every literal run, slot kind (`_`, `__`, `___`), optional delay
@@ -463,7 +454,7 @@ A variadic import carries
 its declaration's complete bare or marked square frame. For example:
 
 ```kio
-import syntax(op _ ? _ : ___, op _ <| ___ |>, varop [* *]);
+import syntax {op _ ? _ : ___; op _ <| ___ |>; op_var [* *]}
 ```
 
 Symbol words are consumed whole. Fixed patterns admit contextual operator-token
@@ -472,7 +463,7 @@ marker words; compact and spaced empty heads select the same marker.
 The formatter never merges distinct complete grammars into one public spelling.
 
 An optional `as` supplies the complete local grammar, without repeating the
-`op` or `varop` tag. A fixed alias preserves every token/slot position, slot
+`op`, `op_macro`, or `op_var` tag. A fixed alias preserves every token/slot position, slot
 kind, and whole-word boundary. Its token substitution
 is consistent and injective: repeated source tokens receive one destination
 token, and distinct source tokens stay distinct. A variadic alias supplies an
@@ -639,7 +630,7 @@ At statement start, `let` is structural before a name/wildcard binder, before `.
 ### Notes (Kio surface)
 
 - The surface `LiteralCall` extension makes the trailing `'[' Type ']'` annotation optional — the unannotated literal is admissible in any expression position. The literal-type selection rule in [`language.md` § Literals](language.md#literals) uses an explicit annotation or concrete contextual inference while checking the Lowered tree. Kio' requires the annotation; the Lowered → Prime substitute pass materializes the typer's recorded resolution, so the Prime artifact is fully annotated.
-- A `LiteralAliasValue` accepts exactly one bare literal token. Adjacent string-literal folding applies to expression literals, not to `literal` declaration bodies; write the complete literal in one string token.
+- A `LiteralAliasValue` accepts exactly one bare literal token. Adjacent string-literal folding applies to expression literals, not to `lit` declaration bodies; write the complete literal in one string token.
 - The dot-splice forms are one syntax family. Forward forms take a path-shaped callee with optional explicit type applications and select its immediately following value group. Reverse forms are suffixes on the preceding expression and select its outermost value application. Whole-expression grouping is transparent; a trailing type application is a boundary that makes the receiver a new value stage. Complete block calls instead use first/last prefix insertion. An omitted selected UFCS value group is receiver-only; a present selected group must be nonempty. `r.>f()`, `r.>>f()`, `f().<r` and `f().<<r` reject, including member/macro analogues. An earlier ordinary empty group is unaffected: `factory()(b).<r` modifies `(b)`. The forward callee's adjacent group belongs to that splice, and cannot be reinterpreted as a call on its result. A tight reverse receiver stops before another splice: `f.<x.>g` means `(f.<x).>g`; use `f.<(x.>g)` to insert a splice result.
 
 - A block-call splice inserts its receiver first (`.>` / `.<<`) or last
@@ -671,23 +662,23 @@ At statement start, `let` is structural before a name/wildcard binder, before `.
 Several Kio file shapes live at the package root alongside any root `.kio` modules:
 
 - `<name>.pkg.kio` — the package boundary file. Exactly one per package; stem = package name. It may carry an optional `build` block and a single `bridge { … }` block of module-path globs that selects which modules form the package's host boundary.
-- `<name>.kio` — a root module. Multiple permitted; stem = root module name. A root module is an ordinary single-segment module file: it begins with `module <name>;`.
-- `<local>.dep.kio` — a dependency-declaration file. One per direct dependency; stem = the dependency's **local name**. It begins with `dependency <local>;` and declares one `source { … }` block naming a local package file (`path`) or a remote git repository (`git` + `ref`). Like `<pkg>.sig.kio`, it is not a module and is kept out of module discovery (see [`package.md` § Dependency files](package.md#dependency-files)).
+- `<name>.kio` — a root module. Multiple permitted; stem = root module name. A root module is an ordinary single-segment module file: it begins with `mod <name>;`.
+- `<local>.dep.kio` — a dependency-declaration file. One per direct dependency; stem = the dependency's **local name**. It begins with `dep <local>;` and declares one `source { … }` block naming a local package file (`path`) or a remote git repository (`git` + `ref`). Like `<pkg>.sig.kio`, it is not a module and is kept out of module discovery (see [`package.md` § Dependency files](package.md#dependency-files)).
 - `<local>.lock.kio` — a dependency lock file. One per remote `git` dependency, beside its `<local>.dep.kio`; stem = the dependency's **local name**. It begins with `lock <local>;` and declares one `resolved { … }` block pinning the `(git, ref, commit, sig)` the dependency's `ref` resolved to (`sig` is the dependency's contract-surface digest at the commit). Committed to version control; like the others it is not a module and is kept out of module discovery (see [`package.md` § Dependency files](package.md#dependency-files)).
-- `<pkg>.sig.kio` — a signature changelog. At most one per package; stem = package name. It begins with `signature <pkg> v(N);` and records the package's versioned host/export contract-surface history. Generated and gated by `kio sig`; like the dependency files it is not a module and is kept out of module discovery (see [§ Signature file](#signature-file-sigkio) below and [`versioning.md`](versioning.md)).
+- `<pkg>.sig.kio` — a signature changelog. At most one per package; stem = package name. It begins with `sig <pkg> v(N);` and records the package's versioned host/export contract-surface history. Generated and gated by `kio sig`; like the dependency files it is not a module and is kept out of module discovery (see [§ Signature file](#signature-file-sigkio) below and [`versioning.md`](versioning.md)).
 
 These grammars share the lexical structure and `IDENT` / `STR_LIT` /
 `ModulePath` / `Type` / `Signature` / `Block` / `TypeParamList` productions
-with the module grammars above. A package file begins with `package <name>;`,
+with the module grammars above. A package file begins with `pkg <name>;`,
 where `<name>` is the filename stem. A package is not a module, and a bare
-`module ...;` directive is not admitted at the top of a package file.
+`mod ...;` directive is not admitted at the top of a package file.
 
 ### Package file (`*.pkg.kio`)
 
 ```ebnf
 PackageFile       ::= PackageDecl PackageEntry*
 PackageEntry      ::= BuildBlock | BridgeBlock
-PackageDecl       ::= 'package' IDENT ';'                      (* IDENT = filename stem = package identity *)
+PackageDecl       ::= 'pkg' IDENT ';'                      (* IDENT = filename stem = package identity *)
 
 BridgeBlock       ::= 'bridge' '{' SemiEntries<BridgeGlob>? '}' ';'?
 BridgeGlob        ::= BridgeGlobSeg ('/' BridgeGlobSeg)*       (* a module-path glob, `/`-separated *)
@@ -696,7 +687,7 @@ BridgeGlobSeg     ::= IDENT | '*' | '**'                       (* literal segmen
 
 Notes:
 
-- The file must begin with a `package <name>;` directive whose `<name>` is the filename stem (for example, `app.pkg.kio` begins `package app;`). A missing directive or a name that does not match the stem is a parse error.
+- The file must begin with a `pkg <name>;` directive whose `<name>` is the filename stem (for example, `app.pkg.kio` begins `pkg app;`). A missing directive or a name that does not match the stem is a parse error.
 - After the required header, a package file admits at most one `build` block and at most one `bridge` block, in either order. Other entries, including a stray `env` / `export`, are parse errors.
 - A package file declares no host items and no `import` clauses. The host boundary lives in modules: a module declares what it needs from the host with `host type` / `host fn` items and what it offers with ordinary `pub` items (see [§ Productions (Kio')](#productions-kio)). The package file only names, with module globs, which modules participate.
 - `BridgeBlock` is a `;`-separated list of module-path globs spelled the same way a `ModulePath` is, extended with `*` (matches one path segment) and `**` (matches a whole subtree, zero or more segments) following shell glob semantics. It selects **modules**; from each matched module, every `pub host` item becomes a host requirement (the env — what the host must supply), every other public callable becomes a host-invocable entry (an export), and public type declarations contribute the type surface those signatures use. A plain-public nominal type contributes its identity; its constructor and projector contribute independent host operations only when the corresponding member is also plain `pub`. A private or `pub(path)` outer nominal type contributes no host surface regardless of its member markers. Entries keep their module namespace; there is no rename. A glob that matches no module is a build error. The module-completeness and type-closure rules that keep the exposed contract self-contained are stated in [`package.md` § The bridge block](package.md#the-bridge-block).
@@ -741,12 +732,12 @@ kinds. Commas, calls, and operators are not part of this scalar grammar.
 
 ### Dependency file (`*.dep.kio`)
 
-A dependency-declaration file names one direct cross-package dependency. It begins with a `dependency <local>;` header, where `<local>` is the filename stem (the same filename-stem coherence check `package <name>;` and `signature <name>;` run), and contains exactly one `source { … }` block naming where the dependency comes from — a local package file (`path`) or a remote git repository (`git` + `ref`).
+A dependency-declaration file names one direct cross-package dependency. It begins with a `dep <local>;` header, where `<local>` is the filename stem (the same filename-stem coherence check `pkg <name>;` and `sig <name>;` run), and contains exactly one `source { … }` block naming where the dependency comes from — a local package file (`path`) or a remote git repository (`git` + `ref`).
 
 ```ebnf
 DependencyFile    ::= DependencyDecl DependencyEntry*
 DependencyEntry   ::= SourceBlock | RehostStmt | RetypeStmt
-DependencyDecl    ::= 'dependency' IDENT ';'                    (* IDENT = filename stem = dependency local name; lowercase value name *)
+DependencyDecl    ::= 'dep' IDENT ';'                    (* IDENT = filename stem = dependency local name; lowercase value name *)
 
 SourceBlock       ::= 'source' '{' SemiRunEntries<SourceField> '}' ';'?
 SourceField       ::= ('path' | 'git' | 'ref') ConfigString | 'path' ConfigUnit
@@ -757,8 +748,8 @@ RetypePath        ::= ModulePath ( '.' IDENT )?                 (* trailing `.Na
 
 Notes:
 
-- The file must begin with a `dependency <local>;` directive whose `<local>` is the filename stem (for example, `foobar.dep.kio` begins `dependency foobar;`). A missing directive or a name that does not match the stem is a parse error. The local name is a value name: it must match `_?[a-z]+[0-9]*(?:_[a-z]+[0-9]*)*_*`.
-- `dependency` is a file-shape keyword, a sibling of `package` / `module` / `signature`; it is recognized only in this leading position. A `.dep.kio` file declares no module and no `import` clauses. After its header it requires exactly one `source` block and admits zero or more `rehost` and `retype` statements (below), in any relative order. A second `source` block or any other entry is a parse error.
+- The file must begin with a `dep <local>;` directive whose `<local>` is the filename stem (for example, `foobar.dep.kio` begins `dep foobar;`). A missing directive or a name that does not match the stem is a parse error. The local name is a value name: it must match `_?[a-z]+[0-9]*(?:_[a-z]+[0-9]*)*_*`.
+- `dep` is a file-shape keyword, a sibling of `pkg` / `mod` / `sig`; it is recognized only in this leading position. A `.dep.kio` file declares no module and no `import` clauses. After its header it requires exactly one `source` block and admits zero or more `rehost` and `retype` statements (below), in any relative order. A second `source` block or any other entry is a parse error.
 - A `source` block declares **exactly one** source — either a standalone `path`, or a `git` + `ref` pair with an optional `path`. All present fields may occur in any order. An empty block is a parse error.
 - A standalone **`path`** key is a `STR_LIT` naming the dependency's `*.pkg.kio` package file, always spelled with its `.pkg.kio` extension. The path is **relative** (resolved against the consumer's package root) and **`/`-separated**; it may climb `../`. An absolute path (leading `/`) or a `\`-separated path is a parse error, as is a duplicate `path` or a non-string `path` value.
 - The **`git`** key is a `STR_LIT` clone URL (`file://`, `https://`, `git@…`, …) and the **`ref`** key is a `STR_LIT` revision designator git resolves uniformly — a branch name, a tag, or a commit SHA. Both keys are required when either appears; a `git` without a `ref`, a `ref` without a `git`, an empty value, a duplicate, or a non-string value is a parse error.
@@ -786,20 +777,20 @@ ResolvedKey       ::= 'git'    ConfigString                     (* the clone URL
 
 Notes:
 
-- The file must begin with a `lock <local>;` directive whose `<local>` is the filename stem (for example, `foobar.lock.kio` begins `lock foobar;`). A missing directive or a name that does not match the stem is a parse error. `lock` is a file-shape keyword, a sibling of `dependency`; it is recognized only in this leading position.
+- The file must begin with a `lock <local>;` directive whose `<local>` is the filename stem (for example, `foobar.lock.kio` begins `lock foobar;`). A missing directive or a name that does not match the stem is a parse error. `lock` is a file-shape keyword, a sibling of `dep`; it is recognized only in this leading position.
 - The `resolved` block declares the required `git`, `ref`, `commit`, and `sig` keys and an optional `path` in any order. Values are grouped or ungrouped strings, with `path ()` equivalent to omitting `path`. A duplicate key, a missing required key, another value kind, or any other key is a parse error. A string `path` has the same relative-syntax rules as a Git source's selector. Anything after the `resolved` block is a parse error.
 - The `sig` value is the dependency's contract-surface digest at the pinned commit (see [`versioning.md` § Git-dependency contract gate](versioning.md#git-dependency-contract-gate)); it is opaque to the grammar — any `STR_LIT`.
 
 ### Signature file (`*.sig.kio`)
 
-A signature file records a package's versioned **contract-surface changelog** — the history of its host / export surface across sealed generations. At most one per package; stem = package name. It begins with a `signature <pkg> v(N);` header (the same filename-stem coherence check the other package-root shapes run), is generated and gated by `kio sig`, and — like the dependency files — is not a module and is kept out of module discovery.
+A signature file records a package's versioned **contract-surface changelog** — the history of its host / export surface across sealed generations. At most one per package; stem = package name. It begins with a `sig <pkg> v(N);` header (the same filename-stem coherence check the other package-root shapes run), is generated and gated by `kio sig`, and — like the dependency files — is not a module and is kept out of module discovery.
 
 ```ebnf
 SignatureFile     ::= SignatureDecl VersionBlock*
-SignatureDecl     ::= 'signature' IDENT 'v' '(' INT_LIT ')' ';'   (* IDENT = filename stem; v(N) = current generation *)
+SignatureDecl     ::= 'sig' IDENT 'v' '(' INT_LIT ')' ';'   (* IDENT = filename stem; v(N) = current generation *)
 ```
 
-The version-block body admits optional `with`, `breaking`, and `nonbreaking` entries in any order, at most once each. Each partition admits `add`, `modify`, and `remove` operation blocks in any order, at most once each. Ordinary nonrecursive add/modify entries remain post-elaboration Kio' declarations inside `module` sections. A complete recursive `rec { ... }` group instead appears exactly once under `with { module <path> { ... } }`, while operations name its changed members by exact non-expression `ItemRef` FQNs such as `api.A;` or `foo/bar.B;`. Canonical removals use the same FQN form; the legacy nested `module path { Name; }` removal form remains parse-compatible but is not emitted. The complete grammar and context-epoch/replay rules are specified in [`versioning.md` § Changelog grammar](versioning.md#changelog-grammar).
+The version-block body admits optional `with`, `breaking`, and `nonbreaking` entries in any order, at most once each. Each partition admits `add`, `modify`, and `remove` operation blocks in any order, at most once each. Ordinary nonrecursive add/modify entries remain post-elaboration Kio' declarations inside `mod` sections. A complete recursive `rec { ... }` group instead appears exactly once under `with { mod <path> { ... } }`, while operations name its changed members by exact non-expression `ItemRef` FQNs such as `api.A;` or `foo/bar.B;`. Removals use the same FQN form. The complete grammar and context-epoch/replay rules are specified in [`versioning.md` § Changelog grammar](versioning.md#changelog-grammar).
 
 The one changelog-specific declaration production is the **body-less `fn` export signature**, which uses the ordinary function's `Signature`, including type-only groups, and is recorded without a body (a stray body is a changelog error). Unlike a host import, an ordinary export does not require a value group:
 
@@ -808,12 +799,12 @@ SigExportFn       ::= ('pub' 'pure'? | 'pure' 'pub') 'fn' IDENT Signature ('->' 
                                                                   (* changelog-only; body-less export; formatter emits `pub pure fn` *)
 ```
 
-`signature` is a file-shape keyword, a sibling of `package` / `module` / `dependency` / `lock`, recognized only in this leading position.
+`sig` is a file-shape keyword, a sibling of `pkg` / `mod` / `dep` / `lock`, recognized only in this leading position.
 
 ### Notes (Package files)
 
 - Package files share `ModulePath`, `Signature`, `Type`, `Block`,
   `TypeParamList`, and the literal forms with the regular-module grammars;
   productions are not duplicated above.
-- A package file admits no `module ...;` directive and no `import` clauses (see § Package file Notes above).
+- A package file admits no `mod ...;` directive and no `import` clauses (see § Package file Notes above).
 - `kio fmt` formats package files with the same A1 leading-comma rules as regular modules; see [`style.md`](style.md). Each `bridge` glob is formatted on its own line.

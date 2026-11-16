@@ -1,4 +1,4 @@
-package macro_return_type_module_named_import;
+pkg macro_return_type_module_named_import;
 
 build {
   cache "out/.kio-cache/";

@@ -5,15 +5,15 @@
 /// runtime property of a value, not a fact the shape carries — and encoding it
 /// in the type would make the audit vacuous, which is the one check this
 /// package exists to perform.
-module tree/node;
+mod tree/node;
 
-import macros/control(macro if);
-import macros/match(macro match);
-import macros/row_macros(macro select);
-import macros/spine_macros(macro widen_sum);
-import testapi(Bool, I32, String);
-import testapi/arith(add_i32, eq_i32, lt_i32);
-import testapi/iter(loop);
+import macros/control { macro if }
+import macros/match { macro match }
+import macros/row_macros { macro select }
+import macros/spine_macros { macro widen_sum }
+import testapi { type Bool; type I32; type String }
+import testapi/arith { fn add_i32; fn eq_i32; fn lt_i32 }
+import testapi/iter { fn loop }
 
 rec {
   pub type Node_body =

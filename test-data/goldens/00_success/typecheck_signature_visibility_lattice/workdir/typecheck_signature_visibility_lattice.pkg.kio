@@ -1,4 +1,4 @@
-package typecheck_signature_visibility_lattice;
+pkg typecheck_signature_visibility_lattice;
 
 build {
   cache "out/.kio-cache/";

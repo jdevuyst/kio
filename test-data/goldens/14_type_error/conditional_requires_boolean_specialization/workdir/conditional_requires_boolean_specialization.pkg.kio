@@ -1,4 +1,4 @@
-package conditional_requires_boolean_specialization;
+pkg conditional_requires_boolean_specialization;
 
 build {
   cache "out/.kio-cache/";

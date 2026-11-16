@@ -1,8 +1,8 @@
-module testapi/main;
+mod testapi/main;
 
-import macros/algebraic_macros(macro atom, macro into);
-import testapi(I32, String);
-import testapi/io(print);
+import macros/algebraic_macros { macro atom; macro into }
+import testapi { type I32; type String }
+import testapi/io { fn print }
 
 // `atom(e, T)` — pick a single value of type `T` from `e`.
 // Exercises the new semantics:

@@ -1,4 +1,4 @@
-package float_string_range;
+pkg float_string_range;
 
 build {
   cache "out/.kio-cache/";

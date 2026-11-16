@@ -116,8 +116,7 @@ fn menu_keybindings() -> reedline::Keybindings {
     keybindings
 }
 
-const HELP_TEMPLATE: &str = "\
-Usage: kio repl [<selector>...]
+const HELP_TEMPLATE: &str = "Usage: kio repl [<selector>...]
 
 Open the Kio module inspector — an interactive prompt for loading
 modules from the current directory by their module path (FQN) and
@@ -888,7 +887,7 @@ mod tests {
         // the prompt names it on the context line above the `kio> `
         // symbol.
         let mut session = Session::new(PathBuf::from("/tmp/pkg"));
-        let module = crate::pass::parser::parse("module pkg/demo;\npub fn run() -> . { () }\n")
+        let module = crate::pass::parser::parse("mod pkg/demo;\npub fn run() -> . { () }\n")
             .expect("test module parses");
         let staged = StagedModule {
             path: "pkg/demo".to_owned(),

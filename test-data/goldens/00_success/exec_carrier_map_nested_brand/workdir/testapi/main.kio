@@ -1,6 +1,6 @@
-module testapi/main;
+mod testapi/main;
 
-import macros/match(macro match);
+import macros/match { macro match }
 // Exercises a host `loop` whose STATE is a nested higher-kinded
 // carrier: `Box[I32][I32]` is a nominal type wrapping an ALIAS
 // `Trail[K][V]` over a 2-type-parameter RECURSIVE nominal type `Crumbs[K][V]`
@@ -10,11 +10,11 @@ import macros/match(macro match);
 // sum-of-products mentioning both binders — the combination (recursion +
 // alias indirection + structured sum payload) that an erased carrier
 // must round-trip transparently across the loop.
-import macros/spine_macros(macro widen_sum);
-import testapi(I32);
-import testapi/fmt(int_to_string);
-import testapi/io(print);
-import testapi/iter(loop);
+import macros/spine_macros { macro widen_sum }
+import testapi { type I32 }
+import testapi/fmt { fn int_to_string }
+import testapi/io { fn print }
+import testapi/iter { fn loop }
 
 // `Crumbs[K][V]` is a 2-type-param recursive nominal type whose node is a
 // SUM of two nominal products (`Left` / `Right`), each

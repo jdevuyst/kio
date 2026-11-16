@@ -1,4 +1,4 @@
-module arith;
+mod arith;
 
 pub fn add(x: ., y: .) { x }
 

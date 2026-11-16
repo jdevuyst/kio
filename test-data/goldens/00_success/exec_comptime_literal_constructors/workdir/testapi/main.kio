@@ -1,6 +1,6 @@
-module testapi/main;
+mod testapi/main;
 
-import constructors(macro checked_false, macro checked_true);
-import testapi/io(print);
+import constructors { macro checked_false; macro checked_true }
+import testapi/io { fn print }
 
 pub fn main() { checked_true(()); checked_false(()); print("literal constructors\n") }

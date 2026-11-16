@@ -1,4 +1,4 @@
-package exec_else_if_chain;
+pkg exec_else_if_chain;
 
 build {
   cache "out/.kio-cache/";

@@ -2,7 +2,7 @@
 //!
 //! Produces a flat token stream from source text. Every word in the
 //! language — including the item-leading words `fn` / `type` /
-//! `literal` / `newtype` / `labels` / `module` / `import` and the
+//! `lit` / `macro` / `op` / `op_macro` / `op_var` / `mod` / `import` and the
 //! expression-leading words `let` / `fn` / `if` / `else` / `do` —
 //! is lexed as an ordinary `Ident` and disambiguated in the parser
 //! by position. The structural punctuators `( ) { } , ;` keep
@@ -89,8 +89,8 @@ pub enum Trivia {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TokenKind {
     /// Identifiers and contextual keywords. Includes the item-leading
-    /// words (`fn`, `type`, `literal`, `newtype`, `labels`, `module`,
-    /// `import`), the expression-leading words (`let`, `if`,
+    /// words (`fn`, `type`, `lit`, `macro`, `op`, `op_macro`, `op_var`,
+    /// `mod`, `import`), the expression-leading words (`let`, `if`,
     /// `else`, `do`), boolean-shaped words (`true`, `false`), the contextual
     /// set (`pub`, `from`, `as`,
     /// `target`, `out`, `constructor`, `projector`, `role`), and
@@ -1815,7 +1815,7 @@ mod tests {
             ('中', "unexpected character: '中'"),
             ('🦀', "unexpected character: '🦀'"),
         ] {
-            for prefix in ["", "module main;\n", "// π中🦀\nmodule main;\n"] {
+            for prefix in ["", "mod main;\n", "// π中🦀\nmod main;\n"] {
                 let source = format!("{prefix}{ch} trailing");
                 let error =
                     lex(&source).expect_err("non-ASCII characters are not identifier tokens");
@@ -1838,7 +1838,7 @@ mod tests {
             ('中', "invalid escape sequence: \\中"),
             ('🦀', "invalid escape sequence: \\🦀"),
         ] {
-            for prefix in ["\"", "module main;\n\"début "] {
+            for prefix in ["\"", "mod main;\n\"début "] {
                 let source = format!("{prefix}\\{ch}\"");
                 let error = lex(&source).expect_err("only the specified escapes are admitted");
                 assert_eq!(
@@ -1898,7 +1898,7 @@ mod tests {
 
     #[test]
     fn hello_world_package_file_lexes() {
-        let src = r#"package hello;
+        let src = r#"pkg hello;
 
 bridge {
   main
@@ -1909,7 +1909,7 @@ bridge {
         // and there are no string literals in the package file.
         assert!(
             toks.iter()
-                .any(|t| t.kind == TokenKind::Ident("package".into()))
+                .any(|t| t.kind == TokenKind::Ident("pkg".into()))
         );
         assert!(
             toks.iter()
@@ -1920,7 +1920,7 @@ bridge {
 
     #[test]
     fn hello_world_module_file_lexes() {
-        let src = r#"module main;
+        let src = r#"mod main;
 
 host type String role(str);
 host fn print(p0: String);
@@ -1936,7 +1936,7 @@ pub fn main() {
         );
         assert!(
             toks.iter()
-                .any(|t| matches!(&t.kind, TokenKind::Ident(s) if s == "module"))
+                .any(|t| matches!(&t.kind, TokenKind::Ident(s) if s == "mod"))
         );
         assert!(
             toks.iter()

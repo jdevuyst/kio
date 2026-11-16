@@ -4,7 +4,7 @@
 //! Each surface-level entry point (`parse`, `parse_build_block_body`,
 //! `parse_package_file`) lives in the umbrella
 //! [`super`] (`pass/parser`) and is a thin wrapper that constructs a
-//! [`Parser`], drives the matching top-level production (`module`
+//! [`Parser`], drives the matching top-level production (`mod`
 //! / `package_file`), and calls
 //! [`Parser::expect_eof`] before returning. Everything below — the
 //! Parser state, helper types, private utilities — is shared
@@ -24,11 +24,10 @@ use crate::ast::{
     Meta, Module, ModulePath, Newtype, NominalMembers, NominalRhs, Op, OpBody, OpChainKind, OpPart,
     OperatorDispatchKey, PackageFile, Param, ParamPattern, ParamPatternElem, PathSegment, Purity,
     RecCallAnnotation, RecCallMode, RecCallSyntax, RecGroup, RehostDecl, RetypeDecl, Role,
-    RoleAnnotation, SigChangeSet, SigExportFn, SigItem, SigItemRef, SigModuleSection,
-    SigRemoveModule, SigRemoveName, SigVersion, Signature, SignatureFile, SignatureGroup,
-    SignatureParam, SourceBlock, SourceOrigin, Surface, TargetBlock, TargetEntry, Type, TypeAlias,
-    TypeMember, TypeParam, TypeRecGroup, TypeRecMember, UfcsFlavor, UserMacroDef, VariadicOperator,
-    Visibility,
+    RoleAnnotation, SigChangeSet, SigExportFn, SigItem, SigItemRef, SigModuleSection, SigVersion,
+    Signature, SignatureFile, SignatureGroup, SignatureParam, SourceBlock, SourceOrigin, Surface,
+    TargetBlock, TargetEntry, Type, TypeAlias, TypeMember, TypeParam, TypeRecGroup, TypeRecMember,
+    UfcsFlavor, UserMacroDef, VariadicOperator, Visibility,
 };
 use crate::ast::{
     DelimitedTrivia, SignatureTrivia, SignatureTriviaPosition, append_relocated_trivia,
@@ -206,7 +205,7 @@ fn remove_type_comments(ty: &mut Type, moved: &std::collections::HashSet<Span>) 
 }
 
 /// Collect comments after the first meaningful token in one top-level item
-/// slice. `op`, `varop`, and `macro` canonicalize compact bodies whose fields do
+/// slice. `op`, `op_var`, and `macro` canonicalize compact bodies whose fields do
 /// not all have trivia channels, so their internal comments move together to
 /// the compact body's trivia slot in source order. The first token's trivia is
 /// excluded because
@@ -859,7 +858,11 @@ pub(crate) struct TargetCursor {
 pub(crate) enum ImportSelectionKind {
     Any,
     Name,
+    Function,
+    Type,
+    Literal,
     Macro,
+    MacroOperator,
     FixedOperator,
     VariadicOperator,
 }
@@ -2030,23 +2033,6 @@ impl<'a> Parser<'a> {
         matches!(self.peek_at(offset), Some(TokenKind::Ident(s)) if s == expected)
     }
 
-    /// Consume zero or more consecutive comma tokens. Returns `true` if
-    /// at least one comma was advanced past. Comma-separated productions
-    /// in Kio accept any number of commas in any position — leading,
-    /// repeated between items, and trailing — all collapse to the same
-    /// AST as the canonical one-comma-per-separator layout. The
-    /// formatter relies on this to emit the leading-comma multi-line
-    /// style (`( , a , b , c )`) without distinguishing it from the
-    /// inline (`(a, b, c)`) shape at the AST level.
-    fn skip_commas(&mut self) -> bool {
-        let mut any = false;
-        while matches!(self.peek(), Some(TokenKind::Comma)) {
-            self.advance();
-            any = true;
-        }
-        any
-    }
-
     fn skip_commas_with_trivia(&mut self, pending: &mut Vec<Trivia>) -> bool {
         let mut any = false;
         while matches!(self.peek(), Some(TokenKind::Comma)) {
@@ -2436,7 +2422,7 @@ impl<'a> Parser<'a> {
     pub(super) fn tooling_source_root(&self) -> (Option<crate::ast::KioFileKind>, bool) {
         if let Some(TokenKind::Ident(name)) = self.peek()
             && matches!(self.peek_at(1), Some(TokenKind::Ident(_)))
-            && let Some(kind) = crate::ast::KioFileKind::from_variant_name(name)
+            && let Some(kind) = crate::ast::KioFileKind::from_header_keyword(name)
         {
             return (Some(kind), false);
         }
@@ -2446,7 +2432,9 @@ impl<'a> Parser<'a> {
         {
             matches!(self.peek_after_paren_group_at(1), Some(TokenKind::LBrace))
                 || matches!(self.peek_after_paren_group_at(1), Some(TokenKind::Ident(name)) if name == "fn" || name == "pub")
-        } else if (self.peek_ident_named("op") || self.peek_ident_named("varop"))
+        } else if (self.peek_ident_named("op")
+            || self.peek_ident_named("op_macro")
+            || self.peek_ident_named("op_var"))
             && matches!(self.peek_at(1), Some(TokenKind::LParen))
         {
             matches!(self.peek_at(2), Some(TokenKind::SymbolRun(_)))
@@ -2567,10 +2555,10 @@ impl<'a> Parser<'a> {
     }
 
     fn module_with_mode(&mut self, mode: ItemParseMode) -> Result<LazyModule, Error> {
-        self.cursor_choices(CursorSlot::Grammar, &["module"]);
-        // Capture the trivia before the `module` keyword — this is
+        self.cursor_choices(CursorSlot::Grammar, &["mod"]);
+        // Capture the trivia before the `mod` keyword — this is
         // where a module-level doc-comment lives (the only place a
-        // `///` can precede the `module` line).
+        // `///` can precede the `mod` line).
         let mut module_leading = self.peek_leading_trivia();
         let module_doc = extract_doc_comment(&mut module_leading);
 
@@ -2579,7 +2567,7 @@ impl<'a> Parser<'a> {
         if let Some(error) = self.foreign_file_header_error(false) {
             return Err(error);
         }
-        let module_kw_span = self.expect_ident_named("module")?;
+        let module_kw_span = self.expect_ident_named("mod")?;
         let mut header_comments = self.cursor.clone();
         let path = self.module_path_in(true)?;
         if matches!(self.peek(), Some(TokenKind::Ident(_))) {
@@ -2604,9 +2592,9 @@ impl<'a> Parser<'a> {
                         if let Some(end) = last_name_end {
                             let mut error = self.err(
                                 Span::new(path.span.start, end),
-                                "`module` must be followed by one module path, not adjacent names",
-                            ).with_help("write `module <path>;` with `/`-separated segments relative to the package root, removing `.kio`, with no package-name prefix");
-                            if path.segments[0].as_str() == "package" {
+                                "`mod` must be followed by one module path, not adjacent names",
+                            ).with_help("write `mod <path>;` with `/`-separated segments relative to the package root, removing `.kio`, with no package-name prefix");
+                            if path.segments[0].as_str() == "pkg" {
                                 error = error
                                     .with_note("package declarations belong in `*.pkg.kio` files");
                             }
@@ -2686,7 +2674,7 @@ impl<'a> Parser<'a> {
 
         // `extract_doc_comment` pulled the trailing `///` run into
         // `module_doc`; whatever remains in `module_leading` is a plain
-        // `//` file-header comment above the `module` line. Attach it to
+        // `//` file-header comment above the `mod` line. Attach it to
         // the module's meta so `kio fmt` preserves it (without this the
         // header is silently dropped).
         let mut meta: Meta<crate::ast::Surface> = Meta::new(Span::new(start, end));
@@ -3690,15 +3678,15 @@ impl<'a> Parser<'a> {
     // =====================================================================
 
     pub(super) fn package_file(&mut self, stem: Option<&str>) -> Result<PackageFile, Error> {
-        self.cursor_choices(CursorSlot::Grammar, &["package"]);
+        self.cursor_choices(CursorSlot::Grammar, &["pkg"]);
         let start = self.peek_span().start;
         let mut header_leading = self.peek_leading_trivia();
-        if !self.peek_ident_named("package") {
+        if !self.peek_ident_named("pkg") {
             return Err(self.err_here(
-                "a `.pkg.kio` file must begin with a `package <name>;` directive whose `<name>` is the filename stem",
+                "a `.pkg.kio` file must begin with a `pkg <name>;` directive whose `<name>` is the filename stem",
             ));
         }
-        self.expect_ident_named("package")?;
+        self.expect_ident_named("pkg")?;
         let mut header_comments = self.cursor.clone();
         let (name, name_span) = self.expect_binder()?;
         crate::naming::validate_source_name(&name, crate::naming::NameRole::Package, name_span)?;
@@ -3723,11 +3711,7 @@ impl<'a> Parser<'a> {
         let mut last_end = header_end;
         let mut pending = Vec::new();
         loop {
-            let expected = if self.peek_ident_named("env") || self.peek_ident_named("export") {
-                "`env` / `export` blocks were replaced by `host` declarations in modules and a single package `bridge { … }` glob list"
-            } else {
-                "a package file contains a `package <name>;` header, an optional `build` block, and an optional `bridge` block"
-            };
+            let expected = "a package file contains a `pkg <name>;` header, an optional `build` block, and an optional `bridge` block";
             let Some(field) = self.next_named_entry(
                 CursorSlot::Grammar,
                 &[
@@ -3793,23 +3777,23 @@ impl<'a> Parser<'a> {
 
     /// Parse a `<name>.sig.kio` package-signature changelog:
     ///
-    ///   `signature <pkg> v(<N>);` header, then a body of oldest-first
+    ///   `sig <pkg> v(<N>);` header, then a body of oldest-first
     ///   per-version blocks `v(<M>) { breaking { … } nonbreaking { … } }`.
     ///
-    /// `signature` is a file-shape keyword, sibling to `package` /
-    /// `module`. `stem` is the filename stem (`<pkg>` of
+    /// `sig` is a file-shape keyword, sibling to `pkg` /
+    /// `mod`. `stem` is the filename stem (`<pkg>` of
     /// `<pkg>.sig.kio`); when present, the header `<pkg>` must match it,
-    /// the same coherence check `package <name>;` runs.
+    /// the same coherence check `pkg <name>;` runs.
     pub(super) fn signature_file(&mut self, stem: Option<&str>) -> Result<SignatureFile, Error> {
-        self.cursor_choices(CursorSlot::Grammar, &["signature"]);
+        self.cursor_choices(CursorSlot::Grammar, &["sig"]);
         let start = self.peek_span().start;
         let header_leading = self.peek_leading_trivia();
-        if !self.peek_ident_named("signature") {
+        if !self.peek_ident_named("sig") {
             return Err(self.err_here(
-                "a `.sig.kio` file must begin with a `signature <pkg> v(<N>);` header whose `<pkg>` is the filename stem",
+                "a `.sig.kio` file must begin with a `sig <pkg> v(<N>);` header whose `<pkg>` is the filename stem",
             ));
         }
-        self.expect_ident_named("signature")?;
+        self.expect_ident_named("sig")?;
         let (pkg, pkg_span) = self.expect_binder()?;
         crate::naming::validate_source_name(&pkg, crate::naming::NameRole::Package, pkg_span)?;
         if let Some(expected) = stem
@@ -3823,7 +3807,7 @@ impl<'a> Parser<'a> {
         self.cursor_choices(CursorSlot::Grammar, &["v"]);
         if !self.peek_ident_named("v") {
             return Err(self.err_here(
-                "expected the contract generation `v(<N>)` in the `signature <pkg> v(<N>);` header",
+                "expected the contract generation `v(<N>)` in the `sig <pkg> v(<N>);` header",
             ));
         }
         let (version, header_version_span) = self.sig_version_paren()?;
@@ -4014,7 +3998,6 @@ impl<'a> Parser<'a> {
             if (set.add.is_empty() && set.add_refs.is_empty())
                 || !set.modify.is_empty()
                 || !set.modify_refs.is_empty()
-                || !set.remove.is_empty()
                 || !set.remove_refs.is_empty()
             {
                 return false;
@@ -4101,23 +4084,23 @@ impl<'a> Parser<'a> {
 
     /// Parse a `<local>.dep.kio` dependency declaration:
     ///
-    ///   `dependency <local>;` header, then exactly one
+    ///   `dep <local>;` header, then exactly one
     ///   `source { path "<rel>/<name>.pkg.kio"; }` block.
     ///
-    /// `dependency` is a file-shape keyword, sibling to `package` /
-    /// `module` / `signature`. `stem` is the filename stem (`<local>` of
+    /// `dep` is a file-shape keyword, sibling to `pkg` /
+    /// `mod` / `sig`. `stem` is the filename stem (`<local>` of
     /// `<local>.dep.kio`); when present, the header `<local>` must match
-    /// it, the same coherence check `package <name>;` runs.
+    /// it, the same coherence check `pkg <name>;` runs.
     pub(super) fn dependency_file(&mut self, stem: Option<&str>) -> Result<DependencyFile, Error> {
-        self.cursor_choices(CursorSlot::Grammar, &["dependency"]);
+        self.cursor_choices(CursorSlot::Grammar, &["dep"]);
         let start = self.peek_span().start;
         let header_leading = self.peek_leading_trivia();
-        if !self.peek_ident_named("dependency") {
+        if !self.peek_ident_named("dep") {
             return Err(self.err_here(
-                "a `.dep.kio` file must begin with a `dependency <local>;` header whose `<local>` is the filename stem",
+                "a `.dep.kio` file must begin with a `dep <local>;` header whose `<local>` is the filename stem",
             ));
         }
-        self.expect_ident_named("dependency")?;
+        self.expect_ident_named("dep")?;
         let (name, name_span) = self.expect_binder()?;
         crate::naming::validate_source_name(&name, crate::naming::NameRole::Dependency, name_span)?;
         if let Some(expected) = stem
@@ -4302,10 +4285,10 @@ impl<'a> Parser<'a> {
     ///   `resolved { git "<url>"; ref "<rev>"; commit "<sha>"; sig "<d>"; }`
     ///   block.
     ///
-    /// `lock` is a file-shape keyword, sibling to `dependency`. `stem` is
+    /// `lock` is a file-shape keyword, sibling to `dep`. `stem` is
     /// the filename stem (`<local>` of `<local>.lock.kio`); when present,
     /// the header `<local>` must match it, the same coherence check
-    /// `dependency <local>;` runs. The `sig` key records the dependency's
+    /// `dep <local>;` runs. The `sig` key records the dependency's
     /// contract-surface digest at the pinned commit (see [`LockFile`]).
     pub(super) fn lock_file(&mut self, stem: Option<&str>) -> Result<LockFile, Error> {
         self.cursor_choices(CursorSlot::Grammar, &["lock"]);
@@ -4851,12 +4834,11 @@ impl<'a> Parser<'a> {
             .end;
         let (add, add_refs, add_trailing_trivia) = add.unwrap_or_default();
         let (modify, modify_refs, modify_trailing_trivia) = modify.unwrap_or_default();
-        let (remove, remove_refs, remove_trailing_trivia) = remove.unwrap_or_default();
+        let (remove_refs, remove_trailing_trivia) = remove.unwrap_or_default();
         if add.is_empty()
             && add_refs.is_empty()
             && modify.is_empty()
             && modify_refs.is_empty()
-            && remove.is_empty()
             && remove_refs.is_empty()
         {
             return Err(self.err(
@@ -4877,7 +4859,6 @@ impl<'a> Parser<'a> {
             add_refs,
             modify,
             modify_refs,
-            remove,
             remove_refs,
             span: Span::new(start, end),
         })
@@ -4888,7 +4869,7 @@ impl<'a> Parser<'a> {
     fn sig_with_block(&mut self) -> Result<(Vec<SigModuleSection>, Vec<Trivia>), Error> {
         self.expect_ident_named("with")?;
         self.expect_kind(TokenKind::LBrace, "`{` after `with`")?;
-        self.cursor_choices(CursorSlot::Grammar, &["module"]);
+        self.cursor_choices(CursorSlot::Grammar, &["mod"]);
         let mut sections = Vec::new();
         let mut pending = self.leading_block_separator(false)?;
         while !matches!(self.peek(), Some(TokenKind::RBrace)) {
@@ -4896,13 +4877,13 @@ impl<'a> Parser<'a> {
             append_relocated_trivia(&mut pending, std::mem::take(&mut section.leading_trivia));
             section.leading_trivia = std::mem::take(&mut pending);
             sections.push(section);
-            pending = self.block_separator(false, false, &["module"])?;
-            self.cursor_choices(CursorSlot::Grammar, &["module"]);
+            pending = self.block_separator(false, false, &["mod"])?;
+            self.cursor_choices(CursorSlot::Grammar, &["mod"]);
         }
         append_relocated_trivia(&mut pending, self.peek_leading_trivia());
         self.expect_kind(TokenKind::RBrace, "`}` closing `with`")?;
         if sections.is_empty() {
-            return Err(self.err_here("`with { … }` needs at least one `module` section"));
+            return Err(self.err_here("`with { … }` needs at least one `mod` section"));
         }
         Ok((sections, pending))
     }
@@ -4919,10 +4900,9 @@ impl<'a> Parser<'a> {
         let mut sections = Vec::new();
         let mut refs = Vec::new();
         let mut pending = self.leading_block_separator(false)?;
-        self.cursor_choices(CursorSlot::ModulePath, &["module"]);
+        self.cursor_choices(CursorSlot::ModulePath, &["mod"]);
         while !matches!(self.peek(), Some(TokenKind::RBrace)) {
-            if self.peek_ident_named("module")
-                && matches!(self.peek_at(1), Some(TokenKind::Ident(_)))
+            if self.peek_ident_named("mod") && matches!(self.peek_at(1), Some(TokenKind::Ident(_)))
             {
                 let mut section = self.sig_module_section(false)?;
                 append_relocated_trivia(&mut pending, std::mem::take(&mut section.leading_trivia));
@@ -4938,7 +4918,7 @@ impl<'a> Parser<'a> {
                 refs.push(reference);
             }
             pending = self.block_separator(false, false, &[])?;
-            self.cursor_choices(CursorSlot::ModulePath, &["module"]);
+            self.cursor_choices(CursorSlot::ModulePath, &["mod"]);
         }
         append_relocated_trivia(&mut pending, self.peek_leading_trivia());
         self.expect_kind(TokenKind::RBrace, "`}` closing the block")?;
@@ -4957,7 +4937,7 @@ impl<'a> Parser<'a> {
         allow_type_rec_groups: bool,
     ) -> Result<SigModuleSection, Error> {
         let leading_trivia = self.peek_leading_trivia();
-        let start = self.expect_ident_named("module")?.start;
+        let start = self.expect_ident_named("mod")?.start;
         let path = self.module_path()?;
         self.expect_kind(TokenKind::LBrace, "`{` after the module path")?;
         let context = DeclarationContext::Signature {
@@ -4980,7 +4960,12 @@ impl<'a> Parser<'a> {
                 let mut import = self.import_stmt_in(DeclarationEnd::BlockEntry)?;
                 if let ImportKind::Selective { items, .. } = &import.kind
                     && let Some(span) = items.iter().find_map(|item| match item {
-                        ImportItem::Name { macro_span, .. } => *macro_span,
+                        ImportItem::Name {
+                            kind: crate::ast::ImportNameKind::Macro,
+                            kind_span,
+                            span,
+                            ..
+                        } => Some(kind_span.unwrap_or(*span)),
                         _ => None,
                     })
                 {
@@ -5098,12 +5083,6 @@ impl<'a> Parser<'a> {
                     DeclarationEnd::BlockEntry,
                     modifiers.header_trivia,
                 )?;
-                if host_type.owned {
-                    return Err(self.err(
-                        host_type.meta.span,
-                        "`{ owned }` is a source-only compatibility annotation — a `.sig.kio` records backend-independent signatures, not source-only annotations",
-                    ));
-                }
                 Ok(SigItem::HostType(host_type))
             } else if self.peek_ident_named("fn") {
                 self.expect_ident_named("fn")?;
@@ -5184,43 +5163,29 @@ impl<'a> Parser<'a> {
         Ok(SigExportFn { purity, function })
     }
 
-    /// `remove { module <path> { <name>; … } … }` — a braced run of
-    /// name-only module sections.
-    fn sig_remove_block(&mut self) -> Result<SigBlockEntries<SigRemoveModule>, Error> {
+    /// `remove { path.name; … }` — exact declaration references.
+    fn sig_remove_block(&mut self) -> Result<(Vec<SigItemRef>, Vec<Trivia>), Error> {
         self.expect_ident_named("remove")?;
         self.expect_kind(TokenKind::LBrace, "`{` after `remove`")?;
-        let mut modules = Vec::new();
         let mut refs = Vec::new();
         let mut pending = self.leading_block_separator(false)?;
-        self.cursor_choices(CursorSlot::ModulePath, &["module"]);
+        self.cursor_choices(CursorSlot::ModulePath, &[]);
         while !matches!(self.peek(), Some(TokenKind::RBrace)) {
-            if self.peek_ident_named("module")
-                && matches!(self.peek_at(1), Some(TokenKind::Ident(_)))
-            {
-                let mut section = self.sig_remove_module()?;
-                append_relocated_trivia(&mut pending, std::mem::take(&mut section.leading_trivia));
-                section.leading_trivia = std::mem::take(&mut pending);
-                modules.push(section);
-            } else {
-                let mut reference = self.sig_item_ref()?;
-                append_relocated_trivia(
-                    &mut pending,
-                    std::mem::take(&mut reference.leading_trivia),
-                );
-                reference.leading_trivia = std::mem::take(&mut pending);
-                refs.push(reference);
-            }
+            let mut reference = self.sig_item_ref()?;
+            append_relocated_trivia(&mut pending, std::mem::take(&mut reference.leading_trivia));
+            reference.leading_trivia = std::mem::take(&mut pending);
+            refs.push(reference);
             pending = self.block_separator(false, false, &[])?;
-            self.cursor_choices(CursorSlot::ModulePath, &["module"]);
+            self.cursor_choices(CursorSlot::ModulePath, &[]);
         }
         append_relocated_trivia(&mut pending, self.peek_leading_trivia());
         self.expect_kind(TokenKind::RBrace, "`}` closing `remove`")?;
-        if modules.is_empty() && refs.is_empty() {
+        if refs.is_empty() {
             return Err(
                 self.err_here("`remove { … }` needs at least one exact declaration reference")
             );
         }
-        Ok((modules, refs, pending))
+        Ok((refs, pending))
     }
 
     /// An exact, non-expression declaration reference: `foo/bar.Item;`.
@@ -5239,47 +5204,6 @@ impl<'a> Parser<'a> {
             leading_trivia,
             path,
             name,
-            span: Span::new(start, end),
-        })
-    }
-
-    /// One `module <path> { <name>; … }` entry inside a `remove` block.
-    /// Each `<name>` is a bare value-name or type-name terminated by `;`;
-    /// the item's side (host vs export) and signature are recovered by
-    /// replay, not parsed here.
-    fn sig_remove_module(&mut self) -> Result<SigRemoveModule, Error> {
-        let leading_trivia = self.peek_leading_trivia();
-        let start = self.expect_ident_named("module")?.start;
-        let path = self.module_path()?;
-        self.expect_kind(TokenKind::LBrace, "`{` after the module path")?;
-        let mut names = Vec::new();
-        let mut pending = self.leading_block_separator(false)?;
-        while !matches!(self.peek(), Some(TokenKind::RBrace)) {
-            append_relocated_trivia(&mut pending, self.peek_leading_trivia());
-            let (name, name_span) = self.expect_ident()?;
-            Self::validate_removed_name(&name, name_span)?;
-            names.push(SigRemoveName {
-                leading_trivia: std::mem::take(&mut pending),
-                name,
-                span: name_span,
-            });
-            pending = self.block_separator(false, false, &[])?;
-        }
-        append_relocated_trivia(&mut pending, self.peek_leading_trivia());
-        let end = self
-            .expect_kind(TokenKind::RBrace, "`}` closing the module section")?
-            .end;
-        if names.is_empty() {
-            return Err(self.err(
-                Span::new(start, end),
-                "a `remove` module section needs at least one item name",
-            ));
-        }
-        Ok(SigRemoveModule {
-            leading_trivia,
-            trailing_trivia: pending,
-            path,
-            names,
             span: Span::new(start, end),
         })
     }
@@ -5384,14 +5308,10 @@ impl<'a> Parser<'a> {
         })
     }
 
-    /// `type Name TypeParamList? RoleAnnotation? OwnedBlock? ;` after the
+    /// `type Name TypeParamList? RoleAnnotation? ;` after the
     /// `host type` keywords. The parser preserves the grammar's components;
     /// shared semantic validation restricts host type parameters to kind `*`
-    /// and rejects a declaration that combines any parameters with a role. The
-    /// optional `{ owned }` block is preserved for source compatibility
-    /// (see [`HostType::owned`]) but selects no alternate facade. Rust renders
-    /// every `role(str)` occurrence by value, and other backends likewise give
-    /// the block no runtime meaning.
+    /// and rejects a declaration that combines any parameters with a role.
     fn host_type_rest(&mut self, start: u32, leading: Vec<Trivia>) -> Result<HostType, Error> {
         self.host_type_rest_in(start, DeclarationEnd::Outer, leading)
     }
@@ -5424,15 +5344,6 @@ impl<'a> Parser<'a> {
         } else {
             None
         };
-        let owned = if matches!(self.peek(), Some(TokenKind::LBrace)) {
-            self.expect_kind(TokenKind::LBrace, "`{`")?;
-            self.cursor_choices(CursorSlot::Grammar, &["owned"]);
-            self.expect_ident_named("owned")?;
-            self.expect_kind(TokenKind::RBrace, "`}`")?;
-            true
-        } else {
-            false
-        };
         let semi_end = self.declaration_end(end, "`;` after the host type declaration")?;
         Self::collect_line_comments(&mut header_cursor, semi_end, &mut header_trivia);
         let mut meta = Meta::new(Span::new(start, semi_end));
@@ -5443,7 +5354,6 @@ impl<'a> Parser<'a> {
             name,
             type_params,
             role,
-            owned,
             meta,
             doc: None,
         })
@@ -5680,16 +5590,16 @@ impl<'a> Parser<'a> {
             return None;
         };
         let extension = match keyword.as_str() {
-            "package" => "pkg",
-            "dependency" => "dep",
+            "pkg" => "pkg",
+            "dep" => "dep",
             "lock" => "lock",
-            "signature" => "sig",
+            "sig" => "sig",
             _ => return None,
         };
         if !matches!(self.peek_at(1), Some(TokenKind::Ident(_))) {
             return None;
         }
-        let complete_header = if keyword == "signature" {
+        let complete_header = if keyword == "sig" {
             matches!(self.peek_at(2), Some(TokenKind::Ident(name)) if name == "v")
                 && matches!(self.peek_at(3), Some(TokenKind::LParen))
                 && matches!(self.peek_at(4), Some(TokenKind::IntLit { .. }))
@@ -5707,7 +5617,7 @@ impl<'a> Parser<'a> {
             format!("a {keyword} declaration is not a module header")
         };
         Some(self.err_here(message).with_help(format!(
-            "put {keyword} declarations in `*.{extension}.kio` files; a regular `.kio` file starts with `module <path>;`"
+            "put {keyword} declarations in `*.{extension}.kio` files; a regular `.kio` file starts with `mod <path>;`"
         )))
     }
 
@@ -5846,14 +5756,14 @@ impl<'a> Parser<'a> {
                 Self::validate_value_name(&alias, span)?;
                 ImportKind::Qualified { path: from, alias }
             } else {
-                self.expect_kind(TokenKind::LParen, "`(` after the import provider")?;
+                self.expect_kind(TokenKind::LBrace, "`{` after the import provider")?;
                 Self::collect_import_comments(
                     &mut comments,
                     self.peek_span().start,
                     &mut leading_trivia,
                 );
                 let mut pending_item_trivia = Vec::new();
-                self.skip_commas();
+                self.skip_semicolon_separators();
                 Self::collect_import_comments(
                     &mut comments,
                     self.peek_span().start,
@@ -5861,12 +5771,19 @@ impl<'a> Parser<'a> {
                 );
                 let mut items = Vec::new();
                 let mut ends_with_item = false;
-                while !matches!(self.peek(), Some(TokenKind::RParen)) {
-                    self.cursor_choices(CursorSlot::ImportSelection, &[]);
-                    let selection_start = self.peek_span().start;
+                while !matches!(self.peek(), Some(TokenKind::RBrace)) {
+                    self.cursor_choices(
+                        CursorSlot::ImportSelection,
+                        &["fn", "type", "lit", "macro", "op", "op_macro", "op_var"],
+                    );
+                    let tag_start = self.peek_span().start;
+                    let selection_start = tag_start;
                     let selection_depth = self.cursor.depth();
                     let selection_kind = self.import_selection_kind();
-                    let selection_start = if matches!(selection_kind, ImportSelectionKind::Macro) {
+                    let selection_start = if !matches!(
+                        selection_kind,
+                        ImportSelectionKind::Any | ImportSelectionKind::Name
+                    ) {
                         self.peek_token_at(1)
                             .filter(|token| token.span.start != token.span.end)
                             .map_or_else(
@@ -5881,12 +5798,10 @@ impl<'a> Parser<'a> {
                     } else {
                         selection_start
                     };
-                    // The tag atom is still a completion prefix when parsed as a name;
-                    // a following `as` fixes its selection to the ordinary namespace.
-                    let tag_end = ((self.peek_ident_named("op")
-                        || self.peek_ident_named("varop")
-                        || matches!(selection_kind, ImportSelectionKind::Macro))
-                        && !matches!(self.peek_at(1), Some(TokenKind::Ident(name)) if name == "as"))
+                    let tag_end = (!matches!(
+                        selection_kind,
+                        ImportSelectionKind::Any | ImportSelectionKind::Name
+                    ))
                     .then(|| self.peek_span().end);
                     let mut source_end = None;
                     let parsed = self.parse_import_item(true, &mut source_end);
@@ -5898,6 +5813,21 @@ impl<'a> Parser<'a> {
                         tag_end,
                         source_end,
                     );
+                    if let Some(tooling) = self.tooling.as_mut()
+                        && let Some(cursor) = tooling.cursor
+                        && tag_end.is_some_and(|end| tag_start <= cursor && cursor <= end)
+                        && let Some(context) = tooling.facts.cursor.as_mut()
+                        && context.slot == CursorSlot::ImportSelection
+                    {
+                        let end = if parsed.is_ok() {
+                            self.syntax_end
+                        } else {
+                            tag_end.expect("a cursor within a tag has a tag end")
+                        };
+                        context.atom.replacement = Span::new(tag_start, end);
+                        context.atom.prefix = Span::new(tag_start, cursor);
+                        context.span = context.atom.replacement;
+                    }
                     let mut item = match parsed {
                         Ok(item) => Some(item),
                         Err(error) if self.recover_import_errors.is_some() => {
@@ -5909,11 +5839,7 @@ impl<'a> Parser<'a> {
                                 && (self.cursor.depth() > selection_depth
                                     || (!matches!(
                                         self.peek(),
-                                        Some(
-                                            TokenKind::Comma
-                                                | TokenKind::RParen
-                                                | TokenKind::Semicolon
-                                        )
+                                        Some(TokenKind::RBrace | TokenKind::Semicolon)
                                     ) && peek_item_keyword(
                                         self.cursor.remaining_current_frame(),
                                         0,
@@ -5932,14 +5858,15 @@ impl<'a> Parser<'a> {
                         .unwrap_or(&mut trailing_trivia);
                     append_relocated_trivia(trivia, std::mem::take(&mut pending_item_trivia));
                     Self::collect_import_comments(&mut comments, self.peek_span().start, trivia);
-                    if matches!(self.peek(), Some(TokenKind::RParen)) {
+                    if matches!(self.peek(), Some(TokenKind::RBrace)) {
                         ends_with_item = item.is_some();
                         items.extend(item);
                         break;
                     }
-                    if !self.skip_commas() {
-                        return Err(self.err_here("expected `,` or `)` in the import list"));
+                    if !matches!(self.peek(), Some(TokenKind::Semicolon)) {
+                        return Err(self.err_here("expected `;` or `}` in the import list"));
                     }
+                    self.skip_semicolon_separators();
                     Self::collect_import_comments(
                         &mut comments,
                         self.peek_span().start,
@@ -5949,7 +5876,10 @@ impl<'a> Parser<'a> {
                 }
                 // A completed selector owns its optional alias even at a recovered close.
                 if !ends_with_item {
-                    self.cursor_choices(CursorSlot::ImportSelection, &[]);
+                    self.cursor_choices(
+                        CursorSlot::ImportSelection,
+                        &["fn", "type", "lit", "macro", "op", "op_macro", "op_var"],
+                    );
                     self.import_cursor(
                         &from,
                         &items,
@@ -5966,7 +5896,7 @@ impl<'a> Parser<'a> {
                     &mut trailing_trivia,
                     std::mem::take(&mut pending_item_trivia),
                 );
-                self.expect_kind(TokenKind::RParen, "`)` closing the import list")?;
+                self.expect_kind(TokenKind::RBrace, "`}` closing the import list")?;
                 Self::collect_import_comments(
                     &mut comments,
                     self.peek_span().start,
@@ -5975,7 +5905,14 @@ impl<'a> Parser<'a> {
                 ImportKind::Selective { items, from }
             }
         };
-        let end = self.declaration_end(termination, "`;` after the import")?;
+        let end = if matches!(&kind, ImportKind::Selective { .. }) {
+            if matches!(termination, DeclarationEnd::Outer) {
+                self.optional_outer_semicolon();
+            }
+            self.syntax_end
+        } else {
+            self.declaration_end(termination, "`;` after the import")?
+        };
         Self::collect_import_comments(&mut comments, end, &mut leading_trivia);
         Ok(Import {
             kind,
@@ -5996,27 +5933,55 @@ impl<'a> Parser<'a> {
         allow_alias: bool,
         source_end: &mut Option<u32>,
     ) -> Result<ImportItem, Error> {
-        let macro_span = if allow_alias && self.macro_import_starts_here() {
-            Some(self.expect_ident_named("macro")?)
+        let mut selection = self.import_selection_kind();
+        if !allow_alias
+            && matches!(
+                selection,
+                ImportSelectionKind::FixedOperator
+                    | ImportSelectionKind::MacroOperator
+                    | ImportSelectionKind::VariadicOperator
+            )
+            && matches!(self.peek_at(1), None | Some(TokenKind::RParen))
+        {
+            selection = ImportSelectionKind::Name;
+        }
+        let (kind, kind_span) = if allow_alias {
+            let tag = self.peek_span();
+            let kind = match selection {
+                ImportSelectionKind::Function => Some(crate::ast::ImportNameKind::Function),
+                ImportSelectionKind::Type => Some(crate::ast::ImportNameKind::Type),
+                ImportSelectionKind::Literal => Some(crate::ast::ImportNameKind::Literal),
+                ImportSelectionKind::Macro => Some(crate::ast::ImportNameKind::Macro),
+                ImportSelectionKind::FixedOperator
+                | ImportSelectionKind::MacroOperator
+                | ImportSelectionKind::VariadicOperator => None,
+                _ => return Err(self.err_here("expected an import selection kind")),
+            };
+            if kind.is_some() {
+                self.advance();
+            }
+            (kind, kind.map(|_| tag))
         } else {
-            None
-        };
-        let selection = if macro_span.is_some() {
-            ImportSelectionKind::Name
-        } else {
-            self.import_selection_kind()
+            (None, None)
         };
         if matches!(
             selection,
-            ImportSelectionKind::FixedOperator | ImportSelectionKind::VariadicOperator
+            ImportSelectionKind::FixedOperator
+                | ImportSelectionKind::MacroOperator
+                | ImportSelectionKind::VariadicOperator
         ) {
             let start = self.peek_span().start;
-            let grammar = if self.peek_ident_named("varop") {
+            let grammar = if self.peek_ident_named("op_var") {
                 let (open, close) = self.parse_variadic_head()?;
                 crate::ast::OperatorGrammar::Variadic { open, close }
             } else {
-                self.expect_ident_named("op")?;
-                let kind = self.parse_op_kind();
+                let kind = if self.peek_ident_named("op_macro") {
+                    self.advance();
+                    crate::ast::FixedOperatorKind::Macro
+                } else {
+                    self.expect_ident_named("op")?;
+                    crate::ast::FixedOperatorKind::Function
+                };
                 crate::ast::OperatorGrammar::fixed(kind, &self.parse_op_pattern(true)?)
             };
             let span = Span::new(start, self.syntax_end);
@@ -6067,10 +6032,10 @@ impl<'a> Parser<'a> {
             });
         }
         let (name, span) = self.expect_ident()?;
-        if macro_span.is_some() {
-            Self::validate_value_name(&name, span)?;
-        } else {
-            Self::validate_value_or_type_name(&name, span)?;
+        match kind {
+            Some(crate::ast::ImportNameKind::Type) => Self::validate_type_name(&name, span)?,
+            Some(_) => Self::validate_value_name(&name, span)?,
+            None => Self::validate_value_or_type_name(&name, span)?,
         }
         if allow_alias {
             self.cursor_choices(CursorSlot::Grammar, &["as"]);
@@ -6091,8 +6056,16 @@ impl<'a> Parser<'a> {
         } else {
             None
         };
+        let kind = kind.unwrap_or_else(|| {
+            if crate::naming::is_type_name(&name) {
+                crate::ast::ImportNameKind::Type
+            } else {
+                crate::ast::ImportNameKind::Function
+            }
+        });
         Ok(ImportItem::Name {
-            macro_span,
+            kind,
+            kind_span,
             name,
             span,
             alias,
@@ -6100,57 +6073,19 @@ impl<'a> Parser<'a> {
         })
     }
 
-    fn macro_import_starts_here(&self) -> bool {
-        if !self.peek_ident_named("macro") {
-            return false;
-        }
-        let Some(TokenKind::Ident(name)) = self.peek_at(1) else {
-            return false;
-        };
-        if name != "as" {
-            return true;
-        }
-        self.peek_token_at(2).is_some_and(|token| {
-            matches!(token.kind, TokenKind::Comma | TokenKind::RParen)
-                && token.span.start < token.span.end
-        }) || (self.peek_ident_named_at(2, "as")
-            && matches!(self.peek_at(3), Some(TokenKind::Ident(_))))
-    }
-
     fn import_selection_kind(&self) -> ImportSelectionKind {
-        // An unfinished import has a synthesized closer at the last atom,
-        // before the whitespace belonging to the missing macro target.
-        let missing_selection_target = self.peek_token_at(1).is_some_and(|token| {
-            token.kind == TokenKind::RParen
-                && token.span.start == token.span.end
-                && self
-                    .tooling
-                    .as_ref()
-                    .and_then(|tooling| tooling.cursor)
-                    .is_some_and(|cursor| cursor > self.peek_span().end)
-        });
-        if self.macro_import_starts_here()
-            || (self.peek_ident_named("macro") && missing_selection_target)
-        {
-            ImportSelectionKind::Macro
-        } else if !matches!(
-            self.peek_at(1),
-            None | Some(TokenKind::Comma | TokenKind::RParen)
-        ) && !matches!(self.peek_at(1), Some(TokenKind::Ident(name)) if name == "as")
-            && self.peek_ident_named("op")
-        {
-            ImportSelectionKind::FixedOperator
-        } else if !matches!(
-            self.peek_at(1),
-            None | Some(TokenKind::Comma | TokenKind::RParen)
-        ) && !matches!(self.peek_at(1), Some(TokenKind::Ident(name)) if name == "as")
-            && self.peek_ident_named("varop")
-        {
-            ImportSelectionKind::VariadicOperator
-        } else if matches!(self.peek(), Some(TokenKind::Ident(_))) {
-            ImportSelectionKind::Name
-        } else {
-            ImportSelectionKind::Any
+        match self.peek() {
+            Some(TokenKind::Ident(name)) => match name.as_str() {
+                "fn" => ImportSelectionKind::Function,
+                "type" => ImportSelectionKind::Type,
+                "lit" => ImportSelectionKind::Literal,
+                "macro" => ImportSelectionKind::Macro,
+                "op" => ImportSelectionKind::FixedOperator,
+                "op_macro" => ImportSelectionKind::MacroOperator,
+                "op_var" => ImportSelectionKind::VariadicOperator,
+                _ => ImportSelectionKind::Name,
+            },
+            _ => ImportSelectionKind::Any,
         }
     }
 
@@ -6177,11 +6112,13 @@ impl<'a> Parser<'a> {
         {
             return;
         }
-        let failed_token_end = if matches!(kind, ImportSelectionKind::VariadicOperator)
-            && matches!(
-                self.peek(),
-                Some(TokenKind::SymbolRun(_) | TokenKind::Ident(_) | TokenKind::Slot1)
-            ) {
+        let failed_token_end = if matches!(
+            kind,
+            ImportSelectionKind::VariadicOperator | ImportSelectionKind::Name
+        ) && matches!(
+            self.peek(),
+            Some(TokenKind::SymbolRun(_) | TokenKind::Ident(_) | TokenKind::Slot1)
+        ) {
             self.peek_span().end
         } else {
             start
@@ -6217,6 +6154,11 @@ impl<'a> Parser<'a> {
             && context.slot == CursorSlot::ImportSelection
             && context.import.is_none()
         {
+            if matches!(kind, ImportSelectionKind::Any | ImportSelectionKind::Name) {
+                context.keywords = ["fn", "type", "lit", "macro", "op", "op_macro", "op_var"]
+                    .into_iter()
+                    .collect();
+            }
             context.import = Some(ImportCursor {
                 provider: provider.clone(),
                 kind: if cursor < start || tag_end.is_some_and(|end| cursor <= end) {
@@ -6375,11 +6317,12 @@ impl<'a> Parser<'a> {
             ),
             ("rec", ordinary && recursive && !type_group),
             ("type", !modifiers.purity.is_pure()),
-            ("literal", ordinary && module),
+            ("lit", ordinary && module),
             ("equiv", ordinary && module && !modifiers.vis.is_pub()),
             ("macro", ordinary && module),
             ("op", ordinary && module),
-            ("varop", ordinary && module),
+            ("op_macro", ordinary && module),
+            ("op_var", ordinary && module),
         ];
         self.cursor_choices_from(
             CursorSlot::Grammar,
@@ -6444,11 +6387,9 @@ impl<'a> Parser<'a> {
             )
         } else if self.peek_ident_named("type") {
             self.nominal_type_declaration_in(modifiers, DeclarationEnd::Outer)
-        } else if self.peek_ident_named("literal") {
+        } else if self.peek_ident_named("lit") {
             self.literal_alias(modifiers)
                 .map(|literal| Item::LiteralAlias(literal, ()))
-        } else if self.peek_ident_named("tags") {
-            Err(self.err_here("compact nominal declarations use `type { Name: Payload; }`"))
         } else if self.peek_ident_named("equiv") {
             // `equiv` decls have no visibility (they're a test-runner
             // concern, not a public API surface); reject `pub equiv`.
@@ -6460,10 +6401,10 @@ impl<'a> Parser<'a> {
             self.equiv().map(|e| Item::Equiv(e, ()))
         } else if self.peek_ident_named("macro") {
             self.macro_item(modifiers).map(|s| Item::Macro(s, ()))
-        } else if self.peek_ident_named("varop") {
+        } else if self.peek_ident_named("op_var") {
             let fold = self.variadic_operator(modifiers)?;
             Ok(Item::VariadicOperator(Box::new(fold), ()))
-        } else if self.peek_ident_named("op") {
+        } else if self.peek_ident_named("op") || self.peek_ident_named("op_macro") {
             // Only preceding local declarations enter the expression scope.
             // Imported grammars enter through their explicit selection lists.
             let op = self.op(modifiers)?;
@@ -6473,24 +6414,10 @@ impl<'a> Parser<'a> {
                 .insert(*kind, pattern.clone())
                 .map_err(|message| self.err(span, message))?;
             Ok(Item::Op(Box::new(op), ()))
-        } else if let Some(old) = self.peek_renamed_item_keyword() {
-            // Retired item-leading keywords get a directed
-            // suggestion rather than the generic "expected …" error.
-            let suggestion = match old {
-                "defn" => "fn",
-                "deftype" => "type",
-                "defop" => "op",
-                _ => {
-                    unreachable!("peek_renamed_item_keyword only returns renamed keywords")
-                }
-            };
-            Err(self.err_here(format!(
-                "`{old}` is no longer a keyword — use `{suggestion}`"
-            )))
         } else if let Some(error) = self.foreign_file_header_error(true) {
             Err(error)
         } else {
-            Err(self.err_here("expected `fn`, `rec`, `type`, `literal`, `equiv`, `macro`, or `op`"))
+            Err(self.err_here("expected `fn`, `rec`, `type`, `lit`, `equiv`, `macro`, `op`, `op_macro`, or `op_var`"))
         }
     }
 
@@ -7435,21 +7362,12 @@ impl<'a> Parser<'a> {
         })
     }
 
-    /// If the next token is a retired item-leading keyword, return its
-    /// spelling so the item parser can emit a directed "use `<new>`"
-    /// diagnostic.
-    fn peek_renamed_item_keyword(&self) -> Option<&'static str> {
-        ["defn", "deftype", "defop"]
-            .into_iter()
-            .find(|&kw| self.peek_ident_named(kw))
-    }
-
-    /// Parse a `literal` declaration:
+    /// Parse a `lit` declaration:
     ///
-    ///   `pub? literal name = <bare-literal> ;`
+    ///   `pub? lit name = <bare-literal> ;`
     fn literal_alias(&mut self, modifiers: ItemModifiers) -> Result<LiteralAlias, Error> {
         let start = self.peek_span().start;
-        self.expect_ident_named("literal")?;
+        self.expect_ident_named("lit")?;
         let mut header_cursor = self.cursor.clone();
         let (name, name_span) = self.expect_binder()?;
         Self::validate_value_name(&name, name_span)?;
@@ -7524,8 +7442,13 @@ impl<'a> Parser<'a> {
     /// Parse a fixed pattern and its ordinary callable implementation.
     fn op(&mut self, modifiers: ItemModifiers) -> Result<Op, Error> {
         let start = self.peek_span().start;
-        self.expect_ident_named("op")?;
-        let kind = self.parse_op_kind();
+        let kind = if self.peek_ident_named("op_macro") {
+            self.advance();
+            crate::ast::FixedOperatorKind::Macro
+        } else {
+            self.expect_ident_named("op")?;
+            crate::ast::FixedOperatorKind::Function
+        };
         let pattern = self.parse_op_pattern(false)?;
         let function = self.parse_normal_op_body()?;
         let end = self.syntax_end;
@@ -7540,16 +7463,6 @@ impl<'a> Parser<'a> {
             meta: Meta::new(Span::new(start, end)),
             doc: None,
         })
-    }
-
-    fn parse_op_kind(&mut self) -> crate::ast::FixedOperatorKind {
-        self.cursor_choices(CursorSlot::Grammar, &["macro"]);
-        if self.peek_ident_named("macro") {
-            self.advance();
-            crate::ast::FixedOperatorKind::Macro
-        } else {
-            crate::ast::FixedOperatorKind::Function
-        }
     }
 
     fn parse_op_pattern(&mut self, import_item: bool) -> Result<Vec<OpPart>, Error> {
@@ -7606,7 +7519,9 @@ impl<'a> Parser<'a> {
                     });
                     continue;
                 }
-                Some(TokenKind::RParen | TokenKind::Comma) if import_item => break,
+                Some(
+                    TokenKind::RParen | TokenKind::Comma | TokenKind::RBrace | TokenKind::Semicolon,
+                ) if import_item => break,
                 Some(TokenKind::Comma | TokenKind::Semicolon) => {
                     return Err(self.err(
                         span,
@@ -7665,14 +7580,14 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_variadic_head(&mut self) -> Result<(Vec<String>, Vec<String>), Error> {
-        self.expect_ident_named("varop")?;
+        self.expect_ident_named("op_var")?;
         self.parse_variadic_delimiters()
     }
 
     fn parse_variadic_delimiters(&mut self) -> Result<(Vec<String>, Vec<String>), Error> {
         let frame = self.begin_variadic_frame()?;
         if self.peek_span().start < frame.region_end {
-            return Err(self.err_here("a varop head contains only its mirrored markers"));
+            return Err(self.err_here("an op_var head contains only its mirrored markers"));
         }
         self.finish_variadic_frame(&frame)?;
         Ok((
@@ -9924,18 +9839,6 @@ impl<'a> Parser<'a> {
             };
         }
 
-        // Existentials are declared as trailing `<U>` binders on a nominal
-        // header and consumed through its CPS projector; see
-        // `specs/language.md` § Existential type binders.
-        if self.at_sym("<") {
-            return Err(self.err_here(crate::documentation_help(
-                "existential type expressions are no longer admissible at this position — \
-                 declare existentials on a nominal header, as in `type { Name[A] <U>: A & U; }`, \
-                 and consume the payload through `Name.get`. \
-                 See {base}/specs/language.md#existential-type-binders.",
-            )));
-        }
-
         // Leading `&` / `|` layouts stay in the explicit chain
         // path below. Their elements are atoms, so a function-typed
         // element must be parenthesized. Otherwise a parenthesized
@@ -11966,13 +11869,18 @@ impl<'a> Parser<'a> {
             let mut saw_value = false;
             while self.at_sym("[") || matches!(self.peek(), Some(TokenKind::LParen)) {
                 let group_start = self.peek_span().start;
+                let mut leading = Vec::new();
+                Self::collect_line_comments(&mut header_cursor, group_start, &mut leading);
                 let (args, end, source_trivia) = if self.at_sym("[") {
-                    let (ty, end) = self.type_argument_bracket()?;
+                    let (mut ty, end) = self.type_argument_bracket()?;
+                    append_relocated_trivia(
+                        &mut leading,
+                        std::mem::take(&mut ty.meta_mut().leading_trivia),
+                    );
+                    ty.meta_mut().leading_trivia = leading;
                     (vec![CallArg::Type(ty)], end, None)
                 } else {
                     saw_value = true;
-                    let mut leading = Vec::new();
-                    Self::collect_line_comments(&mut header_cursor, group_start, &mut leading);
                     append_relocated_trivia(&mut leading, self.peek_leading_trivia());
                     self.call_arg_list(None, leading)?
                 };
@@ -11982,6 +11890,8 @@ impl<'a> Parser<'a> {
                     source_trivia,
                     meta: Meta::new(Span::new(group_start, end)),
                 });
+                // Each stage owns its comments; scan only the next boundary.
+                header_cursor = self.cursor.clone();
             }
             if !saw_value {
                 return Err(self.err_here("expected a value argument group after `recur` callee"));
@@ -12275,7 +12185,7 @@ impl<'a> Parser<'a> {
         Ok(reference)
     }
 
-    /// Parse the callable-target syntax shared by `op`, `varop`, and `macro`.
+    /// Parse the callable-target syntax shared by `op`, `op_var`, and `macro`.
     /// A target is an ordinary lexical value path: a local or selectively
     /// imported name, or a dotted path through a qualified import/newtype.
     fn parse_lexical_callable_path(
@@ -12355,8 +12265,7 @@ impl<'a> Parser<'a> {
         let span = self.direct_value_fqn_ahead()?;
         Some(self.err(
             span,
-            "slash-qualified item paths are not value expressions; import the item or its \
-             module and use the local name or module alias",
+            "slash-qualified item paths are not value expressions; import the item or its module and use the local name or module alias",
         ))
     }
 
@@ -13246,7 +13155,7 @@ fn partition_top_level_items(
     let mut start = 0;
     while start < children.len() {
         let keyword = peek_item_keyword(children, start);
-        let is_op = matches!(keyword, Some("op" | "varop"));
+        let is_op = matches!(keyword, Some("op" | "op_macro" | "op_var"));
         // Skip past the current item's modifier set + keyword
         // before scanning for the next item start, so the scan
         // doesn't immediately re-find this item's own keyword.
@@ -13462,15 +13371,9 @@ fn item_keyword_starts_here(
         "fn" if paren_group(1) || next_is(1, "=") || next_is_semicolon(1) => false,
         "fn" => leaf_value_name(1),
         "type" => leaf_ident(1) || brace_group(1),
-        "literal" | "equiv" | "macro" => leaf_ident(1),
-        "op" => {
-            op_pattern_lead(1)
-                || matches!(
-                    children.get(idx + 1),
-                    Some(SkeletonNode::Leaf(token)) if matches!(&token.kind, TokenKind::Ident(name) if name == "macro")
-                )
-        }
-        "varop" => matches!(
+        "lit" | "equiv" | "macro" => leaf_ident(1),
+        "op" | "op_macro" => op_pattern_lead(1),
+        "op_var" => matches!(
             children.get(idx + 1),
             Some(SkeletonNode::Group {
                 kind: GroupKind::Square,
@@ -13617,7 +13520,7 @@ pub(crate) fn parse_declaration_query(
             }
             (true, ImportItem::Name { .. }) => {
                 return Err(parser.err_here(
-                    "a qualified selector's outer parentheses are only for `op` or `varop`",
+                    "a qualified selector's outer parentheses are only for `op`, `op_macro`, or `op_var`",
                 ));
             }
             _ => {}
@@ -13702,7 +13605,7 @@ fn validate_op_pattern(pattern: &[OpPart], span: Span) -> Result<(), Error> {
             if content.contains(['[', ']']) {
                 return Err(Error::parse(
                     *span,
-                    "fixed operator tokens cannot contain square brackets; use a mirrored `varop` delimiter",
+                    "fixed operator tokens cannot contain square brackets; use a mirrored `op_var` delimiter",
                 ));
             }
             if content.contains('.') {

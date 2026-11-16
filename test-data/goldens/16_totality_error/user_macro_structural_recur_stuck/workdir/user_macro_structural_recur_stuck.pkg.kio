@@ -1,4 +1,4 @@
-package user_macro_structural_recur_stuck;
+pkg user_macro_structural_recur_stuck;
 
 build {
   cache "out/.kio-cache/";

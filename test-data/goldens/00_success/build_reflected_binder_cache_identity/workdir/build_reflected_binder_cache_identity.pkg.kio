@@ -1,4 +1,4 @@
-package build_reflected_binder_cache_identity;
+pkg build_reflected_binder_cache_identity;
 
 build {
   cache "out/.kio-cache/";

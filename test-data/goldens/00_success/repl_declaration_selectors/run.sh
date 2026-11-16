@@ -6,14 +6,14 @@ printf '%s\n' \
     ':sig op _ + _' \
     ':sig demo/ops.(op _ + _)' \
     ':sig arithmetic.(op _ (=) _)' \
-    ':sig demo/ops.(varop [* *])' \
+    ':sig demo/ops.(op_var [* *])' \
     ':src arithmetic.(op _ + _)' \
-    ':doc arithmetic.(varop [* *])' \
+    ':doc arithmetic.(op_var [* *])' \
     ':which op _ + _' \
     ':which arithmetic.(op _ + _)' \
     ':which choose' \
     ':refs arithmetic.(op _ + _)' \
-    ':refs varop [* *]' \
+    ':refs op_var [* *]' \
     ':sig arithmetic.Field' \
     ':sig arithmetic.field' \
     ':refs arithmetic.Field' \

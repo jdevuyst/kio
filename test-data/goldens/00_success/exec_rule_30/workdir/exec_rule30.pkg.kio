@@ -1,4 +1,4 @@
-package exec_rule30;
+pkg exec_rule30;
 
 build {
   cache "out/.kio-cache/";

@@ -1,8 +1,8 @@
-module testapi/main;
+mod testapi/main;
 
-import macros(macro id_user);
-import testapi(String);
-import testapi/io(print);
+import macros { macro id_user }
+import testapi { type String }
+import testapi/io { fn print }
 
 fn keep(s: String) -> String { id_user(s)[String] }
 

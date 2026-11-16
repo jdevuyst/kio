@@ -1,7 +1,7 @@
-module planner/bool;
+mod planner/bool;
 
-import macros/control(macro if);
-import testapi(Bool);
+import macros/control { macro if }
+import testapi { type Bool }
 
 pub fn invert(value: Bool) -> Bool {
   if(value) { .f } else { .t }

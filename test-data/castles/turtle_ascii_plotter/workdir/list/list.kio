@@ -1,22 +1,22 @@
 /// Ready-to-use linked-list library with host-backed spine walks, partial accessors, operators, and list literals.
-module list/list;
+mod list/list;
 
-import list/core(
-, List
-, append_step
-, cons
-, head
-, length_step
-, map_step
-, nil
-, reverse_step
-, singleton
-, tail
-, uncons
-);
-import list/macros/control(Bool as Control_bool, macro if);
-import list/macros/match(macro match);
-import list/macros/spine_macros(macro widen_sum);
+import list/core {
+  type List;
+  fn append_step;
+  fn cons;
+  fn head;
+  fn length_step;
+  fn map_step;
+  fn nil;
+  fn reverse_step;
+  fn singleton;
+  fn tail;
+  fn uncons
+}
+import list/macros/control { type Bool as Control_bool; macro if }
+import list/macros/match { macro match }
+import list/macros/spine_macros { macro widen_sum }
 import turtle/list_host as _rehost_hehfhchegmgfcpgmgjhdhefpgigphdhe;
 
 pub type Bool = Control_bool;
@@ -395,7 +395,7 @@ pub op _ <| _ |> { impl index }
 pub op _ |> _ { impl map_with }
 
 /// Builds lists with bracket syntax.
-pub varop [] { foldr prepend empty }
+pub op_var [] { foldr prepend empty }
 
 // =====================================================================
 // equiv-law battery

@@ -1,4 +1,4 @@
-package pure_functions;
+pkg pure_functions;
 
 build {
   cache "out/.kio-cache/";

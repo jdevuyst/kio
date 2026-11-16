@@ -1,10 +1,10 @@
-module testapi/main;
+mod testapi/main;
 
-import macros/match(macro match);
-import macros/spine_macros(macro widen_sum);
-import testapi(I32, String);
-import testapi/fmt(int_to_string);
-import testapi/io(print);
+import macros/match { macro match }
+import macros/spine_macros { macro widen_sum }
+import testapi { type I32; type String }
+import testapi/fmt { fn int_to_string }
+import testapi/io { fn print }
 
 // `match` derives its result type from the clauses. Both arms here
 // return `String`, so the direct result type is `String`.

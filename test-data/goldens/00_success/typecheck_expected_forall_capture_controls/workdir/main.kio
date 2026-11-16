@@ -1,4 +1,4 @@
-module main;
+mod main;
 
 fn consume[A](seed: A, f: [X] (A & X) -> A) { () }
 

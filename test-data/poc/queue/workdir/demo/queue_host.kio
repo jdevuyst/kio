@@ -1,6 +1,6 @@
-module queue_host;
+mod queue_host;
 
-import library/macros/control(macro if);
+import library/macros/control { macro if }
 import testapi as api;
 import testapi/arith as arith;
 import testapi/iter as iter;

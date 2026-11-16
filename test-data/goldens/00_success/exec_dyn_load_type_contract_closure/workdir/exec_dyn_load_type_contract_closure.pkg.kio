@@ -1,4 +1,4 @@
-package exec_dyn_load_type_contract_closure;
+pkg exec_dyn_load_type_contract_closure;
 
 build {
   cache "out/.kio-cache/";

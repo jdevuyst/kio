@@ -1,4 +1,4 @@
-package xcn;
+pkg xcn;
 
 build {
   cache "out/.kio-cache/";

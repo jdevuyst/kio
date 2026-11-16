@@ -1,8 +1,8 @@
-module build_rust_projector_after_tuple_projection/main;
+mod build_rust_projector_after_tuple_projection/main;
 
 import __intrinsics__;
 
-import build_rust_projector_after_tuple_projection(String);
+import build_rust_projector_after_tuple_projection { type String }
 
 type { Greet: String { pub mk; pub get } }
 

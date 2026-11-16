@@ -1,4 +1,4 @@
-package ufcs_block_label_after_splice;
+pkg ufcs_block_label_after_splice;
 
 build {
   cache "out/.kio-cache/";

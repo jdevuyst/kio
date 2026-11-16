@@ -4,14 +4,14 @@
 /// symbol nor an integer is a real thing a reader can type, and the calculator
 /// answers it with a fault value rather than a crash. Keeping it a token arm
 /// is what lets the transcript echo the offending text back.
-module desk/token;
+mod desk/token;
 
-import desk/op(Op, symbol);
-import macros/match(macro match);
-import macros/row_macros(macro select);
-import macros/spine_macros(macro widen_sum);
-import testapi(I32, String);
-import testapi/fmt(int_to_string);
+import desk/op { type Op; fn symbol }
+import macros/match { macro match }
+import macros/row_macros { macro select }
+import macros/spine_macros { macro widen_sum }
+import testapi { type I32; type String }
+import testapi/fmt { fn int_to_string }
 
 pub type Token = { Num: I32 } | { Oper: Op } | { Lparen: . } | { Rparen: . } | { Bad: String };
 

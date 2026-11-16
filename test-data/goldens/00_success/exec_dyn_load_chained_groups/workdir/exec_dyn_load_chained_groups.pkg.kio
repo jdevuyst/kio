@@ -1,4 +1,4 @@
-package exec_dyn_load_chained_groups;
+pkg exec_dyn_load_chained_groups;
 
 build {
   cache "out/.kio-cache/";

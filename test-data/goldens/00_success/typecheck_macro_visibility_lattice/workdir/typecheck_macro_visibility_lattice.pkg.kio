@@ -1,4 +1,4 @@
-package typecheck_macro_visibility_lattice;
+pkg typecheck_macro_visibility_lattice;
 
 build {
   cache "out/.kio-cache/";

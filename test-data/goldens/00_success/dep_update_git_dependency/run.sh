@@ -77,7 +77,7 @@ sha_a=$(git --git-dir="$bare" rev-parse HEAD) || fail "cannot read commit A"
 # fetching once. This is the realistic "lockfile already pins the old
 # commit" starting state `dep update` exists to advance. ---
 cat > "$scratch/consumer/greetlib.dep.kio" <<EOF
-dependency greetlib;
+dep greetlib;
 
 source {
   git "$bare";
@@ -100,7 +100,7 @@ $(cat "$lock")"
 # --- Commit B: change `marker` to return its SECOND argument. A distinct
 # tree, so a distinct SHA; FIXED metadata, so B is reproducible. ---
 cat > "$src/greet.kio" <<'EOF'
-module greet;
+mod greet;
 
 // Commit-B behavior: return the SECOND of two like-typed values.
 pub fn marker[A](_before: A, after: A) -> A { after }

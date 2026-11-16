@@ -1,4 +1,4 @@
-package boolean_bdd_workbench;
+pkg boolean_bdd_workbench;
 
 build {
   cache "out/.kio-cache/";

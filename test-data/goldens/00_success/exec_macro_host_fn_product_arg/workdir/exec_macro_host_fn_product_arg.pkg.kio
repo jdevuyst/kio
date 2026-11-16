@@ -1,4 +1,4 @@
-package exec_macro_host_fn_product_arg;
+pkg exec_macro_host_fn_product_arg;
 
 build {
   cache "out/.kio-cache/";

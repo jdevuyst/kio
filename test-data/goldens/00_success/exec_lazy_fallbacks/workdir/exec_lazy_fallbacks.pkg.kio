@@ -1,4 +1,4 @@
-package exec_lazy_fallbacks;
+pkg exec_lazy_fallbacks;
 
 build {
   cache "out/.kio-cache/";

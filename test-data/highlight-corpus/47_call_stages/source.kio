@@ -1,12 +1,12 @@
-module call_stages;
+mod call_stages;
 
-import operators(varop []);
-import macros(macro invoke, macro form);
+import operators {op_var []}
+import macros {macro invoke; macro form}
 
 type Applied[*F][A] = F[A];
 type Nested = Map[Key][List[Value]];
 type Poly = [A] A -> [B] B -> A;
-literal count = 42;
+lit count = 42;
 
 fn run(value: A, other: B) {
   ordinary[A](value)[B](other);

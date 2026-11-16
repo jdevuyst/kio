@@ -1,5 +1,5 @@
-module testapi/main;
+mod testapi/main;
 
-import loader(mk_image);
+import loader { fn mk_image }
 
 pub fn main() { () }

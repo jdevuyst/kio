@@ -1,6 +1,6 @@
-module dkm/main;
+mod dkm/main;
 
-import macros/derive(macro derive);
+import macros/derive { macro derive }
 
 pub type { Box[A]: A { pub mk; pub get } }
 

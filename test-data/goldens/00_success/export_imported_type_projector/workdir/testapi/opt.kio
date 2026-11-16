@@ -1,10 +1,10 @@
-module testapi/opt;
+mod testapi/opt;
 
-import macros/match(macro match);
-import macros/spine_macros(macro widen_sum);
-import testapi(String);
-import testapi/io(print);
-import testapi/text(string_concat);
+import macros/match { macro match }
+import macros/spine_macros { macro widen_sum }
+import testapi { type String }
+import testapi/io { fn print }
+import testapi/text { fn string_concat }
 
 // `Option(String)` as `String | .`: the `String` arm carries a
 // present value, the `()` arm is absence. Exposed with a public

@@ -1,7 +1,7 @@
-module polygon/fixtures;
+mod polygon/fixtures;
 
 import polygon/geometry as geo;
-import testapi(Array, I32);
+import testapi { type Array; type I32 }
 import testapi/array as arr;
 
 pub fn rectangle() -> Array[geo.Point] {

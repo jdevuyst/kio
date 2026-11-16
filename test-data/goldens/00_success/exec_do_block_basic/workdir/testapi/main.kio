@@ -1,8 +1,8 @@
-module testapi/main;
+mod testapi/main;
 
-import macros/sequence(macro do);
-import testapi(String);
-import testapi/io(print);
+import macros/sequence { macro do }
+import testapi { type String }
+import testapi/io { fn print }
 
 // A concrete monad: `Box(A)` wraps a single value. `box_pure`
 // lifts a value into the monad; `box_bind` peels and re-wraps.

@@ -1,4 +1,4 @@
-module java/class;
+mod java/class;
 
 pub type { Token: . { pub mk; pub get } }
 

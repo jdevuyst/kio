@@ -1,4 +1,4 @@
-package block_thunk;
+pkg block_thunk;
 
 build {
   target js {

@@ -1,7 +1,7 @@
-module caller;
+mod caller;
 
-import api(run);
-import provider(serve);
+import api { fn run }
+import provider { fn serve }
 
 type { Token: . & . { mk; get } }
 

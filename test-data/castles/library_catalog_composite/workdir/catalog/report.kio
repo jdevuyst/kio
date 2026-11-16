@@ -1,30 +1,30 @@
-module catalog/report;
+mod catalog/report;
 
-import catalog/domain(
-, Book
-, Book_index
-, Checkout
-, Hold
-, Hold_list
-, Line_list
-, Member
-, Member_index
-, Op
-, Report
-, Return
-);
-import catalog/domain(Copies_out, Copies_total, Fines, Title);
-import catalog/domain(cat, istr, pad2, pad3);
+import catalog/domain {
+  type Book;
+  type Book_index;
+  type Checkout;
+  type Hold;
+  type Hold_list;
+  type Line_list;
+  type Member;
+  type Member_index;
+  type Op;
+  type Report;
+  type Return
+}
+import catalog/domain { fn cat; fn istr; fn pad2; fn pad3 }
+import catalog/domain { type Copies_out; type Copies_total; type Fines; type Title }
 import catalog/ledger as ledger;
 import catalog/shelf as shelf;
 import dict/dict as dict;
 import list/core as lcore;
 import list/list as list;
-import macros/control(macro if);
-import macros/match(macro match);
-import macros/row_macros(macro select);
-import testapi(Bool, I32, String);
-import testapi/fmt(bool_to_string);
+import macros/control { macro if }
+import macros/match { macro match }
+import macros/row_macros { macro select }
+import testapi { type Bool; type I32; type String }
+import testapi/fmt { fn bool_to_string }
 
 fn op_text(op: Op) -> String {
   match(op) {

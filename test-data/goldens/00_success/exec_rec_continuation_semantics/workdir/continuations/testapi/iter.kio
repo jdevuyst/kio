@@ -1,4 +1,4 @@
-module continuations/testapi/iter;
+mod continuations/testapi/iter;
 
 import testapi/iter as _rehost_hegfhdhegbhagjcpgjhegfhc;
 

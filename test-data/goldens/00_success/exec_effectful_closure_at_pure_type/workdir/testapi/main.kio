@@ -1,7 +1,7 @@
-module testapi/main;
+mod testapi/main;
 
-import testapi(String);
-import testapi/io(print);
+import testapi { type String }
+import testapi/io { fn print }
 
 fn for_each_line(emit: String -> .) { emit("first\n"[String]); emit("second\n"[String]) }
 

@@ -1,10 +1,10 @@
-module testapi/main;
+mod testapi/main;
 
-import macros/algebraic_macros(macro onto);
-import macros/control(macro if);
-import macros/spine_macros(macro widen_sum);
-import testapi(Bool, String);
-import testapi/io(print);
+import macros/algebraic_macros { macro onto }
+import macros/control { macro if }
+import macros/spine_macros { macro widen_sum }
+import testapi { type Bool; type String }
+import testapi/io { fn print }
 
 // `onto`-only collapse cases:
 //   - collapse_sum : (String | String) → String   (sum collapse)

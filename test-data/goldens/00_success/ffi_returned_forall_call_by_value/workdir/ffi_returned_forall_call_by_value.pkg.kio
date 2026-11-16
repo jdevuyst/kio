@@ -1,4 +1,4 @@
-package ffi_returned_forall_call_by_value;
+pkg ffi_returned_forall_call_by_value;
 
 build {
   cache "out/.kio-cache/";

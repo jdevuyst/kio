@@ -1,4 +1,4 @@
-package seclib;
+pkg seclib;
 
 bridge {
   iter;

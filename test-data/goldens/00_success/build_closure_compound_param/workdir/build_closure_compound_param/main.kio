@@ -1,8 +1,8 @@
-module build_closure_compound_param/main;
+mod build_closure_compound_param/main;
 
-import build_closure_compound_param(Bool, I32, Str);
-import build_closure_compound_param(build, step);
-import macros/match(macro match);
+import build_closure_compound_param { fn build; fn step }
+import build_closure_compound_param { type Bool; type I32; type Str }
+import macros/match { macro match }
 
 fn use_step() -> I32 {
   step(.(t: I32 & Str & Bool) -> I32 {

@@ -1,4 +1,4 @@
-package exec_host_closure_type_param_leg;
+pkg exec_host_closure_type_param_leg;
 
 build {
   cache "out/.kio-cache/";

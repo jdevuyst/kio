@@ -1,7 +1,7 @@
-module host/m;
+mod host/m;
 
-import host(foo);
-import macros/control(macro scope);
+import host { fn foo }
+import macros/control { macro scope }
 
 equiv do_single_expression_reduces() {
   scope { foo() };

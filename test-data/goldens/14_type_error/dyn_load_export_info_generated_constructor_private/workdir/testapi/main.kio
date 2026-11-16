@@ -1,5 +1,5 @@
-module testapi/main;
+mod testapi/main;
 
-import loader(Export_info);
+import loader { type Export_info }
 
 pub fn main() { let constructor = Export_info.mk; () }

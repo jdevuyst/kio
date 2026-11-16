@@ -1,10 +1,10 @@
-signature app v(2);
+sig app v(2);
 
 v(1) {
   ;
   nonbreaking {
     add {
-      module api {
+      mod api {
         ;
         pub type Gone = .;
         pub type Old = .;
@@ -17,13 +17,13 @@ v(2) {
   ;
   nonbreaking {
     remove {
-      module api {
-        ; Gone // removed tail
+
+        ; api.Gone // removed tail
         ; // removed close
-      }
+
     };
     modify {
-      module api {
+      mod api {
         pub type Old = !;
       }
     };
@@ -34,13 +34,13 @@ v(2) {
   };
   breaking {
     add {
-      module api {
+      mod api {
         host type H;
       }
     }
   };
   with {
-    module api {
+    mod api {
       pub rec type { Fresh: . | Fresh {
         pub mk;
         pub get // member tail

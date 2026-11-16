@@ -1,4 +1,4 @@
-package rlist;
+pkg rlist;
 
 build {
   cache "out/.kio-cache/";

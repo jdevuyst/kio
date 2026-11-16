@@ -8,7 +8,7 @@ itself or another function in the same recursive group. The name inside
 supplies, imported with a plain `import`:
 
 ```text
-import app(loop, leq_i32, sub_i32);
+import app {fn loop; fn leq_i32; fn sub_i32}
 ```
 
 The loop function has the shape:
@@ -22,9 +22,9 @@ bridge {
   kiodoc;
 }
 
-module kiodoc;
+mod kiodoc;
 
-import control(Bool, macro if);
+import control {type Bool; macro if}
 
 host type I32 role(i32);
 host type String role(str);
@@ -42,7 +42,7 @@ The examples use host types `I32`, `Bool`, and `String` with roles `i32`,
 `bool`, and `str`. The host comparisons `eq_i32` and `leq_i32` take two `I32`
 values and return `Bool`; `sub_i32` and `mul_i32` take two `I32` values and
 return `I32`. Import the conditional macro with
-`import macros/control(Bool, macro if);` after following the
+`import macros/control {type Bool; macro if}` after following the
 [macro-library setup](using-libraries.md#the-macro-library) under
 the dependency name `macros`.
 

@@ -1,4 +1,4 @@
-package pure_calls_impure_fn;
+pkg pure_calls_impure_fn;
 
 build {
   cache "out/.kio-cache/";

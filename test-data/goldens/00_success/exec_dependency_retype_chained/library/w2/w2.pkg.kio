@@ -1,4 +1,4 @@
-package w2;
+pkg w2;
 
 build {
   cache "out/.kio-cache/";

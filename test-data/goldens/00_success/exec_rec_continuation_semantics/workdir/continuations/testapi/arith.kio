@@ -1,6 +1,6 @@
-module continuations/testapi/arith;
+mod continuations/testapi/arith;
 
-import continuations/testapi(Bool, I32);
+import continuations/testapi { type Bool; type I32 }
 import testapi/arith as _rehost_hegfhdhegbhagjcpgbhcgjhegi;
 
 pub fn add_i32(p0: I32, p1: I32) -> I32 { _rehost_hegfhdhegbhagjcpgbhcgjhegi.add_i32(p0, p1) }

@@ -1,5 +1,5 @@
-module main;
+mod main;
 
-import provider(Bool, macro combine);
+import provider { type Bool; macro combine }
 
 fn check(value: Bool) -> Bool { combine(value) }

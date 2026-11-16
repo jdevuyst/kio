@@ -1,8 +1,8 @@
-module testapi/main;
+mod testapi/main;
 
-import testapi(String);
-import testapi/arith(staged);
-import testapi/io(print);
+import testapi { type String }
+import testapi/arith { fn staged }
+import testapi/io { fn print }
 
 pub fn main() {
   let after_first = staged[.]("first"[String]);

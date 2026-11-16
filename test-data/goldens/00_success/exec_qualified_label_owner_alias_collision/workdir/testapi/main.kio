@@ -1,10 +1,10 @@
-module testapi/main;
+mod testapi/main;
 
 import decoy as selected;
-import macros/control(macro if);
+import macros/control { macro if }
 import selected as chosen;
-import testapi(Bool, String);
-import testapi/io(print);
+import testapi { type Bool; type String }
+import testapi/io { fn print }
 
 pub fn main() {
   let card = chosen.make(.t);

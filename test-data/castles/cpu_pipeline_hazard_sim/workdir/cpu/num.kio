@@ -2,14 +2,14 @@
 /// else out of. The host env supplies exactly one integer comparison,
 /// `leq_i32`, and no division at all, so equality, strict order and
 /// quotient are derived here, once, and every other module reuses them.
-module cpu/num;
+mod cpu/num;
 
-import macros/control(macro if);
-import testapi(Bool, I32, String);
-import testapi/arith(add_i32, leq_i32, sub_i32);
-import testapi/fmt(int_to_string);
-import testapi/iter(loop);
-import testapi/text(string_concat);
+import macros/control { macro if }
+import testapi { type Bool; type I32; type String }
+import testapi/arith { fn add_i32; fn leq_i32; fn sub_i32 }
+import testapi/fmt { fn int_to_string }
+import testapi/iter { fn loop }
+import testapi/text { fn string_concat }
 
 fn not(value: Bool) -> Bool {
   if(value) { .f } else { .t }

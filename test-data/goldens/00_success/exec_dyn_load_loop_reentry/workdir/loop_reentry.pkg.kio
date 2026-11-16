@@ -1,4 +1,4 @@
-package loop_reentry;
+pkg loop_reentry;
 
 build {
   cache "out/.kio-cache/";

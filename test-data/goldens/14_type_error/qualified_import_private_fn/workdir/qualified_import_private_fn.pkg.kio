@@ -1,4 +1,4 @@
-package qualified_import_private_fn;
+pkg qualified_import_private_fn;
 
 build {
   cache "out/.kio-cache/";

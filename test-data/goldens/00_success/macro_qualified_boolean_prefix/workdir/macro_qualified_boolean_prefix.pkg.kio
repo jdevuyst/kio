@@ -1,4 +1,4 @@
-package macro_qualified_boolean_prefix;
+pkg macro_qualified_boolean_prefix;
 
 build {
   cache "out/.kio-cache/";

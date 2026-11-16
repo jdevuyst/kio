@@ -1,6 +1,6 @@
-module testapi/text;
+mod testapi/text;
 
-import testapi(Bool, Str);
+import testapi { type Bool; type Str }
 
 host fn string_concat(p0: Str, p1: Str) -> Str;
 

@@ -9,39 +9,47 @@
 /// Nothing here traps into the host: a zero divisor and a pop on an empty
 /// stack both stop the machine with a fault, and a program counter that
 /// walks off the end simply runs out of instructions.
-module forge/vm;
+mod forge/vm;
 
 import forge/isa as isa;
-import forge/isa(
-, Add
-, Div
-, Emit
-, Halt
-, Ins
-, Jmp_addr
-, Jmpz_addr
-, Loadi
-, Mod
-, Mov
-, Mul
-, Pop
-, Push
-, Ra
-, Rb
-, Rc
-, Rd
-, Reg
-, Sub
-);
+import forge/isa {
+  type Add;
+  type Div;
+  type Emit;
+  type Halt;
+  type Ins;
+  type Jmp_addr;
+  type Jmpz_addr;
+  type Loadi;
+  type Mod;
+  type Mov;
+  type Mul;
+  type Pop;
+  type Push;
+  type Ra;
+  type Rb;
+  type Rc;
+  type Rd;
+  type Reg;
+  type Sub
+}
 import forge/list as l;
-import forge/program(Prog);
-import macros/control(macro if);
-import macros/match(macro match);
-import macros/row_macros(macro select, macro with);
-import macros/spine_macros(macro widen_sum);
-import testapi(Bool, I32, String);
-import testapi/arith(add_i32, div_i32, leq_i32, lt_i32, mod_i32, mul_i32, sub_i32);
-import testapi/iter(loop);
+import forge/program { type Prog }
+import macros/control { macro if }
+import macros/match { macro match }
+import macros/row_macros { macro select; macro with }
+import macros/spine_macros { macro widen_sum }
+import testapi { type Bool; type I32; type String }
+import testapi/arith {
+  fn add_i32;
+  fn div_i32;
+  fn leq_i32;
+  fn lt_i32;
+  fn mod_i32;
+  fn mul_i32;
+  fn sub_i32
+}
+import testapi/iter { fn loop }
 
 /// A list of machine words. The operand stack and the emit log are both
 /// one of these.

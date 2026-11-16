@@ -1,4 +1,4 @@
-package build_comptime_absurd_fn_return;
+pkg build_comptime_absurd_fn_return;
 
 build {
   cache "out/.kio-cache/";

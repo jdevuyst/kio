@@ -1,9 +1,9 @@
-module testapi/main;
+mod testapi/main;
 
-import testapi(I32, String);
-import testapi/arith(sub_i32);
-import testapi/fmt(i32_to_string);
-import testapi/io(print);
+import testapi { type I32; type String }
+import testapi/arith { fn sub_i32 }
+import testapi/fmt { fn i32_to_string }
+import testapi/io { fn print }
 
 // Bind subtraction to an infix operator so the `1-2` and `a-1`
 // subtraction shapes the lexer carve-out tests against actually

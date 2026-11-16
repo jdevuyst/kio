@@ -1,4 +1,4 @@
-package rec_loop_selected_call;
+pkg rec_loop_selected_call;
 
 build {
   target js {

@@ -1,4 +1,4 @@
-package operator_later_local_label_member_implementation;
+pkg operator_later_local_label_member_implementation;
 
 build {
   cache "out/.kio-cache/";

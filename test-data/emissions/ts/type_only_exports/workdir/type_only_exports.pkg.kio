@@ -1,4 +1,4 @@
-package type_only_exports;
+pkg type_only_exports;
 
 build {
   target ts {

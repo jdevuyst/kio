@@ -9,24 +9,24 @@ fn repl_rendering_requalifies_distinct_newtype_owners_without_alias_collisions()
     let pkg = lowered_package(&[
         (
             "a/one.kio",
-            "module a/one; pub type { Wrap: . { pub mk; pub get; }; };",
+            "mod a/one; pub type { Wrap: . { pub mk; pub get; }; };",
         ),
         (
             "b/two.kio",
-            "module b/two; pub type { Wrap: . { pub mk; pub get; }; };",
+            "mod b/two; pub type { Wrap: . { pub mk; pub get; }; };",
         ),
         (
             "left.kio",
-            "module left; import a/one as _q0; fn keep() -> . { () }",
+            "mod left; import a/one as _q0; fn keep() -> . { () }",
         ),
         (
             "right.kio",
-            "module right; import b/two as _q0; fn keep() -> . { () }",
+            "mod right; import b/two as _q0; fn keep() -> . { () }",
         ),
-        ("occupied.kio", "module occupied; fn keep() -> . { () }"),
+        ("occupied.kio", "mod occupied; fn keep() -> . { () }"),
         (
             "consumer.kio",
-            "module consumer; import occupied as _q1; fn _q0() -> . { () }",
+            "mod consumer; import occupied as _q1; fn _q0() -> . { () }",
         ),
     ]);
     let left = &pkg.module("left").expect("left module").module;
@@ -73,9 +73,9 @@ fn repl_rendering_avoids_residual_atom_heads_when_allocating_imports() {
     let pkg = lowered_package(&[
         (
             "inner/a.kio",
-            "module inner/a; pub type { Wrap: . { pub mk; pub get; }; };",
+            "mod inner/a; pub type { Wrap: . { pub mk; pub get; }; };",
         ),
-        ("consumer.kio", "module consumer; fn keep() -> . { () }"),
+        ("consumer.kio", "mod consumer; fn keep() -> . { () }"),
     ]);
     let inner = &pkg.module("inner/a").expect("inner/a module").module;
     let consumer = &pkg.module("consumer").expect("consumer module").module;
@@ -99,11 +99,11 @@ fn repl_rendering_names_named_closures_and_suffix_parameters() {
     let pkg = lowered_package(&[
         (
             "provider.kio",
-            "module provider; pub pure fn wrap(x: .)(y: .) -> . { x; y }",
+            "mod provider; pub pure fn wrap(x: .)(y: .) -> . { x; y }",
         ),
         (
             "consumer.kio",
-            "module consumer; import provider as p; fn expose() -> . { p.wrap }",
+            "mod consumer; import provider as p; fn expose() -> . { p.wrap }",
         ),
     ]);
     let consumer = &pkg.module("consumer").expect("consumer").module;
@@ -128,11 +128,11 @@ fn repl_rendering_names_anonymous_closures_by_owner_and_source_span() {
     let pkg = lowered_package(&[
         (
             "provider.kio",
-            "module provider; pub pure fn make() -> . -> . { .(z: .) -> . { z } }",
+            "mod provider; pub pure fn make() -> . -> . { .(z: .) -> . { z } }",
         ),
         (
             "consumer.kio",
-            "module consumer; import provider as p; fn expose() -> . { p.make() }",
+            "mod consumer; import provider as p; fn expose() -> . { p.make() }",
         ),
     ]);
     let provider = &pkg.module("provider").expect("provider").module;
@@ -157,10 +157,9 @@ fn repl_rendering_preserves_private_saturated_and_residual_newtype_members() {
     let pkg = lowered_package(&[
         (
             "secret.kio",
-            "module secret; \
-             type { Hidden[A][ B][ C]: A & B & C { mk; get; }; };",
+            "mod secret; type { Hidden[A][ B][ C]: A & B & C { mk; get; }; };",
         ),
-        ("consumer.kio", "module consumer; fn keep() -> . { () }"),
+        ("consumer.kio", "mod consumer; fn keep() -> . { () }"),
     ]);
     let secret = &pkg.module("secret").expect("secret").module;
     let consumer = &pkg.module("consumer").expect("consumer").module;
@@ -218,12 +217,7 @@ fn repl_rendering_preserves_private_saturated_and_residual_newtype_members() {
 fn diagnostic_handler_closures() -> (Value, Value) {
     let pkg = lowered_package(&[(
         "handlers.kio",
-        "module handlers; \
-         host fn foo() -> .; \
-         host fn bar() -> .; \
-         pure fn make(handler: . -> .) -> . -> . { .() { handler(()) } } \
-         fn left() -> . -> . { make(foo) } \
-         fn right() -> . -> . { make(bar) }",
+        "mod handlers; host fn foo() -> .; host fn bar() -> .; pure fn make(handler: . -> .) -> . -> . { .() { handler(()) } } fn left() -> . -> . { make(foo) } fn right() -> . -> . { make(bar) }",
     )]);
     let module = &pkg.module("handlers").expect("handlers module").module;
     let ctx = EvalCtx::for_module(&pkg, module, "handlers").expect("handlers context");

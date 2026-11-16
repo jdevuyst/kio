@@ -1,9 +1,9 @@
-module api;
+mod api;
 
 import decoy as other;
-import macros/control(macro if);
+import macros/control { macro if }
 import selected as chosen;
-import testapi(Bool);
+import testapi { type Bool }
 
 pub fn choose(card: chosen.Card) -> Bool {
   if(card.>chosen.Flag.get) { .t } else { .f }

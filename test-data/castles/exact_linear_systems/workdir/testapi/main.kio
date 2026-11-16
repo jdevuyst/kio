@@ -1,14 +1,14 @@
-module testapi/main;
+mod testapi/main;
 
-import macros/match(macro match);
-import macros/row_macros(macro select);
+import macros/match { macro match }
+import macros/row_macros { macro select }
 import systems/input as input;
 import systems/report as report;
-import testapi(I32, String);
+import testapi { type I32; type String }
 import testapi/arith as a;
 import testapi/fmt as fmt;
 import testapi/io as io;
-import testapi/iter(loop);
+import testapi/iter { fn loop }
 import testapi/text as text;
 
 rec(loop) fn workbench(count: I32) {

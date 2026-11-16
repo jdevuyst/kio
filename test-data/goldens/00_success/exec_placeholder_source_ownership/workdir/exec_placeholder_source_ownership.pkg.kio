@@ -1,4 +1,4 @@
-package exec_placeholder_source_ownership;
+pkg exec_placeholder_source_ownership;
 
 build {
   cache "out/.kio-cache/";

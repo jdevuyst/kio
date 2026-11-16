@@ -1,6 +1,6 @@
-module app/util;
+mod app/util;
 
-import app(S, print, upper);
+import app { type S; fn print; fn upper }
 
 pub fn shout(s: S) -> S { upper(s) }
 

@@ -1,4 +1,4 @@
-package exec_narrow_sum_inferred;
+pkg exec_narrow_sum_inferred;
 
 build {
   cache "out/.kio-cache/";

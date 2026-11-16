@@ -1,4 +1,4 @@
-package pre_input_close;
+pkg pre_input_close;
 
 build {
   cache "out/.kio-cache/";

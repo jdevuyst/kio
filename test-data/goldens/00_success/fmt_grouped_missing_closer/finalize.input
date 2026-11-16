@@ -1,1 +1,1 @@
-module app; varop [] { foldl step base; finalize ( }
+mod app; op_var [] { foldl step base; finalize ( }

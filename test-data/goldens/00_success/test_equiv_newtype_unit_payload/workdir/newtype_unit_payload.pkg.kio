@@ -1,4 +1,4 @@
-package newtype_unit_payload;
+pkg newtype_unit_payload;
 
 build {
   cache "out/.kio-cache/";

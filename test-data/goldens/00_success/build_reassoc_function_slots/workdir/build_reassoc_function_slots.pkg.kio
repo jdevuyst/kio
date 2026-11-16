@@ -1,4 +1,4 @@
-package build_reassoc_function_slots;
+pkg build_reassoc_function_slots;
 
 build {
   cache "out/.kio-cache/";

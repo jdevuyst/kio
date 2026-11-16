@@ -98,8 +98,8 @@ mod cache_work_counters {
     }
 }
 
-const HELP_TEMPLATE: &str = "\
-Usage: kio build [--package NAME]... [--skip-unsupported-targets] [TARGET]...
+const HELP_TEMPLATE: &str =
+    "Usage: kio build [--package NAME]... [--skip-unsupported-targets] [TARGET]...
 
 Transpile package(s) to one or more compilation targets.
 
@@ -2079,7 +2079,7 @@ fn append_package_fingerprint(
     sig_content: Option<&str>,
 ) {
     for (module_key, entry) in package.modules() {
-        out.push_str("module ");
+        out.push_str("mod ");
         out.push_str(module_key);
         out.push('\n');
         #[cfg(test)]
@@ -2088,7 +2088,7 @@ fn append_package_fingerprint(
         out.push('\n');
     }
     if let Some(entry) = package.package_file() {
-        out.push_str("package ");
+        out.push_str("pkg ");
         out.push_str(&entry.entry().package_name);
         out.push('\n');
         #[cfg(test)]
@@ -2619,7 +2619,7 @@ mod tests {
             fs::create_dir(&package).unwrap();
             fs::write(
                 package.join(format!("{name}.pkg.kio")),
-                format!("package {name}; build {{ cache (); {targets} }}"),
+                format!("pkg {name}; build {{ cache (); {targets} }}"),
             )
             .unwrap();
             // Planning inventories this path but must not parse its contents.
@@ -2658,7 +2658,13 @@ mod tests {
             for setting in ["", "; namespace ()", "; namespace \"pinned\""] {
                 for name in ["before", "after"] {
                     let manifest = dir.path().join(format!("{name}.pkg.kio"));
-                    fs::write(&manifest, format!("package {name}; build {{ target {backend} {{ out \"out\"{setting} }} }}")).unwrap();
+                    fs::write(
+                        &manifest,
+                        format!(
+                            "pkg {name}; build {{ target {backend} {{ out \"out\"{setting} }} }}"
+                        ),
+                    )
+                    .unwrap();
                     let plan = selected_output_plan(dir.path(), backend).unwrap();
                     let expected = if setting.contains('"') {
                         "pinned"
@@ -2677,16 +2683,16 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let manifest = dir.path().join("app.pkg.kio");
         for source in [
-            "package app; build { target ts { out \"api.kio\" } }",
-            "package app; build { target ts { out \"out\"; namespace \"bad-name\" } }",
-            "package app; build { target ts { out \"out\"; namespace \"a\"; namespace \"b\" } }",
-            "package app; build { target ts { out \"out\"; namespace (); namespace () } }",
-            "package app; build { target ts { out \"out\"; namespace (); namespace \"a\" } }",
-            "package app; build { target ts { out \"out\"; namespace \"a\"; namespace () } }",
-            "package app; build { target ts { out \"out\"; out \"other\" } }",
+            "pkg app; build { target ts { out \"api.kio\" } }",
+            "pkg app; build { target ts { out \"out\"; namespace \"bad-name\" } }",
+            "pkg app; build { target ts { out \"out\"; namespace \"a\"; namespace \"b\" } }",
+            "pkg app; build { target ts { out \"out\"; namespace (); namespace () } }",
+            "pkg app; build { target ts { out \"out\"; namespace (); namespace \"a\" } }",
+            "pkg app; build { target ts { out \"out\"; namespace \"a\"; namespace () } }",
+            "pkg app; build { target ts { out \"out\"; out \"other\" } }",
         ] {
             fs::write(&manifest, source).unwrap();
-            fs::write(dir.path().join("api.kio"), "module api;").unwrap();
+            fs::write(dir.path().join("api.kio"), "mod api;").unwrap();
             assert!(selected_output_plan(dir.path(), "ts").is_err());
             assert_eq!(fs::read_to_string(&manifest).unwrap(), source);
         }
@@ -2702,7 +2708,7 @@ mod tests {
         std::os::unix::fs::symlink(root.join("actual"), root.join("alias")).unwrap();
         fs::write(
             root.join("app.pkg.kio"),
-            "package app; build { target (ts, \"--help\") { out \"alias\" } }",
+            "pkg app; build { target (ts, \"--help\") { out \"alias\" } }",
         )
         .unwrap();
         let plan = selected_output_plan(&root, "--help").unwrap();
@@ -2781,7 +2787,7 @@ mod tests {
     fn find_package_file_single() {
         let dir = fresh_dir("single");
         let path = dir.join("mypkg.pkg.kio");
-        fs::write(&path, "package mypkg;\n").unwrap();
+        fs::write(&path, "pkg mypkg;\n").unwrap();
         let found = find_package_file(&dir).expect("find Single");
         assert_eq!(found, path);
         let _ = fs::remove_dir_all(&dir);
@@ -2829,11 +2835,11 @@ mod tests {
     }
 
     #[cfg(feature = "surface")]
-    const SEALED_RETAINED_HOST_SIG: &str = r#"signature app v(3);
+    const SEALED_RETAINED_HOST_SIG: &str = r#"sig app v(3);
 v(1) {
   nonbreaking {
     add {
-      module api {
+      mod api {
         host type H role(i32);
         host fn old(value: H) -> H;
       }
@@ -2843,20 +2849,20 @@ v(1) {
 v(2) {
   nonbreaking {
     remove {
-      module api {
-        old;
-      }
+
+        api.old;
+
     }
   }
 }
 "#;
 
     #[cfg(feature = "surface")]
-    const OPEN_HOST_REMOVAL_SIG: &str = r#"signature app v(2);
+    const OPEN_HOST_REMOVAL_SIG: &str = r#"sig app v(2);
 v(1) {
   nonbreaking {
     add {
-      module api {
+      mod api {
         host type H role(i32);
         host fn old(value: H) -> H;
       }
@@ -2866,20 +2872,20 @@ v(1) {
 v(2) {
   nonbreaking {
     remove {
-      module api {
-        old;
-      }
+
+        api.old;
+
     }
   }
 }
 "#;
 
     #[cfg(feature = "surface")]
-    const SEALED_RETAINED_CARRIER_SIG: &str = r#"signature app v(3);
+    const SEALED_RETAINED_CARRIER_SIG: &str = r#"sig app v(3);
 v(1) {
   nonbreaking {
     add {
-      module api {
+      mod api {
         host type Box[A];
         host type Unused[A];
         type { Token[A]: A { pub mk; get; }; };
@@ -2891,23 +2897,23 @@ v(1) {
 v(2) {
   nonbreaking {
     remove {
-      module api {
-        Box;
-        Unused;
-        Token;
-        old;
-      }
+
+        api.Box;
+        api.Unused;
+        api.Token;
+        api.old;
+
     }
   }
 }
 "#;
 
     #[cfg(feature = "surface")]
-    const OPEN_RETAINED_CARRIER_SIG: &str = r#"signature app v(2);
+    const OPEN_RETAINED_CARRIER_SIG: &str = r#"sig app v(2);
 v(1) {
   nonbreaking {
     add {
-      module api {
+      mod api {
         host type Box[A];
         host type Unused[A];
         type { Token[A]: A { pub mk; get; }; };
@@ -2919,12 +2925,12 @@ v(1) {
 v(2) {
   nonbreaking {
     remove {
-      module api {
-        Box;
-        Unused;
-        Token;
-        old;
-      }
+
+        api.Box;
+        api.Unused;
+        api.Token;
+        api.old;
+
     }
   }
 }
@@ -2934,20 +2940,22 @@ v(2) {
     fn typed_go_workspace(dir: &Path) -> (check::TypedPackageCollection, TargetBlock) {
         fs::write(
             dir.join("app.pkg.kio"),
-            "package app;\n\
-             build {\n\
-               cache ();\n\
-               target go {\n\
-                 out \"out/go/\";\n\
-               }\n\
-             }\n\
-             bridge { api; }\n",
+            "pkg app;
+build {
+cache ();
+target go {
+out \"out/go/\";
+}
+}
+bridge { api; }
+",
         )
         .expect("write package file");
         fs::write(
             dir.join("api.kio"),
-            "module api;\n\
-             pub fn unit() -> . { () }\n",
+            "mod api;
+pub fn unit() -> . { () }
+",
         )
         .expect("write module");
 
@@ -2972,20 +2980,22 @@ v(2) {
     fn typed_python_workspace(dir: &Path) -> (check::TypedPackageCollection, TargetBlock) {
         fs::write(
             dir.join("app.pkg.kio"),
-            "package app;\n\
-             build {\n\
-               cache ();\n\
-               target python {\n\
-                 out \"out/python/\";\n\
-               }\n\
-             }\n\
-             bridge { api; }\n",
+            "pkg app;
+build {
+cache ();
+target python {
+out \"out/python/\";
+}
+}
+bridge { api; }
+",
         )
         .expect("write package file");
         fs::write(
             dir.join("api.kio"),
-            "module api;\n\
-             pub fn unit() -> . { () }\n",
+            "mod api;
+pub fn unit() -> . { () }
+",
         )
         .expect("write module");
 
@@ -3021,21 +3031,23 @@ v(2) {
         fs::write(
             dir.join("app.pkg.kio"),
             format!(
-                "package app;\n\
-                 build {{\n\
-                   cache ();\n\
-                   target {backend} {{\n\
-                     out \"out/{backend}/\";\n\
-                   }}\n\
-                 }}\n\
-                 bridge {{ api; }}\n"
+                "pkg app;
+build {{
+cache ();
+target {backend} {{
+out \"out/{backend}/\";
+}}
+}}
+bridge {{ api; }}
+"
             ),
         )
         .expect("write retained-carrier package file");
         fs::write(
             dir.join("api.kio"),
-            "module api;\n\
-             pub fn unit() -> . { () }\n",
+            "mod api;
+pub fn unit() -> . { () }
+",
         )
         .expect("write retained-carrier module");
 
@@ -3332,7 +3344,7 @@ v(2) {
             "valid signature history unnecessarily partitioned Python's artifact cache"
         );
 
-        fs::write(dir.join("app.sig.kio"), "signature app v(1)\n")
+        fs::write(dir.join("app.sig.kio"), "sig app v(1)\n")
             .expect("write malformed changed signature");
         let err = match python_backend(&dir, &target, &workspace, &routed, &artifact_cache) {
             Ok(()) => panic!("malformed signature incorrectly accepted a Python cache hit"),
@@ -3345,8 +3357,17 @@ v(2) {
 
         fs::write(
             dir.join("app.sig.kio"),
-            "signature app v(2);\n\
-             v(1) {\n  breaking {\n    remove {\n      module api {\n        ghost;\n      }\n    }\n  }\n}\n",
+            "sig app v(2);
+v(1) {
+  breaking {
+    remove {
+
+        api.ghost;
+
+    }
+  }
+}
+",
         )
         .expect("write replay-incoherent changed signature");
         let err = match python_backend(&dir, &target, &workspace, &routed, &artifact_cache) {
@@ -3533,9 +3554,9 @@ v(2) {
     #[cfg(feature = "surface")]
     #[test]
     fn build_signature_replay_rejects_an_invalid_fresh_kio_artifact() {
-        let malformed = r#"signature app v(2);
+        let malformed = r#"sig app v(2);
 v(1) {
-  with { module api {
+  with { mod api {
     pub rec type { Bad: (Bad -> .) { pub mk; pub get; }; };
   } };
   nonbreaking { add { api.Bad; } }
@@ -3557,8 +3578,7 @@ v(1) {
     fn malformed_go_signature_fails_on_artifact_miss() {
         let dir = fresh_dir("go-sig-miss");
         let (workspace, target) = typed_go_workspace(&dir);
-        fs::write(dir.join("app.sig.kio"), "signature app v(1)\n")
-            .expect("write malformed signature");
+        fs::write(dir.join("app.sig.kio"), "sig app v(1)\n").expect("write malformed signature");
         let root = workspace.root_package.as_ref().expect("typed root");
         let label = build_timing::package_label(root.package());
         let enriched_cache = crate::cache::enriched::EnrichedCache::disabled();
@@ -3586,7 +3606,7 @@ v(1) {
     fn go_artifact_hit_does_not_replay_signature() {
         let dir = fresh_dir("go-sig-hit");
         let (workspace, target) = typed_go_workspace(&dir);
-        let malformed = "signature app v(1)\n";
+        let malformed = "sig app v(1)\n";
         fs::write(dir.join("app.sig.kio"), malformed).expect("write malformed signature");
 
         let artifact_cache = crate::cache::artifact::ArtifactCache::open(dir.join("cache"))
@@ -3634,7 +3654,7 @@ v(1) {
             "go",
             &target,
             &workspace,
-            Some("signature app v(1);\n"),
+            Some("sig app v(1);\n"),
         );
         assert!(disabled_key.is_none());
         assert_eq!(
@@ -3650,7 +3670,7 @@ v(1) {
             "go",
             &target,
             &workspace,
-            Some("signature app v(1);\n"),
+            Some("sig app v(1);\n"),
         );
         assert!(active_key.is_some());
         let counts = cache_work_counters::snapshot();
@@ -3769,10 +3789,8 @@ v(1) {
             Package::build(&dir, Vec::new(), None).expect("build empty package");
         let package = crate::prime::typer::check_package(&package).expect("validate empty package");
         let target = target("go");
-        let first =
-            artifact_key_for_package("go", &target, &package, Some("signature app v(1);\n"));
-        let second =
-            artifact_key_for_package("go", &target, &package, Some("signature app v(2);\n"));
+        let first = artifact_key_for_package("go", &target, &package, Some("sig app v(1);\n"));
+        let second = artifact_key_for_package("go", &target, &package, Some("sig app v(2);\n"));
         assert_ne!(first, second);
 
         let cache = crate::cache::artifact::ArtifactCache::open(dir.join("cache"))

@@ -1,4 +1,4 @@
-package generic_public_abi;
+pkg generic_public_abi;
 
 build {
   cache "out/.kio-cache/";

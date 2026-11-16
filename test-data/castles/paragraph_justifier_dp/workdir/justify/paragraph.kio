@@ -8,11 +8,11 @@
 /// and buys a second line of `is the art of` that is three columns short
 /// instead of six. It spends 125 + 27 where greedy spends 8 + 216, and the two
 /// layouts agree on every line after that.
-module justify/paragraph;
+mod justify/paragraph;
 
-import justify/list(append, nil, one);
-import justify/word(Word, Words, make_word);
-import testapi(I32, String);
+import justify/list { fn append; fn nil; fn one }
+import justify/word { type Word; type Words; fn make_word }
+import testapi { type I32; type String }
 
 /// The right margin, in columns.
 pub fn column() -> I32 { 16 }

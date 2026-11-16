@@ -1,4 +1,4 @@
-package qualified_import_missing_type;
+pkg qualified_import_missing_type;
 
 build {
   cache "out/.kio-cache/";

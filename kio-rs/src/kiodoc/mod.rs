@@ -78,8 +78,7 @@ use doc_comments::{DocCommentError, DocCommentSnippet};
 use document::{DocError, Document, Snippet};
 use validate::ValidationError;
 
-const HELP_TEMPLATE: &str = "\
-Usage: kio doc <subcommand>
+const HELP_TEMPLATE: &str = "Usage: kio doc <subcommand>
 
 Validate and render the current package's Kiodoc content.
 
@@ -111,8 +110,7 @@ Exit codes (per {base}/specs/exit-codes.md):
 
 See {base}/specs/cli.md#kio-doc-subcommand and {base}/specs/kiodoc.md.";
 
-const HELP_CHECK_TEMPLATE: &str = "\
-Usage: kio doc check [<path>...]
+const HELP_CHECK_TEMPLATE: &str = "Usage: kio doc check [<path>...]
 
 Validate the current package's Kiodoc content: every `kio` fence in
 the markdown tree under the build block's `docs.md`, every `///`
@@ -138,8 +136,7 @@ field; 2 on CLI usage error (unknown path).
 
 See {base}/specs/cli.md#kio-doc-check-path for full command behavior.";
 
-const HELP_FMT_TEMPLATE: &str = "\
-Usage: kio doc fmt [--check] [<path>...]
+const HELP_FMT_TEMPLATE: &str = "Usage: kio doc fmt [--check] [<path>...]
 
 Format formattable Kiodoc `kio` snippet fences in the markdown tree
 under the build block's `docs.md`.
@@ -168,8 +165,7 @@ error.
 See {base}/specs/cli.md#kio-doc-fmt---check-path for full command
 behavior.";
 
-const HELP_BUILD_TEMPLATE: &str = "\
-Usage: kio doc build [--md] [--html]
+const HELP_BUILD_TEMPLATE: &str = "Usage: kio doc build [--md] [--html]
 
 Validate the current package's Kiodoc content (as `kio doc check`),
 then render a per-module documentation site.
@@ -280,10 +276,7 @@ fn resolve_docs_config_at(
         Some(p) => p,
         None => {
             eprintln!(
-                "error: kio doc: no `<name>.pkg.kio` at {} — `kio doc` requires a \
-                 package file with a `build {{ … }}` block declaring a `docs` field; \
-                 run `kio init` to scaffold a package \
-                 (see {})",
+                "error: kio doc: no `<name>.pkg.kio` at {} — `kio doc` requires a package file with a `build {{ … }}` block declaring a `docs` field; run `kio init` to scaffold a package (see {})",
                 DisplayPath(&package_root),
                 crate::documentation_help("{base}/specs/package.md#build-target-files")
             );
@@ -316,9 +309,7 @@ fn resolve_docs_config_at(
         None => {
             if require_docs {
                 eprintln!(
-                    "error: kio doc: package's package file ({}) declares no `docs` field in its \
-                     `build {{ … }}` block — add `build {{ cache (); docs {{ md \"<path>\"; }}; }}` \
-                     (see {})",
+                    "error: kio doc: package's package file ({}) declares no `docs` field in its `build {{ … }}` block — add `build {{ cache (); docs {{ md \"<path>\"; }}; }}` (see {})",
                     DisplayPath(&package_path),
                     crate::documentation_help("{base}/specs/package.md#build-target-files")
                 );
@@ -512,9 +503,7 @@ fn run_build(args: &[String]) -> ExitCode {
     };
     if roots.is_empty() {
         eprintln!(
-            "error: kio doc: no `<name>.pkg.kio` at {} or its subdirectories — `kio doc` requires a \
-             package file with a `build {{ … }}` block declaring a `docs` field; \
-             run `kio init` to scaffold a package (see {})",
+            "error: kio doc: no `<name>.pkg.kio` at {} or its subdirectories — `kio doc` requires a package file with a `build {{ … }}` block declaring a `docs` field; run `kio init` to scaffold a package (see {})",
             DisplayPath(&cwd),
             crate::documentation_help("{base}/specs/package.md#build-target-files")
         );
@@ -1851,17 +1840,18 @@ mod tests {
         write_tempfile(
             dir.path(),
             "pkg.pkg.kio",
-            "package pkg;\nbridge { pkg/main; }\n",
+            "pkg pkg;\nbridge { pkg/main; }\n",
         );
         write_tempfile(
             dir.path(),
             "main.kio",
-            "module pkg/main;\n\
-             rec(loop) {\n\
-               fn local(value: .) -> . { recur exported(value) };\n\
-               pub(pkg) fn scoped(value: .) -> . { recur local(value) };\n\
-               pub fn exported(value: .) -> . { recur scoped(value) }\n\
-             }\n",
+            "mod pkg/main;
+rec(loop) {
+fn local(value: .) -> . { recur exported(value) };
+pub(pkg) fn scoped(value: .) -> . { recur local(value) };
+pub fn exported(value: .) -> . { recur scoped(value) }
+}
+",
         );
         let md = write_tempfile(dir.path(), "guide.md", "See [`exported`].\n");
         let scope = find_package_scope_for_md(&md);
@@ -1878,17 +1868,17 @@ mod tests {
         let support = dir.path().join("support");
         fs::create_dir(&package).unwrap();
         fs::create_dir(&support).unwrap();
-        write_tempfile(&package, "local.kio", "module local;\n");
+        write_tempfile(&package, "local.kio", "mod local;\n");
         write_tempfile(
             &package,
             "shared.kio",
-            "module shared; fn root() -> . { () }\n",
+            "mod shared; fn root() -> . { () }\n",
         );
-        write_tempfile(&support, "external.kio", "module external;\n");
+        write_tempfile(&support, "external.kio", "mod external;\n");
         write_tempfile(
             &support,
             "shared.kio",
-            "module shared; fn stale() -> . { () }\n",
+            "mod shared; fn stale() -> . { () }\n",
         );
 
         let files = collect_package_module_support_files(&package, &[support]).unwrap();
@@ -1904,9 +1894,9 @@ mod tests {
         for child in ["helpers", "nested", "out", "target", ".hidden"] {
             fs::create_dir(dir.path().join(child)).unwrap();
         }
-        write_tempfile(&dir.path().join("helpers"), "a.kio", "module helpers/a;");
-        write_tempfile(&dir.path().join("helpers"), "b.kio", "module helpers/b;");
-        write_tempfile(&dir.path().join("nested"), "own.pkg.kio", "package own;");
+        write_tempfile(&dir.path().join("helpers"), "a.kio", "mod helpers/a;");
+        write_tempfile(&dir.path().join("helpers"), "b.kio", "mod helpers/b;");
+        write_tempfile(&dir.path().join("nested"), "own.pkg.kio", "pkg own;");
         for child in ["nested", "out", "target", ".hidden"] {
             write_tempfile(&dir.path().join(child), "ignored.kio", "not a module");
         }
@@ -1925,9 +1915,9 @@ mod tests {
             fs::create_dir(root).unwrap();
             fs::create_dir(root.join("helpers")).unwrap();
         }
-        write_tempfile(&first.join("helpers"), "a.kio", "module helpers/a;");
-        write_tempfile(&first.join("helpers"), "b.kio", "module helpers/b;");
-        write_tempfile(&later.join("helpers"), "c.kio", "module helpers/c;");
+        write_tempfile(&first.join("helpers"), "a.kio", "mod helpers/a;");
+        write_tempfile(&first.join("helpers"), "b.kio", "mod helpers/b;");
+        write_tempfile(&later.join("helpers"), "c.kio", "mod helpers/c;");
         let files = collect_package_module_support_files(&package, &[first, later]).unwrap();
         let paths: Vec<_> = files.iter().map(|file| file.path.as_str()).collect();
         assert_eq!(paths, ["helpers/a.kio", "helpers/b.kio"]);
@@ -1937,7 +1927,7 @@ mod tests {
     #[test]
     fn support_discovery_does_not_follow_directory_symlinks() {
         let dir = tempdir();
-        write_tempfile(dir.path(), "actual.kio", "module actual;");
+        write_tempfile(dir.path(), "actual.kio", "mod actual;");
         std::os::unix::fs::symlink(dir.path(), dir.path().join("loop")).unwrap();
         std::os::unix::fs::symlink(dir.path(), dir.path().join("loop.kio")).unwrap();
         let files = collect_package_module_support_files(dir.path(), &[]).unwrap();
@@ -1965,7 +1955,7 @@ mod tests {
         // descends through the loop.
         let dir = tempdir();
         let root = dir.path();
-        write_tempfile(root, "m.kio", "module m;\n");
+        write_tempfile(root, "m.kio", "mod m;\n");
         std::os::unix::fs::symlink(root, root.join("self")).expect("mk symlink loop");
 
         let mut out = Vec::new();

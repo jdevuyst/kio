@@ -1,4 +1,4 @@
-package fmt_else_if;
+pkg fmt_else_if;
 
 build {
   cache "out/.kio-cache/";

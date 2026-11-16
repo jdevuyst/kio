@@ -1,4 +1,4 @@
-package turnstile_event_replay;
+pkg turnstile_event_replay;
 
 build {
   cache "out/.kio-cache/";

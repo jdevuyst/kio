@@ -1,6 +1,6 @@
-module helper;
+mod helper;
 
-import macros/control(Bool as Control_bool, macro if);
+import macros/control { type Bool as Control_bool; macro if }
 
 pub type Bool = Control_bool;
 

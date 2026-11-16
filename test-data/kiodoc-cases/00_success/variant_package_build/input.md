@@ -4,7 +4,7 @@ A `kio` fence carrying `variant=package` validates the whole
 package file, including its optional `build { ... }` block.
 
 ```kio {variant=package}
-package pkg;
+pkg pkg;
 
 build {
   cache "out/.kio-cache/";

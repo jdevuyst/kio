@@ -1,6 +1,6 @@
-module build_open_world_imported_newtype/b;
+mod build_open_world_imported_newtype/b;
 
-import build_open_world_imported_newtype(String);
+import build_open_world_imported_newtype { type String }
 
 pub type { Item: String { pub mk; pub get } }
 

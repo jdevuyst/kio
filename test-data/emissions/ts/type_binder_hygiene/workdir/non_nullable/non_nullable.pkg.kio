@@ -1,4 +1,4 @@
-package non_nullable;
+pkg non_nullable;
 
 build {
   target ts {

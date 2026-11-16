@@ -1,4 +1,4 @@
-package ffi_export_nested_product_roundtrip;
+pkg ffi_export_nested_product_roundtrip;
 
 build {
   cache "out/.kio-cache/";

@@ -676,7 +676,7 @@ fn comptime_example(builtin: ComptimeBuiltin) -> Option<&'static str> {
     use ComptimeBuiltin::*;
     match builtin {
         ComptimeIfThenElse => Some(
-            r#"module builtin_comptime_conditional_example;
+            r#"mod builtin_comptime_conditional_example;
 
 import __comptime__;
 
@@ -689,7 +689,7 @@ pure fn describe(ct: __Comptime__, condition: Comptime_bool) -> __Diagnostic_tex
 }"#,
         ),
         TypeProductSpineFold => Some(
-            r#"module builtin_type_fold_example;
+            r#"mod builtin_type_fold_example;
 
 import __comptime__;
 
@@ -702,7 +702,7 @@ fn product_arity(ct: __Comptime__, typ: __Type__) -> __Type_arity__ {
 }"#,
         ),
         TermFn => Some(
-            r#"module builtin_checked_fn_example;
+            r#"mod builtin_checked_fn_example;
 
 import __comptime__;
 
@@ -712,7 +712,7 @@ fn identity_term(ct: __Comptime__, typ: __Type__) -> __Checked_term__ {
 }"#,
         ),
         StructuralRecur => Some(
-            r#"module builtin_structural_recur_example;
+            r#"mod builtin_structural_recur_example;
 
 import __intrinsics__;
 
@@ -740,7 +740,7 @@ fn count_down(ct: __Comptime__, fuel: Fuel) -> __Type_arity__ {
         ),
         FillCtx => None,
         FillResult => Some(
-            r#"module builtin_fill_result_example;
+            r#"mod builtin_fill_result_example;
 
 import __comptime__;
 
@@ -749,7 +749,7 @@ fn append_result(ct: __Comptime__, fills: __Fill_ctx__, candidate: __Type__) -> 
 }"#,
         ),
         Fill => Some(
-            r#"module builtin_fill_example;
+            r#"mod builtin_fill_example;
 
 import __comptime__;
 
@@ -758,7 +758,7 @@ fn append_result(ct: __Comptime__, fills: __Fill_ctx__, destination: __Type__, c
 }"#,
         ),
         TermSpecialize => Some(
-            r#"module builtin_term_specialize_example;
+            r#"mod builtin_term_specialize_example;
 
 import __comptime__;
 

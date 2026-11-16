@@ -1,4 +1,4 @@
-package textdep;
+pkg textdep;
 
 build {
   cache "out/.kio-cache/";

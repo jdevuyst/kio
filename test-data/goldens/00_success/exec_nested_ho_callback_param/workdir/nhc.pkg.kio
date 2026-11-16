@@ -1,4 +1,4 @@
-package nhc;
+pkg nhc;
 
 build {
   cache "out/.kio-cache/";

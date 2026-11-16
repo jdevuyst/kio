@@ -1,11 +1,11 @@
-module testapi/main;
+mod testapi/main;
 
 import __intrinsics__;
 
-import macros(Marker_bool, macro marker);
-import testapi(I32, String);
-import testapi/io(print);
-import testapi/text(string_concat);
+import macros { type Marker_bool; macro marker }
+import testapi { type I32; type String }
+import testapi/io { fn print }
+import testapi/text { fn string_concat }
 
 fn marker_bool_to_string(value: Marker_bool) -> String {
   __either__[.][.][String](value, .(yes: .) -> String { "true" }, .(no: .) -> String { "false" })

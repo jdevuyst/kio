@@ -1,9 +1,9 @@
-module pure_macro_emits_host_call/macros;
+mod pure_macro_emits_host_call/macros;
 
 import __intrinsics__;
 
 import __comptime__;
-import pure_macro_emits_host_call(I32, id_i32);
+import pure_macro_emits_host_call { type I32; fn id_i32 }
 
 pub pure fn apply_impl(
 , ct: __Comptime__

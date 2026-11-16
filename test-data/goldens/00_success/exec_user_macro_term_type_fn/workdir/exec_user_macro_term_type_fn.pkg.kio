@@ -1,4 +1,4 @@
-package exec_user_macro_term_type_fn;
+pkg exec_user_macro_term_type_fn;
 
 build {
   cache "out/.kio-cache/";

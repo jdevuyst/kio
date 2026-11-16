@@ -1,4 +1,4 @@
-module main;
+mod main;
 
 // Type-operator chains accept any number of operators in any
 // position when the chain is parenthesized — leading runs (before

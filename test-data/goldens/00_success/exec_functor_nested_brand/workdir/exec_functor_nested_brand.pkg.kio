@@ -1,4 +1,4 @@
-package exec_functor_nested_brand;
+pkg exec_functor_nested_brand;
 
 build {
   cache "out/.kio-cache/";

@@ -1,4 +1,4 @@
-package fmt_named_entry_order;
+pkg fmt_named_entry_order;
 
 // bridge outer
 build {
@@ -39,9 +39,9 @@ bridge {
   // bridge close
 }
 // build outer
-module fmt_named_entry_order/main;
+mod fmt_named_entry_order/main;
 
-varop [* *] {
+op_var [* *] {
   // fold tail
 
   // varop close
@@ -76,7 +76,7 @@ op _ + _ {
 }
 
 // op outer
-dependency lib;
+dep lib;
 
 source {
   git "https://example.invalid/lib";
@@ -104,12 +104,12 @@ resolved {
   // resolved close
 }
 // resolved outer
-signature app v(2);
+sig app v(2);
 
 v(1) {
   nonbreaking {
     add {
-      module api {
+      mod api {
         pub type Gone = .;
         pub type Old = .
       }
@@ -119,7 +119,7 @@ v(1) {
 
 v(2) {
   with {
-    module api {
+    mod api {
       pub rec type {
         Fresh:
           . | Fresh
@@ -135,7 +135,7 @@ v(2) {
   };
   breaking {
     add {
-      module api {
+      mod api {
         host type H
       }
     }
@@ -148,7 +148,7 @@ v(2) {
       // add close
     };
     modify {
-      module api {
+      mod api {
         pub type Old = !
       }
     };

@@ -1,9 +1,9 @@
-module testapi/main;
+mod testapi/main;
 
-import testapi(Box, I32);
-import testapi/arith(box_get, box_make);
-import testapi/fmt(i32_to_string);
-import testapi/io(print);
+import testapi { type Box; type I32 }
+import testapi/arith { fn box_get; fn box_make }
+import testapi/fmt { fn i32_to_string }
+import testapi/io { fn print }
 
 type { T: I32 { mk; get } }
 

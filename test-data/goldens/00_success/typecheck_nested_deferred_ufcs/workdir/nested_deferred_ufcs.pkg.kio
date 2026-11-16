@@ -1,4 +1,4 @@
-package nested_deferred_ufcs;
+pkg nested_deferred_ufcs;
 
 build {
   cache "out/.kio-cache/";

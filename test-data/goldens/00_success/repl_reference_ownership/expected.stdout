@@ -2,12 +2,12 @@ kio repl — the module inspector
 loaded: demo/main
 type `:help` for commands, `:quit` to leave
 references to `truth`:
-  demo/a:7:13  in literal truth
+  demo/a:7:9  in literal truth
   demo/a:26:21  in fn local
-  demo/main:4:50  in module demo/main
+  demo/main:4:58  in module demo/main
   demo/main:7:27  in fn literal_use
 references to `truth`:
-  demo/b:7:13  in literal truth
+  demo/b:7:9  in literal truth
   demo/b:24:21  in fn local
 references to `proof`:
   demo/a:9:7  in equiv proof
@@ -15,12 +15,12 @@ references to `build`:
   demo/a:24:11  in macro build
   demo/a:32:13  in fn bang
   demo/a:34:19  in fn splice
-  demo/main:4:43  in module demo/main
+  demo/main:4:71  in module demo/main
   demo/main:11:13  in fn bang
   demo/main:13:19  in fn splice
 references to `Field`:
   demo/a:16:10  in type Field
-  demo/main:4:15  in module demo/main
+  demo/main:4:22  in module demo/main
   demo/main:15:30  in fn alias_use
   demo/main:21:48  in fn update
   demo/main:21:64  in fn update

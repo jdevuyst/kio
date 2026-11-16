@@ -1,6 +1,6 @@
-module host/m;
+mod host/m;
 
-import host(f, g);
+import host { fn f; fn g }
 
 equiv neq_stuck() {
   f(());

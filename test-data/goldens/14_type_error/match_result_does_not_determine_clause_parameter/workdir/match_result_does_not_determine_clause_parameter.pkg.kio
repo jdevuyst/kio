@@ -1,4 +1,4 @@
-package match_result_does_not_determine_clause_parameter;
+pkg match_result_does_not_determine_clause_parameter;
 
 build {
   cache "out/.kio-cache/";

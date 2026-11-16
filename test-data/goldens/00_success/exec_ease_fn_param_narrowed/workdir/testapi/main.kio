@@ -1,8 +1,8 @@
-module testapi/main;
+mod testapi/main;
 
-import macros/algebraic_macros(macro ease);
-import testapi(String);
-import testapi/io(print);
+import macros/algebraic_macros { macro ease }
+import testapi { type String }
+import testapi/io { fn print }
 
 type { A: String { pub mk; pub get } }
 

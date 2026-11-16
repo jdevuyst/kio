@@ -1,4 +1,4 @@
-package eqcache;
+pkg eqcache;
 
 build {
   cache "out/.kio-cache/";

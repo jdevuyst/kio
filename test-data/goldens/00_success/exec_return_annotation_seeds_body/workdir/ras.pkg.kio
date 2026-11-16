@@ -1,4 +1,4 @@
-package ras;
+pkg ras;
 
 build {
   cache "out/.kio-cache/";

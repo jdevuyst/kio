@@ -1,4 +1,4 @@
-module shadow_elaborators;
+mod shadow_elaborators;
 
 import __comptime__;
 

@@ -1,4 +1,4 @@
-package library_catalog_composite;
+pkg library_catalog_composite;
 
 build {
   cache "out/.kio-cache/";

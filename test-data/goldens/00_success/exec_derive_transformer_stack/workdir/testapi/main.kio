@@ -1,10 +1,10 @@
-module testapi/main;
+mod testapi/main;
 
 import __intrinsics__;
 
-import macros/derive(macro derive);
-import testapi(Int, String);
-import testapi/io(print);
+import macros/derive { macro derive }
+import testapi { type Int; type String }
+import testapi/io { fn print }
 
 // The motivating `derive` use case: composing a `Monad` instance for a
 // monad-transformer stack `State_t(Int, Maybe_t(Maybe))` from per-layer

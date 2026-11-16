@@ -84,7 +84,7 @@ pub(crate) fn selected_block_header(
                 matches!(
                     item,
                     ImportItem::Name {
-                        macro_span: Some(_),
+                        kind: crate::ast::ImportNameKind::Macro,
                         ..
                     }
                 ) && item.as_local_name() == Some(name)

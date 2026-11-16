@@ -8,6 +8,6 @@
 /// ```kio {@ check_exit_code=14}
 /// identity(identity)
 /// ```
-module doctest/expected_failure;
+mod doctest/expected_failure;
 
 pub fn identity(x: .) { x }

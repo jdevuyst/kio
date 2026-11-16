@@ -9,19 +9,19 @@
 /// without a new fact was already derived. Both must reach the same
 /// database, and that identity is the correctness argument for the
 /// second.
-module datalog/eval;
+mod datalog/eval;
 
-import datalog/atom(Atom, Atoms, atom_eq);
+import datalog/atom { type Atom; type Atoms; fn atom_eq }
 import datalog/list as list;
 import datalog/program as program;
 import datalog/subst as subst;
 import datalog/unify as unify;
-import macros/control(macro if);
-import macros/match(macro match);
-import macros/row_macros(macro select);
-import testapi(Bool, I32);
-import testapi/arith(add_i32, eq_i32);
-import testapi/iter(loop);
+import macros/control { macro if }
+import macros/match { macro match }
+import macros/row_macros { macro select }
+import testapi { type Bool; type I32 }
+import testapi/arith { fn add_i32; fn eq_i32 }
+import testapi/iter { fn loop }
 
 pub type Round = { Rd_index: I32; Rd_derivs: I32; Rd_added: I32 };
 

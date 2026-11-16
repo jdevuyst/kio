@@ -54,7 +54,7 @@ printf '%s\n' "$@"
 EOF
 
 cat >"$scratch/cases/identity/workdir/pkg.pkg.kio" <<'EOF'
-package pkg;
+pkg pkg;
 
 build {
   target js {

@@ -1,4 +1,4 @@
-package smallint;
+pkg smallint;
 
 build {
   cache "out/.kio-cache/";

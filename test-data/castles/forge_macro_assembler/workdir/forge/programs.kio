@@ -10,14 +10,14 @@
 /// an instruction, `at` marks a label, and `mac` calls a macro. The
 /// accumulator holds the items reversed - `forge/list` conses at the head
 /// - and `done` puts them back in order.
-module forge/programs;
+mod forge/programs;
 
 import forge/isa as i;
-import forge/isa(Src);
+import forge/isa { type Src }
 import forge/list as l;
 import forge/program as p;
-import forge/program(Item, Items);
-import testapi(I32, String);
+import forge/program { type Item; type Items }
+import testapi { type I32; type String }
 
 fn start() -> Items { l.nil[Item] }
 

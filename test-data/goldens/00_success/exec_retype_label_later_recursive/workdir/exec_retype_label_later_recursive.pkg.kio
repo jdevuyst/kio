@@ -1,4 +1,4 @@
-package exec_retype_label_later_recursive;
+pkg exec_retype_label_later_recursive;
 
 build {
   cache "out/.kio-cache/";

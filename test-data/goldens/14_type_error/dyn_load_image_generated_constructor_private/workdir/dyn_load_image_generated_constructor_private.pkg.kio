@@ -1,4 +1,4 @@
-package dyn_load_image_generated_constructor_private;
+pkg dyn_load_image_generated_constructor_private;
 
 build {
   cache "out/.kio-cache/";

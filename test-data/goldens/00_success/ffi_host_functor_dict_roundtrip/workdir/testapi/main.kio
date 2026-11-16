@@ -1,11 +1,11 @@
-module testapi/main;
+mod testapi/main;
 
 import __intrinsics__;
 
-import testapi(String);
-import testapi/arith(round_functor);
-import testapi/io(print);
-import testapi/types(Box, Capture, Functor, Shadow);
+import testapi { type String }
+import testapi/arith { fn round_functor }
+import testapi/io { fn print }
+import testapi/types { type Box; type Capture; type Functor; type Shadow }
 
 // The Box instance delegates through `Shadow`, whose payload keeps its
 // outer carrier separate from its nested polymorphic identity function.

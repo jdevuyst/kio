@@ -1,8 +1,8 @@
-module testapi/main;
+mod testapi/main;
 
-import macros/spine_macros(macro narrow_prod, macro reorder_prod);
-import testapi(I32, String);
-import testapi/io(print);
+import macros/spine_macros { macro narrow_prod; macro reorder_prod }
+import testapi { type I32; type String }
+import testapi/io { fn print }
 
 type { A: I32 { pub mk; pub get } }
 

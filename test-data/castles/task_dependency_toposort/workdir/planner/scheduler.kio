@@ -1,13 +1,13 @@
-module planner/scheduler;
+mod planner/scheduler;
 
-import macros/control(macro if);
-import macros/row_macros(macro select);
-import planner/deps(is_blocked, is_ready);
-import planner/state(Plan_state, completed, empty, mark_done);
-import planner/tasks(total);
-import testapi(Bool, I32);
-import testapi/arith(add_i32, eq_i32, lt_i32, sub_i32);
-import testapi/iter(loop);
+import macros/control { macro if }
+import macros/row_macros { macro select }
+import planner/deps { fn is_blocked; fn is_ready }
+import planner/state { type Plan_state; fn completed; fn empty; fn mark_done }
+import planner/tasks { fn total }
+import testapi { type Bool; type I32 }
+import testapi/arith { fn add_i32; fn eq_i32; fn lt_i32; fn sub_i32 }
+import testapi/iter { fn loop }
 
 pub type Scan_result = { Selected_task: I32; Ready_seen: I32; Blocked_seen: I32 };
 

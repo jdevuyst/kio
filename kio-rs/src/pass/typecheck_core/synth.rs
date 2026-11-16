@@ -2074,7 +2074,7 @@ where
                         format!("macro `{member}` requires a locally selected name"),
                     )
                     .with_help(format!(
-                        "select it with `import {provider}(macro {member});` and call `{member}(...)`"
+                        "select it with `import {provider} {{ macro {member} }}` and call `{member}(...)`"
                     )));
                 }
                 if let crate::ast::Item::FnDef(d) = item
@@ -2182,17 +2182,14 @@ where
         return Err(Error::type_(
             span,
             format!(
-                "module aliased as `{alias}` has no `pub newtype` named `{type_name}` \
-                 (sub-module access through a qualified-import alias is not supported)"
+                "module aliased as `{alias}` has no `pub newtype` named `{type_name}` (sub-module access through a qualified-import alias is not supported)"
             ),
         ));
     }
     Err(Error::type_(
         span,
         format!(
-            "dotted-path `{}` is not a recognised value reference \
-             (sub-module access through a qualified-import alias is not supported; \
-             import the module declaring `{}` directly)",
+            "dotted-path `{}` is not a recognised value reference (sub-module access through a qualified-import alias is not supported; import the module declaring `{}` directly)",
             segments.join("."),
             segments.join("."),
         ),
@@ -3644,7 +3641,7 @@ mod tests {
             "pub host fn generic[A](value: A)() -> A;",
         ] {
             let module = crate::prime::lower::lower_module(
-                crate::pass::parser::parse(&format!("module provider;\n{declaration}\n")).unwrap(),
+                crate::pass::parser::parse(&format!("mod provider;\n{declaration}\n")).unwrap(),
             )
             .unwrap();
             let package = Package::build(
@@ -3729,7 +3726,7 @@ mod tests {
             ("fn helper() { () } fn heaper() { () }", false),
         ] {
             let module = crate::prime::lower::lower_module(
-                crate::pass::parser::parse(&format!("module main; {declarations}")).unwrap(),
+                crate::pass::parser::parse(&format!("mod main; {declarations}")).unwrap(),
             )
             .unwrap();
             let env = super::super::ModuleEnv::build(&module, None, None, None).unwrap();
@@ -3756,7 +3753,7 @@ mod tests {
     #[test]
     fn wrong_namespace_nominal_diagnostic_requires_the_actual_local_cutoff() {
         let module = crate::prime::lower::lower_module(
-            crate::pass::parser::parse("module main; type Value = .;").unwrap(),
+            crate::pass::parser::parse("mod main; type Value = .;").unwrap(),
         )
         .unwrap();
         let env = super::super::ModuleEnv::build(&module, None, None, None).unwrap();
@@ -3873,7 +3870,7 @@ mod tests {
     #[test]
     fn top_fn_producers_carry_the_complete_scheme_summary() {
         let surface =
-            crate::pass::parser::parse("module main; fn identity[A](value: A) -> A { value }")
+            crate::pass::parser::parse("mod main; fn identity[A](value: A) -> A { value }")
                 .expect("parse polymorphic function");
         let (modules, _) =
             <crate::pass::full::FullPipeline as crate::pipeline::Pipeline>::lower_package(

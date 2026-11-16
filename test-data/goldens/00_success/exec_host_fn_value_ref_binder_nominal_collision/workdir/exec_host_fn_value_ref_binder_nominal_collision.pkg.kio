@@ -1,4 +1,4 @@
-package exec_host_fn_value_ref_binder_nominal_collision;
+pkg exec_host_fn_value_ref_binder_nominal_collision;
 
 build {
   cache "out/.kio-cache/";

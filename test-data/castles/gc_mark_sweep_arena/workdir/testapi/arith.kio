@@ -1,6 +1,6 @@
-module testapi/arith;
+mod testapi/arith;
 
-import testapi(Bool, I32);
+import testapi { type Bool; type I32 }
 
 host fn add_i32(p0: I32, p1: I32) -> I32;
 

@@ -1,4 +1,4 @@
-package env_use_own_submodule;
+pkg env_use_own_submodule;
 
 build {
   cache "out/.kio-cache/";

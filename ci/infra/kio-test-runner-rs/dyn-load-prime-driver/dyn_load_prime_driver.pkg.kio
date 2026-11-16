@@ -1,4 +1,4 @@
-package dyn_load_prime_driver;
+pkg dyn_load_prime_driver;
 
 build {
   cache "out/.kio-cache/";

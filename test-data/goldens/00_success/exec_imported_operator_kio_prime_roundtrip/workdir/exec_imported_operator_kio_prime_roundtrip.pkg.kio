@@ -1,4 +1,4 @@
-package exec_imported_operator_kio_prime_roundtrip;
+pkg exec_imported_operator_kio_prime_roundtrip;
 
 build {
   cache "out/.kio-cache/";

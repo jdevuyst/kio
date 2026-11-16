@@ -1,3 +1,3 @@
-module testapi/host;
+mod testapi/host;
 
 pub fn value() { () }

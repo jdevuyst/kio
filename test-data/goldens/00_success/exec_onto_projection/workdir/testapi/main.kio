@@ -1,8 +1,8 @@
-module testapi/main;
+mod testapi/main;
 
-import macros/algebraic_macros(macro onto);
-import testapi(I32, String);
-import testapi/io(print);
+import macros/algebraic_macros { macro onto }
+import testapi { type I32; type String }
+import testapi/io { fn print }
 
 // `onto` drops source factors that aren't in the target. Here
 // we project a 3-tuple `(String & I32 & I32)` to just the `String`.

@@ -1,10 +1,10 @@
-module testapi/main;
+mod testapi/main;
 
-import macros/match(macro match);
-import macros/spine_macros(macro fit);
-import testapi(I32, String);
-import testapi/fmt(int_to_string);
-import testapi/io(print);
+import macros/match { macro match }
+import macros/spine_macros { macro fit }
+import testapi { type I32; type String }
+import testapi/fmt { fn int_to_string }
+import testapi/io { fn print }
 
 // A source function that handles the wider `(String | I32)` input.
 fn handle_either(x: String | I32) {

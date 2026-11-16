@@ -1,19 +1,19 @@
-module testapi/main;
+mod testapi/main;
 
-import loader(
-, Import
-, Lr_diag
-, Lr_image
-, import_source
-, mk_import
-, mk_import_as
-, un_import
-, un_load_outcome
-);
-import loader/scan(load_package);
-import macros/match(macro match);
-import testapi(String);
-import testapi/io(print);
+import loader {
+  type Import;
+  type Lr_diag;
+  type Lr_image;
+  fn import_source;
+  fn mk_import;
+  fn mk_import_as;
+  fn un_import;
+  fn un_load_outcome
+}
+import loader/scan { fn load_package }
+import macros/match { macro match }
+import testapi { type String }
+import testapi/io { fn print }
 
 fn show(entry: Import) {
   match(un_import(entry)) {
@@ -53,25 +53,24 @@ pub fn main() {
       print("\n"[String])
     }
   };
-  load_result("module origin; pub fn source() { () } module consumer; import "
-              "origin(source as first, source as second); pub fn run() { first(); "
-              "second() } package guest; bridge { consumer; }"[String]);
-  load_result("module origin; pub fn op() { () } pub fn source() { () } module "
-              "consumer; import origin(op as local, source as op); pub fn run() { "
-              "local(); op() } package guest; bridge { consumer; }"[String]);
-  load_result("module origin; pub fn source() { () } module consumer; import "
-              "origin(source as local, source as local); pub fn run() { local() } "
-              "package guest; bridge { consumer; }"[String]);
-  load_result("module origin; fn hidden() { () } pub fn local() { () } module consumer; "
-              "import origin(hidden as local); pub fn run() { local() } package guest; "
+  load_result("mod origin; pub fn source() { () } mod consumer; import origin {fn "
+              "source as first; fn source as second} pub fn run() { first(); second() } "
+              "pkg guest; bridge { consumer; }"[String]);
+  load_result("mod origin; pub fn op() { () } pub fn source() { () } mod consumer; "
+              "import origin {fn op as local; fn source as op} pub fn run() { local(); "
+              "op() } pkg guest; bridge { consumer; }"[String]);
+  load_result("mod origin; pub fn source() { () } mod consumer; import origin {fn "
+              "source as local; fn source as local} pub fn run() { local() } pkg guest; "
               "bridge { consumer; }"[String]);
-  load_result("module origin; pub fn local() { () } module consumer; import "
-              "origin(missing as local); pub fn run() { local() } package guest; bridge "
-              "{ consumer; }"[String]);
-  load_result("module origin; pub fn default() { () } module consumer; import "
-              "origin(default); pub fn run() { default() } package guest; bridge { "
-              "consumer; }"[String]);
-  load_result("module origin; host type Number role(i32); module consumer; import "
-              "origin(default Number); pub fn run(value: Number) -> Number { value } "
-              "package guest; bridge { origin; consumer; }"[String])
+  load_result("mod origin; fn hidden() { () } pub fn local() { () } mod consumer; "
+              "import origin {fn hidden as local} pub fn run() { local() } pkg guest; "
+              "bridge { consumer; }"[String]);
+  load_result("mod origin; pub fn local() { () } mod consumer; import origin {fn "
+              "missing as local} pub fn run() { local() } pkg guest; bridge { consumer; "
+              "}"[String]);
+  load_result("mod origin; pub fn default() { () } mod consumer; import origin {fn "
+              "default} pub fn run() { default() } pkg guest; bridge { consumer; }"[String]);
+  load_result("mod origin; host type Number role(i32); mod consumer; import origin {fn "
+              "default Number} pub fn run(value: Number) -> Number { value } pkg guest; "
+              "bridge { origin; consumer; }"[String])
 }

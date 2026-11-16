@@ -1,6 +1,6 @@
-module api/left;
+mod api/left;
 
-import outside(borrowed);
+import outside {fn borrowed}
 
 /// Left public function uses its private [`helper`].
 pub fn make() { helper() }
@@ -13,7 +13,7 @@ pub(api) fn scoped() { () }
 
 pub type Alias = .;
 
-pub literal text = "example";
+pub lit text = "example";
 
 pub type { Box: . { pub mk; get }; }
 

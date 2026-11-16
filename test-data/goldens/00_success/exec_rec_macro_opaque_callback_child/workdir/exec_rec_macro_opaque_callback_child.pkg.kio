@@ -1,4 +1,4 @@
-package exec_rec_macro_opaque_callback_child;
+pkg exec_rec_macro_opaque_callback_child;
 
 build {
   cache "out/.kio-cache/";

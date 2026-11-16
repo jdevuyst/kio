@@ -1,4 +1,4 @@
-module main;
+mod main;
 
 pub type Reorder[First][Second] = [Reorder_bound] Second -> Reorder_bound;
 

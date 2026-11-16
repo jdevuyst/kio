@@ -22,8 +22,7 @@
 
 use crate::exit_code::ExitCode;
 
-const HELP_TEMPLATE: &str = "\
-Usage: kio completions <shell>
+const HELP_TEMPLATE: &str = "Usage: kio completions <shell>
 
 Print a shell completion script for `kio` to stdout.
 
@@ -370,9 +369,11 @@ fn render_zsh() -> String {
         }
         if s.name == "build" {
             out.push_str("                    _arguments -S \\\n");
-            out.push_str("                        '*--package=[select a package by name]:package name:' \\\n");
             out.push_str(
-                "                        '*--pkg=[select a package by name]:package name:' \\\n",
+                "                        '*--package=[select a package by name]:package name:' \\n",
+            );
+            out.push_str(
+                "                        '*--pkg=[select a package by name]:package name:' \\n",
             );
             out.push_str("                        '--skip-unsupported-targets[skip unavailable backends in default selection]' \\\n");
             out.push_str("                        '-h[show help]' '--help[show help]' \\\n");

@@ -1,4 +1,4 @@
-module testapi/main;
+mod testapi/main;
 
 import grid_firebreak_search/report as report;
 

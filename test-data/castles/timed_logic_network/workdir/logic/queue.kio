@@ -1,15 +1,15 @@
-module logic/queue;
+mod logic/queue;
 
 import list/core as lists;
 import list/list as traversal;
 import list_host as numbers;
 import logic/model as model;
-import macros/control(macro if);
-import macros/match(macro match);
-import macros/row_macros(macro select);
-import testapi(Bool, I32);
+import macros/control { macro if }
+import macros/match { macro match }
+import macros/row_macros { macro select }
+import testapi { type Bool; type I32 }
 import testapi/arith as arith;
-import testapi/iter(loop);
+import testapi/iter { fn loop }
 
 fn before(a: model.Event, b: model.Event) -> Bool {
   if(arith.lt_i32(a.>select { model.At.get }, b.>select { model.At.get })) {

@@ -1,4 +1,4 @@
-package exec_macro_unit_quote;
+pkg exec_macro_unit_quote;
 
 build {
   cache "out/.kio-cache/";

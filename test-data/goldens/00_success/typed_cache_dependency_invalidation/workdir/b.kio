@@ -1,5 +1,5 @@
-module b;
+mod b;
 
-import a(helper);
+import a { fn helper }
 
 pub fn run() { helper() }

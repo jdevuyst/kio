@@ -1,4 +1,4 @@
-package typecheck_narrow_sum_inferred_nested_arm;
+pkg typecheck_narrow_sum_inferred_nested_arm;
 
 build {
   cache "out/.kio-cache/";

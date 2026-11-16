@@ -1,4 +1,4 @@
-package efcp;
+pkg efcp;
 
 build {
   cache "out/.kio-cache/";

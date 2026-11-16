@@ -1,4 +1,4 @@
-package typecheck_imported_covariant_newtype_recursion;
+pkg typecheck_imported_covariant_newtype_recursion;
 
 build {
   cache "out/.kio-cache/";

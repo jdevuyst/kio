@@ -1,4 +1,4 @@
-module combinator;
+mod combinator;
 
 pub fn id[A](x: A) -> A { x }
 

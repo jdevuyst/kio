@@ -1,4 +1,4 @@
-module main;
+mod main;
 
 type Pair[A][B] = A & B;
 
@@ -11,7 +11,7 @@ type Sum3[A][B][C] = A | B | C;
 type Bottom = !;
 
 type Unit = .;
-module main;
+mod main;
 
 type Pair[A][B] = A & B;
 

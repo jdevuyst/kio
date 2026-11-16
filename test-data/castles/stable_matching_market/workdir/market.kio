@@ -1,7 +1,7 @@
-module market;
+mod market;
 
-import macros/control(macro if);
-import testapi(Array, Bool, I32);
+import macros/control { macro if }
+import testapi { type Array; type Bool; type I32 }
 import testapi/arith as arith;
 import testapi/array as array;
 

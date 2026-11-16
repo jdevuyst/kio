@@ -1,4 +1,4 @@
-package exec_host_env_root_scoped;
+pkg exec_host_env_root_scoped;
 
 build {
   cache "out/.kio-cache/";

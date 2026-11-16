@@ -1,5 +1,5 @@
-module pkg;
+mod pkg;
 
-import pkg/types(Secret);
+import pkg/types { type Secret }
 
 pub fn reveal() -> Secret { Secret.mk(()) }

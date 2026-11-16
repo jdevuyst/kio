@@ -1,4 +1,4 @@
-package exec_newtype_inference_bare;
+pkg exec_newtype_inference_bare;
 
 build {
   cache "out/.kio-cache/";

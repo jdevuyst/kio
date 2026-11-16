@@ -1,9 +1,9 @@
 /// A `Meters` newtype the dependency owns, over its own `Float`.
-module meters;
+mod meters;
 
 host type Float role(f64);
 
-pub type { Meters: Float { pub mk; pub get; }; }
+pub type { Meters: Float { pub mk; pub get } }
 
 /// Consumes the dependency's own `Meters`.
 pub fn dep_len(m: Meters) -> Float { Meters.get(m) }

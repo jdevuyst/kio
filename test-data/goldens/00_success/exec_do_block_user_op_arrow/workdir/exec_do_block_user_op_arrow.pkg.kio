@@ -1,4 +1,4 @@
-package exec_do_block_user_op_arrow;
+pkg exec_do_block_user_op_arrow;
 
 build {
   cache "out/.kio-cache/";

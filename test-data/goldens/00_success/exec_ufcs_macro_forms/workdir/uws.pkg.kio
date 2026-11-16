@@ -1,4 +1,4 @@
-package uws;
+pkg uws;
 
 build {
   cache "out/.kio-cache/";

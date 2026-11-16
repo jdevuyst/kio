@@ -1,17 +1,39 @@
 /// The Kio' lexer: source text → a positioned token list, driven by the host `loop`.
-module docs_loader/lex;
+mod docs_loader/lex;
 
-import docs_loader/chars(and2, c_backslash, c_dot, c_minus, c_nl, c_quote, c_slash, or2);
-import docs_loader/chars(is_digit, is_space, is_word_cont, is_word_start);
-import docs_loader/macros/control(macro if);
-import docs_loader/macros/match(macro match);
-import docs_loader/macros/spine_macros(macro widen_sum);
-import docs_loader/testapi(Bool, I32, String);
-import docs_loader/testapi/arith(add_i32, eq_i32, leq_i32, lt_i32, mul_i32);
-import docs_loader/testapi/iter(loop);
-import docs_loader/testapi/text(string_code_at, string_concat, string_len, string_slice);
-import docs_loader/token(Token, Toks);
-import docs_loader/token(tk_num, tk_punct, tk_str, tk_word, toks_cons, toks_nil, un_toks);
+import docs_loader/chars {
+  fn and2;
+  fn c_backslash;
+  fn c_dot;
+  fn c_minus;
+  fn c_nl;
+  fn c_quote;
+  fn c_slash;
+  fn or2
+}
+import docs_loader/chars { fn is_digit; fn is_space; fn is_word_cont; fn is_word_start }
+import docs_loader/macros/control { macro if }
+import docs_loader/macros/match { macro match }
+import docs_loader/macros/spine_macros { macro widen_sum }
+import docs_loader/testapi { type Bool; type I32; type String }
+import docs_loader/testapi/arith { fn add_i32; fn eq_i32; fn leq_i32; fn lt_i32; fn mul_i32 }
+import docs_loader/testapi/iter { fn loop }
+import docs_loader/testapi/text {
+  fn string_code_at;
+  fn string_concat;
+  fn string_len;
+  fn string_slice
+}
+import docs_loader/token {
+  fn tk_num;
+  fn tk_punct;
+  fn tk_str;
+  fn tk_word;
+  fn toks_cons;
+  fn toks_nil;
+  fn un_toks
+}
+import docs_loader/token { type Token; type Toks }
 
 // `lex.kio` — turn Kio' source text into a positioned token list.
 //

@@ -1,9 +1,9 @@
-module macros;
+mod macros;
 
 import __intrinsics__;
 
 import __comptime__;
-import testapi(String);
+import testapi { type String }
 
 pub pure fn id_impl(
 , _ct: __Comptime__

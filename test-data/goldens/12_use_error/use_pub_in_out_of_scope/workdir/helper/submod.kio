@@ -1,4 +1,4 @@
-module helper/submod;
+mod helper/submod;
 
 // `secret` is visible only within the `helper` module subtree
 // (`pub(helper)`), so a module outside that subtree cannot import it.

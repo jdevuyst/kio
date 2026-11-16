@@ -1,4 +1,4 @@
-module hello;
+mod hello;
 
 host type String role(str);
 

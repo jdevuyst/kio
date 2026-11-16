@@ -1,5 +1,5 @@
-module main;
+mod main;
 
-import provider(_FooBar);
+import provider {type _FooBar}
 
 fn bad() { () }

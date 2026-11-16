@@ -1,4 +1,4 @@
-module optics/macros/testapi;
+mod optics/macros/testapi;
 
 host type String role(str);
 

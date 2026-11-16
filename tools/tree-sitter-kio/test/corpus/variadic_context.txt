@@ -1,7 +1,7 @@
 ================================================================================
 varop declarations preserve variadic callable names
 ================================================================================
-module variadic/context;
+mod variadic/context;
 fn variadic(value: .) -> . { value }
 fn uses() -> . {
   let bare = variadic;
@@ -9,7 +9,7 @@ fn uses() -> . {
   variadic(());
   helper.variadic(())
 }
-varop [* *] { foldr helper.variadic variadic; };
+op_var [* *] { foldr helper.variadic variadic; };
 --------------------------------------------------------------------------------
 
 (source_file
@@ -183,8 +183,8 @@ fn neighbor() -> . { () }
 ================================================================================
 left modes and finalizer heads do not classify callable names as keywords
 ================================================================================
-varop [< <] { foldl foldl helpers.finalize; finalize foldr; };
-varop [! !] { foldl1 helpers.foldr1 finalize; };
+op_var [< <] { foldl foldl helpers.finalize; finalize foldr; };
+op_var [! !] { foldl1 helpers.foldr1 finalize; };
 --------------------------------------------------------------------------------
 
 (source_file
@@ -234,7 +234,7 @@ varop [! !] { foldl1 helpers.foldr1 finalize; };
 ================================================================================
 complete imported grammars retain fixed groups and split variadic heads
 ================================================================================
-import syntax(op, import, variadic, Entry, op _ (=) _, op _ ~ ___ ~, op _ ? _ : ___, varop [< <]);
+import syntax {fn op; fn import; fn variadic; type Entry; op _ (=) _; op _ ~ ___ ~; op _ ? _ : ___; op_var [< <]}
 --------------------------------------------------------------------------------
 
 (source_file
@@ -242,19 +242,23 @@ import syntax(op, import, variadic, Entry, op _ (=) _, op _ ~ ___ ~, op _ ? _ : 
     (keyword_import)
     (module_path
       (entity_name_module))
-    (bracket_lparen)
+    (bracket_lbrace)
     (import_named_item
+      (keyword_fn)
       (identifier))
-    (separator_comma)
+    (separator_semicolon)
     (import_named_item
+      (keyword_fn)
       (identifier))
-    (separator_comma)
+    (separator_semicolon)
     (import_named_item
+      (keyword_fn)
       (identifier))
-    (separator_comma)
+    (separator_semicolon)
     (import_named_item
+      (keyword_type)
       (identifier))
-    (separator_comma)
+    (separator_semicolon)
     (import_operator_item
       (keyword_op)
       (slot)
@@ -263,14 +267,14 @@ import syntax(op, import, variadic, Entry, op _ (=) _, op _ ~ ___ ~, op _ ? _ : 
         (operator_builtin)
         (bracket_rparen))
       (slot))
-    (separator_comma)
+    (separator_semicolon)
     (import_operator_item
       (keyword_op)
       (slot)
       (operator_run)
       (slot)
       (operator_run))
-    (separator_comma)
+    (separator_semicolon)
     (import_operator_item
       (keyword_op)
       (slot)
@@ -278,7 +282,7 @@ import syntax(op, import, variadic, Entry, op _ (=) _, op _ ~ ___ ~, op _ ? _ : 
       (slot)
       (operator_builtin)
       (slot))
-    (separator_comma)
+    (separator_semicolon)
     (import_operator_item
       (keyword_varop)
       (variadic_head
@@ -286,8 +290,7 @@ import syntax(op, import, variadic, Entry, op _ (=) _, op _ ~ ___ ~, op _ ? _ : 
         (operator_run)
         (operator_run)
         (bracket_rbracket)))
-    (bracket_rparen)
-    (separator_semicolon)))
+    (bracket_rbrace)))
 
 ================================================================================
 bare contextual words remain identifiers

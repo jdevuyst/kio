@@ -1,4 +1,4 @@
-module pkg;
+mod pkg;
 
 fn identity(x: .) { x }
 

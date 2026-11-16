@@ -1,4 +1,4 @@
-package dnd;
+pkg dnd;
 
 build {
   cache "out/.kio-cache/";

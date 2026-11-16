@@ -1,6 +1,6 @@
-module main;
+mod main;
 
-import origin(op _ ? _);
+import origin { op _ ? _ }
 
 fn choose(a: ., b: ., c: .) { a }
 

@@ -1,4 +1,4 @@
-module main;
+mod main;
 
 // Abstract higher-kinded application: a function generic over a
 // kind-`*→*` brand binder `[*F]` and a kind-`*` carrier `[A]`,

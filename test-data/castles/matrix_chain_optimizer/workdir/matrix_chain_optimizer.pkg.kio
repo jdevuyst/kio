@@ -1,4 +1,4 @@
-package matrix_chain_optimizer;
+pkg matrix_chain_optimizer;
 
 build {
   cache "out/.kio-cache/";

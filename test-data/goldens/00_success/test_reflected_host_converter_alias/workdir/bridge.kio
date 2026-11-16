@@ -1,4 +1,4 @@
-module bridge;
+mod bridge;
 
 import runtime as runtime;
 

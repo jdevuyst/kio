@@ -1,4 +1,4 @@
-module equiv_product_packet_binder_equivalence;
+mod equiv_product_packet_binder_equivalence;
 
 host type T;
 

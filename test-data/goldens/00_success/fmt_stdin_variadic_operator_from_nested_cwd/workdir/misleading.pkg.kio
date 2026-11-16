@@ -1,4 +1,4 @@
-package misleading;
+pkg misleading;
 
 build {
   cache "out/.kio-cache/";

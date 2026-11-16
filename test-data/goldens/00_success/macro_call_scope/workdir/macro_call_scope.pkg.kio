@@ -1,4 +1,4 @@
-package macro_call_scope;
+pkg macro_call_scope;
 
 build {
   cache "out/.kio-cache/";

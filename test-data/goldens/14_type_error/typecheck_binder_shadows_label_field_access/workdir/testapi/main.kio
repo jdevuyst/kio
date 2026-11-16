@@ -1,6 +1,6 @@
-module testapi/main;
+mod testapi/main;
 
-import testapi(String);
+import testapi { type String }
 
 pub type { A: String { pub mk; pub get } }
 

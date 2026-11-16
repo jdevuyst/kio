@@ -44,13 +44,13 @@ expect_exit 0 "$KIO_BIN" sig stage app.pkg.kio
 # package and advance the generation once.
 expect_exit 0 "$KIO_BIN" sig commit . .
 # Overlapping dir + pkg-file selector also dedups.
-"$KIO_BIN" sig log | grep -q 'signature app v(2);' || {
+"$KIO_BIN" sig log | grep -q 'sig app v(2);' || {
   printf 'duplicate selectors should advance to v(2) exactly once\n' >&2
   "$KIO_BIN" sig log >&2
   exit 1
 }
 # A v(3) would mean it advanced twice — it must not have.
-if "$KIO_BIN" sig log | grep -q 'signature app v(3);'; then
+if "$KIO_BIN" sig log | grep -q 'sig app v(3);'; then
   printf 'duplicate selectors double-advanced the generation\n' >&2
   exit 1
 fi

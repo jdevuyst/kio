@@ -1,4 +1,4 @@
-package tape_macro_interpreter;
+pkg tape_macro_interpreter;
 
 build {
   cache "out/.kio-cache/";

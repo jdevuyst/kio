@@ -1,4 +1,4 @@
-package elevator_bank_sim;
+pkg elevator_bank_sim;
 
 build {
   cache "out/.kio-cache/";

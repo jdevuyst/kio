@@ -1,4 +1,4 @@
-package exec_recur_escape_argument_order;
+pkg exec_recur_escape_argument_order;
 
 build {
   cache "out/.kio-cache/";

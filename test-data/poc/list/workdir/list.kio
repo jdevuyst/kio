@@ -1,22 +1,22 @@
 /// Ready-to-use linked-list library with host-backed spine walks, partial accessors, operators, and list literals.
-module list;
+mod list;
 
-import core(
-, List
-, append_step
-, cons
-, head
-, length_step
-, map_step
-, nil
-, reverse_step
-, singleton
-, tail
-, uncons
-);
-import macros/control(Bool as Control_bool, macro if);
-import macros/match(macro match);
-import macros/spine_macros(macro widen_sum);
+import core {
+  type List;
+  fn append_step;
+  fn cons;
+  fn head;
+  fn length_step;
+  fn map_step;
+  fn nil;
+  fn reverse_step;
+  fn singleton;
+  fn tail;
+  fn uncons
+}
+import macros/control { type Bool as Control_bool; macro if }
+import macros/match { macro match }
+import macros/spine_macros { macro widen_sum }
 
 pub type Bool = Control_bool;
 
@@ -390,7 +390,7 @@ pub op _ <| _ |> { impl index }
 pub op _ |> _ { impl map_with }
 
 /// Builds lists with bracket syntax.
-pub varop [] { foldr prepend empty }
+pub op_var [] { foldr prepend empty }
 
 // =====================================================================
 // equiv-law battery

@@ -1,9 +1,9 @@
-module testapi/main;
+mod testapi/main;
 
 import alib/greet as left;
 import blib/greet as right;
-import testapi(String);
-import testapi/io(print);
+import testapi { type String }
+import testapi/io { fn print }
 
 pub fn main() {
   print(left.marker("left-before\n"[String], "left-after\n"[String]));

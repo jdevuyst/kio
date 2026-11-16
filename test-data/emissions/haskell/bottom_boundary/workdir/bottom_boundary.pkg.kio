@@ -1,4 +1,4 @@
-package bottom_boundary;
+pkg bottom_boundary;
 
 build {
   cache "out/.kio-cache/";

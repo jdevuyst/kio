@@ -1,4 +1,4 @@
-package residual_type_binders;
+pkg residual_type_binders;
 
 build {
   cache "out/.kio-cache/";

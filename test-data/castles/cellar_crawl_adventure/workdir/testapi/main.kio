@@ -5,8 +5,8 @@
 /// key, and one room is unlit and turns away anyone without the lantern. The
 /// player drives it from stdin with a seven-verb command language, and the
 /// program prints the whole transcript itself — the runner echoes nothing.
-module testapi/main;
+mod testapi/main;
 
-import cellar/session(run);
+import cellar/session { fn run }
 
 pub fn main() { run() }

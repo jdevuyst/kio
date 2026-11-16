@@ -630,8 +630,7 @@ mod integration_tests {
 
     #[test]
     fn live_snapshot_matches_replayed_sig() {
-        let module_src = "\
-module api;
+        let module_src = "mod api;
 
 host type Handle role(i32);
 
@@ -639,7 +638,7 @@ host fn open() -> Handle;
 
 pub fn serve(h: Handle) -> Handle { h }
 ";
-        let pkg_src = "package app;\n\nbridge {\n  api;\n}\n";
+        let pkg_src = "pkg app;\n\nbridge {\n  api;\n}\n";
         let package = typed_package("api", module_src, pkg_src);
         let live = ContractSnapshot::from_package(&package);
 
@@ -662,13 +661,12 @@ pub fn serve(h: Handle) -> Handle { h }
         // A sig changelog that records exactly this surface, replayed,
         // must compare clean against the live package — the snapshot and
         // the replay produce identical canonical forms.
-        let sig_src = "\
-signature app v(1);
+        let sig_src = "sig app v(1);
 
 v(1) {
   nonbreaking {
     add {
-      module api {
+      mod api {
         host type Handle role(i32);
         host fn open() -> Handle;
         pub fn serve(h: Handle) -> Handle;
@@ -691,14 +689,14 @@ v(1) {
     fn draft_records_a_projected_recursive_group_once_and_refs_its_members() {
         let package = typed_package(
             "api",
-            r#"module api;
+            r#"mod api;
 
 rec {
   pub type A = B;
   pub type { B : A { pub mk; pub get; }; };
 }
 "#,
-            "package app;\n\nbridge {\n  api;\n}\n",
+            "pkg app;\n\nbridge {\n  api;\n}\n",
         );
         let live = ContractSnapshot::from_package(&package);
         let recorded = record::RecordedSurface::from_package(&package);
@@ -706,14 +704,14 @@ rec {
         let text = emit_signature_file(&plan.recomputed);
         assert_eq!(text.matches("rec {").count(), 1, "{text}");
         assert!(
-            text.contains("with {\n    module api {\n      rec {"),
+            text.contains("with {\n    mod api {\n      rec {"),
             "{text}"
         );
         assert!(
             text.contains("add {\n      api.A;\n      api.B\n    }"),
             "{text}"
         );
-        assert!(!text.contains("module api {\n        pub type A"), "{text}");
+        assert!(!text.contains("mod api {\n        pub type A"), "{text}");
 
         let parsed = crate::pass::parser::parse_signature_file(&text, Some("app"))
             .expect("emitted recursive sig parses");
@@ -725,14 +723,14 @@ rec {
     fn draft_records_a_projected_recursive_singleton_once_and_refs_it() {
         let package = typed_package(
             "api",
-            r#"module api;
+            r#"mod api;
 
 pub rec type { List[A] : . | (A & List[A]) {
   pub mk;
   pub get;
 }; };
 "#,
-            "package app;\n\nbridge {\n  api;\n}\n",
+            "pkg app;\n\nbridge {\n  api;\n}\n",
         );
         let live = ContractSnapshot::from_package(&package);
         let recorded = record::RecordedSurface::from_package(&package);
@@ -740,7 +738,7 @@ pub rec type { List[A] : . | (A & List[A]) {
         let text = emit_signature_file(&plan.recomputed);
         assert_eq!(text.matches("rec type").count(), 1, "{text}");
         assert!(
-            text.contains("with {\n    module api {\n      pub rec type { List"),
+            text.contains("with {\n    mod api {\n      pub rec type { List"),
             "{text}"
         );
         assert!(text.contains("add {\n      api.List\n    }"), "{text}");
@@ -755,19 +753,19 @@ pub rec type { List[A] : . | (A & List[A]) {
     fn draft_rejects_an_invalid_fresh_signature_artifact() {
         let package = typed_package(
             "api",
-            r#"module api;
+            r#"mod api;
 
 pub rec type { Bad : . | Bad {
   pub mk;
   pub get;
 }; };
 "#,
-            "package app; bridge { api; }",
+            "pkg app; bridge { api; }",
         );
         let live = ContractSnapshot::from_package(&package);
         let mut recorded = record::RecordedSurface::from_package(&package);
         let malformed: crate::ast::Module<Surface> = crate::pass::parser::parse(
-            r#"module api;
+            r#"mod api;
 pub rec type { Bad : (Bad -> .) {
   pub mk;
   pub get;
@@ -804,14 +802,14 @@ pub rec type { Bad : (Bad -> .) {
     fn contract_projection_drops_a_hidden_recursive_singleton_edge() {
         let package = typed_package(
             "api",
-            r#"module api;
+            r#"mod api;
 
 pub rec type { Secret : Secret {
   mk;
   get;
 }; };
 "#,
-            "package app;\n\nbridge {\n  api;\n}\n",
+            "pkg app;\n\nbridge {\n  api;\n}\n",
         );
         let live = ContractSnapshot::from_package(&package);
         let recorded = record::RecordedSurface::from_package(&package);
@@ -831,14 +829,14 @@ pub rec type { Secret : Secret {
     fn contract_projection_recomputes_and_drops_a_hidden_recursive_edge() {
         let package = typed_package(
             "api",
-            r#"module api;
+            r#"mod api;
 
 rec {
   pub type { A : B { mk; get; }; };
   pub type { B : A { pub mk; pub get; }; };
 }
 "#,
-            "package app;\n\nbridge {\n  api;\n}\n",
+            "pkg app;\n\nbridge {\n  api;\n}\n",
         );
         let live = ContractSnapshot::from_package(&package);
         let recorded = record::RecordedSurface::from_package(&package);
@@ -865,7 +863,7 @@ rec {
     fn contract_projection_repartitions_a_mutual_group_into_a_recursive_singleton() {
         let package = typed_package(
             "api",
-            r#"module api;
+            r#"mod api;
 
 rec {
   pub type { A : A | B {
@@ -878,7 +876,7 @@ rec {
   }; };
 }
 "#,
-            "package app; bridge { api; }",
+            "pkg app; bridge { api; }",
         );
         let live = ContractSnapshot::from_package(&package);
         let recorded = record::RecordedSurface::from_package(&package);
@@ -900,7 +898,7 @@ rec {
     fn draft_carries_unchanged_peer_group_when_one_recursive_scc_splits() {
         let base = typed_package(
             "api",
-            r#"module api;
+            r#"mod api;
 
 rec {
   pub type A = B;
@@ -909,7 +907,7 @@ rec {
   pub type { D : C | A { pub mk; pub get; }; };
 }
 "#,
-            "package app; bridge { api; }",
+            "pkg app; bridge { api; }",
         );
         let base_live = ContractSnapshot::from_package(&base);
         let base_recorded = record::RecordedSurface::from_package(&base);
@@ -920,7 +918,7 @@ rec {
 
         let split = typed_package(
             "api",
-            r#"module api;
+            r#"mod api;
 
 rec {
   pub type A = B;
@@ -932,7 +930,7 @@ rec {
   pub type { D : C { pub mk; pub get; }; };
 }
 "#,
-            "package app; bridge { api; }",
+            "pkg app; bridge { api; }",
         );
         let split_live = ContractSnapshot::from_package(&split);
         let split_recorded = record::RecordedSurface::from_package(&split);
@@ -976,7 +974,7 @@ rec {
     fn draft_clears_old_context_for_unchanged_peers_that_become_acyclic() {
         let base = typed_package(
             "api",
-            r#"module api;
+            r#"mod api;
 
 rec {
   pub type A = B;
@@ -984,7 +982,7 @@ rec {
   pub type C = A;
 }
 "#,
-            "package app; bridge { api; }",
+            "pkg app; bridge { api; }",
         );
         let base_live = ContractSnapshot::from_package(&base);
         let base_recorded = record::RecordedSurface::from_package(&base);
@@ -995,13 +993,13 @@ rec {
 
         let acyclic = typed_package(
             "api",
-            r#"module api;
+            r#"mod api;
 
 pub type C = .;
 pub type { B : C { pub mk; pub get; }; };
 pub type A = B;
 "#,
-            "package app; bridge { api; }",
+            "pkg app; bridge { api; }",
         );
         let acyclic_live = ContractSnapshot::from_package(&acyclic);
         let acyclic_recorded = record::RecordedSurface::from_package(&acyclic);
@@ -1013,11 +1011,11 @@ pub type A = B;
         let text = emit_signature_file(&plan.recomputed);
         let v2 = text.rsplit_once("v(2) {").expect("v2 block").1;
         assert!(!v2.contains("rec {"), "{text}");
-        assert!(v2.contains("with {\n    module api {"), "{text}");
+        assert!(v2.contains("with {\n    mod api {"), "{text}");
         assert!(v2.contains("pub type A = B;"), "{text}");
         assert!(v2.contains("pub type { B: C"), "{text}");
         assert!(
-            v2.contains("modify {\n      module api {\n        pub type C = .\n      }"),
+            v2.contains("modify {\n      mod api {\n        pub type C = .\n      }"),
             "{text}"
         );
 
@@ -1038,13 +1036,12 @@ pub type A = B;
 
     #[test]
     fn ordinary_nominal_reference_adds_only_the_declared_contract_kinds() {
-        let module_src = "\
-module api;
+        let module_src = "mod api;
 
 pub type { Field: .; };
 pub type Row = Field & { Other: .; };
 ";
-        let pkg_src = "package app;\n\nbridge {\n  api;\n}\n";
+        let pkg_src = "pkg app;\n\nbridge {\n  api;\n}\n";
         let package = typed_package("api", module_src, pkg_src);
         let live = ContractSnapshot::from_package(&package);
 
@@ -1069,8 +1066,7 @@ pub type Row = Field & { Other: .; };
     fn live_snapshot_projects_newtype_payload_only_through_public_members() {
         let package = typed_package(
             "api",
-            "\
-module api;
+            "mod api;
 
 type Hidden = .;
 pub type Visible = .;
@@ -1078,7 +1074,7 @@ pub type Visible = .;
 pub type { Opaque : Hidden { mk; get; }; };
 pub type { Exposed : Visible { pub mk; get; }; };
 ",
-            "package app; bridge { api; }",
+            "pkg app; bridge { api; }",
         );
         let snapshot = ContractSnapshot::from_package(&package);
 
@@ -1107,17 +1103,12 @@ pub type { Exposed : Visible { pub mk; get; }; };
     fn hidden_newtype_details_do_not_change_the_public_contract() {
         let snapshot = |hidden: &str| {
             let source = format!(
-                "module api; \
-                 type {hidden} = .; \
-                 pub type {{ Opaque : {hidden} {{ \
-                   mk; \
-                   get; \
-                 }}; }};"
+                "mod api; type {hidden} = .; pub type {{ Opaque : {hidden} {{ mk; get; }}; }};"
             );
             ContractSnapshot::from_package(&typed_package(
                 "api",
                 &source,
-                "package app; bridge { api; }",
+                "pkg app; bridge { api; }",
             ))
         };
 
@@ -1133,14 +1124,9 @@ pub type { Exposed : Visible { pub mk; get; }; };
         let emitted = |hidden: &str, existential: &str, scoped: bool| {
             let member_visibility = if scoped { "pub(api) " } else { "" };
             let source = format!(
-                "module api; \
-                 type {hidden} = .; \
-                 pub type {{ Opaque <{existential}> : ({hidden} & {existential}) {{ \
-                   {member_visibility}mk; \
-                   {member_visibility}get; \
-                 }}; }};"
+                "mod api; type {hidden} = .; pub type {{ Opaque <{existential}> : ({hidden} & {existential}) {{ {member_visibility}mk; {member_visibility}get; }}; }};"
             );
-            let package = typed_package("api", &source, "package app; bridge { api; }");
+            let package = typed_package("api", &source, "pkg app; bridge { api; }");
             let live = ContractSnapshot::from_package(&package);
             let recorded = RecordedSurface::from_package(&package);
             let plan = compute_draft("app", None, &recorded, &live).expect("compute draft");
@@ -1176,17 +1162,8 @@ pub type { Exposed : Visible { pub mk; get; }; };
     fn recorded_newtype_preserves_exact_public_member_role_and_payload() {
         let package = typed_package(
             "api",
-            "module api; \
-             pub type Visible = .; \
-             pub type { Ctor_only : Visible { \
-               pub mk; \
-               get; \
-             }; }; \
-             pub type { Proj_only : Visible { \
-               mk; \
-               pub get; \
-             }; };",
-            "package app; bridge { api; }",
+            "mod api; pub type Visible = .; pub type { Ctor_only : Visible { pub mk; get; }; }; pub type { Proj_only : Visible { mk; pub get; }; };",
+            "pkg app; bridge { api; }",
         );
         let live = ContractSnapshot::from_package(&package);
         assert_eq!(
@@ -1226,14 +1203,7 @@ pub type { Exposed : Visible { pub mk; get; }; };
     fn parsed_signature_emission_canonicalizes_hidden_newtype_details() {
         let signature = |provider: &str, hidden: &str| {
             format!(
-                "signature app v(1); \
-                 v(1) {{ nonbreaking {{ add {{ module api {{ \
-                   import {provider}({hidden}); \
-                   pub type {{ Opaque : {hidden} {{ \
-                     mk; \
-                     get; \
-                   }}; }}; \
-                 }} }} }} }}"
+                "sig app v(1); v(1) {{ nonbreaking {{ add {{ mod api {{ import {provider} {{type {hidden}}}; pub type {{ Opaque : {hidden} {{ mk; get; }}; }}; }} }} }} }}"
             )
         };
         let left = crate::pass::parser::parse_signature_file(
@@ -1272,37 +1242,38 @@ pub type { Exposed : Visible { pub mk; get; }; };
     fn hidden_newtype_trivia_does_not_change_the_signature_contract() {
         let signature = |side: &str| {
             format!(
-                "signature app v(1);\n\
-                 \n\
-                 v(1) {{\n\
-                   nonbreaking {{\n\
-                     add {{\n\
-                       module api {{\n\
-                         pub type {{ Opaque : . {{\n\
-                           // {side} opaque constructor\n\
-                           mk;\n\
-                           // {side} opaque projector\n\
-                           get;\n\
-                           // {side} opaque dangling\n\
-                         }}; }};\n\
-                         pub type {{ Constructor_visible : . {{\n\
-                           // fixed visible constructor\n\
-                           pub mk;\n\
-                           // {side} hidden projector\n\
-                           get;\n\
-                           // fixed constructor-visible dangling\n\
-                         }}; }};\n\
-                         pub type {{ Projector_visible : . {{\n\
-                           // {side} hidden constructor\n\
-                           mk;\n\
-                           // fixed visible projector\n\
-                           pub get;\n\
-                           // fixed projector-visible dangling\n\
-                         }}; }};\n\
-                       }}\n\
-                     }}\n\
-                   }}\n\
-                 }}\n"
+                "sig app v(1);
+
+v(1) {{
+nonbreaking {{
+add {{
+mod api {{
+pub type {{ Opaque : . {{
+// {side} opaque constructor
+mk;
+// {side} opaque projector
+get;
+// {side} opaque dangling
+}}; }};
+pub type {{ Constructor_visible : . {{
+// fixed visible constructor
+pub mk;
+// {side} hidden projector
+get;
+// fixed constructor-visible dangling
+}}; }};
+pub type {{ Projector_visible : . {{
+// {side} hidden constructor
+mk;
+// fixed visible projector
+pub get;
+// fixed projector-visible dangling
+}}; }};
+}}
+}}
+}}
+}}
+"
             )
         };
         let left = crate::pass::parser::parse_signature_file(&signature("left"), Some("app"))
@@ -1345,8 +1316,7 @@ pub type { Exposed : Visible { pub mk; get; }; };
 
     #[test]
     fn live_export_added_since_sig_is_compatible_drift() {
-        let module_src = "\
-module api;
+        let module_src = "mod api;
 
 host type Handle role(i32);
 
@@ -1354,18 +1324,17 @@ pub fn serve(h: Handle) -> Handle { h }
 
 pub fn close(h: Handle) -> Handle { h }
 ";
-        let pkg_src = "package app;\n\nbridge {\n  api;\n}\n";
+        let pkg_src = "pkg app;\n\nbridge {\n  api;\n}\n";
         let package = typed_package("api", module_src, pkg_src);
         let live = ContractSnapshot::from_package(&package);
 
         // The sig knows only `Handle` + `serve`; `close` was added since.
-        let sig_src = "\
-signature app v(1);
+        let sig_src = "sig app v(1);
 
 v(1) {
   nonbreaking {
     add {
-      module api {
+      mod api {
         host type Handle role(i32);
         pub fn serve(h: Handle) -> Handle;
       }
@@ -1388,8 +1357,7 @@ v(1) {
 
     #[test]
     fn live_and_replayed_decl_binders_are_alpha_equivalent() {
-        let module_src = "\
-module api;
+        let module_src = "mod api;
 
 pub type Identity[A] = A;
 
@@ -1398,17 +1366,16 @@ pub type { Pack[A] <Hidden> : (A & Hidden) {
   pub get;
 }; };
 ";
-        let pkg_src = "package app;\n\nbridge {\n  api;\n}\n";
+        let pkg_src = "pkg app;\n\nbridge {\n  api;\n}\n";
         let package = typed_package("api", module_src, pkg_src);
         let live = ContractSnapshot::from_package(&package);
 
-        let sig_src = "\
-signature app v(1);
+        let sig_src = "sig app v(1);
 
 v(1) {
   nonbreaking {
     add {
-      module api {
+      mod api {
         pub type Identity[Value] = Value;
         pub type { Pack[Visible] <Sealed> : (Visible & Sealed) {
           pub mk;
@@ -1433,20 +1400,19 @@ v(1) {
 
     #[test]
     fn replayed_generic_aliases_keep_selective_and_qualified_nominal_identity() {
-        let sig_src = "\
-signature app v(1);
+        let sig_src = "sig app v(1);
 
 v(1) {
   nonbreaking {
     add {
-      module left {
+      mod left {
         pub type { Same[A] : A { mk; get; }; };
       };
-      module right {
+      mod right {
         pub type { Same[A] : A { mk; get; }; };
       };
-      module api {
-        import left(Same);
+      mod api {
+        import left {type Same};
         import right as r;
         pub type Selected[Value] = Same[Value];
         pub type Qualified[Item] = r.Same[Item];
@@ -1480,8 +1446,7 @@ v(1) {
         // section's. A section-local-only oracle would canonicalize `H`
         // to `@H`, diverging from the live snapshot and producing a
         // spurious break.
-        let module_src = "\
-module api;
+        let module_src = "mod api;
 
 host type H role(i32);
 
@@ -1489,17 +1454,16 @@ pub fn f() -> H { todo_h() }
 
 host fn todo_h() -> H;
 ";
-        let pkg_src = "package app;\n\nbridge {\n  api;\n}\n";
+        let pkg_src = "pkg app;\n\nbridge {\n  api;\n}\n";
         let package = typed_package("api", module_src, pkg_src);
         let live = ContractSnapshot::from_package(&package);
 
-        let sig_src = "\
-signature app v(2);
+        let sig_src = "sig app v(2);
 
 v(1) {
   nonbreaking {
     add {
-      module api {
+      mod api {
         host type H role(i32);
         host fn todo_h() -> H;
         pub fn f(x: H) -> H;
@@ -1511,7 +1475,7 @@ v(1) {
 v(2) {
   breaking {
     modify {
-      module api {
+      mod api {
         pub fn f() -> H;
       }
     }
@@ -1590,8 +1554,7 @@ v(2) {
     fn record_emit_replay_round_trips_single_module() {
         assert_round_trips(
             "api",
-            "\
-module api;
+            "mod api;
 
 host type Handle role(i32);
 
@@ -1603,7 +1566,7 @@ type Alias = Handle;
 
 pub fn serve[A](h: Handle, x: A) -> Handle { h }
 ",
-            "package app;\n\nbridge {\n  api;\n}\n",
+            "pkg app;\n\nbridge {\n  api;\n}\n",
         );
     }
 
@@ -1611,8 +1574,7 @@ pub fn serve[A](h: Handle, x: A) -> Handle { h }
     fn record_emit_replay_preserves_marked_type_names() {
         let package = typed_package(
             "api",
-            "\
-module api;
+            "mod api;
 
 host type _String role(str);
 
@@ -1620,7 +1582,7 @@ pub type _Alias[_A] = _A;
 
 pub type { _Box[_A] : _A { pub mk; pub get; }; };
 ",
-            "package app;\n\nbridge {\n  api;\n}\n",
+            "pkg app;\n\nbridge {\n  api;\n}\n",
         );
         let live = ContractSnapshot::from_package(&package);
         let recorded = RecordedSurface::from_package(&package);
@@ -1645,8 +1607,8 @@ pub type { _Box[_A] : _A { pub mk; pub get; }; };
     fn record_emit_replay_preserves_exported_function_purity() {
         let package = lowered_package(
             "api",
-            "module api; pub pure fn id[A](x: A) -> A { x }",
-            "package app; bridge { api; }",
+            "mod api; pub pure fn id[A](x: A) -> A { x }",
+            "pkg app; bridge { api; }",
         );
         let live = ContractSnapshot::from_package(&package);
         let recorded = RecordedSurface::from_package(&package);
@@ -1673,8 +1635,8 @@ pub type { _Box[_A] : _A { pub mk; pub get; }; };
             "pub(api) mk; pub(api) get",
         ] {
             let source =
-                format!("module api; pub type {{ Wrap[A]<Hidden>: A & Hidden {{ {members} }}; }}");
-            let package = typed_package("api", &source, "package app; bridge { api; }");
+                format!("mod api; pub type {{ Wrap[A]<Hidden>: A & Hidden {{ {members} }}; }}");
+            let package = typed_package("api", &source, "pkg app; bridge { api; }");
             let live = ContractSnapshot::from_package(&package);
             let recorded = RecordedSurface::from_package(&package);
             let plan = compute_draft("app", None, &recorded, &live).expect("fixed-role draft");
@@ -1699,7 +1661,7 @@ pub type { _Box[_A] : _A { pub mk; pub get; }; };
             "pub type Choice = { First: . { mk; get; }; } | .",
         ] {
             let source = format!(
-                "signature app v(1); v(1) {{ nonbreaking {{ add {{ module api {{ {declaration} }} }} }} }}"
+                "sig app v(1); v(1) {{ nonbreaking {{ add {{ mod api {{ {declaration} }} }} }} }}"
             );
             crate::pass::parser::parse_signature_file(&source, Some("app")).unwrap_err();
         }
@@ -1724,7 +1686,7 @@ pub type { _Box[_A] : _A { pub mk; pub get; }; };
             (live, text, digest)
         }
 
-        let source = "module api;
+        let source = "mod api;
             host type A;
             host fn callback[A](value: A) -> A;
             pub pure fn direct[A] -> . { () }
@@ -1744,7 +1706,7 @@ pub type { _Box[_A] : _A { pub mk; pub get; }; };
             pub type { Both[A] : A {
                 pub mk; pub get;
             }; };";
-        let package_source = "package app; bridge { api; }";
+        let package_source = "pkg app; bridge { api; }";
         let full = observe(&lowered_package("api", source, package_source));
         let prime = observe(&typed_package("api", source, package_source));
         assert_eq!(full, prime, "Full and Prime preserve bytes and digest");
@@ -1804,8 +1766,7 @@ pub type { _Box[_A] : _A { pub mk; pub get; }; };
         // Two modules; `main` references `core`'s exported newtype, so
         // the recorded `main` section must carry the `import` that resolves
         // it. The package's bridge selects both.
-        let module_src = "\
-module core;
+        let module_src = "mod core;
 
 host type Raw role(i32);
 
@@ -1824,10 +1785,9 @@ pub type { Id : Raw { pub mk; pub get; }; };
         };
         let core = desugar(module_src);
         let main = desugar(
-            "\
-module main;
+            "mod main;
 
-import core(Id);
+import core {type Id}
 
 pub fn wrap(x: Id) -> Id { x }
 ",
@@ -1863,7 +1823,7 @@ pub fn wrap(x: Id) -> Id { x }
                 },
             );
         }
-        let pkg_src = "package app;\n\nbridge {\n  core;\n  main;\n}\n";
+        let pkg_src = "pkg app;\n\nbridge {\n  core;\n  main;\n}\n";
         let surface_pkg =
             crate::pass::parser::parse_package_file(pkg_src, Some("app")).expect("parse pkg");
         let pkg_prime = PackageFile::<Prime> {

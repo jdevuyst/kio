@@ -1,5 +1,5 @@
-module main;
+mod main;
 
-import macros(macro guarded);
+import macros { macro guarded }
 
 fn witness() { guarded(((), ()))[.] }

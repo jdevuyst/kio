@@ -1,4 +1,4 @@
-package derive_inline_fn;
+pkg derive_inline_fn;
 
 build {
   cache "out/.kio-cache/";

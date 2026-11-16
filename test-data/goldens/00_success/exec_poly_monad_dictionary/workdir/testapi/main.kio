@@ -1,9 +1,9 @@
-module testapi/main;
+mod testapi/main;
 
-import macros/sequence(macro do);
-import testapi(String);
-import testapi/io(print);
-import testapi/text(string_concat);
+import macros/sequence { macro do }
+import testapi { type String }
+import testapi/io { fn print }
+import testapi/text { fn string_concat }
 
 // The canonical brand-eligible arity-1 newtype.
 pub type { Box[A]: A { pub mk; pub get } }

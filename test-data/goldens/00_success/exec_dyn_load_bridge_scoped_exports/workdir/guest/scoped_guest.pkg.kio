@@ -1,4 +1,4 @@
-package scoped_guest;
+pkg scoped_guest;
 
 build {
   cache "out/.kio-cache/";

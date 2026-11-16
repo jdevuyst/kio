@@ -1,5 +1,5 @@
-module testapi/provider;
+mod testapi/provider;
 
-import testapi(String);
+import testapi { type String }
 
 pub fn identity(value: String) -> String { value }

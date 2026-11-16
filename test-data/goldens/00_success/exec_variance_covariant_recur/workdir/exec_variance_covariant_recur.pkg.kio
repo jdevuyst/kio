@@ -1,4 +1,4 @@
-package exec_variance_covariant_recur;
+pkg exec_variance_covariant_recur;
 
 build {
   cache "out/.kio-cache/";

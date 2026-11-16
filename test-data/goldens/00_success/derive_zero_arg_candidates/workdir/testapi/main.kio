@@ -1,9 +1,9 @@
-module testapi/main;
+mod testapi/main;
 
-import macros/derive(macro derive);
-import macros/spine_macros(macro widen_sum);
-import testapi(Int, String);
-import testapi/io(print);
+import macros/derive { macro derive }
+import macros/spine_macros { macro widen_sum }
+import testapi { type Int; type String }
+import testapi/io { fn print }
 
 type Unit_sum = . | !;
 

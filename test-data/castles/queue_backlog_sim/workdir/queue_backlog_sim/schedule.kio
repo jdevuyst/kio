@@ -1,8 +1,8 @@
-module queue_backlog_sim/schedule;
+mod queue_backlog_sim/schedule;
 
-import macros/control(macro if);
-import testapi(Bool, I32);
-import testapi/arith(add_i32, eq_i32);
+import macros/control { macro if }
+import testapi { type Bool; type I32 }
+import testapi/arith { fn add_i32; fn eq_i32 }
 
 pub fn total_ticks() -> I32 { 7 }
 

@@ -1,10 +1,10 @@
-module testapi/main;
+mod testapi/main;
 
 import __intrinsics__;
 
-import macros/spine_macros(macro one_sum, macro one_sum_);
-import testapi(String);
-import testapi/io(print);
+import macros/spine_macros { macro one_sum; macro one_sum_ }
+import testapi { type String }
+import testapi/io { fn print }
 
 fn leading_bottom[A](value: A) -> A { let collapsed = one_sum_(__right__[!][A](value)); collapsed }
 

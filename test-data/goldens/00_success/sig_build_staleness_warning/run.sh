@@ -55,7 +55,7 @@ expect_exit 0 "$KIO_BIN" sig commit
 
 # (silent) Only a nonbreaking unrecorded drift (a new export): no
 # advisory.
-printf 'module api;\n\npub fn serve() -> . { () }\n\npub fn more() -> . { () }\n' > api.kio
+printf 'mod api;\n\npub fn serve() -> . { () }\n\npub fn more() -> . { () }\n' > api.kio
 if warns "$KIO_BIN" check; then
   printf 'a nonbreaking unrecorded drift must not warn\n' >&2
   cat warn.err >&2
@@ -64,7 +64,7 @@ fi
 
 # (warns) An unrecorded BREAKING change (drop the sealed export
 # `serve`): `kio check` AND `kio build` warn on stderr but still exit 0.
-printf 'module api;\n\npub fn other() -> . { () }\n' > api.kio
+printf 'mod api;\n\npub fn other() -> . { () }\n' > api.kio
 warns "$KIO_BIN" check || {
   # shellcheck disable=SC2016
   printf '`kio check` must warn on an unrecorded breaking change\n' >&2

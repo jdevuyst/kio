@@ -1,4 +1,4 @@
-package exec_dyn_load_curried_signature;
+pkg exec_dyn_load_curried_signature;
 
 build {
   cache "out/.kio-cache/";

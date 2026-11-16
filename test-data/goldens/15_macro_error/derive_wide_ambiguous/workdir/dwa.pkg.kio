@@ -1,4 +1,4 @@
-package dwa;
+pkg dwa;
 
 build {
   cache "out/.kio-cache/";

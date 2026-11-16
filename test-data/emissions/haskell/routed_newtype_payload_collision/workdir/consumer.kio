@@ -1,7 +1,7 @@
-module consumer;
+mod consumer;
 
 import actual as a;
-import domain(Items);
+import domain { type Items }
 import list/list as list;
 import wrong as actual;
 

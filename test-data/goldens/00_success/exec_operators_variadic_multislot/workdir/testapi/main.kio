@@ -1,8 +1,8 @@
-module testapi/main;
+mod testapi/main;
 
-import testapi(String);
-import testapi/io(print);
-import testapi/text(string_concat);
+import testapi { type String }
+import testapi/io { fn print }
+import testapi/text { fn string_concat }
 
 fn nil() -> String { "" }
 
@@ -16,7 +16,7 @@ fn entry(key: String, value: String) -> String & String { (key, value) }
 
 op _ => _ { impl entry }
 
-varop [% %] { foldr cons nil }
+op_var [% %] { foldr cons nil }
 
 pub fn main() {
   print([% "a" => "1", "b" => "2", "c" => "3" %]);

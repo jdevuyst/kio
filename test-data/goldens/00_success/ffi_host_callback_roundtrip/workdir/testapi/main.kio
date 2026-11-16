@@ -1,9 +1,9 @@
-module testapi/main;
+mod testapi/main;
 
-import testapi(Bool, I32, String);
-import testapi/arith(add_i32, call_step, make_pair);
-import testapi/fmt(bool_to_string, i32_to_string);
-import testapi/io(print);
+import testapi { type Bool; type I32; type String }
+import testapi/arith { fn add_i32; fn call_step; fn make_pair }
+import testapi/fmt { fn bool_to_string; fn i32_to_string }
+import testapi/io { fn print }
 
 pub fn main() {
   let stepped =

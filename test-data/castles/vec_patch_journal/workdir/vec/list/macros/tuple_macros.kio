@@ -1,36 +1,36 @@
 /// Tuple-product macros for grouping, splitting, zipping, mapping, and selecting product slots.
-module vec/list/macros/tuple_macros;
+mod vec/list/macros/tuple_macros;
 
 import __intrinsics__;
 
 import __comptime__;
-import vec/list/macros/macro_util(
-, Macro_result
-, Slot
-, Slot_list
-, Term_list
-, Type_list
-, Type_pair
-, err
-, finish_macro_result
-, materialize_dnf_branch_with_spine
-, ok
-, right_fold_product
-, right_fold_term_product_from_reversed
-, slot_cons
-, slot_empty
-, slot_nil
-, slot_prepend_reverse_by_types
-, slot_reverse_by_types
-, slot_term
-, slot_type
-, term_cons
-, term_nil
-, type_append
-, type_cons
-, type_nil
-, type_reverse
-);
+import vec/list/macros/macro_util {
+  type Macro_result;
+  type Slot;
+  type Slot_list;
+  type Term_list;
+  type Type_list;
+  type Type_pair;
+  fn err;
+  fn finish_macro_result;
+  fn materialize_dnf_branch_with_spine;
+  fn ok;
+  fn right_fold_product;
+  fn right_fold_term_product_from_reversed;
+  fn slot_cons;
+  fn slot_empty;
+  fn slot_nil;
+  fn slot_prepend_reverse_by_types;
+  fn slot_reverse_by_types;
+  fn slot_term;
+  fn slot_type;
+  fn term_cons;
+  fn term_nil;
+  fn type_append;
+  fn type_cons;
+  fn type_nil;
+  fn type_reverse
+}
 
 type Function_view = __Type__ & __Type__;
 

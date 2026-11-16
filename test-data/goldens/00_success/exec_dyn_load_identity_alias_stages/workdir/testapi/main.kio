@@ -1,18 +1,24 @@
-module testapi/main;
+mod testapi/main;
 
-import loader(Load_outcome, Lr_diag, Lr_image, diag_message, un_load_outcome);
-import loader/scan(load_package);
-import macros/match(macro match);
-import testapi(String);
-import testapi/io(print);
-import testapi/text(string_concat);
+import loader {
+  type Load_outcome;
+  type Lr_diag;
+  type Lr_image;
+  fn diag_message;
+  fn un_load_outcome
+}
+import loader/scan { fn load_package }
+import macros/match { macro match }
+import testapi { type String }
+import testapi/io { fn print }
+import testapi/text { fn string_concat }
 
 fn image() -> String {
-  "module guest;\n\nimport provider as source;\n\ntype Mid[A][B] = "
+  "mod guest;\n\nimport provider as source;\n\ntype Mid[A][B] = "
   "source.Box[A][B];\ntype Alias[A][B] = Mid[A][B];\n\npub fn run() -> . & . { "
-  "Alias.get[.][.](Alias.mk[.][.]((), ())) }\n\npackage alias_image;\n\nbridge "
-  "{ guest; provider; }\n\nmodule provider;\n\npub type { Box[A][B]: A & B { "
-  "pub mk; pub get; }; };\n"[String]
+  "Alias.get[.][.](Alias.mk[.][.]((), ())) }\n\npkg alias_image;\n\nbridge { "
+  "guest; provider; }\n\nmod provider;\n\npub type { Box[A][B]: A & B { pub mk; "
+  "pub get; }; };\n"[String]
 }
 
 fn outcome(loaded: Load_outcome) -> String {

@@ -1,4 +1,4 @@
-module reflect_helper;
+mod reflect_helper;
 
 import __comptime__;
 import types as local_alias;

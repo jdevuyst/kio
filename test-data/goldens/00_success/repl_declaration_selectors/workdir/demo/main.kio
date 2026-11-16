@@ -1,7 +1,7 @@
-module demo/main;
+mod demo/main;
 
 import demo/ops as arithmetic;
-import demo/ops(Field, choose, field, op _ (=) _, op _ + _, varop [* *]);
+import demo/ops { type Field; fn choose; fn field; op _ (=) _; op _ + _; op_var [* *] }
 import demo/other as other;
 
 pub fn use() {

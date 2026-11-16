@@ -1,5 +1,5 @@
-module testapi/main;
+mod testapi/main;
 
-import elevator/bank(run);
+import elevator/bank { fn run }
 
 pub fn main() { run() }

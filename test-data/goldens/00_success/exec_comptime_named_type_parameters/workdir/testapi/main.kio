@@ -1,9 +1,9 @@
-module testapi/main;
+mod testapi/main;
 
 import __intrinsics__;
 
-import testapi(String);
-import testapi/io(print);
+import testapi { type String }
+import testapi/io { fn print }
 
 pub fn pick_bool[Comptime_bool](value: Comptime_bool | Comptime_bool) -> Comptime_bool {
   __either__[Comptime_bool][Comptime_bool][Comptime_bool](

@@ -1,4 +1,4 @@
-package conditional_types;
+pkg conditional_types;
 
 build {
   cache "out/.kio-cache/";

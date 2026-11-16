@@ -1,4 +1,4 @@
-package base32_byte_codec;
+pkg base32_byte_codec;
 
 build {
   cache "out/.kio-cache/";

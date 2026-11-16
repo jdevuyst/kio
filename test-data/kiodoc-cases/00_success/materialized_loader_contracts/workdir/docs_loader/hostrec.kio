@@ -1,71 +1,77 @@
 /// The standard host capabilities `dyn_load_prime` builds over its own `testapi/*` host fns: op dispatch (`serve_default`), literal construction (`make_lit_default`), and the conditional decision (`test_bool_default`).
-module docs_loader/hostrec;
+mod docs_loader/hostrec;
 
-import docs_loader/host_descriptor(
-, host_fn_eq
-, host_fn_id
-, host_id_eq
-, host_id_render
-, mk_host_fn
-, mk_host_id
-);
-import docs_loader/host_descriptor(Host_fn, Host_id, Host_type);
-import docs_loader/host_descriptor(host_type_id);
-import docs_loader/macros/control(macro if);
-import docs_loader/macros/match(macro match);
-import docs_loader/macros/spine_macros(macro widen_sum);
-import docs_loader/marshal(loop_op);
-import docs_loader/result(Call_result, call_done, call_stuck);
-import docs_loader/testapi(Bool, F64, I32, Scalar, String);
-import docs_loader/testapi/arith(
-, add_i32
-, div_i32
-, eq_i32
-, leq_i32
-, lt_i32
-, mod_i32
-, mul_i32
-, sub_i32
-);
-import docs_loader/testapi/arith(add, div, mod, mul, sub);
-import docs_loader/testapi/arith(add_f64, mul_f64, sub_f64);
-import docs_loader/testapi/fmt(
-, bool_to_string
-, f64_to_string
-, int_to_string
-, print_i32
-, string_to_int
-);
-import docs_loader/testapi/io(print, read_ascii_line);
-import docs_loader/testapi/scalar(
-, make_scalar
-, scalar_as_bool
-, scalar_as_f64
-, scalar_as_i32
-, scalar_as_str
-);
-import docs_loader/testapi/scalar(
-, scalar_is_true
-, scalar_of_bool
-, scalar_of_f64
-, scalar_of_i32
-, scalar_of_str
-);
-import docs_loader/testapi/text(string_code_at, string_concat, string_eq, string_len, string_slice);
-import docs_loader/value(
-, Env
-, Side
-, V_closure
-, V_host
-, V_hostfn
-, V_product
-, V_sum
-, V_unit
-, Value
-, Value_shape
-);
-import docs_loader/value(s_left, s_right, vleft, vright, vsum);
-import docs_loader/value(un_value, value_to_scalar, vhost, vunit);
+import docs_loader/host_descriptor {
+  fn host_fn_eq;
+  fn host_fn_id;
+  fn host_id_eq;
+  fn host_id_render;
+  fn mk_host_fn;
+  fn mk_host_id
+}
+import docs_loader/host_descriptor { fn host_type_id }
+import docs_loader/host_descriptor { type Host_fn; type Host_id; type Host_type }
+import docs_loader/macros/control { macro if }
+import docs_loader/macros/match { macro match }
+import docs_loader/macros/spine_macros { macro widen_sum }
+import docs_loader/marshal { fn loop_op }
+import docs_loader/result { type Call_result; fn call_done; fn call_stuck }
+import docs_loader/testapi { type Bool; type F64; type I32; type Scalar; type String }
+import docs_loader/testapi/arith {
+  fn add_i32;
+  fn div_i32;
+  fn eq_i32;
+  fn leq_i32;
+  fn lt_i32;
+  fn mod_i32;
+  fn mul_i32;
+  fn sub_i32
+}
+import docs_loader/testapi/arith { fn add; fn div; fn mod; fn mul; fn sub }
+import docs_loader/testapi/arith { fn add_f64; fn mul_f64; fn sub_f64 }
+import docs_loader/testapi/fmt {
+  fn bool_to_string;
+  fn f64_to_string;
+  fn int_to_string;
+  fn print_i32;
+  fn string_to_int
+}
+import docs_loader/testapi/io { fn print; fn read_ascii_line }
+import docs_loader/testapi/scalar {
+  fn make_scalar;
+  fn scalar_as_bool;
+  fn scalar_as_f64;
+  fn scalar_as_i32;
+  fn scalar_as_str
+}
+import docs_loader/testapi/scalar {
+  fn scalar_is_true;
+  fn scalar_of_bool;
+  fn scalar_of_f64;
+  fn scalar_of_i32;
+  fn scalar_of_str
+}
+import docs_loader/testapi/text {
+  fn string_code_at;
+  fn string_concat;
+  fn string_eq;
+  fn string_len;
+  fn string_slice
+}
+import docs_loader/value {
+  type Env;
+  type Side;
+  type V_closure;
+  type V_host;
+  type V_hostfn;
+  type V_product;
+  type V_sum;
+  type V_unit;
+  type Value;
+  type Value_shape
+}
+import docs_loader/value { fn s_left; fn s_right; fn vleft; fn vright; fn vsum }
+import docs_loader/value { fn un_value; fn value_to_scalar; fn vhost; fn vunit }
 
 // `hostrec.kio` — the standard host capabilities for the dyn-load-prime differential.
 //

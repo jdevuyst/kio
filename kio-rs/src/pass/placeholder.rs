@@ -411,8 +411,7 @@ mod tests {
     fn numbered_bindings_classify_before_operator_expansion() {
         for body in ["let .x. = (); x1 + ()", "action { let .x. <- (); x1 + () }"] {
             let source = format!(
-                "module m; fn x2(a: ., b: .) -> . {{ a }} \
-                op _ + _ {{ impl x2; }}; fn run() {{ {body} }}"
+                "mod m; fn x2(a: ., b: .) -> . {{ a }} op _ + _ {{ impl x2; }}; fn run() {{ {body} }}"
             );
             let once =
                 op_fold::fold_package(vec![("m.kio".into(), parser::parse(&source).unwrap())])
@@ -456,7 +455,7 @@ mod tests {
 
     #[test]
     fn numbered_binding_direct_desugar_matches_operator_fold_route() {
-        let source = "module m; fn run() { let .x. = ((), ()); let .x. = x2; x3 }";
+        let source = "mod m; fn run() { let .x. = ((), ()); let .x. = x2; x3 }";
         let parsed = parser::parse(source).unwrap();
         let direct = desugar::desugar_module(parsed.clone()).unwrap();
         let (_, folded) = op_fold::fold_package(vec![("m.kio".into(), parsed)])
@@ -480,8 +479,7 @@ mod tests {
 
     #[test]
     fn classified_state_survives_repeat_fold_and_serialization() {
-        let source = "module m; fn x2(a: ., b: .) -> . { a } \
-            op _ + _ { impl x2; }; fn run() { .x. { x1 + () } }";
+        let source = "mod m; fn x2(a: ., b: .) -> . { a } op _ + _ { impl x2; }; fn run() { .x. { x1 + () } }";
         let once =
             op_fold::fold_package(vec![("m.kio".into(), parser::parse(source).unwrap())]).unwrap();
         let bytes = postcard::to_allocvec(&once).unwrap();
@@ -500,7 +498,7 @@ mod tests {
 
     #[test]
     fn failed_classification_keeps_source_tree_unchanged() {
-        let mut module = parser::parse("module m; fn run() { .x. { pair(x1, x2) } }").unwrap();
+        let mut module = parser::parse("mod m; fn run() { .x. { pair(x1, x2) } }").unwrap();
         let Expr::FnPlaceholder { body, .. } = function_mut(&mut module) else {
             panic!("placeholder")
         };
@@ -530,7 +528,7 @@ mod tests {
 
     #[test]
     fn direct_desugar_matches_the_folded_route() {
-        let source = "module m; fn run() { .x. { pair(x1, .y. { pair(y1, p1) }) } }";
+        let source = "mod m; fn run() { .x. { pair(x1, .y. { pair(y1, p1) }) } }";
         let parsed = parser::parse(source).unwrap();
         let direct = desugar::desugar_module(parsed.clone()).unwrap();
         let (_, folded) = op_fold::fold_package(vec![("m.kio".into(), parsed)])
@@ -556,7 +554,7 @@ mod tests {
     #[test]
     fn numbered_block_head_belongs_to_the_nearest_placeholder() {
         let mut module =
-            parser::parse("module m; import provider(macro x1); fn run() { .x. { x1 { () } } }")
+            parser::parse("mod m; import provider {macro x1} fn run() { .x. { x1 { () } } }")
                 .unwrap();
         let Expr::FnPlaceholder {
             stem,
@@ -577,7 +575,7 @@ mod tests {
 
     #[test]
     fn ufcs_placeholder_callee_uses_the_generated_parameter() {
-        let parsed = parser::parse("module m; fn run() { .x. { p1.>x1 } }").unwrap();
+        let parsed = parser::parse("mod m; fn run() { .x. { p1.>x1 } }").unwrap();
         let scope = crate::pass::surface_registry::PackageBlockScope::from_modules(&[(
             "m.kio".into(),
             parsed.clone(),

@@ -1,4 +1,4 @@
-package embedded_forall_shadow_scope;
+pkg embedded_forall_shadow_scope;
 
 build {
   cache "out/.kio-cache/";

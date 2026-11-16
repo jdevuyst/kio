@@ -330,7 +330,7 @@ mod tests {
                 format!("baseline ({expected})"),
             ] {
                 let source = format!(
-                    "package app; build {{ target ({}, \"chosen\") {{ out \"out\"; {setting} }} }}",
+                    "pkg app; build {{ target ({}, \"chosen\") {{ out \"out\"; {setting} }} }}",
                     backend.id()
                 );
                 let package = parse_package_file(&source, Some("app")).unwrap();
@@ -341,7 +341,7 @@ mod tests {
             }
             for setting in ["baseline unknown", "baseline (); baseline latest"] {
                 let source = format!(
-                    "package app; build {{ target {} {{ out \"out\"; {setting} }} }}",
+                    "pkg app; build {{ target {} {{ out \"out\"; {setting} }} }}",
                     backend.id()
                 );
                 let package = parse_package_file(&source, Some("app")).unwrap();
@@ -352,7 +352,7 @@ mod tests {
                 );
             }
             let source = format!(
-                "package app; build {{ target {} {{ out \"out\"; baseline \"{expected}\" }} }}",
+                "pkg app; build {{ target {} {{ out \"out\"; baseline \"{expected}\" }} }}",
                 backend.id()
             );
             assert!(parse_package_file(&source, Some("app")).is_err());
@@ -360,12 +360,12 @@ mod tests {
         assert_eq!(BuildTarget::KioPrime.latest_baseline(), None);
         for value in ["latest", "()", "es2020"] {
             let source = format!(
-                "package app; build {{ target kio-prime {{ out \"out\"; baseline {value} }} }}"
+                "pkg app; build {{ target kio-prime {{ out \"out\"; baseline {value} }} }}"
             );
             assert!(parse_package_file(&source, Some("app")).is_err());
         }
         let prime = parse_package_file(
-            "package app; build { target kio-prime { out \"out\"; baseline \"latest\" } }",
+            "pkg app; build { target kio-prime { out \"out\"; baseline \"latest\" } }",
             Some("app"),
         )
         .unwrap();
@@ -379,16 +379,13 @@ mod tests {
             BuildTarget::Ts.javascript_runtime_baseline("v5_0")
         );
         for source in [
-            "package app; build { target rust { out \"out\"; thread_safety v1_85 } }",
-            "package app; build { target js { out \"out\"; baseline v5_0 } }",
-            "package app; build { target ts { out \"out\"; baseline v9_9 } }",
+            "pkg app; build { target rust { out \"out\"; thread_safety v1_85 } }",
+            "pkg app; build { target js { out \"out\"; baseline v5_0 } }",
+            "pkg app; build { target ts { out \"out\"; baseline v9_9 } }",
         ] {
             assert!(parse_package_file(source, Some("app")).is_err(), "{source}");
         }
-        for source in [
-            "module main; fn v5_0() {}",
-            "module main; fn value() { v5_0 }",
-        ] {
+        for source in ["mod main; fn v5_0() {}", "mod main; fn value() { v5_0 }"] {
             assert!(crate::pass::parser::parse(source).is_err(), "{source}");
         }
     }
@@ -414,7 +411,7 @@ mod tests {
             ] {
                 for name in ["before", "after"] {
                     let source = format!(
-                        "package {name}; build {{ target {} {{ out \"out\"; {setting} }} }}",
+                        "pkg {name}; build {{ target {} {{ out \"out\"; {setting} }} }}",
                         backend.id()
                     );
                     let package = parse_package_file(&source, Some(name)).unwrap();
@@ -437,7 +434,7 @@ mod tests {
                 "namespace \"pinned\"; namespace ()",
             ] {
                 let source = format!(
-                    "package app; build {{ target {} {{ out \"out\"; {setting} }} }}",
+                    "pkg app; build {{ target {} {{ out \"out\"; {setting} }} }}",
                     backend.id()
                 );
                 let package = parse_package_file(&source, Some("app")).unwrap();
@@ -447,7 +444,7 @@ mod tests {
                 );
             }
             let source = format!(
-                "package app; build {{ target {} {{ out \"out\"; namespace \"\" }} }}",
+                "pkg app; build {{ target {} {{ out \"out\"; namespace \"\" }} }}",
                 backend.id()
             );
             let package = parse_package_file(&source, Some("app")).unwrap();

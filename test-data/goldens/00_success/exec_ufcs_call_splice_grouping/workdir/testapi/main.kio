@@ -1,8 +1,8 @@
-module testapi/main;
+mod testapi/main;
 
-import testapi(String);
-import testapi/io(print);
-import testapi/text(string_concat);
+import testapi {type String}
+import testapi/io {fn print}
+import testapi/text {fn string_concat}
 
 fn pair(a: String, b: String) -> String {
   string_concat("(", string_concat(a, string_concat(",", string_concat(b, ")"))))

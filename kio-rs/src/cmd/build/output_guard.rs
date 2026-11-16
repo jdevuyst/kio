@@ -296,7 +296,7 @@ mod tests {
         fs::create_dir_all(root).unwrap();
         fs::write(
             root.join("app.pkg.kio"),
-            format!("package app; build {{ {targets} }}"),
+            format!("pkg app; build {{ {targets} }}"),
         )
         .unwrap();
     }
@@ -357,7 +357,7 @@ mod tests {
     fn every_registered_backend_protects_known_inputs() {
         let dir = tempfile::tempdir().unwrap();
         fs::create_dir(dir.path().join("input")).unwrap();
-        fs::write(dir.path().join("input/main.kio"), "module input/main;").unwrap();
+        fs::write(dir.path().join("input/main.kio"), "mod input/main;").unwrap();
         for backend in BuildTarget::ALL {
             for header in [
                 backend.id().to_owned(),
@@ -422,7 +422,7 @@ mod tests {
         package(&bad, "target js { out \"out\"; }");
         fs::create_dir(bad.join("retained")).unwrap();
         let input = bad.join("retained/main.kio");
-        fs::write(&input, "module retained/main;").unwrap();
+        fs::write(&input, "mod retained/main;").unwrap();
         let marker = bad.join("app.pkg.kio");
         let (failed, attempts) =
             crate::package_collection::import_grammar_with_denied_reads([marker.clone()], || {
@@ -447,7 +447,7 @@ mod tests {
                 .contains("conflicting output")
         );
         package(&a, "target js { out \"../b\"; }");
-        fs::write(b.join("app.pkg.kio"), "package app; build { invalid }").unwrap();
+        fs::write(b.join("app.pkg.kio"), "pkg app; build { invalid }").unwrap();
         let plans = plans(&[&a, &b], &[]);
         assert!(matches!(
             plans.get(&b),
@@ -470,7 +470,7 @@ mod tests {
         fs::create_dir_all(outside.join("nested")).unwrap();
         package(&root, "target js { out \"src\"; }");
         fs::create_dir(root.join("src")).unwrap();
-        fs::write(outside.join("main.kio"), "module src/main;").unwrap();
+        fs::write(outside.join("main.kio"), "mod src/main;").unwrap();
         symlink(outside.join("main.kio"), root.join("src/main.kio")).unwrap();
         symlink(outside.join("nested"), root.join("link")).unwrap();
         assert_eq!(

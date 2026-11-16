@@ -1,4 +1,4 @@
-package typecheck_macro_align_payload_preserving;
+pkg typecheck_macro_align_payload_preserving;
 
 build {
   cache "out/.kio-cache/";

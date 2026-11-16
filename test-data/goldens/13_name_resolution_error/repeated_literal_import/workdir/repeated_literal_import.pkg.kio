@@ -1,4 +1,4 @@
-package repeated_literal_import;
+pkg repeated_literal_import;
 
 build {
   target js {

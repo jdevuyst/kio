@@ -1,4 +1,4 @@
-package other;
+pkg other;
 
 build {
   target (js, "worker") {

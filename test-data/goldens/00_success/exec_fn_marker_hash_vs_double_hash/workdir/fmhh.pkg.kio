@@ -1,4 +1,4 @@
-package fmhh;
+pkg fmhh;
 
 build {
   cache "out/.kio-cache/";

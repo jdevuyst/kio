@@ -1,4 +1,4 @@
-module type_chain_comments;
+mod type_chain_comments;
 
 fn product[A][B](f: (A & B) -> A) -> (& A
 // product domain

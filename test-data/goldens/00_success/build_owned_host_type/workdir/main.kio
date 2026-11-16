@@ -1,5 +1,5 @@
-module main;
+mod main;
 
-host type Owned_str role(str) { owned };
+host type Owned_str role(str);
 
 host fn enqueue(value: Owned_str);

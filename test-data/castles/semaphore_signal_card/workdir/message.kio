@@ -1,11 +1,11 @@
-module message;
+mod message;
 
 import alphabet as letters;
-import alphabet(Card);
-import alphabet(Crossed, High, Vowel);
+import alphabet { type Card }
+import alphabet { type Crossed; type High; type Vowel }
 import logic as bit;
-import macros/row_macros(macro select);
-import testapi(Bool);
+import macros/row_macros { macro select }
+import testapi { type Bool }
 
 // The host offers no loop, so the message is a fixed product of cards and the
 // aggregate facts are folds written out over its nine slots.

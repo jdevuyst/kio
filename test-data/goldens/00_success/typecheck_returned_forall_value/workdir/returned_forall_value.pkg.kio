@@ -1,4 +1,4 @@
-package returned_forall_value;
+pkg returned_forall_value;
 
 build {
   cache "out/.kio-cache/";

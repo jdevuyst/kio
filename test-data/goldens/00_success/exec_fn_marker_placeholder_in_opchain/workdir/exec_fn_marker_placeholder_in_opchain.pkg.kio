@@ -1,4 +1,4 @@
-package exec_fn_marker_placeholder_in_opchain;
+pkg exec_fn_marker_placeholder_in_opchain;
 
 build {
   cache "out/.kio-cache/";

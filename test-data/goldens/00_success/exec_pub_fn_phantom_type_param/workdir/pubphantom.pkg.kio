@@ -1,4 +1,4 @@
-package pubphantom;
+pkg pubphantom;
 
 build {
   cache "out/.kio-cache/";

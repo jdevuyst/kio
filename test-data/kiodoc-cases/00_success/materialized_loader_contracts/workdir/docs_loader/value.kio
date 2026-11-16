@@ -1,11 +1,11 @@
 /// The universal runtime value model `prime_eval` produces: ordinary Kio types are erased, while staged host functions retain exact declaration descriptors.
-module docs_loader/value;
+mod docs_loader/value;
 
-import docs_loader/host_descriptor(Host_fn);
-import docs_loader/macros/match(macro match);
-import docs_loader/macros/spine_macros(macro widen_sum);
-import docs_loader/prime(Group_slots, Term);
-import docs_loader/testapi(Scalar);
+import docs_loader/host_descriptor { type Host_fn }
+import docs_loader/macros/match { macro match }
+import docs_loader/macros/spine_macros { macro widen_sum }
+import docs_loader/prime { type Group_slots; type Term }
+import docs_loader/testapi { type Scalar }
 
 // `value.kio` — the universal value model.
 //

@@ -1,4 +1,4 @@
-package iet;
+pkg iet;
 
 build {
   cache "out/.kio-cache/";

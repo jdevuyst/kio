@@ -1,4 +1,4 @@
-module pure_macro_emits_host_call;
+mod pure_macro_emits_host_call;
 
 host type I32;
 

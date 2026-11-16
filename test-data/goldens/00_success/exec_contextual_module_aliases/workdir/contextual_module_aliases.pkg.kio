@@ -1,4 +1,4 @@
-package contextual_module_aliases;
+pkg contextual_module_aliases;
 
 build {
   cache "out/.kio-cache/";

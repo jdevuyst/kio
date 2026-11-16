@@ -1,8 +1,8 @@
-module river_bytecode_vm/model;
+mod river_bytecode_vm/model;
 
-import macros/row_macros(macro record);
+import macros/row_macros { macro record }
 import river_bytecode_vm/constants as c;
-import testapi(I32);
+import testapi { type I32 }
 
 pub type Snapshot_fields = {
   Pc: I32;

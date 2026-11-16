@@ -1,4 +1,4 @@
-module parse_err_comment_no_ws/main;
+mod parse_err_comment_no_ws/main;
 
 
 //note: a comment marker with no whitespace after `//` is a lex error.

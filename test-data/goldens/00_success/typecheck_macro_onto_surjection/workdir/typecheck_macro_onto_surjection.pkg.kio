@@ -1,4 +1,4 @@
-package typecheck_macro_onto_surjection;
+pkg typecheck_macro_onto_surjection;
 
 build {
   cache "out/.kio-cache/";

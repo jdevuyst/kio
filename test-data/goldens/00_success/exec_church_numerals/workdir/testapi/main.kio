@@ -1,9 +1,9 @@
-module testapi/main;
+mod testapi/main;
 
-import testapi(I32, String);
-import testapi/arith(add_i32);
-import testapi/fmt(int_to_string);
-import testapi/io(print);
+import testapi { type I32; type String }
+import testapi/arith { fn add_i32 }
+import testapi/fmt { fn int_to_string }
+import testapi/io { fn print }
 
 // Church-encoded naturals on `Nat = forall A. ((A -> A) & A) -> A`.
 // `zero` / `succ` / `plus` / `mul` are pure System F polymorphism —

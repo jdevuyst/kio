@@ -1,4 +1,4 @@
-package typecheck_newtype_member;
+pkg typecheck_newtype_member;
 
 build {
   cache "out/.kio-cache/";

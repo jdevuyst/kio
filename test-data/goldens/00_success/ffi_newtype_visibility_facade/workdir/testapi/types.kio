@@ -1,8 +1,8 @@
-module testapi/types;
+mod testapi/types;
 
 import __intrinsics__;
 
-import testapi(I32);
+import testapi { type I32 }
 
 type { Hidden_payload: I32 { mk; get } }
 

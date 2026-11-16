@@ -1,8 +1,8 @@
-module gate_array_dp/fixtures;
+mod gate_array_dp/fixtures;
 
-import gate_array_dp/constants(days);
-import testapi(Array, I32);
-import testapi/array(array_make_filled, array_set);
+import gate_array_dp/constants { fn days }
+import testapi { type Array; type I32 }
+import testapi/array { fn array_make_filled; fn array_set }
 
 pub fn traffic_risk() -> Array[I32] {
   let .(values: Array[I32]) = array_make_filled(days(), 0);

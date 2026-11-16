@@ -1,7 +1,7 @@
 # Harnessed snippet
 
 <!--kio {harness=sample placeholder="__INSERT__"}
-module sample;
+mod sample;
 
 __INSERT__
 -->

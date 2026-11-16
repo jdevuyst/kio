@@ -393,7 +393,6 @@ fn change_set_for(
     let add_refs = recorded.refs_for(added.iter().copied());
     let modify = recorded.sections_for(modified.iter().copied());
     let modify_refs = recorded.refs_for(modified.iter().copied());
-    let remove = Vec::new();
     let remove_refs = remove_refs(&removed_names);
 
     Some(SigChangeSet {
@@ -409,7 +408,6 @@ fn change_set_for(
         add_refs,
         modify,
         modify_refs,
-        remove,
         remove_refs,
         span: Span::new(0, 0),
     })

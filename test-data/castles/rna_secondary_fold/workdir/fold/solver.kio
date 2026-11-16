@@ -1,15 +1,15 @@
-module fold/solver;
+mod fold/solver;
 
 import fold/bases as bases;
 import fold/numbers as numbers;
 import fold/plan as plan;
-import fold/plan(Decisions, Length, Scores);
-import macros/control(macro if);
-import macros/row_macros(macro select);
-import testapi(Array, Bool, I32, String);
+import fold/plan { type Decisions; type Length; type Scores }
+import macros/control { macro if }
+import macros/row_macros { macro select }
+import testapi { type Array; type Bool; type I32; type String }
 import testapi/arith as arith;
 import testapi/array as array;
-import testapi/iter(loop);
+import testapi/iter { fn loop }
 
 fn score(scores: Array[I32], n: I32, i: I32, j: I32) -> I32 {
   if(arith.leq_i32(j, i)) { 0 } else { array.array_get(scores, numbers.index(n, i, j)) }

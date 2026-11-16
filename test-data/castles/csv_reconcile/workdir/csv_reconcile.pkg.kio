@@ -1,4 +1,4 @@
-package csv_reconcile;
+pkg csv_reconcile;
 
 build {
   cache "out/.kio-cache/";

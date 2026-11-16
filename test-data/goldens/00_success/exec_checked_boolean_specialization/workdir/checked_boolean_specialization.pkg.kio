@@ -1,4 +1,4 @@
-package checked_boolean_specialization;
+pkg checked_boolean_specialization;
 
 build {
   cache "out/.kio-cache/";

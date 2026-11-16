@@ -1,4 +1,4 @@
-module dict_host;
+mod dict_host;
 
 import testapi as host;
 import testapi/arith as arith;

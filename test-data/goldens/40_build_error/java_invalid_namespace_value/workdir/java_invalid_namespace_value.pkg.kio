@@ -1,4 +1,4 @@
-package java_invalid_namespace_value;
+pkg java_invalid_namespace_value;
 
 build {
   cache "out/.kio-cache/";

@@ -1,4 +1,4 @@
-package exec_monad_list;
+pkg exec_monad_list;
 
 build {
   cache "out/.kio-cache/";

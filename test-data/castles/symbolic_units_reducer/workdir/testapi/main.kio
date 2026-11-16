@@ -1,11 +1,11 @@
-module testapi/main;
+mod testapi/main;
 
 import symbolic_units/algebra as algebra;
 import symbolic_units/model as model;
-import symbolic_units/model(Expr, Summary);
+import symbolic_units/model { type Expr; type Summary }
 import symbolic_units/render as render;
 import symbolic_units/text as text;
-import testapi(I32, String);
+import testapi { type I32; type String }
 import testapi/arith as arith;
 import testapi/fmt as fmt;
 import testapi/io as io;

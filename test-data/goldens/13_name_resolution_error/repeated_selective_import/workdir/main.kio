@@ -1,4 +1,4 @@
-module main;
+mod main;
 
-import origin(pick);
-import origin(pick);
+import origin { fn pick }
+import origin { fn pick }

@@ -1,5 +1,5 @@
-module testapi/arith;
+mod testapi/arith;
 
-import testapi/types(Pick_first);
+import testapi/types { type Pick_first }
 
 host fn round_picker(picker: Pick_first) -> Pick_first;

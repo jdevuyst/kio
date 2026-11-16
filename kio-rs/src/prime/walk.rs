@@ -116,7 +116,7 @@ pub trait SurfaceToPrime {
         d: crate::ast::UserMacroDef<Surface>,
     ) -> Result<Item<Prime>, Error>;
 
-    /// Reject a `literal` item.
+    /// Reject a `lit` item.
     fn rewrite_item_literal_alias(
         &mut self,
         a: LiteralAlias<Surface>,
@@ -130,6 +130,9 @@ pub trait SurfaceToPrime {
 
     /// Reject an explicitly selected source macro at the Kio' boundary.
     fn rewrite_import_macro(&mut self, span: Span) -> Result<(), Error>;
+
+    /// Reject an explicitly selected literal alias at the Kio' boundary.
+    fn rewrite_import_literal(&mut self, span: Span) -> Result<(), Error>;
 
     /// Consume or reject the compile-time-only builtin import.
     fn rewrite_import_comptime(&mut self, span: Span) -> Result<(), Error>;
@@ -195,14 +198,20 @@ pub trait SurfaceToPrime {
                             self.rewrite_import_op_pattern(*span)?;
                         }
                         crate::ast::ImportItem::Name {
-                            macro_span: Some(span),
+                            kind,
+                            span,
+                            kind_span,
                             ..
-                        } => {
-                            self.rewrite_import_macro(*span)?;
-                        }
-                        crate::ast::ImportItem::Name {
-                            macro_span: None, ..
-                        } => {}
+                        } => match kind {
+                            crate::ast::ImportNameKind::Macro => {
+                                self.rewrite_import_macro(kind_span.unwrap_or(*span))?
+                            }
+                            crate::ast::ImportNameKind::Literal => {
+                                self.rewrite_import_literal(*span)?
+                            }
+                            crate::ast::ImportNameKind::Function
+                            | crate::ast::ImportNameKind::Type => {}
+                        },
                     }
                 }
             }
@@ -343,7 +352,6 @@ pub trait SurfaceToPrime {
             name,
             type_params,
             role,
-            owned,
             meta: Meta { span, .. },
             doc,
         } = h;
@@ -351,7 +359,6 @@ pub trait SurfaceToPrime {
             name,
             type_params,
             role,
-            owned,
             meta: Meta::new(span),
             doc,
         })

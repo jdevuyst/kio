@@ -123,7 +123,7 @@ mod tests {
     fn already_canonical_returns_empty() {
         // `kio fmt` is idempotent; running it on already-canonical
         // source should produce no edits.
-        let source = "module a;\n\nfn id[A](x: A) -> A {\n    x\n}\n";
+        let source = "mod a;\n\nfn id[A](x: A) -> A {\n    x\n}\n";
         // Run format once to get the canonical form.
         let canonical = format_source("a.kio", source).expect("parse ok");
         let uri = file_uri("/tmp/a.kio");
@@ -139,7 +139,7 @@ mod tests {
         // A module body where fn spacing is wrong: the canonical form
         // has blank-line separation between items, so a compacted
         // source will produce one replacement edit.
-        let source = "module a;\nfn id[A](x: A) -> A { x }\n";
+        let source = "mod a;\nfn id[A](x: A) -> A { x }\n";
         let uri = file_uri("/tmp/a.kio");
         let edits = handle_formatting(&uri, source);
         assert_eq!(
@@ -163,7 +163,7 @@ mod tests {
     fn parse_error_returns_empty() {
         // Malformed source: the formatter encounters a parse error and
         // must return an empty edit list (no JSON-RPC error).
-        let source = "module a;\n\nfn ())(\n";
+        let source = "mod a;\n\nfn ())(\n";
         let uri = file_uri("/tmp/a.kio");
         let edits = handle_formatting(&uri, source);
         assert!(
@@ -174,35 +174,32 @@ mod tests {
 
     #[test]
     fn routes_package_file_by_uri_suffix() {
-        let source = "package pkg; bridge { pkg/main; }";
+        let source = "pkg pkg; bridge { pkg/main; }";
         let uri = file_uri("/tmp/pkg.pkg.kio");
         let edits = handle_formatting(&uri, source);
         assert_eq!(edits.len(), 1, "a valid noncanonical package must edit");
-        assert_eq!(
-            edits[0].new_text,
-            "package pkg;\n\nbridge {\n  pkg/main\n}\n"
-        );
+        assert_eq!(edits[0].new_text, "pkg pkg;\n\nbridge {\n  pkg/main\n}\n");
         assert!(handle_formatting(&uri, &edits[0].new_text).is_empty());
     }
 
     #[test]
     fn sig_file_uri_routes_to_signature_formatter() {
-        let source = "signature   app   v(1) ;\n";
+        let source = "sig   app   v(1) ;\n";
         let uri = file_uri("/tmp/app.sig.kio");
         let edits = handle_formatting(&uri, source);
         assert_eq!(edits.len(), 1, "non-canonical .sig.kio must edit");
-        assert_eq!(edits[0].new_text, "signature app v(1);\n");
+        assert_eq!(edits[0].new_text, "sig app v(1);\n");
     }
 
     #[test]
     fn dep_file_uri_routes_to_dependency_formatter() {
-        let source = "dependency lib ;\n\nsource { path \"../lib/lib.pkg.kio\" ; }\n";
+        let source = "dep lib ;\n\nsource { path \"../lib/lib.pkg.kio\" ; }\n";
         let uri = file_uri("/tmp/lib.dep.kio");
         let edits = handle_formatting(&uri, source);
         assert_eq!(edits.len(), 1, "non-canonical .dep.kio must edit");
         assert_eq!(
             edits[0].new_text,
-            "dependency lib;\n\nsource {\n  path \"../lib/lib.pkg.kio\"\n}\n"
+            "dep lib;\n\nsource {\n  path \"../lib/lib.pkg.kio\"\n}\n"
         );
     }
 
@@ -233,7 +230,7 @@ mod tests {
 
     #[test]
     fn untitled_imported_variadic_grammar_formats_without_provider_context() {
-        let source = "module main;\nimport syntax(op _ => _, varop [% %]);\nfn pairs(k:A,v:A)->A{[% k=>v %]}\n";
+        let source = "mod main;\nimport syntax {op _ => _; op_var [% %]}\nfn pairs(k:A,v:A)->A{[% k=>v %]}\n";
         let uri = Uri::from_str("untitled:Untitled-1").unwrap();
         let edits = try_handle_formatting(&uri, source).expect("consumer grammar is complete");
         assert_eq!(edits.len(), 1);
@@ -251,13 +248,13 @@ mod tests {
         let consumer = temp.path().join("a/b/c.kio");
         let provider = temp.path().join("a/d/e.kio");
         std::fs::create_dir_all(provider.parent().unwrap()).unwrap();
-        let source = "module a/b/c;\nimport a/d/e(op _ => _, varop [% %]);\nfn pairs(k:A,v:A)->A{[% k=>v %]}\n";
+        let source = "mod a/b/c;\nimport a/d/e {op _ => _; op_var [% %]}\nfn pairs(k:A,v:A)->A{[% k=>v %]}\n";
         let mut canonical = None;
         for provider_source in [
             None,
-            Some("module a/d/e; fn broken( {"),
+            Some("mod a/d/e; fn broken( {"),
             Some(
-                "module a/d/e; pub op _ => _ { impl entry; }; pub varop [% %] { foldl pair empty; };",
+                "mod a/d/e; pub op _ => _ { impl entry; }; pub op_var [% %] { foldl pair empty; };",
             ),
         ] {
             if let Some(text) = provider_source {
@@ -282,14 +279,14 @@ mod tests {
         let uri = Uri::from_str("untitled:Untitled-1").unwrap();
         for second_provider in ["binary", "other"] {
             let source = format!(
-                "module main; import binary(op _ ? _); import {second_provider}(op _ ? _); fn choose(a: ., b: .) -> . {{ a ? b }}"
+                "mod main; import binary {{op _ ? _}} import {second_provider} {{op _ ? _}} fn choose(a: ., b: .) -> . {{ a ? b }}"
             );
             let edits = try_handle_formatting(&uri, &source).expect("formatting is syntax-only");
             assert_eq!(edits.len(), 1);
             assert!(edits[0].new_text.contains("a ? b"));
         }
 
-        let broken = "module main; import binary(op _ ? _); fn broken() -> . { ( }";
+        let broken = "mod main; import binary {op _ ? _} fn broken() -> . { ( }";
         assert!(matches!(
             try_handle_formatting(&uri, broken),
             Err(Error::Parse(_))

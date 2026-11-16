@@ -1,4 +1,4 @@
-package row_select_non_function;
+pkg row_select_non_function;
 
 build {
   cache "out/.kio-cache/";

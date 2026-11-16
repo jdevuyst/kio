@@ -1,8 +1,8 @@
-module testapi/main;
+mod testapi/main;
 
-import macros(macro finish, macro infer_unit);
-import testapi(String);
-import testapi/io(print);
+import macros { macro finish; macro infer_unit }
+import testapi { type String }
+import testapi/io { fn print }
 
 fn line(_value: .) -> String { "continued\n" }
 

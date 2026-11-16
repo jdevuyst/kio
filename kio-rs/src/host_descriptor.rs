@@ -23,10 +23,8 @@
 //!   Owned-summary callers (the test runner's stub-synthesis path) project the
 //!   descriptor through [`HostManifest`], a small serializable shape.
 //! - The descriptor carries the host items *as the package file declared
-//!   them*. The source-compatible `{ owned }` annotation selects no alternate
-//!   facade: Rust renders `role(str)` values in owned form uniformly. Other
-//!   backend-specific rendering decisions stay in the renderer, not in the
-//!   descriptor.
+//!   them*. Backend-specific rendering decisions stay in the renderer, not
+//!   in the descriptor.
 //! - [`BoundRequirement`] names the *intent* behind each bound a typed
 //!   backend needs the host type to satisfy. The Rust renderer translates
 //!   intents to `Clone + 'static + PartialEq + …`. The descriptor commits

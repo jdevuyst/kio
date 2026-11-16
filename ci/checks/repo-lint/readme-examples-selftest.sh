@@ -54,8 +54,8 @@ README_TEST_EXPECTED=$scratch/expected
 README_TEST_EXACT=1
 export README_TEST_EXPECTED README_TEST_EXACT
 mkdir -p "$README_TEST_EXPECTED"
-printf 'module first;\nfn unit() { () }\n' >"$README_TEST_EXPECTED/first.kio"
-printf 'module second;\nfn unit() { () }\n' >"$README_TEST_EXPECTED/second.kio"
+printf 'mod first;\nfn unit() { () }\n' >"$README_TEST_EXPECTED/first.kio"
+printf 'mod second;\nfn unit() { () }\n' >"$README_TEST_EXPECTED/second.kio"
 
 cat >"$scratch/README.md" <<'MD'
 ```text
@@ -65,12 +65,12 @@ not an example
 ```
 
 ```kio
-module first;
+mod first;
 fn unit() { () }
 ```
 
 ~~~~kio
-module second;
+mod second;
 fn unit() { () }
 ~~~~
 MD
@@ -94,15 +94,15 @@ expect_failure() {
 
 printf '# No examples\n' >"$scratch/README.md"
 expect_failure 1 'no Kio examples found'
-printf '```kio\nmodule unfinished;\n' >"$scratch/README.md"
+printf '```kio\nmod unfinished;\n' >"$scratch/README.md"
 expect_failure 1 'unclosed Kio example'
 printf '```kio\nfn partial() { () }\n```\n' >"$scratch/README.md"
 expect_failure 1 'needs a complete module declaration'
-printf '```kio\nmodule invalid;\nINVALID\n```\n' >"$scratch/README.md"
+printf '```kio\nmod invalid;\nINVALID\n```\n' >"$scratch/README.md"
 expect_failure 14 'invalid example'
-printf '```kio\nmodule dirty;\nNONCANONICAL\n```\n' >"$scratch/README.md"
+printf '```kio\nmod dirty;\nNONCANONICAL\n```\n' >"$scratch/README.md"
 expect_failure 60 'dirty.kio'
-printf '```kio\nmodule valid;\n```\n' >"$scratch/README.md"
+printf '```kio\nmod valid;\n```\n' >"$scratch/README.md"
 README_TEST_FMT_FAILURE=1
 export README_TEST_FMT_FAILURE
 expect_failure 1 'formatter failed'

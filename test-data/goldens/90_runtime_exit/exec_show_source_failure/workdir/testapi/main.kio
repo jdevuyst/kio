@@ -1,10 +1,10 @@
-module testapi/main;
+mod testapi/main;
 
 import __intrinsics__;
 
-import macros/show(macro show);
-import testapi(I32, String);
-import testapi/io(eprint, exit, print);
+import macros/show { macro show }
+import testapi { type I32; type String }
+import testapi/io { fn eprint; fn exit; fn print }
 
 fn source() -> String { eprint("kio panic: boom\n"); __absurd__[String](exit(90[I32])) }
 

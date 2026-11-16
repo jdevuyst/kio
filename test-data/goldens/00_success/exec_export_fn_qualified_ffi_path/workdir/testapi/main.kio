@@ -1,9 +1,9 @@
-module testapi/main;
+mod testapi/main;
 
-import testapi(String);
-import testapi/boxlib(Box);
-import testapi/io(print);
-import testapi/token(Token);
+import testapi { type String }
+import testapi/boxlib { type Box }
+import testapi/io { fn print }
+import testapi/token { type Token }
 
 pub fn boxify(token: Token) -> Box[Token] { Box.mk(token) }
 

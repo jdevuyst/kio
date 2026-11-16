@@ -1,4 +1,4 @@
-module domain;
+mod domain;
 
 import list/core as lcore;
 

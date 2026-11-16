@@ -1,4 +1,4 @@
-package reflected_type_display_canonical_module_path;
+pkg reflected_type_display_canonical_module_path;
 
 build {
   cache "out/.kio-cache/";

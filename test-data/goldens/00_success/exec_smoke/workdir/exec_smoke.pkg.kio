@@ -1,4 +1,4 @@
-package exec_smoke;
+pkg exec_smoke;
 
 build {
   cache "out/.kio-cache/";

@@ -1,37 +1,44 @@
 /// Proves whole-package loading resolves qualified aliases and selective imports
 /// to exact host declarations.
-module testapi/main;
+mod testapi/main;
 
-import host_descriptor(Host_fn, Host_type, Host_types);
-import host_descriptor(host_fn_eq, host_types_cons, host_types_nil);
-import host_descriptor(i32_role, mk_host_fn, mk_host_id, mk_role_host_type);
-import hostrec(make_lit_default, test_bool_default);
-import loader(Apply, I32_out, Lookup, Unit_in);
-import loader(Diag, Host_adapter, Host_fn_binding);
-import loader(Host_fn_bindings, Image, Loaded, Lr_diag, Lr_image, Surface);
-import loader(diag_message, host_fn_bindings_cons, host_fn_bindings_nil);
-import loader(instantiate, mk_host_adapter, mk_host_fn_binding);
-import loader(un_load_outcome);
-import loader/scan(load_package);
-import macros/control(macro if);
-import macros/match(macro match);
-import macros/row_macros(macro select);
-import prime(group_slots_cons, group_slots_nil);
-import result(Call_result, call_done, call_stuck);
-import testapi(Bool, I32, Scalar, String);
-import testapi/fmt(int_to_string);
-import testapi/io(print);
-import testapi/scalar(scalar_of_i32);
-import testapi/text(string_concat);
-import value(Value, vhost);
+import host_descriptor { fn host_fn_eq; fn host_types_cons; fn host_types_nil }
+import host_descriptor { fn i32_role; fn mk_host_fn; fn mk_host_id; fn mk_role_host_type }
+import host_descriptor { type Host_fn; type Host_type; type Host_types }
+import hostrec { fn make_lit_default; fn test_bool_default }
+import loader {
+  type Host_fn_bindings;
+  type Image;
+  type Loaded;
+  type Lr_diag;
+  type Lr_image;
+  type Surface
+}
+import loader { fn diag_message; fn host_fn_bindings_cons; fn host_fn_bindings_nil }
+import loader { fn instantiate; fn mk_host_adapter; fn mk_host_fn_binding }
+import loader { fn un_load_outcome }
+import loader { type Apply; type I32_out; type Lookup; type Unit_in }
+import loader { type Diag; type Host_adapter; type Host_fn_binding }
+import loader/scan { fn load_package }
+import macros/control { macro if }
+import macros/match { macro match }
+import macros/row_macros { macro select }
+import prime { fn group_slots_cons; fn group_slots_nil }
+import result { type Call_result; fn call_done; fn call_stuck }
+import testapi { type Bool; type I32; type Scalar; type String }
+import testapi/fmt { fn int_to_string }
+import testapi/io { fn print }
+import testapi/scalar { fn scalar_of_i32 }
+import testapi/text { fn string_concat }
+import value { type Value; fn vhost }
 
 fn source() -> String {
-  "module external/host;\n\nhost type Value role(i32);\n\nhost fn ping() -> "
-  "Value;\nhost fn _ping() -> Value;\n\nmodule guest/qualified;\n\nimport "
-  "external/host as h;\n\npub fn call_qualified() -> h.Value { h.ping() }\npub "
-  "fn call_underscore() -> h.Value { h._ping() }\n\nmodule guest/selective;\n\n"
-  "import external/host(Value, ping);\n\npub fn call_selective() -> Value { "
-  "ping() }\n\npackage guest;\n\nbridge { external/host; guest/**; }\n"
+  "mod external/host;\n\nhost type Value role(i32);\n\nhost fn ping() -> Value;\n"
+  "host fn _ping() -> Value;\n\nmod guest/qualified;\n\nimport external/host as "
+  "h;\n\npub fn call_qualified() -> h.Value { h.ping() }\npub fn "
+  "call_underscore() -> h.Value { h._ping() }\n\nmod guest/selective;\n\nimport "
+  "external/host {type Value; fn ping}\n\npub fn call_selective() -> Value { "
+  "ping() }\n\npkg guest;\n\nbridge { external/host; guest/**; }\n"
 }
 
 fn target_type() -> Host_type {

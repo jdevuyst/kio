@@ -1,1 +1,1 @@
-module gate;
+mod gate;

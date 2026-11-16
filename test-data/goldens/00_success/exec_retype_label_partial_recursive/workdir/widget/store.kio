@@ -1,7 +1,7 @@
-module widget/store;
+mod widget/store;
 
 import core/store as _rehost_gdgphcgfcphdhegphcgf;
-import widget/macros/row_macros(macro select);
+import widget/macros/row_macros { macro select }
 
 pub type Foo[A] = _rehost_gdgphcgfcphdhegphcgf.Foo[A];
 

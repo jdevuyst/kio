@@ -1,4 +1,4 @@
-module main;
+mod main;
 
 fn flat_short() -> . { let r = receiver.>f(x).>g(y).>h(z); r }
 

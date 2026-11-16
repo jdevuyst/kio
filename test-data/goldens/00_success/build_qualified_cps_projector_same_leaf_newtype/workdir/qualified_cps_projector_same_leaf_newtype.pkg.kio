@@ -1,4 +1,4 @@
-package qualified_cps_projector_same_leaf_newtype;
+pkg qualified_cps_projector_same_leaf_newtype;
 
 build {
   cache "out/.kio-cache/";

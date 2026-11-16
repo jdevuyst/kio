@@ -1,4 +1,4 @@
-module equiv_application_skeleton_distinct;
+mod equiv_application_skeleton_distinct;
 
 host type T;
 

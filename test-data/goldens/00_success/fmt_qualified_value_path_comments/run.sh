@@ -2,7 +2,7 @@
 set -eu
 
 formatted=$("$KIO_BIN" fmt - <<'KIO'
-module fmt_qualified_value_path_comments;
+mod fmt_qualified_value_path_comments;
 fn callee() { m // before dot
 . // before segment
 ready // before call

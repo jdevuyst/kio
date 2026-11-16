@@ -1,13 +1,13 @@
-module index/analysis;
+mod index/analysis;
 
 import index/automaton as sam;
 import index/numbers as num;
-import macros/control(macro if);
-import macros/row_macros(macro select, macro with);
-import testapi(Array, Bool, I32);
+import macros/control { macro if }
+import macros/row_macros { macro select; macro with }
+import testapi { type Array; type Bool; type I32 }
 import testapi/arith as n;
 import testapi/array as a;
-import testapi/iter(loop);
+import testapi/iter { fn loop }
 
 rec(loop) fn collect_length(states: Array[sam.State], length: I32, state: I32) {
   if(num.less(state, a.array_len(states))) {

@@ -1,4 +1,4 @@
-dependency stack;
+dep stack;
 
 source {
   path "../../exec_rec_quoted_stack/workdir/exec_rec_quoted_stack.pkg.kio"

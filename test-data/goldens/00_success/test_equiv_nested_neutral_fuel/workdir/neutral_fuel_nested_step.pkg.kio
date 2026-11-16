@@ -1,4 +1,4 @@
-package neutral_fuel_nested_step;
+pkg neutral_fuel_nested_step;
 
 build {
   cache "out/.kio-cache/";

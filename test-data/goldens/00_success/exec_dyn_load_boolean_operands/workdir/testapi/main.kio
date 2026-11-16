@@ -1,20 +1,32 @@
-module testapi/main;
+mod testapi/main;
 
-import host_descriptor(Host_type, bool_role, host_id_local, host_type_id);
-import host_descriptor(host_types_cons, host_types_nil, mk_host_id, mk_role_host_type);
-import hostrec(serve_default);
-import loader(Apply, Lookup, Str_in, Str_out, diag_message, un_load_outcome);
-import loader(Diag, Loaded, Lr_diag, Lr_image, Surface);
-import loader(Host_adapter, host_fn_bindings_nil, instantiate, mk_host_adapter);
-import loader/scan(load_package);
-import macros/control(macro if);
-import macros/match(macro match);
-import macros/row_macros(macro select);
-import testapi(Scalar, String);
-import testapi/io(print);
-import testapi/scalar(scalar_as_str, scalar_of_str);
-import testapi/text(string_concat, string_eq);
-import value(Side, Value, s_left, s_right, vhost);
+import host_descriptor {
+  fn host_types_cons;
+  fn host_types_nil;
+  fn mk_host_id;
+  fn mk_role_host_type
+}
+import host_descriptor { type Host_type; fn bool_role; fn host_id_local; fn host_type_id }
+import hostrec { fn serve_default }
+import loader {
+  type Apply;
+  type Lookup;
+  type Str_in;
+  type Str_out;
+  fn diag_message;
+  fn un_load_outcome
+}
+import loader { type Diag; type Loaded; type Lr_diag; type Lr_image; type Surface }
+import loader { type Host_adapter; fn host_fn_bindings_nil; fn instantiate; fn mk_host_adapter }
+import loader/scan { fn load_package }
+import macros/control { macro if }
+import macros/match { macro match }
+import macros/row_macros { macro select }
+import testapi { type Scalar; type String }
+import testapi/io { fn print }
+import testapi/scalar { fn scalar_as_str; fn scalar_of_str }
+import testapi/text { fn string_concat; fn string_eq }
+import value { type Side; type Value; fn s_left; fn s_right; fn vhost }
 
 fn adapter() -> Host_adapter {
   mk_host_adapter(
@@ -76,10 +88,10 @@ fn call_value[P](surface: Surface[P], input: String) -> String {
 fn evaluated(body: String, input: String) {
   let source =
     string_concat(
-    , "module hostapi; host type Flag role(bool); host type Other role(bool); "
-      "module guest; import __intrinsics__; import hostapi(Flag, Other); type "
-      "Alias = Flag; pub fn value(left: Flag) -> Flag { "
-    , string_concat(body, " } package guest; bridge { guest; hostapi; }")
+    , "mod hostapi; host type Flag role(bool); host type Other role(bool); mod "
+      "guest; import __intrinsics__; import hostapi {type Flag; type Other} "
+      "type Alias = Flag; pub fn value(left: Flag) -> Flag { "
+    , string_concat(body, " } pkg guest; bridge { guest; hostapi; }")
     );
   match(un_load_outcome(load_package(source))) {
     (
@@ -102,9 +114,9 @@ fn evaluated(body: String, input: String) {
 fn rejected(body: String) {
   let source =
     string_concat(
-    , "module hostapi; host type Flag role(bool); module guest; import "
-      "__intrinsics__; import hostapi(Flag); fn invalid[B](left: B) -> B { "
-    , string_concat(body, " } package guest; bridge { guest; hostapi; }")
+    , "mod hostapi; host type Flag role(bool); mod guest; import "
+      "__intrinsics__; import hostapi {type Flag} fn invalid[B](left: B) -> B { "
+    , string_concat(body, " } pkg guest; bridge { guest; hostapi; }")
     );
   match(un_load_outcome(load_package(source))) {
     (

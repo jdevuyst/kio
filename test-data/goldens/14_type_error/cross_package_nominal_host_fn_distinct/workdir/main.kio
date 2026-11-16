@@ -10,9 +10,9 @@
 /// slot — exit 14. Before the fix the typer requalified `dep_id`'s
 /// signature in the *caller*, conflating the two same-named `String`s by
 /// leaf name and wrongly accepting this.
-module main;
+mod main;
 
-import bdep/hosted(dep_id);
+import bdep/hosted { fn dep_id }
 
 host type String role(str);
 

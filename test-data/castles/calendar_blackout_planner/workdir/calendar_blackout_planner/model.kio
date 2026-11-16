@@ -1,6 +1,6 @@
-module calendar_blackout_planner/model;
+mod calendar_blackout_planner/model;
 
-import testapi(Bool, I32, String);
+import testapi { type Bool; type I32; type String }
 
 pub type Window = { Name: String; Support_load: I32; Priority: I32; Frozen: Bool };
 

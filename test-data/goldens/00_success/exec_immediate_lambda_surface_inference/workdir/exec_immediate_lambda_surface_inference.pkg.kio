@@ -1,4 +1,4 @@
-package exec_immediate_lambda_surface_inference;
+pkg exec_immediate_lambda_surface_inference;
 
 build {
   cache "out/.kio-cache/";

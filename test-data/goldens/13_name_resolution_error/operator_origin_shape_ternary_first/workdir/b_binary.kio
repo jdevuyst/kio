@@ -1,4 +1,4 @@
-module b_binary;
+mod b_binary;
 
 pub fn choose(a: ., b: .) { a }
 

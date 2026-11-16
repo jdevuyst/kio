@@ -1,6 +1,6 @@
-module host/m;
+mod host/m;
 
-import host(a, b, c);
+import host { fn a; fn b; fn c }
 
 equiv three_groups() {
   a();

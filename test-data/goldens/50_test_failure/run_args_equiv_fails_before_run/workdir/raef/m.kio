@@ -1,6 +1,6 @@
-module raef/m;
+mod raef/m;
 
-import raef(I32, String, print);
+import raef { type I32; type String; fn print }
 
 equiv standard_path_failure() {
   1[I32];

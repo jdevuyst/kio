@@ -1,4 +1,4 @@
-package rna_secondary_fold;
+pkg rna_secondary_fold;
 
 build {
   target js {

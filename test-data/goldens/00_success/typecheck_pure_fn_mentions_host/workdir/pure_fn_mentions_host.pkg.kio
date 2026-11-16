@@ -1,4 +1,4 @@
-package pure_fn_mentions_host;
+pkg pure_fn_mentions_host;
 
 build {
   cache "out/.kio-cache/";

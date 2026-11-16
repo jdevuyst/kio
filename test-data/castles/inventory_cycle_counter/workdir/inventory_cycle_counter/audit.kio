@@ -1,9 +1,9 @@
-module inventory_cycle_counter/audit;
+mod inventory_cycle_counter/audit;
 
-import inventory_cycle_counter/model(Bin, Expected, Observed);
-import macros/control(macro if);
-import macros/row_macros(macro select);
-import testapi(Bool, I32, String);
+import inventory_cycle_counter/model { type Bin; type Expected; type Observed }
+import macros/control { macro if }
+import macros/row_macros { macro select }
+import testapi { type Bool; type I32; type String }
 import testapi/arith as arith;
 
 pub fn delta(bin: Bin) -> I32 {

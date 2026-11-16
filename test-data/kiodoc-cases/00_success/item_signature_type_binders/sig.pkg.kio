@@ -1,4 +1,4 @@
-package sig;
+pkg sig;
 
 build {
   docs {

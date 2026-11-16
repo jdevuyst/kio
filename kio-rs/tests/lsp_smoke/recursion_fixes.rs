@@ -5,10 +5,10 @@ fn assert_recursion_repair(body: &str, repaired_body: &str) {
     dir.write_pkg_root_package();
     dir.write(
         "pkg.kio",
-        "module pkg; host fn drive[S][R](step: S -> (S | R), state: S) -> R;\n",
+        "mod pkg; host fn drive[S][R](step: S -> (S | R), state: S) -> R;\n",
     );
     let source = format!(
-        "module pkg/main;\nimport pkg as host;\npub rec(host.drive) fn again[A](x: A) -> . {{ {body} }}\n"
+        "mod pkg/main;\nimport pkg as host;\npub rec(host.drive) fn again[A](x: A) -> . {{ {body} }}\n"
     );
     let repaired = source.replace(body, repaired_body);
     let file = dir.write("pkg/main.kio", &source);
@@ -62,9 +62,9 @@ fn removing_escape_retains_required_continuation_through_native_action() {
     dir.write_pkg_root_package();
     dir.write(
         "pkg.kio",
-        "module pkg; host fn drive[S][R](step: ((S -> R) & S) -> (S | R), state: S) -> R; host fn after(value: .) -> .; host fn retain(callback: . -> .) -> .;\n",
+        "mod pkg; host fn drive[S][R](step: ((S -> R) & S) -> (S | R), state: S) -> R; host fn after(value: .) -> .; host fn retain(callback: . -> .) -> .;\n",
     );
-    let source = "module pkg/main; import pkg as host; rec(host.drive) { pub fn spin(value: .) -> . { host.after(recur(escape) spin(value)) }; fn saved(value: .) -> . { host.retain(.() { recur(escape) saved(value) }) } }\n";
+    let source = "mod pkg/main; import pkg as host; rec(host.drive) { pub fn spin(value: .) -> . { host.after(recur(escape) spin(value)) }; fn saved(value: .) -> . { host.retain(.() { recur(escape) saved(value) }) } }\n";
     let repaired = source.replace("host.after(recur(escape)", "host.after(recur(cont)");
     let file = dir.write("pkg/main.kio", source);
     let uri = path_to_file_uri(&file);
@@ -225,7 +225,7 @@ fn mode_repairs_that_expose_other_errors_are_withheld() {
         ),
     ] {
         let source = format!(
-            "module pkg/main; import pkg as host; pub rec({capability}) fn again[A](x: A) -> . {{ {body} }}"
+            "mod pkg/main; import pkg as host; pub rec({capability}) fn again[A](x: A) -> . {{ {body} }}"
         );
         recursion_actions(&source, |diagnostic, response| {
             assert_eq!(
@@ -242,7 +242,7 @@ fn recursion_actions(source: &str, inspect: impl FnOnce(&Value, &Value)) {
     dir.write_pkg_root_package();
     dir.write(
         "pkg.kio",
-        "module pkg; host fn drive[S][R](step: S -> (S | R), state: S) -> R;\n",
+        "mod pkg; host fn drive[S][R](step: S -> (S | R), state: S) -> R;\n",
     );
     let file = dir.write("pkg/main.kio", source);
     let uri = path_to_file_uri(&file);
@@ -276,7 +276,7 @@ fn invalid_marker_repairs_are_withheld() {
         ),
     ] {
         let source = format!(
-            "module pkg/main; import pkg as host; pub rec({capability}) fn again[A](x: A) -> . {{ {body} }}"
+            "mod pkg/main; import pkg as host; pub rec({capability}) fn again[A](x: A) -> . {{ {body} }}"
         );
         recursion_actions(&source, |diagnostic, response| {
             assert_eq!(
@@ -292,7 +292,7 @@ fn invalid_marker_repairs_are_withheld() {
 fn missing_definition_guidance_does_not_choose_a_capability() {
     for modifier in ["", "pure "] {
         let source =
-            format!("module pkg/main; pub {modifier}fn again(x: .) -> . {{ recur again(x) }}");
+            format!("mod pkg/main; pub {modifier}fn again(x: .) -> . {{ recur again(x) }}");
         recursion_actions(&source, |diagnostic, response| {
             assert!(
                 diagnostic["data"]["help"]
@@ -305,7 +305,7 @@ fn missing_definition_guidance_does_not_choose_a_capability() {
         });
     }
     recursion_actions(
-        "module pkg/main; pub fn again(x: .) -> . { again(x) }",
+        "mod pkg/main; pub fn again(x: .) -> . { again(x) }",
         |diagnostic, _response| {
             assert!(
                 diagnostic["data"]["notes"]
@@ -331,9 +331,9 @@ fn shadowed_member_names_do_not_get_recursion_repairs() {
     dir.write_pkg_root_package();
     dir.write(
         "pkg.kio",
-        "module pkg; host fn drive[S][R](step: S -> (S | R), state: S) -> R;\n",
+        "mod pkg; host fn drive[S][R](step: S -> (S | R), state: S) -> R;\n",
     );
-    let source = "module pkg/main; import pkg as host; pub rec(host.drive) fn again[A](x: A) -> A { let again = .(value: A) { value }; again(x) }";
+    let source = "mod pkg/main; import pkg as host; pub rec(host.drive) fn again[A](x: A) -> A { let again = .(value: A) { value }; again(x) }";
     let file = dir.write("pkg/main.kio", source);
     let uri = path_to_file_uri(&file);
     let mut lsp = LspProcess::spawn();

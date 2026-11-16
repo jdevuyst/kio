@@ -1,6 +1,6 @@
-module owalias/other;
+mod owalias/other;
 
-import owalias(String);
+import owalias { type String }
 
 pub type { X: String { pub mk; pub get } }
 

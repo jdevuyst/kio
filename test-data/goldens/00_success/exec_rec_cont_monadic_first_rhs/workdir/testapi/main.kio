@@ -1,12 +1,12 @@
-module testapi/main;
+mod testapi/main;
 
-import macros/control(macro if);
-import macros/sequence(macro do);
-import testapi(Bool, I32, String);
-import testapi/arith(leq_i32);
-import testapi/fmt(i32_to_string);
-import testapi/io(print);
-import testapi/iter(loop);
+import macros/control { macro if }
+import macros/sequence { macro do }
+import testapi { type Bool; type I32; type String }
+import testapi/arith { fn leq_i32 }
+import testapi/fmt { fn i32_to_string }
+import testapi/io { fn print }
+import testapi/iter { fn loop }
 
 fn chain[A][B](value: A, next: A -> B) -> B { next(value) }
 

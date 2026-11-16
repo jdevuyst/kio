@@ -3,17 +3,17 @@
 /// An address is a nominal `(row & col)` pair rather than a packed integer:
 /// this host tier has no division, so `row * cols + col` could be built but
 /// never taken apart again.
-module sheet/addr;
+mod sheet/addr;
 
-import macros/control(macro if);
-import macros/match(macro match);
-import sheet/list(List, cons, nil, one);
-import sheet/list(append);
-import testapi(Bool, I32, String);
-import testapi/arith(add_i32, eq_i32, leq_i32, lt_i32, sub_i32);
-import testapi/fmt(int_to_string);
-import testapi/iter(loop);
-import testapi/text(string_concat);
+import macros/control { macro if }
+import macros/match { macro match }
+import sheet/list { fn append }
+import sheet/list { type List; fn cons; fn nil; fn one }
+import testapi { type Bool; type I32; type String }
+import testapi/arith { fn add_i32; fn eq_i32; fn leq_i32; fn lt_i32; fn sub_i32 }
+import testapi/fmt { fn int_to_string }
+import testapi/iter { fn loop }
+import testapi/text { fn string_concat }
 
 pub type { Addr: I32 & I32 { pub mk; pub get } }
 

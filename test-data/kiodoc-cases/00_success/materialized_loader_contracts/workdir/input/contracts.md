@@ -1,7 +1,7 @@
 # Materialized loader contracts
 
 ```kio {}
-module contracts;
+mod contracts;
 
 import docs_loader/loader as loader;
 import docs_loader/testapi as host;

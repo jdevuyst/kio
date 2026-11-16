@@ -1,9 +1,9 @@
-module testapi/main;
+mod testapi/main;
 
-import macros/algebraic_macros(macro ease);
-import macros/match(macro match);
-import testapi/io(print);
-import testapi/types(String);
+import macros/algebraic_macros { macro ease }
+import macros/match { macro match }
+import testapi/io { fn print }
+import testapi/types { type String }
 
 type { A: String { pub mk; pub get } }
 

@@ -604,6 +604,21 @@ fn import_list_candidates(
         is_incomplete: false,
         items: Vec::new(),
     };
+    let range = LineIndex::new(source).to_range(cursor.atom.replacement);
+    result
+        .items
+        .extend(cursor.keywords.iter().map(|keyword| CompletionItem {
+            label: (*keyword).to_owned(),
+            kind: Some(CompletionItemKind::KEYWORD),
+            text_edit: Some(CompletionTextEdit::Edit(TextEdit {
+                range: lsp_types::Range::new(
+                    Position::new(range.start.line, range.start.character),
+                    Position::new(range.end.line, range.end.character),
+                ),
+                new_text: (*keyword).to_owned(),
+            })),
+            ..Default::default()
+        }));
     let name = context.provider.segments.join("/");
     let Some((provider_source, provider)) = sources.provider(&name) else {
         result.is_incomplete = true;
@@ -624,10 +639,9 @@ fn import_list_candidates(
                 .render(),
         })
         .collect();
-    let range = LineIndex::new(source).to_range(cursor.atom.replacement);
     let mut push = |entry: &crate::doc_entry::DocEntry<'_>, label: String, kind, selection| {
         let admitted = match context.kind {
-            ImportSelectionKind::Any => true,
+            ImportSelectionKind::Any | ImportSelectionKind::Name => true,
             requested => requested == selection,
         };
         if selected.contains(&label)
@@ -636,10 +650,37 @@ fn import_list_candidates(
         {
             return;
         }
-        let label = if selection == ImportSelectionKind::Macro
-            && context.kind == ImportSelectionKind::Any
-        {
-            format!("macro {label}")
+        let tag = match selection {
+            ImportSelectionKind::Function => "fn",
+            ImportSelectionKind::Type => "type",
+            ImportSelectionKind::Literal => "lit",
+            ImportSelectionKind::Macro => "macro",
+            ImportSelectionKind::FixedOperator => "op",
+            ImportSelectionKind::MacroOperator => "op_macro",
+            ImportSelectionKind::VariadicOperator => "op_var",
+            _ => return,
+        };
+        let operator = matches!(
+            selection,
+            ImportSelectionKind::FixedOperator
+                | ImportSelectionKind::MacroOperator
+                | ImportSelectionKind::VariadicOperator
+        );
+        let label = if matches!(
+            context.kind,
+            ImportSelectionKind::Any | ImportSelectionKind::Name
+        ) {
+            if operator {
+                label
+            } else {
+                format!("{tag} {label}")
+            }
+        } else if operator {
+            label
+                .strip_prefix(tag)
+                .unwrap_or(&label)
+                .trim_start()
+                .to_owned()
         } else {
             label
         };
@@ -665,7 +706,7 @@ fn import_list_candidates(
         }
         let (kind, selection) = match &entry {
             DocEntry::Fn(_) | DocEntry::RecFn(_) | DocEntry::HostFn(_) => {
-                (CompletionItemKind::FUNCTION, ImportSelectionKind::Name)
+                (CompletionItemKind::FUNCTION, ImportSelectionKind::Function)
             }
             DocEntry::Macro(_) => (CompletionItemKind::FUNCTION, ImportSelectionKind::Macro),
             DocEntry::TypeAlias(..)
@@ -673,13 +714,22 @@ fn import_list_candidates(
             | DocEntry::HostType(_)
             | DocEntry::Labels(..)
             | DocEntry::LabelNominal { .. } => {
-                (CompletionItemKind::STRUCT, ImportSelectionKind::Name)
+                (CompletionItemKind::STRUCT, ImportSelectionKind::Type)
             }
-            DocEntry::LiteralAlias(_) => (CompletionItemKind::CONSTANT, ImportSelectionKind::Name),
-            DocEntry::Op(..) => (
-                CompletionItemKind::OPERATOR,
-                ImportSelectionKind::FixedOperator,
-            ),
+            DocEntry::LiteralAlias(_) => {
+                (CompletionItemKind::CONSTANT, ImportSelectionKind::Literal)
+            }
+            DocEntry::Op(op, _) => {
+                let crate::ast::OpBody::Normal { kind, .. } = &op.body;
+                (
+                    CompletionItemKind::OPERATOR,
+                    if *kind == crate::ast::FixedOperatorKind::Macro {
+                        ImportSelectionKind::MacroOperator
+                    } else {
+                        ImportSelectionKind::FixedOperator
+                    },
+                )
+            }
             DocEntry::VariadicOperator(..) => (
                 CompletionItemKind::OPERATOR,
                 ImportSelectionKind::VariadicOperator,
@@ -1039,7 +1089,7 @@ fn parse_module(source: &str) -> Option<Module<Surface>> {
 mod tests {
     #[test]
     fn block_snippet_uses_an_editable_prefix_region_and_ordered_descriptors() {
-        let source = "module app; macro choose : (. & (. -> .)) -> . { trailing product; trailing thunk fallback; impl implementation } fn run() { cho }";
+        let source = "mod app; macro choose : (. & (. -> .)) -> . { trailing product; trailing thunk fallback; impl implementation } fn run() { cho }";
         let items = complete_at_marker(source, "{ cho");
         let item = items.iter().find(|item| item.label == "choose").unwrap();
         assert_eq!(
@@ -1076,7 +1126,7 @@ mod tests {
 
     #[test]
     fn block_snippet_defaults_to_no_prefix_and_edits_a_whole_argument_list() {
-        let source = "module app; macro record : . -> . { trailing product; impl implementation } fn run() { rec }";
+        let source = "mod app; macro record : . -> . { trailing product; impl implementation } fn run() { rec }";
         let items = complete_at_marker(source, "{ rec");
         let snippet = items
             .iter()
@@ -1185,7 +1235,7 @@ mod tests {
 
     #[test]
     fn comptime_literal_completion_tracks_current_import_and_expression_context() {
-        let with_import = "module m; import __comptime__; fn f(ct: T) { __ }";
+        let with_import = "mod m; import __comptime__; fn f(ct: T) { __ }";
         let items = complete_at_marker(with_import, "{ __");
         for (label, insertion) in [
             ("__.t__", "__.t__(${1:proof})"),
@@ -1231,17 +1281,17 @@ mod tests {
             panic!("plain completion edit")
         };
         assert_eq!(edit.new_text, "__.t__");
-        let argument = "module m; import __comptime__; fn f(ct: T) { target(__) }";
+        let argument = "mod m; import __comptime__; fn f(ct: T) { target(__) }";
         assert!(
             complete_at_marker(argument, "target(__")
                 .iter()
                 .any(|item| item.label == "__.t__")
         );
         for source in [
-            "module m; fn f(ct: T) { __ }",
-            "module m; import __comptime__; fn f(ct: __) { () }",
-            "module m; import __comptime__; fn f(ct: T) { value.__ }",
-            "module m; import __comptime__; fn f(ct: T) { // __\n () }",
+            "mod m; fn f(ct: T) { __ }",
+            "mod m; import __comptime__; fn f(ct: __) { () }",
+            "mod m; import __comptime__; fn f(ct: T) { value.__ }",
+            "mod m; import __comptime__; fn f(ct: T) { // __\n () }",
         ] {
             let items = complete_at_marker(
                 source,
@@ -1264,7 +1314,7 @@ mod tests {
 
     #[test]
     fn exact_scope_shadowing_does_not_borrow_declaration_documentation() {
-        let source = "module pkg/main;\n/// Outer documentation.\nfn value() -> . { () }\nfn consumer(value: .) -> . { value }";
+        let source = "mod pkg/main;\n/// Outer documentation.\nfn value() -> . { () }\nfn consumer(value: .) -> . { value }";
         let items = complete_at_marker(source, "{ value");
         let local = items.iter().find(|item| item.label == "value").unwrap();
         assert_eq!(local.kind, Some(CompletionItemKind::VARIABLE));
@@ -1273,8 +1323,8 @@ mod tests {
 
     #[test]
     fn completion_metadata_preserves_selected_provider_kinds() {
-        let source = "module pkg/main; import provider(macro expand, answer); fn f() -> . { () }";
-        let provider = "module provider; /// Expansion docs.\npub macro expand : . -> . { impl expand_body } pub literal answer = 1;";
+        let source = "mod pkg/main; import provider {macro expand; lit answer} fn f() -> . { () }";
+        let provider = "mod provider; /// Expansion docs.\npub macro expand : . -> . { impl expand_body } pub lit answer = 1;";
         let uri = test_file_uri("/pkg/main.kio");
         let path = crate::lsp::util::uri_to_canonical(&uri).unwrap();
         let provider_path = test_file_path("/provider.kio");
@@ -1321,7 +1371,7 @@ mod tests {
         use crate::ast::{Lowered, Meta, Type};
         use crate::pass::typecheck_full::ResolvedBinder;
         use crate::span::Span;
-        let source = "module pkg/main; fn f(value: .) -> . { value }";
+        let source = "mod pkg/main; fn f(value: .) -> . { value }";
         let module = crate::pass::parser::parse(source).unwrap();
         let candidate = crate::scope_walk::in_scope_candidates(&module, (source.len() - 2) as u32)
             .into_iter()
@@ -1367,7 +1417,7 @@ mod tests {
         use crate::ast::{Lowered, Meta, Type};
         use crate::span::Span;
         let source =
-            "module pkg/main; fn before(value: .) -> . { value } fn after(value: .) -> . { value }";
+            "mod pkg/main; fn before(value: .) -> . { value } fn after(value: .) -> . { value }";
         let module = crate::pass::parser::parse(source).unwrap();
         let candidate = crate::scope_walk::in_scope_candidates(&module, (source.len() - 2) as u32)
             .into_iter()
@@ -1427,13 +1477,13 @@ mod tests {
     #[test]
     fn qualified_provider_members_are_visibility_and_namespace_exact() {
         let analysis = operator_catalog(
-            "module syntax; pub fn visible() { () } fn hidden() { () } pub type Item = .; pub type { Box: . { pub mk; get }; }",
+            "mod syntax; pub fn visible() { () } fn hidden() { () } pub type Item = .; pub type { Box: . { pub mk; get }; }",
         );
         for (fragment, expected) in [
             ("selected.", vec!["visible"]),
             ("selected.Box.", vec!["mk"]),
         ] {
-            let source = format!("module app; import syntax as selected; fn run() {{ {fragment}");
+            let source = format!("mod app; import syntax as selected; fn run() {{ {fragment}");
             let uri: Uri = test_file_uri("/app.kio");
             let position = LineIndex::new(&source).to_position(source.len() as u32);
             let result = handle_completion(
@@ -1445,7 +1495,7 @@ mod tests {
             .unwrap();
             assert_eq!(labels(&result.items), expected, "{fragment}");
         }
-        let source = "module app; import syntax as selected; fn run(selected: .) { selected.";
+        let source = "mod app; import syntax as selected; fn run(selected: .) { selected.";
         let uri: Uri = test_file_uri("/app.kio");
         let position = LineIndex::new(source).to_position(source.len() as u32);
         assert!(
@@ -1464,7 +1514,7 @@ mod tests {
     #[test]
     fn qualified_completion_reads_only_selected_identity_edges() {
         let mut analysis = operator_catalog(
-            "module syntax; import terminal as owner; import absent as unrelated; pub type Forward = owner.Box; pub fn visible() { () }",
+            "mod syntax; import terminal as owner; import absent as unrelated; pub type Forward = owner.Box; pub fn visible() { () }",
         );
         let terminal = test_file_path("/workspace/terminal.kio");
         analysis
@@ -1472,7 +1522,7 @@ mod tests {
             .insert(terminal.clone(), "terminal".to_owned());
         analysis.sources.insert(
             terminal,
-            "module terminal; pub type { Box: . { pub mk; pub get }; }".to_owned(),
+            "mod terminal; pub type { Box: . { pub mk; pub get }; }".to_owned(),
         );
         let mut failures = Vec::new();
         for (fragment, expected_reads, expected_labels) in [
@@ -1481,7 +1531,7 @@ mod tests {
             ("Alias.", vec!["syntax", "terminal"], vec!["get", "mk"]),
         ] {
             let source = format!(
-                "module app; import syntax as selected; import missing as unused; type Alias = selected.Forward; type {{ Box: . {{ mk; get; }}; }}; fn run() {{ {fragment}"
+                "mod app; import syntax as selected; import missing as unused; type Alias = selected.Forward; type {{ Box: . {{ mk; get; }}; }}; fn run() {{ {fragment}"
             );
             let uri: Uri = test_file_uri("/app.kio");
             let position = LineIndex::new(&source).to_position(source.len() as u32);
@@ -1512,7 +1562,7 @@ mod tests {
         assert!(failures.is_empty(), "{}", failures.join("\n"));
     }
 
-    const OPERATOR_PROVIDER: &str = "module syntax;
+    const OPERATOR_PROVIDER: &str = "mod syntax;
         fn pair(a: ., b: .) -> . { a }
         fn zero() -> . { () }
         /// Adds two values.
@@ -1520,59 +1570,41 @@ mod tests {
         pub(app) op _ ? __ { impl pair }
         op _ - _ { impl pair }
         /// Collects values.
-        pub varop [%?:+- -+:?%] { foldl pair zero }";
+        pub op_var [%?:+- -+:?%] { foldl pair zero }";
 
     #[test]
     fn operator_import_completion_uses_full_grammar_and_visibility() {
         let analysis = operator_catalog(OPERATOR_PROVIDER);
         for (importer, expected) in [("app/main", 3), ("outside/main", 2)] {
-            for tail in ["", "op", "varop [%", "op _ ?"] {
-                let source = format!("module {importer}; import syntax({tail}");
-                let list =
-                    import_list_completions(&source, source.len() as u32, None, Some(&analysis))
-                        .expect("operator selection");
-                assert!(!list.is_incomplete);
-                let count = match tail {
-                    "varop [%" => 1,
-                    "op _ ?" => expected - 1,
-                    _ => expected,
+            let source = format!("mod {importer}; import syntax {{");
+            let list = import_list_completions(&source, source.len() as u32, None, Some(&analysis))
+                .expect("operator selection");
+            let operators: Vec<_> = list
+                .items
+                .iter()
+                .filter(|item| item.kind == Some(CompletionItemKind::OPERATOR))
+                .collect();
+            assert_eq!(operators.len(), expected, "{source}");
+            assert!(!operators.iter().any(|item| item.label == "op _ - _"));
+            for item in operators {
+                let Some(CompletionTextEdit::Edit(edit)) = &item.text_edit else {
+                    panic!("operator edit")
                 };
-                assert_eq!(list.items.len(), count, "{source}");
-                assert!(!labels(&list.items).contains(&"op _ - _"));
-                assert_eq!(
-                    labels(&list.items).contains(&"op _ + _"),
-                    tail != "varop [%"
+                assert!(
+                    item.detail
+                        .as_deref()
+                        .is_some_and(|text| text.contains("impl") || text.contains("foldl"))
                 );
-                assert_eq!(
-                    labels(&list.items).contains(&"varop [%?:+- -+:?%]"),
-                    tail != "op _ ?"
-                );
-                for item in list.items {
-                    assert_eq!(item.kind, Some(CompletionItemKind::OPERATOR));
-                    let Some(CompletionTextEdit::Edit(edit)) = item.text_edit else {
-                        panic!("full grammar insertion");
-                    };
-                    assert_eq!(edit.new_text, item.label);
-                    assert!(
-                        item.detail.as_deref().unwrap().contains("impl")
-                            || item.detail.as_deref().unwrap().contains("foldl")
-                    );
-                    let line_index = LineIndex::new(&source);
-                    let offset = line_index.position_to_offset(LspPosition {
-                        line: edit.range.start.line,
-                        character: edit.range.start.character,
-                    }) as usize;
-                    let inserted = format!("{}{});", &source[..offset], edit.new_text);
-                    let module = crate::pass::parser::parse(&inserted).expect("inserted import");
-                    let crate::ast::ImportKind::Selective { items, .. } = &module.imports[0].kind
-                    else {
-                        panic!("selective import")
-                    };
-                    let crate::ast::ImportItem::OperatorPattern { grammar, .. } = &items[0] else {
-                        panic!("operator import")
-                    };
-                    assert_eq!(grammar.render(), item.label);
-                }
+                let inserted = format!("{source}{}}}", edit.new_text);
+                let module = crate::pass::parser::parse(&inserted).expect("inserted import");
+                let crate::ast::ImportKind::Selective { items, .. } = &module.imports[0].kind
+                else {
+                    panic!("selective import")
+                };
+                let crate::ast::ImportItem::OperatorPattern { grammar, .. } = &items[0] else {
+                    panic!("operator import")
+                };
+                assert_eq!(grammar.render(), item.label);
             }
         }
     }
@@ -1580,10 +1612,10 @@ mod tests {
     #[test]
     fn macro_import_completion_selects_only_macro_declarations_and_keeps_one_tag() {
         let analysis = operator_catalog(
-            "module syntax; pub macro build : . -> . { impl implementation; }; pub fn ordinary() { () } pub fn macro() { () }",
+            "mod syntax; pub macro build : . -> . { impl implementation; }; pub fn ordinary() { () } pub fn macro() { () }",
         );
         for tail in ["macro ", "macro bu", "macro // keep\n bu"] {
-            let source = format!("module app; import syntax({tail}");
+            let source = format!("mod app; import syntax {{{tail}");
             let list = import_list_completions(&source, source.len() as u32, None, Some(&analysis))
                 .unwrap();
             assert_eq!(labels(&list.items), ["build"], "{source}");
@@ -1595,7 +1627,7 @@ mod tests {
                 line: edit.range.start.line,
                 character: edit.range.start.character,
             }) as usize;
-            let applied = format!("{}{});", &source[..start], edit.new_text);
+            let applied = format!("{}{}{}", &source[..start], edit.new_text, "}");
             let module = crate::pass::parser::parse(&applied).unwrap();
             let crate::ast::ImportKind::Selective { items, .. } = &module.imports[0].kind else {
                 panic!("selective import");
@@ -1603,14 +1635,14 @@ mod tests {
             assert!(matches!(
                 &items[0],
                 crate::ast::ImportItem::Name {
-                    macro_span: Some(_),
+                    kind: crate::ast::ImportNameKind::Macro,
                     ..
                 }
             ));
             assert_eq!(applied.matches("macro ").count(), 1, "{applied}");
             assert_eq!(applied.contains("// keep"), source.contains("// keep"));
         }
-        let source = "module app; import syntax(";
+        let source = "mod app; import syntax {";
         let list =
             import_list_completions(source, source.len() as u32, None, Some(&analysis)).unwrap();
         assert!(labels(&list.items).contains(&"macro build"));
@@ -1621,27 +1653,27 @@ mod tests {
     #[test]
     fn ordinary_default_import_completion_preserves_the_value_namespace() {
         let provider = concat!(
-            "module syntax; host type Int role(i64); pub type Alias = Int;\n",
-            "pub fn default() -> . { () } pub literal answer = 42;\n",
+            "mod syntax; host type Int role(i64); pub type Alias = Int;\n",
+            "pub fn default() -> . { () } pub lit answer = 42;\n",
         );
         let analysis = operator_catalog(provider);
-        let source = "module app; import syntax(";
+        let source = "mod app; import syntax {";
         let list = import_list_completions(source, source.len() as u32, None, Some(&analysis))
             .expect("ordinary selection slot");
-        assert!(labels(&list.items).contains(&"default"));
-        assert!(labels(&list.items).contains(&"answer"));
-        assert!(labels(&list.items).contains(&"Int"));
+        assert!(labels(&list.items).contains(&"fn default"));
+        assert!(labels(&list.items).contains(&"lit answer"));
+        assert!(labels(&list.items).contains(&"type Int"));
         let item = list
             .items
             .iter()
-            .find(|item| item.label == "default")
+            .find(|item| item.label == "fn default")
             .unwrap();
         assert_eq!(item.kind, Some(CompletionItemKind::FUNCTION));
         let Some(CompletionTextEdit::Edit(edit)) = &item.text_edit else {
             panic!("ordinary import completion needs a source edit");
         };
-        assert_eq!(edit.new_text, "default");
-        let parsed = crate::pass::parser::parse(&format!("{source}{});", edit.new_text)).unwrap();
+        assert_eq!(edit.new_text, "fn default");
+        let parsed = crate::pass::parser::parse(&format!("{source}{}}}", edit.new_text)).unwrap();
         let crate::ast::ImportKind::Selective { items, .. } = &parsed.imports[0].kind else {
             panic!("selective import");
         };
@@ -1650,7 +1682,7 @@ mod tests {
 
     #[test]
     fn import_list_completion_preserves_every_export_namespace() {
-        let source = "module syntax;
+        let source = "mod syntax;
             host type Host;
             host fn host_value() -> .;
             pub fn visible() -> . { () }
@@ -1659,7 +1691,7 @@ mod tests {
             pub(app) fn scoped() -> . { () }
             pub type Value = .;
             pub type { Wrapped: . { pub mk; pub get }; }
-            pub literal answer = 1;
+            pub lit answer = 1;
             pub type Packet = { Alpha: .; Beta: .; };
             pub type { Gamma: .; };
             pub(app) type { Local: .; };
@@ -1670,84 +1702,71 @@ mod tests {
             pure fn expand_value(value: .) -> . { value }
             pub macro expand : . -> . { impl expand_value }
             pub op _ + _ { impl visible }
-            pub varop [* *] { foldr visible visible }";
+            pub op_var [* *] { foldr visible visible }";
         let analysis = operator_catalog(source);
         let ordinary = [
-            "Alpha",
-            "Beta",
-            "Gamma",
-            "Forward",
-            "Host",
-            "Packet",
-            "Value",
-            "Wrapped",
-            "answer",
+            "type Alpha",
+            "type Beta",
+            "type Gamma",
+            "type Forward",
+            "type Host",
+            "type Packet",
+            "type Value",
+            "type Wrapped",
+            "lit answer",
             "macro expand",
-            "host_value",
-            "op",
-            "visible",
+            "fn host_value",
+            "fn op",
+            "fn visible",
         ];
         for importer in ["app/main", "outside/main"] {
-            for prefix in ["", "op", "vis", "op _", "varop ["] {
-                let text = format!("module {importer}; import syntax({prefix}");
-                let list = import_list_completions(&text, text.len() as u32, None, Some(&analysis))
-                    .unwrap();
-                let names = labels(&list.items);
-                assert!(!list.is_incomplete);
-                assert!(!names.contains(&"hidden"));
-                assert!(!names.contains(&"expand_value"));
-                assert!(!names.contains(&"make"));
-                assert!(!names.contains(&"get"));
-                assert!(!names.contains(&"Hidden_forward"));
-                assert!(names.iter().all(|name| !name.contains('{')));
-                match prefix {
-                    "" | "op" => {
-                        for name in ordinary {
-                            assert!(names.contains(&name), "{importer}: {names:?}");
-                        }
-                        for name in ["op _ + _", "varop [* *]"] {
-                            assert!(names.contains(&name), "{importer}: {names:?}");
-                        }
-                        assert_eq!(names.contains(&"scoped"), importer == "app/main");
-                        assert_eq!(names.contains(&"Local"), importer == "app/main");
-                        assert_eq!(names.contains(&"Local_forward"), importer == "app/main");
-                    }
-                    "vis" => assert!(list.items.iter().all(|item| !matches!(
-                        item.kind,
-                        Some(CompletionItemKind::FIELD | CompletionItemKind::OPERATOR)
-                    ))),
-                    _ => assert!(
-                        list.items
-                            .iter()
-                            .all(|item| item.kind == Some(CompletionItemKind::OPERATOR))
-                    ),
-                }
-                assert!(!list.items.is_empty(), "{prefix}");
-                if matches!(prefix, "" | "op") {
-                    let forwards: Vec<_> = list
-                        .items
-                        .iter()
-                        .filter(|item| item.label == "Forward")
-                        .collect();
-                    assert_eq!(forwards.len(), 1);
-                    assert_eq!(forwards[0].kind, Some(CompletionItemKind::STRUCT));
-                    let Some(Documentation::MarkupContent(doc)) = &forwards[0].documentation else {
-                        panic!("alias completion keeps its own documentation");
-                    };
-                    assert!(doc.value.contains("alias's own documentation"));
-                }
-                for item in list.items {
-                    let Some(CompletionTextEdit::Edit(edit)) = item.text_edit else {
-                        panic!("selection edit")
-                    };
-                    assert_eq!(edit.new_text, item.label);
-                    let offset = LineIndex::new(&text).position_to_offset(LspPosition {
-                        line: edit.range.start.line,
-                        character: edit.range.start.character,
-                    }) as usize;
-                    let inserted = format!("{}{});", &text[..offset], edit.new_text);
-                    crate::pass::parser::parse(&inserted).expect("namespace-correct selection");
-                }
+            let text = format!("mod {importer}; import syntax {{");
+            let list =
+                import_list_completions(&text, text.len() as u32, None, Some(&analysis)).unwrap();
+            let names = labels(&list.items);
+            assert!(!list.is_incomplete);
+            for name in ordinary {
+                assert!(names.contains(&name), "{importer}: {names:?}");
+            }
+            for name in ["op _ + _", "op_var [* *]"] {
+                assert!(names.contains(&name), "{importer}: {names:?}");
+            }
+            for name in [
+                "fn hidden",
+                "fn expand_value",
+                "fn make",
+                "fn get",
+                "type Hidden_forward",
+            ] {
+                assert!(!names.contains(&name));
+            }
+            assert_eq!(names.contains(&"fn scoped"), importer == "app/main");
+            assert_eq!(names.contains(&"type Local"), importer == "app/main");
+            assert_eq!(
+                names.contains(&"type Local_forward"),
+                importer == "app/main"
+            );
+            let forward = list
+                .items
+                .iter()
+                .find(|item| item.label == "type Forward")
+                .expect("alias completion");
+            assert_eq!(forward.kind, Some(CompletionItemKind::STRUCT));
+            let Some(Documentation::MarkupContent(doc)) = &forward.documentation else {
+                panic!("alias documentation")
+            };
+            assert!(doc.value.contains("alias's own documentation"));
+            for item in list
+                .items
+                .iter()
+                .filter(|item| item.kind != Some(CompletionItemKind::KEYWORD))
+            {
+                let Some(CompletionTextEdit::Edit(edit)) = &item.text_edit else {
+                    panic!("selection edit")
+                };
+                assert_eq!(edit.new_text, item.label);
+                crate::pass::parser::parse(&format!("{text}{}}}", edit.new_text))
+                    .expect("namespace-correct selection");
             }
         }
     }
@@ -1755,17 +1774,17 @@ mod tests {
     #[test]
     fn operator_import_completion_keeps_selection_and_token_boundaries() {
         for prefix in [
-            "module app/main; import syntax(",
-            "module app/main; import syntax(\n  , ",
-            "module app/main; import syntax(\n , // Leading trivia\n , ",
-            "module app/main; import syntax(foo, op",
-            "module app/main; import syntax(varop [* *], op",
-            "module app/main; import syntax(varop [], op",
-            "module app/main; import syntax(varop [**], op",
-            "module app/main; import syntax(op _ ? ___, op",
-            "module app/main; import syntax(op (_ ? ___), op",
-            "module app/main; import syntax(varop [%",
-            "module app/main; import syntax // Provider\n (foo, // Item\n op",
+            "mod app/main; import syntax {",
+            "mod app/main; import syntax {\n  ; ",
+            "mod app/main; import syntax {\n ; // Leading trivia\n ; ",
+            "mod app/main; import syntax {fn foo; op",
+            "mod app/main; import syntax {op_var [* *]; op",
+            "mod app/main; import syntax {op_var []; op",
+            "mod app/main; import syntax {op_var [**]; op",
+            "mod app/main; import syntax {op _ ? ___; op",
+            "mod app/main; import syntax {op (_ ? ___); op",
+            "mod app/main; import syntax {op_var [%",
+            "mod app/main; import syntax // Provider\n {fn foo; // Item\n op",
         ] {
             let context = import_list_context(prefix, prefix.len() as u32, None).expect(prefix);
             assert_eq!(
@@ -1774,14 +1793,14 @@ mod tests {
             );
             let selected = &prefix[context.atom.replacement.start as usize..];
             assert!(
-                selected.is_empty() || selected.starts_with("op") || selected.starts_with("varop"),
+                selected.is_empty() || selected.starts_with("op") || selected.starts_with('['),
                 "{selected}"
             );
         }
         for source in [
-            "module app/main; import syntax as alias",
-            "module app/main; import syntax(op _ + _);",
-            "module app/main; fn import() -> . { () }",
+            "mod app/main; import syntax as alias",
+            "mod app/main; import syntax {op _ + _}",
+            "mod app/main; fn import() -> . { () }",
         ] {
             assert!(
                 import_list_context(source, source.len() as u32, None).is_none(),
@@ -1793,19 +1812,17 @@ mod tests {
     #[test]
     fn malformed_import_recovery_keeps_ordinary_completion_candidates() {
         let analysis =
-            operator_catalog("module syntax; pub type { Field: .; }; pub fn field() -> . { () }");
-        for prefix in ["{", "{f", "{Field"] {
-            let source = format!("module app; import syntax({prefix}");
+            operator_catalog("mod syntax; pub type { Field: .; }; pub fn field() -> . { () }");
+        for prefix in ["", "f", "ty"] {
+            let source = format!("mod app; import syntax {{{prefix}");
             let list = import_list_completions(&source, source.len() as u32, None, Some(&analysis))
-                .expect("ordinary import recovery context");
-            assert_eq!(
-                labels(&list.items),
-                ["Field", "field"],
-                "{source}: {list:?}"
-            );
+                .expect("import recovery context");
+            let names = labels(&list.items);
+            assert!(names.contains(&"type Field"), "{source}: {names:?}");
+            assert!(names.contains(&"fn field"), "{source}: {names:?}");
             for item in list.items {
                 let Some(CompletionTextEdit::Edit(edit)) = item.text_edit else {
-                    panic!("ordinary selection edit");
+                    panic!("selection edit")
                 };
                 assert_eq!(edit.new_text, item.label);
             }
@@ -1815,16 +1832,16 @@ mod tests {
     #[test]
     fn import_list_completion_preserves_comments_around_replaced_selections() {
         let analysis = operator_catalog(
-            "module syntax; pub type { Field: .; }; pub fn foo() -> . { () }
+            "mod syntax; pub type { Field: .; }; pub fn foo() -> . { () }
              pub op _ + _ { impl foo }",
         );
         for (selection, prefix, requested) in [
-            ("foo", "f", "foo"),
-            ("Field", "F", "Field"),
-            ("op _ + _", "op", "op _ + _"),
+            ("fn foo", "fn f", "foo"),
+            ("type Field", "type F", "Field"),
+            ("op _ + _", "op _", "_ + _"),
         ] {
             let source =
-                format!("module app/main; import syntax({selection} // Beside the delimiter\n);");
+                format!("mod app/main; import syntax {{{selection} // Beside the delimiter\n}}");
             let parsed = crate::pass::parser::parse(&source).unwrap();
             let start = source.find(selection).unwrap();
             let cursor = (start + prefix.len()) as u32;
@@ -1847,7 +1864,7 @@ mod tests {
                 line: edit.range.end.line,
                 character: edit.range.end.character,
             }) as usize;
-            assert_eq!(&source[start..end], selection);
+            assert_eq!(&source[start..end], selection.split_once(' ').unwrap().1);
             let result = format!("{}{}{}", &source[..start], edit.new_text, &source[end..]);
             assert!(result.contains("// Beside the delimiter"));
             crate::pass::parser::parse(&result).expect("completed selection preserves delimiters");
@@ -1856,7 +1873,7 @@ mod tests {
 
     #[test]
     fn operator_import_completion_replaces_the_whole_existing_projection() {
-        let source = "module app/main; import syntax(op _ + _); fn run() -> . { () }";
+        let source = "mod app/main; import syntax {op _ + _} fn run() -> . { () }";
         let module = crate::pass::parser::parse(source).unwrap();
         let offset = (source.find("op _").unwrap() + 2) as u32;
         let analysis = operator_catalog(OPERATOR_PROVIDER);
@@ -1864,7 +1881,9 @@ mod tests {
         let selected = list
             .items
             .into_iter()
-            .find(|item| item.label.starts_with("varop"))
+            .find(|item| {
+                item.kind == Some(CompletionItemKind::OPERATOR) && item.label.starts_with("op_var")
+            })
             .unwrap();
         let Some(CompletionTextEdit::Edit(edit)) = selected.text_edit else {
             panic!("edit")
@@ -1886,7 +1905,7 @@ mod tests {
 
     #[test]
     fn module_level_fn_names_visible() {
-        let source = "module pkg/main;\npub fn run() -> . { () }\nfn helper() -> . { () }\n";
+        let source = "mod pkg/main;\npub fn run() -> . { () }\nfn helper() -> . { () }\n";
         // Position on line 1 inside `run`'s body (character 22 = after `{`)
         let items = complete_at(source, 1, 22);
         let lbls = labels(&items);
@@ -1902,11 +1921,12 @@ mod tests {
 
     #[test]
     fn rec_member_completion_excludes_rec_only_callees_but_keeps_params() {
-        let source = "module pkg/main;\n\
-rec(loop) {\n\
-  fn first(x: .) -> . { recur second(x) };\n\
-  fn second(y: .) -> . { recur first(y) }\n\
-}\n";
+        let source = "mod pkg/main;
+rec(loop) {
+fn first(x: .) -> . { recur second(x) };
+fn second(y: .) -> . { recur first(y) }
+}
+";
         let items = complete_at_marker(source, "recur first(");
         let names = labels(&items);
         assert!(
@@ -1919,7 +1939,7 @@ rec(loop) {\n\
 
     #[test]
     fn fn_params_visible_inside_body() {
-        let source = "module pkg/main;\nfn f(x: .) -> . { x }\n";
+        let source = "mod pkg/main;\nfn f(x: .) -> . { x }\n";
         let items = complete_at_marker(source, "{ x");
         let lbls = labels(&items);
         assert!(
@@ -1931,7 +1951,7 @@ rec(loop) {\n\
     #[test]
     fn let_binding_visible_in_body_but_not_before() {
         // `let y = …` — `y` is in scope in the body (after the `;`)
-        let source = "module pkg/main;\nfn f(x: .) -> . {\n    let y = x;\n    y\n}\n";
+        let source = "mod pkg/main;\nfn f(x: .) -> . {\n    let y = x;\n    y\n}\n";
         // Position inside the `y` on the last expr line: line 3, char 4
         let items = complete_at(source, 3, 4);
         let lbls = labels(&items);
@@ -1945,7 +1965,7 @@ rec(loop) {\n\
     fn shadowed_binding_only_inner_visible() {
         // `fn f(x: .) -> . { let x = (); x }` — the let `x` shadows
         // the parameter `x`.  Only one `x` should appear.
-        let source = "module pkg/main;\nfn f(x: .) -> . { let x = (); x }\n";
+        let source = "mod pkg/main;\nfn f(x: .) -> . { let x = (); x }\n";
         // cursor on the trailing `x` — inside the let body
         let items = complete_at(source, 1, 31);
         let lbls = labels(&items);
@@ -1959,8 +1979,8 @@ rec(loop) {\n\
 
     #[test]
     fn imported_names_visible() {
-        // `import pkg/helper(h);` brings `h` into scope.
-        let source = "module pkg/main;\nimport pkg/helper(h);\nfn f() -> . { () }\n";
+        // `import pkg/helper {fn h}` brings `h` into scope.
+        let source = "mod pkg/main;\nimport pkg/helper {fn h}\nfn f() -> . { () }\n";
         // cursor inside f's body
         let items = complete_at_marker(source, "{ ");
         let lbls = labels(&items);
@@ -1972,7 +1992,7 @@ rec(loop) {\n\
 
     #[test]
     fn selective_nominal_imports_stay_in_the_type_completion_scope() {
-        let source = "module pkg/main;\nimport pkg/types(item, Item, Field);\nfn f() -> . { () }\n";
+        let source = "mod pkg/main;\nimport pkg/types {fn item; type Item; type Field}\nfn f() -> . { () }\n";
         let items = complete_at_marker(source, "{ ");
         let labels = labels(&items);
         assert!(labels.contains(&"item"));
@@ -1982,7 +2002,7 @@ rec(loop) {\n\
 
     #[test]
     fn ordinary_nominal_completion_keeps_owner_prose() {
-        let source = "module pkg/main;\n/// The field type.\ntype { Field: .; }\nfn f(value: Field) -> . { () }\n";
+        let source = "mod pkg/main;\n/// The field type.\ntype { Field: .; }\nfn f(value: Field) -> . { () }\n";
         let items = complete_at_marker(source, "value: ");
         let item = items
             .iter()
@@ -1999,10 +2019,9 @@ rec(loop) {\n\
 
     #[test]
     fn literal_decl_completion_is_constant_with_docs() {
-        let source = "\
-module pkg/main;
+        let source = "mod pkg/main;
 /// Shared greeting text.
-literal greeting = \"hi\";
+lit greeting = \"hi\";
 fn f() -> . { () }
 ";
         let items = complete_at_marker(source, "f() -> . { ");
@@ -2021,8 +2040,7 @@ fn f() -> . { () }
 
     #[test]
     fn recursive_type_group_completion_keeps_member_docs() {
-        let source = "\
-module pkg/main;
+        let source = "mod pkg/main;
 rec {
   /// Transparent recursive chain.
   pub type Chain = Node;
@@ -2050,9 +2068,9 @@ fn use_site(value: Node) -> . { () }
     #[test]
     fn type_position_after_macro_colon_filters_to_type_names() {
         let source = "\
-module pkg/main;
-import pkg/types(Imported, _Imported);
-import pkg/values(value_fn);
+mod pkg/main;
+import pkg/types {type Imported; type _Imported}
+import pkg/values {fn value_fn}
 type Pair = .;
 type _Pair = .;
 type { Box: . { pub mk; pub get }; }
@@ -2083,8 +2101,7 @@ pub macro foo : [Source] Source -> [Target] Target { impl helper }
 
     #[test]
     fn type_position_in_fn_body_includes_type_params_not_values() {
-        let source = "\
-module pkg/main;
+        let source = "mod pkg/main;
 type Pair = .;
 fn f[A](x: A) -> A { x }
 ";
@@ -2097,7 +2114,7 @@ fn f[A](x: A) -> A { x }
         );
         assert!(
             lbls.contains(&"Pair"),
-            "module type alias should be visible: {lbls:?}"
+            "mod type alias should be visible: {lbls:?}"
         );
         for label in ["f", "x"] {
             assert!(
@@ -2111,8 +2128,7 @@ fn f[A](x: A) -> A { x }
 
     #[test]
     fn imported_macro_completion_uses_local_name_and_docs() {
-        let source = "\
-module pkg/macros;
+        let source = "mod pkg/macros;
 /// Builds the identity term.
 pub macro identity : [A] A -> A { impl identity_impl }
 fn identity_impl() -> . { () }
@@ -2133,7 +2149,7 @@ fn use_site() -> . { () }
 
     #[test]
     fn qualified_import_alias_visible() {
-        let source = "module pkg/main;\nimport pkg/helper as h;\nfn f() -> . { () }\n";
+        let source = "mod pkg/main;\nimport pkg/helper as h;\nfn f() -> . { () }\n";
         let items = complete_at_marker(source, "{ ");
         let lbls = labels(&items);
         assert!(
@@ -2146,7 +2162,7 @@ fn use_site() -> . { () }
     fn top_level_position_no_fn_locals() {
         // At the top-level (module header line), fn-local binders
         // must not appear.
-        let source = "module pkg/main;\nfn f(x: .) -> . { x }\n";
+        let source = "mod pkg/main;\nfn f(x: .) -> . { x }\n";
         // cursor on the module header line (line 0)
         let items = complete_at(source, 0, 5);
         let lbls = labels(&items);
@@ -2159,13 +2175,13 @@ fn use_site() -> . { () }
     #[test]
     fn package_build_block_keywords_visible_without_module_parse() {
         let uri = test_file_uri("/pkg.pkg.kio");
-        let source = "package pkg;\n\nbuild {\n  \n}\n";
+        let source = "pkg pkg;\n\nbuild {\n  \n}\n";
         let items = complete_at_uri(&uri, source, 3, 2);
         let lbls = labels(&items);
         for label in ["cache", "docs", "target"] {
             assert!(
                 lbls.contains(&label),
-                "package build block should complete `{label}`; got {lbls:?}"
+                "pkg build block should complete `{label}`; got {lbls:?}"
             );
         }
     }
@@ -2173,13 +2189,13 @@ fn use_site() -> . { () }
     #[test]
     fn package_target_block_keys_visible_without_module_parse() {
         let uri = test_file_uri("/pkg.pkg.kio");
-        let source = "package pkg;\n\nbuild {\n  target rust {\n    \n  }\n}\n";
+        let source = "pkg pkg;\n\nbuild {\n  target rust {\n    \n  }\n}\n";
         let items = complete_at_uri(&uri, source, 4, 4);
         let lbls = labels(&items);
         for label in ["out", "namespace", "baseline", "thread_safety"] {
             assert!(
                 lbls.contains(&label),
-                "package target block should complete `{label}`; got {lbls:?}"
+                "pkg target block should complete `{label}`; got {lbls:?}"
             );
         }
     }
@@ -2191,17 +2207,17 @@ fn use_site() -> . { () }
             (
                 ConfigFieldOwner::Build,
                 "file:///pkg.pkg.kio",
-                "package pkg; build { ",
+                "pkg pkg; build { ",
             ),
             (
                 ConfigFieldOwner::Docs,
                 "file:///pkg.pkg.kio",
-                "package pkg; build { docs { ",
+                "pkg pkg; build { docs { ",
             ),
             (
                 ConfigFieldOwner::Source,
                 "file:///pkg.dep.kio",
-                "dependency pkg; source { ",
+                "dep pkg; source { ",
             ),
             (
                 ConfigFieldOwner::Resolved,
@@ -2215,7 +2231,7 @@ fn use_site() -> . { () }
         cases.extend(crate::build_target::BuildTarget::ALL.iter().map(|target| {
             (
                 "file:///pkg.pkg.kio",
-                format!("package pkg; build {{ target {} {{ ", target.id()),
+                format!("pkg pkg; build {{ target {} {{ ", target.id()),
                 target.fields(),
             )
         }));
@@ -2239,11 +2255,8 @@ fn use_site() -> . { () }
     #[test]
     fn non_module_variant_files_complete_their_own_header() {
         let cases = [
-            ("file:///pkg.sig.kio", "signature pkg v(1);\n"),
-            (
-                "file:///mathlib.dep.kio",
-                "dependency mathlib;\n\nsource {\n}\n",
-            ),
+            ("file:///pkg.sig.kio", "sig pkg v(1);\n"),
+            ("file:///mathlib.dep.kio", "dep mathlib;\n\nsource {\n}\n"),
             (
                 "file:///mathlib.lock.kio",
                 "lock mathlib;\n\nresolved {\n}\n",

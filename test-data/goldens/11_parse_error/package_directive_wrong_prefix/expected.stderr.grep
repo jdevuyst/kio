@@ -1,1 +1,1 @@
-a `\.pkg\.kio` file must begin with a `package <name>;` directive whose `<name>` is the filename stem
+a `\.pkg\.kio` file must begin with a `pkg <name>;` directive whose `<name>` is the filename stem

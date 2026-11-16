@@ -1,4 +1,4 @@
-module rec_unrelated_match_macro_lambda/macros;
+mod rec_unrelated_match_macro_lambda/macros;
 
 import __intrinsics__;
 

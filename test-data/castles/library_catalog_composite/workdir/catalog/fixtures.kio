@@ -1,12 +1,26 @@
-module catalog/fixtures;
+mod catalog/fixtures;
 
 import catalog/domain as dom;
-import catalog/domain(Book, Book_index, Member, Member_index, Op, Op_list);
-import catalog/domain(Copies_out, Copies_total, Fines, Held, Member_id, Title);
-import dict/dict(op _ => _, varop [% %]);
+import catalog/domain {
+  type Book;
+  type Book_index;
+  type Member;
+  type Member_index;
+  type Op;
+  type Op_list
+}
+import catalog/domain {
+  type Copies_out;
+  type Copies_total;
+  type Fines;
+  type Held;
+  type Member_id;
+  type Title
+}
+import dict/dict { op _ => _; op_var [% %] }
 import list/core as lcore;
 import list/list as list;
-import testapi(I32, String);
+import testapi { type I32; type String }
 
 fn book(name: String, copies: I32) -> Book {
   (Title.mk(name), Copies_total.mk(copies), Copies_out.mk(0))

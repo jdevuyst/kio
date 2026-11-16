@@ -1,4 +1,4 @@
-module litamb;
+mod litamb;
 
 host type I32 role(i32);
 

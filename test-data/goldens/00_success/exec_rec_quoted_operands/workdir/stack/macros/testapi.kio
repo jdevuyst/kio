@@ -1,4 +1,4 @@
-module stack/macros/testapi;
+mod stack/macros/testapi;
 
 import macros/testapi as _rehost_gngbgdhcgphdcphegfhdhegbhagj;
 

@@ -5,11 +5,11 @@
 /// witness in a function *result*, erased through `as_any`) and a
 /// contravariant `P -> String` (the witness in a function *parameter*,
 /// recovered through `from_any`).
-module mini;
+mod mini;
 
 import __intrinsics__;
 
-import testapi(String);
+import testapi { type String }
 
 /// A record of operations over a hidden representation `P`: wrap a string
 /// into `P`, and read a `P` back out as a string.

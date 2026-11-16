@@ -2,14 +2,14 @@
 /// addresses, precedent sets, the ready queue, the topological order, the
 /// dirty set, the edit script. This host tier offers no array type, so the
 /// list is the only sequence there is.
-module sheet/list;
+mod sheet/list;
 
-import macros/control(macro if);
-import macros/match(macro match);
-import macros/spine_macros(macro widen_sum);
-import testapi(Bool, I32);
-import testapi/arith(add_i32);
-import testapi/iter(loop);
+import macros/control { macro if }
+import macros/match { macro match }
+import macros/spine_macros { macro widen_sum }
+import testapi { type Bool; type I32 }
+import testapi/arith { fn add_i32 }
+import testapi/iter { fn loop }
 
 pub rec type { List[A]: . | (A & List[A]) { pub mk; pub get } }
 

@@ -1,4 +1,4 @@
-package exec_comptime_literal_constructors;
+pkg exec_comptime_literal_constructors;
 
 build {
   target js {

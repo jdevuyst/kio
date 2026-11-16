@@ -1,6 +1,6 @@
-module testapi/left;
+mod testapi/left;
 
-import testapi(I32);
+import testapi { type I32 }
 
 pub type { Shared: I32 { pub mk; pub get } }
 

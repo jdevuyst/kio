@@ -1,6 +1,6 @@
-module transcript;
+mod transcript;
 
-import testapi(String);
+import testapi { type String }
 
 pub fn fixture() -> String {
   "EXEC: build package\nSAVE artifact\nRETRY: rm -rf cache\nRTRY: network "

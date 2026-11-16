@@ -1,8 +1,8 @@
-module testapi/main;
+mod testapi/main;
 
-import testapi(Bool, String);
-import testapi/fmt(bool_to_string);
-import testapi/io(print);
+import testapi { type Bool; type String }
+import testapi/fmt { fn bool_to_string }
+import testapi/io { fn print }
 
 type { Boolbox: Bool { pub mk; pub get } }
 

@@ -1,4 +1,4 @@
-package fold_public_private_implementation;
+pkg fold_public_private_implementation;
 
 build {
   cache "out/.kio-cache/";

@@ -1,6 +1,6 @@
-module env_use_own_submodule;
+mod env_use_own_submodule;
 
-import env_use_own_submodule/sub(Int, Wrap);
+import env_use_own_submodule/sub { type Int; type Wrap }
 
 host fn make(p0: Int) -> Wrap;
 

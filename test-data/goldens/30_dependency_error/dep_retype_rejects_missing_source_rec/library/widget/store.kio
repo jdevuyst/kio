@@ -1,5 +1,5 @@
-module store;
+mod store;
 
 pub type Ignore[A][B] = B;
 
-pub type { Node: Ignore[Node][.] { pub mk; pub get; }; };
+pub type { Node: Ignore[Node][.] { pub mk; pub get } }

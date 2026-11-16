@@ -518,7 +518,7 @@ mod tests {
     #[test]
     fn type_only_lambda_completion_and_validation_keep_written_binders() {
         let mut completer = completer_with(NameSet {
-            current_module_src: Some("module app; type Existing = .;".to_owned()),
+            current_module_src: Some("mod app; type Existing = .;".to_owned()),
             ..NameSet::default()
         });
         for prefix in ["", ":normalize "] {
@@ -548,7 +548,7 @@ mod tests {
     #[test]
     fn route_preserves_trailing_label_replacement_and_keyword_description() {
         let completer = completer_with(NameSet {
-            current_module_src: Some("module app; macro choose : (. & .) -> . { trailing product; trailing product otherwise; impl implementation }".to_owned()),
+            current_module_src: Some("mod app; macro choose : (. & .) -> . { trailing product; trailing product otherwise; impl implementation }".to_owned()),
             ..NameSet::default()
         });
         let input = "choose { () } oth";
@@ -660,7 +660,7 @@ mod tests {
     fn highlighter_uses_session_scope_and_retracts_after_module_change() {
         let names = Arc::new(Mutex::new(NameSet {
             expression_module: Some(Arc::new(
-                crate::pass::parser::parse("module app; import provider(macro build as selected);")
+                crate::pass::parser::parse("mod app; import provider {macro build as selected}")
                     .unwrap(),
             )),
             ..Default::default()
@@ -691,7 +691,7 @@ mod tests {
             incomplete.buffer
         );
         names.lock().unwrap().expression_module = Some(Arc::new(
-            crate::pass::parser::parse("module app; fn selected(x: .) { x }").unwrap(),
+            crate::pass::parser::parse("mod app; fn selected(x: .) { x }").unwrap(),
         ));
         let styled = highlighter.highlight(":normalize selected(())", 0);
         assert!(
@@ -733,11 +733,11 @@ mod tests {
         let shared = Arc::new(Mutex::new(names));
         let completer = ReplCompleter::new(shared.clone());
         let hinter = ReplHinter::new(shared);
-        let line = ":sig app/syntax.(varop [*";
+        let line = ":sig app/syntax.(op_var [*";
         let choices = completer.route(line, line.len());
         let selected = choices
             .iter()
-            .find(|choice| choice.value == "app/syntax.(varop [* *])")
+            .find(|choice| choice.value == "app/syntax.(op_var [* *])")
             .unwrap();
         assert_eq!(selected.span, Span::new(5, line.len()));
         assert_eq!(hint_for(&hinter, line), " *])");
@@ -776,23 +776,23 @@ mod tests {
         let mut files = std::collections::BTreeMap::new();
         files.insert(
             root.join("app.pkg.kio"),
-            "package app;\n\nbridge {\n  app/**;\n}\n".to_owned(),
+            "pkg app;\n\nbridge {\n  app/**;\n}\n".to_owned(),
         );
         files.insert(
             root.join("app/syntax.kio"),
-            "module app/syntax;\n\
+            "mod app/syntax;\n\
              import __comptime__;\n\
              pure fn implementation(_ct: __Comptime__, _source: __Type__, value: __Checked_term__) -> __Checked_term__ { value }\n\
              pub macro identity : [Source] Source -> Source { impl implementation; };\n\
              pub fn bracket(left: ., right: .) -> . { left }\n\
              pub fn empty() -> . { () }\n\
-             pub varop [* *] { foldl bracket empty }\n"
+             pub op_var [* *] { foldl bracket empty }\n"
                 .to_owned(),
         );
         files.insert(
             root.join("app/main.kio"),
-            "module app/main;\n\
-             import app/syntax(varop [* *], macro identity as selected);\n\
+            "mod app/main;\n\
+             import app/syntax {op_var [* *]; macro identity as selected}\n\
              pub fn run() -> . { [* (), () *] }\n"
                 .to_owned(),
         );
@@ -868,12 +868,12 @@ mod tests {
     #[test]
     fn validator_square_balance_is_independent_of_operator_context() {
         let plus = local_expression_context(
-            "module x; fn add(a: A, b: A) -> A { a } op _ + _ { impl add; };",
+            "mod x; fn add(a: A, b: A) -> A { a } op _ + _ { impl add; };",
         );
         assert!(!validates_complete_with_context(":t value + .[A", plus,));
 
         let dollar = local_expression_context(
-            "module x; fn apply(a: A, b: A) -> A { a } op _ $ _ { impl apply; };",
+            "mod x; fn apply(a: A, b: A) -> A { a } op _ $ _ { impl apply; };",
         );
         assert!(!validates_complete(":t lhs $ .[A"));
         assert!(!validates_complete_with_context(":t lhs $ .[A", dollar,));
@@ -1100,7 +1100,7 @@ mod tests {
         // A bare expression line ghost-texts the in-scope identifier: one
         // matching item `factorial`, typing `1 + fac` predicts `torial`.
         let set = NameSet {
-            current_module_src: Some("module demo/main; fn factorial(x: .) -> . { x } fn add(x: ., y: .) -> . { x } op _ + _ { impl add; };".to_owned()),
+            current_module_src: Some("mod demo/main; fn factorial(x: .) -> . { x } fn add(x: ., y: .) -> . { x } op _ + _ { impl add; };".to_owned()),
             items: vec![ItemEntry {
                 short_name: "factorial".to_owned(),
                 fqn: "demo/main.factorial".to_owned(),
@@ -1117,7 +1117,7 @@ mod tests {
     #[test]
     fn hinter_predicts_in_scope_identifier_for_normalize_argument() {
         let set = NameSet {
-            current_module_src: Some("module demo/main; fn factorial(x: .) -> . { x }".to_owned()),
+            current_module_src: Some("mod demo/main; fn factorial(x: .) -> . { x }".to_owned()),
             items: vec![ItemEntry {
                 short_name: "factorial".to_owned(),
                 fqn: "demo/main.factorial".to_owned(),

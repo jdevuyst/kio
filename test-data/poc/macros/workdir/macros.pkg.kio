@@ -1,4 +1,4 @@
-package macros;
+pkg macros;
 
 build {
   cache "out/.kio-cache/";

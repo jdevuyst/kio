@@ -1,4 +1,4 @@
-module model;
+mod model;
 
 import testapi/io as io;
 

@@ -1,4 +1,4 @@
-package ffi_export_curried_facade;
+pkg ffi_export_curried_facade;
 
 build {
   cache "out/.kio-cache/";

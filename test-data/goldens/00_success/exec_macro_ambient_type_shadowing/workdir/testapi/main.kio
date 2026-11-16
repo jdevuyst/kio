@@ -1,9 +1,9 @@
-module testapi/main;
+mod testapi/main;
 
-import syntax(macro identity);
+import syntax { macro identity }
 import testapi as host;
-import testapi(String);
-import testapi/io(print);
+import testapi { type String }
+import testapi/io { fn print }
 
 fn shadow[String](_value: String) -> host.String { identity("nominal\n") }
 

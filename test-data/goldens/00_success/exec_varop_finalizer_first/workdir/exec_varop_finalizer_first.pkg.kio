@@ -1,4 +1,4 @@
-package exec_varop_finalizer_first;
+pkg exec_varop_finalizer_first;
 
 build {
   cache "out/.kio-cache/";

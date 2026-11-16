@@ -5,17 +5,25 @@
 /// That invariant is why the operator cases never inspect what they wrap —
 /// and why the three postfix operators differ only in which of the same
 /// four epsilons they add.
-module automata/nfa;
+mod automata/nfa;
 
-import automata/pattern(Alt, Cat, Chr, Opt, Pattern, Plus, Star);
-import automata/seq(List, append, cons, one);
-import automata/symbol(epsilon);
-import macros/control(macro if);
-import macros/match(macro match);
-import macros/row_macros(macro select);
-import testapi(Bool, I32);
-import testapi/arith(add_i32);
-import testapi/iter(loop);
+import automata/pattern {
+  type Alt;
+  type Cat;
+  type Chr;
+  type Opt;
+  type Pattern;
+  type Plus;
+  type Star
+}
+import automata/seq { type List; fn append; fn cons; fn one }
+import automata/symbol { fn epsilon }
+import macros/control { macro if }
+import macros/match { macro match }
+import macros/row_macros { macro select }
+import testapi { type Bool; type I32 }
+import testapi/arith { fn add_i32 }
+import testapi/iter { fn loop }
 
 /// One transition. `sym` is a letter code, or `epsilon()`.
 pub type Edge = { Src: I32; Sym: I32; Dst: I32 };

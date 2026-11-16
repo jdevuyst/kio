@@ -1,4 +1,4 @@
-package build_closure_compound_param;
+pkg build_closure_compound_param;
 
 build {
   cache "out/.kio-cache/";

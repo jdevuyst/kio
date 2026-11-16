@@ -1,4 +1,4 @@
-module main;
+mod main;
 
 // A kind-`*` binder is not applicable to a type argument. `[A]`
 // has the default kind `*` (no leading stars), so writing `A[B]`

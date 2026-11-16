@@ -1,9 +1,9 @@
-module api;
+mod api;
 
-import labels(Item);
+import labels { type Item }
 import types as t;
-import types(A);
-import types(Kept);
+import types { type A }
+import types { type Kept }
 
 pub fn make() { Item.get(Item.mk(())) }
 

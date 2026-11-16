@@ -1,5 +1,5 @@
-module app;
+mod app;
 
-import mid(pass);
+import mid { fn pass }
 
 pub fn run() { pass() }

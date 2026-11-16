@@ -1,10 +1,10 @@
-module testapi/main;
+mod testapi/main;
 
 import __intrinsics__;
 
-import testapi(Int, String);
-import testapi/fmt(int_to_string);
-import testapi/io(print);
+import testapi { type Int; type String }
+import testapi/fmt { fn int_to_string }
+import testapi/io { fn print }
 
 // The second slot retains the whole product tail.
 fn tail_of[A][B][C](p: A & B & C) -> B & C { __snd__[A][B & C](p) }

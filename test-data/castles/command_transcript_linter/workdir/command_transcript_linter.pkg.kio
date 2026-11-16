@@ -1,4 +1,4 @@
-package command_transcript_linter;
+pkg command_transcript_linter;
 
 build {
   cache "out/.kio-cache/";

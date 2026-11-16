@@ -1,5 +1,0 @@
-module main;
-
-host type Int role(i64);
-
-default type Selected = Int;

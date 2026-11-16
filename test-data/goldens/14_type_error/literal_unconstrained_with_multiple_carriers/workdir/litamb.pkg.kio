@@ -1,4 +1,4 @@
-package litamb;
+pkg litamb;
 
 build {
   cache "out/.kio-cache/";

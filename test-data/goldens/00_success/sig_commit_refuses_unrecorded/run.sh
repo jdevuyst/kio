@@ -55,7 +55,7 @@ fi
 # the refusal is specifically about the *unrecorded* delta.
 expect_exit 0 "$KIO_BIN" sig stage
 expect_exit 0 "$KIO_BIN" sig commit
-"$KIO_BIN" sig log | grep -q 'signature app v(3);' || {
+"$KIO_BIN" sig log | grep -q 'sig app v(3);' || {
   printf 'after staging then committing, the changelog should reach v(3)\n' >&2
   "$KIO_BIN" sig log >&2
   exit 1

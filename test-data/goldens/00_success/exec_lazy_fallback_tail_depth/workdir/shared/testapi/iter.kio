@@ -1,4 +1,4 @@
-module shared/testapi/iter;
+mod shared/testapi/iter;
 
 import testapi/iter as _rehost_hegfhdhegbhagjcpgjhegfhc;
 

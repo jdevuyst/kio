@@ -1,6 +1,6 @@
-module geomlib/ops;
+mod geomlib/ops;
 
-import geomlib/vec(Vec2, fst, mk, snd);
+import geomlib/vec { type Vec2; fn fst; fn mk; fn snd }
 
 // An intra-dependency selective `use`: `ops` pulls `Vec2`/`mk`/`fst`/
 // `snd` from its sibling module `vec`. After the dependency is

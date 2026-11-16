@@ -1,14 +1,29 @@
-module testapi/main;
+mod testapi/main;
 
-import host_descriptor(Host_type, bool_role, i32_role, mk_host_id, mk_role_host_type);
-import macros/control(macro if);
-import macros/match(macro match);
-import macros/spine_macros(macro widen_sum);
-import parse(P_err, P_ok, Type_scope, parse_str, perr_message);
-import testapi(I32, String);
-import testapi/io(print);
-import testapi/text(string_eq);
-import token(Tk_num, Tk_punct, Tk_str, Tk_word, Token, Toks, un_token, un_toks);
+import host_descriptor {
+  type Host_type;
+  fn bool_role;
+  fn i32_role;
+  fn mk_host_id;
+  fn mk_role_host_type
+}
+import macros/control { macro if }
+import macros/match { macro match }
+import macros/spine_macros { macro widen_sum }
+import parse { type P_err; type P_ok; type Type_scope; fn parse_str; fn perr_message }
+import testapi { type I32; type String }
+import testapi/io { fn print }
+import testapi/text { fn string_eq }
+import token {
+  type Tk_num;
+  type Tk_punct;
+  type Tk_str;
+  type Tk_word;
+  type Token;
+  type Toks;
+  fn un_token;
+  fn un_toks
+}
 
 fn resolve_host_type(tokens: Toks, _types: Type_scope) -> Host_type | String {
   match(un_toks(tokens)) {

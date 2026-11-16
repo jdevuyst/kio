@@ -1,4 +1,4 @@
-package exec_fit_nested_narrow_then_widen;
+pkg exec_fit_nested_narrow_then_widen;
 
 build {
   cache "out/.kio-cache/";

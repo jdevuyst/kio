@@ -1,15 +1,15 @@
 /// Turning the calculator's values back into the transcript's text.
-module desk/render;
+mod desk/render;
 
-import desk/list(List, map);
-import desk/outcome(Failure, fault_of, kind_name, pos_of);
-import desk/step(Step, step_text);
-import desk/token(Placed, placed_text);
-import macros/match(macro match);
-import testapi(I32, String);
-import testapi/fmt(int_to_string);
-import testapi/iter(loop);
-import testapi/text(string_concat);
+import desk/list { type List; fn map }
+import desk/outcome { type Failure; fn fault_of; fn kind_name; fn pos_of }
+import desk/step { type Step; fn step_text }
+import desk/token { type Placed; fn placed_text }
+import macros/match { macro match }
+import testapi { type I32; type String }
+import testapi/fmt { fn int_to_string }
+import testapi/iter { fn loop }
+import testapi/text { fn string_concat }
 
 pub fn cat(a: String, b: String) -> String { string_concat(a, b) }
 

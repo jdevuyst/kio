@@ -1,4 +1,4 @@
-package public_op_private_newtype_member;
+pkg public_op_private_newtype_member;
 
 build {
   cache "out/.kio-cache/";

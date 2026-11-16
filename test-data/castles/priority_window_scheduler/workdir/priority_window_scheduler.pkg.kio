@@ -1,4 +1,4 @@
-package priority_window_scheduler;
+pkg priority_window_scheduler;
 
 build {
   cache "out/.kio-cache/";

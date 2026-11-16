@@ -37,9 +37,9 @@ bridge {
   kiodoc;
 }
 
-module kiodoc;
+mod kiodoc;
 
-import sequence(macro do);
+import sequence {macro do}
 
 host type String role(str);
 host fn print(p0: String);
@@ -170,7 +170,7 @@ instances, `do` sequencing, and combinators generic over the type constructor
 
 `do` comes from the [macro library](using-libraries.md#the-macro-library),
 not a keyword. After adopting that dependency under the name `macros`, import
-it with `import macros/sequence(macro do);`.
+it with `import macros/sequence {macro do}`.
 
 A monadic `do` block supplies the bind operation it will sequence with. The
 receiver must have the shape `[A][B] (F[A] & (A -> F[B])) -> F[B]`. It is an
@@ -227,7 +227,7 @@ bridge {
   kiodoc;
 }
 
-module kiodoc;
+mod kiodoc;
 
 host type String role(str);
 

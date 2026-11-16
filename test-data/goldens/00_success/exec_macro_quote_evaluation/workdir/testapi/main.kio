@@ -1,17 +1,17 @@
-module testapi/main;
+mod testapi/main;
 
-import quote(
-, macro drop
-, macro first
-, macro later
-, macro marked_first
-, macro marked_repeat
-, macro marked_share
-, macro repeat
-, macro share
-);
-import testapi(String);
-import testapi/io(print);
+import quote {
+  macro drop;
+  macro first;
+  macro later;
+  macro marked_first;
+  macro marked_repeat;
+  macro marked_share;
+  macro repeat;
+  macro share
+}
+import testapi { type String }
+import testapi/io { fn print }
 
 fn mark(text: String) { print(text) }
 

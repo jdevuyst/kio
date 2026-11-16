@@ -1,4 +1,4 @@
-package exec_spine_eq_align_widen_then_collapse;
+pkg exec_spine_eq_align_widen_then_collapse;
 
 build {
   cache "out/.kio-cache/";

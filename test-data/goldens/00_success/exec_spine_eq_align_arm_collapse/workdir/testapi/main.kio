@@ -1,9 +1,9 @@
-module testapi/main;
+mod testapi/main;
 
-import macros/control(macro if);
-import macros/spine_macros(macro narrow_sum, macro widen_sum);
-import testapi(Bool, String);
-import testapi/io(print);
+import macros/control { macro if }
+import macros/spine_macros { macro narrow_sum; macro widen_sum }
+import testapi { type Bool; type String }
+import testapi/io { fn print }
 
 // The branches explicitly construct `String | String`; the spine
 // palette's `narrow_sum` collapses to `String`. Equivalent to the

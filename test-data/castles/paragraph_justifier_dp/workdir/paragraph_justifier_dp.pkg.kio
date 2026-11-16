@@ -1,4 +1,4 @@
-package paragraph_justifier_dp;
+pkg paragraph_justifier_dp;
 
 build {
   cache "out/.kio-cache/";

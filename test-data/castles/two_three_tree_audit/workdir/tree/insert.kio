@@ -6,30 +6,30 @@
 /// An empty position always answers `split`, never a new node: a new key is a
 /// promotion its parent absorbs, so the tree can only ever grow at the root,
 /// and every leaf stays at the same depth.
-module tree/insert;
+mod tree/insert;
 
-import macros/control(macro if);
-import macros/match(macro match);
-import macros/row_macros(macro select);
-import macros/spine_macros(macro widen_sum);
-import testapi(Bool, I32, String);
-import testapi/arith(add_i32, eq_i32, lt_i32);
-import testapi/iter(loop);
-import tree/node(
-, Leaf
-, Node
-, Three
-, Tree
-, Two
-, contains
-, leaf_node
-, make_tree
-, root_of
-, size_of
-, three_node
-, two_node
-);
-import tree/tally(Tally, tally_add, tally_root_grow, tally_split, tally_zero);
+import macros/control { macro if }
+import macros/match { macro match }
+import macros/row_macros { macro select }
+import macros/spine_macros { macro widen_sum }
+import testapi { type Bool; type I32; type String }
+import testapi/arith { fn add_i32; fn eq_i32; fn lt_i32 }
+import testapi/iter { fn loop }
+import tree/node {
+  type Leaf;
+  type Node;
+  type Three;
+  type Tree;
+  type Two;
+  fn contains;
+  fn leaf_node;
+  fn make_tree;
+  fn root_of;
+  fn size_of;
+  fn three_node;
+  fn two_node
+}
+import tree/tally { type Tally; fn tally_add; fn tally_root_grow; fn tally_split; fn tally_zero }
 
 type Ins = { Fitted: Node } | { Split: Node & I32 & String & Node };
 

@@ -1,4 +1,4 @@
-module main;
+mod main;
 
 fn seed(_key: ., _value: . -> .) { () }
 
@@ -8,6 +8,6 @@ fn entry[K][V](key: K, value: V) -> K & V { (key, value) }
 
 op _ => _ { impl entry }
 
-varop [% %] { foldr1 push seed }
+op_var [% %] { foldr1 push seed }
 
 fn rejected() { [% () => () %] }

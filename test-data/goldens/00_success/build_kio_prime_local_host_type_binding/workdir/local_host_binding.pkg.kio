@@ -1,4 +1,4 @@
-package local_host_binding;
+pkg local_host_binding;
 
 build {
   cache "out/.kio-cache/";

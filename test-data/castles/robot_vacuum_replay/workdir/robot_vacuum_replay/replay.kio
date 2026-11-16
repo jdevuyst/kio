@@ -1,13 +1,13 @@
-module robot_vacuum_replay/replay;
+mod robot_vacuum_replay/replay;
 
-import macros/match(macro match);
-import robot_vacuum_replay/apply(apply_command);
-import robot_vacuum_replay/model(Vacuum, initial_vacuum);
-import robot_vacuum_replay/parse(parse_command);
-import robot_vacuum_replay/render(summary_line, transcript_line);
-import testapi(String);
-import testapi/io(print, read_ascii_line);
-import testapi/iter(loop);
+import macros/match { macro match }
+import robot_vacuum_replay/apply { fn apply_command }
+import robot_vacuum_replay/model { type Vacuum; fn initial_vacuum }
+import robot_vacuum_replay/parse { fn parse_command }
+import robot_vacuum_replay/render { fn summary_line; fn transcript_line }
+import testapi { type String }
+import testapi/io { fn print; fn read_ascii_line }
+import testapi/iter { fn loop }
 
 rec(loop) fn replay_lines(state: Vacuum) -> Vacuum {
   match(read_ascii_line()) {

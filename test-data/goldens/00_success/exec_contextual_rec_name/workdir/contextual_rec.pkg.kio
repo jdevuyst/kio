@@ -1,4 +1,4 @@
-package contextual_rec;
+pkg contextual_rec;
 
 build {
   cache "out/.kio-cache/";

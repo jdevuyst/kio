@@ -1,4 +1,4 @@
-package typecheck_expected_forall_capture_elided;
+pkg typecheck_expected_forall_capture_elided;
 
 build {
   cache "out/.kio-cache/";

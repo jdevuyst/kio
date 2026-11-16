@@ -1,4 +1,4 @@
-package tpa;
+pkg tpa;
 
 build {
   cache "out/.kio-cache/";

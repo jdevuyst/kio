@@ -949,7 +949,7 @@ mod tests {
     /// `captured_from`.
     #[test]
     fn captured_from_lists_outer_binder() {
-        let src = "module x; fn caller(y: .) -> (. -> .) { .(x: .) -> . { y } }";
+        let src = "mod x; fn caller(y: .) -> (. -> .) { .(x: .) -> . { y } }";
         let pkg = pipeline_to_routed(src);
         let pkg = annotate_escapes(pkg);
         let body = fn_body(&pkg, "caller");
@@ -962,7 +962,7 @@ mod tests {
     /// `captured_from` (the inner param shadows the outer reference).
     #[test]
     fn shadowing_omits_captured() {
-        let src = "module x; fn caller(y: .) -> (. -> .) { .(y: .) -> . { y } }";
+        let src = "mod x; fn caller(y: .) -> (. -> .) { .(y: .) -> . { y } }";
         let pkg = pipeline_to_routed(src);
         let pkg = annotate_escapes(pkg);
         let body = fn_body(&pkg, "caller");
@@ -982,10 +982,7 @@ mod tests {
     /// outer-scope reference for the inner closure).
     #[test]
     fn nested_closure_captures_grandparent() {
-        let src = "module x; \
-                   fn caller[A](y: A) -> (A -> (. -> A)) { \
-                       .(a: A) -> (. -> A) { .(b: .) -> A { y } } \
-                   }";
+        let src = "mod x; fn caller[A](y: A) -> (A -> (. -> A)) { .(a: A) -> (. -> A) { .(b: .) -> A { y } } }";
         let pkg = pipeline_to_routed(src);
         let pkg = annotate_escapes(pkg);
         let body = fn_body(&pkg, "caller");
@@ -1034,8 +1031,7 @@ mod tests {
     /// marked `Stack`.
     #[test]
     fn non_escaping_fn_param_marked_stack() {
-        let src = "module x; \
-                   fn caller(k: . -> .) -> . { k(()) }";
+        let src = "mod x; fn caller(k: . -> .) -> . { k(()) }";
         let pkg = pipeline_to_routed(src);
         let pkg = annotate_lifetime(pkg);
         let lifetime = fn_param_lifetime(&pkg, "caller").expect("fn-typed param");
@@ -1050,10 +1046,7 @@ mod tests {
     /// `Heap` (the param value flows beyond the outer frame).
     #[test]
     fn captured_fn_param_marked_heap() {
-        let src = "module x; \
-                   fn caller(k: . -> .) -> (. -> .) { \
-                       .(s: .) -> . { k(s) } \
-                   }";
+        let src = "mod x; fn caller(k: . -> .) -> (. -> .) { .(s: .) -> . { k(s) } }";
         let pkg = pipeline_to_routed(src);
         let pkg = annotate_escapes(pkg);
         let pkg = annotate_lifetime(pkg);

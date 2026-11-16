@@ -1,6 +1,6 @@
-module area;
+mod area;
 
-import units/scalar(Scaled, scale, unscale);
+import units/scalar { type Scaled; fn scale; fn unscale }
 
 pub type Boxed[A] = Scaled[A];
 

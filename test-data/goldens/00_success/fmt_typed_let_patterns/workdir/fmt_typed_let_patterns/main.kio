@@ -1,4 +1,4 @@
-module fmt_typed_let_patterns/main;
+mod fmt_typed_let_patterns/main;
 
 fn typed(n: I32) -> I32 { let .(x: I32) = n; x }
 

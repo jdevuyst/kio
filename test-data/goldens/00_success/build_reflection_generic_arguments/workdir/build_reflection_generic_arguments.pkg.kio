@@ -1,4 +1,4 @@
-package build_reflection_generic_arguments;
+pkg build_reflection_generic_arguments;
 
 build {
   cache "out/.kio-cache/";

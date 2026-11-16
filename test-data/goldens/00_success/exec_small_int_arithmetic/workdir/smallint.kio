@@ -1,4 +1,4 @@
-module smallint;
+mod smallint;
 
 host type String role(str);
 

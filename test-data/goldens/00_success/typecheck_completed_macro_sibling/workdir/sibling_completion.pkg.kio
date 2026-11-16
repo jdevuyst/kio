@@ -1,4 +1,4 @@
-package sibling_completion;
+pkg sibling_completion;
 
 build {
   cache "out/.kio-cache/";

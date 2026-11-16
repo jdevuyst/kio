@@ -1,4 +1,4 @@
-package repeated_operator_import;
+pkg repeated_operator_import;
 
 build {
   target js {

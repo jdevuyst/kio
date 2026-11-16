@@ -1,6 +1,6 @@
-module collision;
+mod collision;
 
-import provider(Flag, Proof, make_flag);
+import provider { type Flag; type Proof; fn make_flag }
 
 host type Comptime_bool[A];
 

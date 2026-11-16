@@ -1,11 +1,11 @@
-module certificate;
+mod certificate;
 
-import macros/control(macro if);
+import macros/control { macro if }
 import market as market;
-import testapi(Array, Bool, I32);
+import testapi { type Array; type Bool; type I32 }
 import testapi/arith as arith;
 import testapi/array as array;
-import testapi/iter(loop);
+import testapi/iter { fn loop }
 
 // Certificates scan the original ordered lists, independently of the
 // proposal engine's inverse rank table and rejection history.

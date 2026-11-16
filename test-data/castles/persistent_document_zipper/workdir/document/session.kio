@@ -1,15 +1,15 @@
-module document/session;
+mod document/session;
 
 import document/tree as tree;
 import document/zipper as zipper;
 import list/core as lists;
 import list/list as traversal;
-import macros/control(macro if);
-import macros/match(macro match);
-import testapi(Bool, String);
+import macros/control { macro if }
+import macros/match { macro match }
+import testapi { type Bool; type String }
 import testapi/fmt as fmt;
 import testapi/io as io;
-import testapi/iter(loop);
+import testapi/iter { fn loop }
 import testapi/text as text;
 
 type { Snapshot: String & tree.Node { mk; get } }

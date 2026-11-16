@@ -1,4 +1,4 @@
-package if_computed_condition;
+pkg if_computed_condition;
 
 build {
   cache "out/.kio-cache/";

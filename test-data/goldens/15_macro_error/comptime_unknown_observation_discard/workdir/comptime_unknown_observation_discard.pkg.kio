@@ -1,4 +1,4 @@
-package comptime_unknown_observation_discard;
+pkg comptime_unknown_observation_discard;
 
 build {
   target js {

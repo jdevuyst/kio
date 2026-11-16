@@ -37,9 +37,10 @@ fn prefix(marked: bool, required: bool, error: bool) -> String {
     };
     let schedule = if marked { "impl(fills)" } else { "impl" };
     format!(
-        "module main; import __comptime__;
+        "mod main; import __comptime__;
         pure fn build(ct: __Comptime__, {capabilities} _target: {target}, _unit: __Checked_term__) -> {result} {{ {body} }}
-        macro produce : [R] . -> R {{ {schedule} build }}\n"
+        macro produce : [R] . -> R {{ {schedule} build }}
+"
     )
 }
 
@@ -107,7 +108,7 @@ fn required_results_wait_even_when_implementation_ignores_target() {
 
 #[test]
 fn natural_eligibility_follows_alias_expansion_and_lexical_binders() {
-    let declarations = "module main; import __comptime__;
+    let declarations = "mod main; import __comptime__;
         type Ignore[T] = .; type { Box[T]: . { mk; get } }";
     let implementation = "pure fn build(ct: __Comptime__, _result: ., _value: __Checked_term__) -> __Checked_term__ { __term_unit__(ct) }";
     for signature in [
@@ -169,7 +170,7 @@ fn mixed_result_modes_preserve_required_readiness_and_validation() {
             term.to_owned()
         };
         let schedule = if marked { "impl(fills)" } else { "impl" };
-        let source = format!("module main; import __comptime__;
+        let source = format!("mod main; import __comptime__;
             pure fn build(ct: __Comptime__, {capabilities} _natural: ., _required: __Type__, _unit: __Checked_term__) -> {result} {{ {body} }}
             macro produce : [N][R] . -> (N & R) {{ {schedule} build }}");
         check(&format!(
@@ -206,7 +207,7 @@ fn natural_result_preserves_residual_input_binders_and_values() {
             "__term_unit__(ct)"
         };
         let schedule = if marked { "impl(fills)" } else { "impl" };
-        check(&format!("module main; import __comptime__;
+        check(&format!("mod main; import __comptime__;
             pure fn build(ct: __Comptime__, {capabilities} _natural: ., _unit: __Checked_term__, _input: __Type__, _second: __Checked_term__) -> {result} {{ {body} }}
             macro produce : [R] . -> [A] A -> R {{ {schedule} build }}
             fn partial() -> [A] A -> . {{ produce[.](()) }}
@@ -216,7 +217,7 @@ fn natural_result_preserves_residual_input_binders_and_values() {
 
 #[test]
 fn whole_result_fill_is_immutable_and_discarded_entries_have_no_effect() {
-    let prefix = "module main; import __comptime__;
+    let prefix = "mod main; import __comptime__;
         type { Token: . { mk; get } }
         pure fn build(ct: __Comptime__, fills: __Fill_ctx__, _result: ., _unit: __Checked_term__) -> (__Checked_term__ & __Fill_ctx__) {
             let appended = __fill_result__(ct, fills, __reflect_type__(ct)[Token]);
@@ -230,7 +231,7 @@ fn whole_result_fill_is_immutable_and_discarded_entries_have_no_effect() {
 }
 
 fn whole_result_common_prefix() -> &'static str {
-    "module main; import __comptime__; import __intrinsics__;
+    "mod main; import __comptime__; import __intrinsics__;
      pure fn build(ct: __Comptime__, fills: __Fill_ctx__,
                    _a: __Type__, first: __Checked_term__,
                    _b: __Type__, second: __Checked_term__, _result: .)
@@ -295,7 +296,7 @@ fn whole_result_fill_and_destination_fills_share_one_result_relation() {
                     "__fill_result__(ct, __fill__(ct, fills, target, __type_unit__(ct)), {candidate})"
                 )
             };
-            let source = format!("module main; import __comptime__;
+            let source = format!("mod main; import __comptime__;
                 type {{ Token: . {{ mk; get }} }}
                 pure fn build(ct: __Comptime__, fills: __Fill_ctx__, target: __Type__, callback: __Checked_term__)
                     -> (__Checked_term__ & __Fill_ctx__) {{
@@ -316,7 +317,7 @@ fn whole_result_fill_and_destination_fills_share_one_result_relation() {
 
 #[test]
 fn whole_result_fill_uses_the_terminal_type_beneath_residual_binders() {
-    check("module main; import __comptime__;
+    check("mod main; import __comptime__;
         pure fn build(ct: __Comptime__, fills: __Fill_ctx__, _result: ., _unit: __Checked_term__, _input: __Type__, _value: __Checked_term__)
             -> (__Checked_term__ & __Fill_ctx__) {
             (__term_unit__(ct), __fill_result__(ct, fills, __type_unit__(ct)))
@@ -324,7 +325,7 @@ fn whole_result_fill_uses_the_terminal_type_beneath_residual_binders() {
         macro produce : [R] . -> [A] A -> R { impl(fills) build }
         fn partial() -> [A] A -> . { produce[.](()) }
         fn witness() { partial()[.](()) }").unwrap();
-    check("module main; import __comptime__;
+    check("mod main; import __comptime__;
         pure fn build(ct: __Comptime__, fills: __Fill_ctx__, _result: ., _unit: __Checked_term__, _input: __Type__, value: __Checked_term__)
             -> (__Checked_term__ & __Fill_ctx__) {
             let pair = __intrinsic_pair__(ct, __term_unit__(ct), value);
@@ -337,7 +338,7 @@ fn whole_result_fill_uses_the_terminal_type_beneath_residual_binders() {
 
 #[test]
 fn whole_result_fill_preserves_rigid_higher_kind_and_forall_candidates() {
-    check("module main; import __comptime__;
+    check("mod main; import __comptime__;
         pure fn build(ct: __Comptime__, fills: __Fill_ctx__, _input: __Type__, value: __Checked_term__, _result: .)
             -> (__Checked_term__ & __Fill_ctx__) {
             (value, __fill_result__(ct, fills, __term_type__(ct, value)))

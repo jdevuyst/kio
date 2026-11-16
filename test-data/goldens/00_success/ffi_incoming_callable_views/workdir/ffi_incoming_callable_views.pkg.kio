@@ -1,4 +1,4 @@
-package ffi_incoming_callable_views;
+pkg ffi_incoming_callable_views;
 
 build {
   cache "out/.kio-cache/";

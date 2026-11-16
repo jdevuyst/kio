@@ -1,4 +1,4 @@
-module slot0;
+mod slot0;
 
 host type Value;
 

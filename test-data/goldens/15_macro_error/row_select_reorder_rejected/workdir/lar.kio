@@ -1,4 +1,4 @@
-module lar;
+mod lar;
 
 host type I32 role(i32);
 

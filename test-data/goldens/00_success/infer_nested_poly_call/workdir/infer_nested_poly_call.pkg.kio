@@ -1,4 +1,4 @@
-package infer_nested_poly_call;
+pkg infer_nested_poly_call;
 
 build {
   cache "out/.kio-cache/";

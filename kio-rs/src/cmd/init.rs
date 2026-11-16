@@ -6,8 +6,7 @@ use std::path::{Path, PathBuf};
 use crate::exit_code::ExitCode;
 use crate::path_display::DisplayPath;
 
-const HELP_TEMPLATE: &str = "\
-Usage: kio init [<package-name>]
+const HELP_TEMPLATE: &str = "Usage: kio init [<package-name>]
 
 Scaffold a new Kio package in the current directory.
 
@@ -141,7 +140,7 @@ fn validate_package_name(name: &str) -> Result<(), &'static str> {
 fn package_source(package_name: &str) -> String {
     format!(
         concat!(
-            "package {};\n\n",
+            "pkg {};\n\n",
             "build {{\n",
             "  cache \"out/.kio-cache/\";\n\n",
             "  target js {{\n",
@@ -162,7 +161,7 @@ fn package_source(package_name: &str) -> String {
 
 fn main_source() -> String {
     concat!(
-        "module main;\n\n",
+        "mod main;\n\n",
         "host type String role(str);\n\n",
         "host fn print(p0: String);\n\n",
         "pub fn main() { print(\"hello from Kio\\n\") }\n",

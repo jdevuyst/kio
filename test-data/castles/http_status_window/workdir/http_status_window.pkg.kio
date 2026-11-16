@@ -1,4 +1,4 @@
-package http_status_window;
+pkg http_status_window;
 
 build {
   cache "out/.kio-cache/";

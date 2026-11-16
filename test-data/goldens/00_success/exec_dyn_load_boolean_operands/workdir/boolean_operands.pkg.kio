@@ -1,4 +1,4 @@
-package boolean_operands;
+pkg boolean_operands;
 
 build {
   cache "out/.kio-cache/";

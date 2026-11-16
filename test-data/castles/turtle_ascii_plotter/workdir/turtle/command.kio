@@ -4,12 +4,12 @@
 /// spelled out and the interpreter never rediscovers a matching `end`. A body
 /// is the public generic list package instantiated at `Command`, the same
 /// collection representation the canvas uses for rows and cells.
-module turtle/command;
+mod turtle/command;
 
 import list/core as list;
-import macros/row_macros(macro select);
-import macros/spine_macros(macro widen_sum);
-import testapi(Bool, I32, String);
+import macros/row_macros { macro select }
+import macros/spine_macros { macro widen_sum }
+import testapi { type Bool; type I32; type String }
 
 pub type { Pen_cmd: Bool }
 

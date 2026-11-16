@@ -1,4 +1,4 @@
-package into_rejects_projection;
+pkg into_rejects_projection;
 
 build {
   cache "out/.kio-cache/";

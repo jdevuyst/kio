@@ -1,4 +1,4 @@
-module testapi;
+mod testapi;
 
 host type Str role(str);
 

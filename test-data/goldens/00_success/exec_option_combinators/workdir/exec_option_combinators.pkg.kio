@@ -1,4 +1,4 @@
-package exec_option_combinators;
+pkg exec_option_combinators;
 
 build {
   cache "out/.kio-cache/";

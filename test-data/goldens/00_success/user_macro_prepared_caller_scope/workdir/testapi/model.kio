@@ -1,7 +1,7 @@
-module testapi/model;
+mod testapi/model;
 
-import macros/spine_macros(macro widen_sum);
-import testapi(I32);
+import macros/spine_macros { macro widen_sum }
+import testapi { type I32 }
 
 pub type { Leaf: I32 { pub mk; pub get } }
 

@@ -1,8 +1,8 @@
-module testapi/main;
+mod testapi/main;
 
-import macros/spine_macros(macro narrow_sum, macro widen_sum);
-import testapi(String);
-import testapi/io(print);
+import macros/spine_macros { macro narrow_sum; macro widen_sum }
+import testapi { type String }
+import testapi/io { fn print }
 
 fn collapse(x: String | String) -> String { narrow_sum(x) }
 

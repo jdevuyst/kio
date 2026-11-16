@@ -2697,9 +2697,7 @@ mod tests {
         const QUERIES: usize = 32;
 
         let mut source = String::from(
-            "module provider; pub host type Host; \
-             pub type { Nominal: . { pub mk; pub get; }; }; \
-             pub type Alias = .;",
+            "mod provider; pub host type Host; pub type { Nominal: . { pub mk; pub get; }; }; pub type Alias = .;",
         );
         for index in 0..UNRELATED_DECLARATIONS {
             source.push_str(&format!(" type Unrelated{index} = .;"));
@@ -2760,7 +2758,7 @@ mod tests {
         const UNRELATED_DECLARATIONS: usize = 64;
         const OCCURRENCES: usize = 32;
 
-        let mut source = String::from("module source;");
+        let mut source = String::from("mod source;");
         for index in 0..UNRELATED_DECLARATIONS {
             source.push_str(&format!(" type Unrelated{index} = .;"));
         }
@@ -2796,7 +2794,7 @@ mod tests {
     #[cfg(feature = "surface")]
     #[test]
     fn source_kind_walk_consumes_the_singular_complete_scheme_summary() {
-        let module = parse_module("module source; type Scheme = [*F] F[.] -> F[.];");
+        let module = parse_module("mod source; type Scheme = [*F] F[.] -> F[.];");
         let scheme = module
             .items
             .iter()
@@ -2829,15 +2827,13 @@ mod tests {
         const QUERIES: usize = 32;
 
         let mut provider = String::from(
-            "module provider; pub host type Host; \
-             pub type { Nominal: . { pub mk; pub get; }; }; \
-             pub type Alias = .;",
+            "mod provider; pub host type Host; pub type { Nominal: . { pub mk; pub get; }; }; pub type Alias = .;",
         );
         for index in 0..UNRELATED_DECLARATIONS {
             provider.push_str(&format!(" type Unrelated{index} = .;"));
         }
         let provider = parse_module(&provider);
-        let consumer = parse_module("module consumer; import provider as p;");
+        let consumer = parse_module("mod consumer; import provider as p;");
         let provider_scope = crate::pass::resolve::TopLevelScope::build(&provider)
             .expect("provider declaration-only scope");
         let consumer_scope = crate::pass::resolve::TopLevelScope::build(&consumer)
@@ -3568,7 +3564,7 @@ mod tests {
     #[test]
     fn display_type_uses_only_structurally_required_parentheses() {
         fn parse_type(source: &str) -> Ty {
-            let module = parse_module(&format!("module display; type Example = {source};"));
+            let module = parse_module(&format!("mod display; type Example = {source};"));
             let crate::ast::Item::TypeAlias(alias) = &module.items[0] else {
                 panic!("expected type alias");
             };

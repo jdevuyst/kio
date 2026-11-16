@@ -1,6 +1,6 @@
-module litdemo/main;
+mod litdemo/main;
 
-import litdemo(B, F32, F64, I128, I32, I8, S, U64);
+import litdemo {type B; type F32; type F64; type I128; type I32; type I8; type S; type U64}
 
 fn s_simple() -> S { "hello"[S] }
 

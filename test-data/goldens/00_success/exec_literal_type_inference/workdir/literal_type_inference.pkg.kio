@@ -1,4 +1,4 @@
-package literal_type_inference;
+pkg literal_type_inference;
 
 build {
   cache "out/.kio-cache/";

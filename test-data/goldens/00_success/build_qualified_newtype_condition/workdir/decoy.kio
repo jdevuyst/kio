@@ -1,4 +1,4 @@
-module decoy;
+mod decoy;
 
 pub type { Flag: . { pub mk; pub get } }
 

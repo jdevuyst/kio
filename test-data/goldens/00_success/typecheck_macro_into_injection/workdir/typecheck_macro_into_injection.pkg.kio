@@ -1,4 +1,4 @@
-package typecheck_macro_into_injection;
+pkg typecheck_macro_into_injection;
 
 build {
   cache "out/.kio-cache/";

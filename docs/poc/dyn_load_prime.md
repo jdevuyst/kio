@@ -82,7 +82,7 @@ concatenated text of every emitted `.kio` file — regular modules, host
 modules, and the `.pkg.kio` manifest alike, in any order. Nothing is
 curated away:
 
-- Each `module` / `package` header delimits one unit, and the loader
+- Each `mod` / `pkg` header delimits one unit, and the loader
   topologically orders the modules from their `import` headers.
 - A **host module** — all `host fn` / `host type` declarations, no bodies —
   contributes no guest code; its declarations tell the loader which

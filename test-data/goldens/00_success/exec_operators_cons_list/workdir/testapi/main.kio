@@ -1,12 +1,12 @@
-module testapi/main;
+mod testapi/main;
 
-import macros/match(macro match);
-import macros/spine_macros(macro widen_sum);
-import testapi(Int, String);
-import testapi/arith(add);
-import testapi/fmt(int_to_string);
-import testapi/io(print);
-import testapi/iter(loop);
+import macros/match { macro match }
+import macros/spine_macros { macro widen_sum }
+import testapi { type Int; type String }
+import testapi/arith { fn add }
+import testapi/fmt { fn int_to_string }
+import testapi/io { fn print }
+import testapi/iter { fn loop }
 
 // Cons-list of `A`: the `()` branch is the empty list, the
 // `(A & List(A))` branch is a cons cell.

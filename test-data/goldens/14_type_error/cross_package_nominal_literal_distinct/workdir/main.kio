@@ -17,9 +17,9 @@
 /// the expected parameter type `(bdep/text, String)` and be accepted; the
 /// `[String]` annotation forces the consumer's `(main, String)` and
 /// exposes the distinctness.
-module main;
+mod main;
 
-import bdep/text(dep_take);
+import bdep/text { fn dep_take }
 
 host type String role(str);
 

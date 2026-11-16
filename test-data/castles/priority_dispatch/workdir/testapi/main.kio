@@ -1,5 +1,5 @@
-module testapi/main;
+mod testapi/main;
 
-import priority_dispatch/planner(run);
+import priority_dispatch/planner { fn run }
 
 pub fn main() { run() }

@@ -5,15 +5,15 @@
 /// The two `fold_*` eliminators are the whole interface for taking a content
 /// or a value apart: callers get the payloads without importing the label
 /// vocabulary, and every dispatch stays exhaustive.
-module sheet/cells;
+mod sheet/cells;
 
-import macros/match(macro match);
-import macros/row_macros(macro select);
-import macros/spine_macros(macro widen_sum);
-import sheet/addr(Addr);
-import sheet/formula(Expr);
-import sheet/table(Table, empty, get_or, put);
-import testapi(I32);
+import macros/match { macro match }
+import macros/row_macros { macro select }
+import macros/spine_macros { macro widen_sum }
+import sheet/addr { type Addr }
+import sheet/formula { type Expr }
+import sheet/table { type Table; fn empty; fn get_or; fn put }
+import testapi { type I32 }
 
 pub type Content = { Blank: . } | { Number: I32 } | { Formula: Expr };
 

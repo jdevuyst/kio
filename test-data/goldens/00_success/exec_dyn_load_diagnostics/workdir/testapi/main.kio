@@ -1,20 +1,35 @@
 /// This case's loading host: feed each class of malformed image to the loader and print its diagnostic.
-module testapi/main;
+mod testapi/main;
 
-import host_descriptor(Host_type, Role, i32_role, mk_host_id, mk_role_host_type);
-import lex(Lex_err, lex);
-import loader(Load_outcome, Lr_diag, Lr_image);
-import loader(diag_message, un_load_outcome);
-import loader/scan(load_package);
-import macros/control(macro if);
-import macros/match(macro match);
-import macros/spine_macros(macro widen_sum);
-import parse(P_err, P_ok, Type_scope);
-import parse(parse_toks_scope_fuel, perr_message, scope_nil, scope_push);
-import testapi(Bool, I32, String);
-import testapi/io(print);
-import testapi/text(string_concat, string_eq);
-import token(Tk_num, Tk_punct, Tk_str, Tk_word, Token, Toks, un_token, un_toks);
+import host_descriptor {
+  type Host_type;
+  type Role;
+  fn i32_role;
+  fn mk_host_id;
+  fn mk_role_host_type
+}
+import lex { type Lex_err; fn lex }
+import loader { fn diag_message; fn un_load_outcome }
+import loader { type Load_outcome; type Lr_diag; type Lr_image }
+import loader/scan { fn load_package }
+import macros/control { macro if }
+import macros/match { macro match }
+import macros/spine_macros { macro widen_sum }
+import parse { fn parse_toks_scope_fuel; fn perr_message; fn scope_nil; fn scope_push }
+import parse { type P_err; type P_ok; type Type_scope }
+import testapi { type Bool; type I32; type String }
+import testapi/io { fn print }
+import testapi/text { fn string_concat; fn string_eq }
+import token {
+  type Tk_num;
+  type Tk_punct;
+  type Tk_str;
+  type Tk_word;
+  type Token;
+  type Toks;
+  fn un_token;
+  fn un_toks
+}
 
 // Render a load outcome's diagnostic under the case's label; a load that
 // unexpectedly succeeds renders as `(loaded)` so a silently-accepted
@@ -87,69 +102,69 @@ fn fuel_diag() -> String {
 pub fn main() {
   print(diag_of(
   , "truncated body: "[String]
-  , load_package("module hostapi;\n\nhost type I32 role(i32);\n\nhost fn add_i32(p0: I32, p1: "
-                 "I32) -> I32;\nmodule a;\n\nimport hostapi(I32, add_i32);\n\npub fn ok(x: I32) "
-                 "-> I32 { x }\n\nmodule b;\n\nimport hostapi(I32, add_i32);\n\npub fn broken(x: "
-                 "I32) -> I32 { add_i32(x"[String])
+  , load_package("mod hostapi;\n\nhost type I32 role(i32);\n\nhost fn add_i32(p0: I32, p1: "
+                 "I32) -> I32;\nmod a;\n\nimport hostapi {type I32; fn add_i32}\n\npub fn ok(x: "
+                 "I32) -> I32 { x }\n\nmod b;\n\nimport hostapi {type I32; fn add_i32}\n\npub fn "
+                 "broken(x: I32) -> I32 { add_i32(x"[String])
   ));
   print(diag_of(
   , "import cycle: "[String]
-  , load_package("module hostapi;\n\nhost type I32 role(i32);\n\nmodule a;\n\nimport "
-                 "hostapi(I32);\nimport b(pong);\n\npub fn ping(x: I32) -> I32 { pong(x) }\n\n"
-                 "module b;\n\nimport hostapi(I32);\nimport a(ping);\n\npub fn pong(x: I32) -> "
-                 "I32 { ping(x) }\n"[String])
+  , load_package("mod hostapi;\n\nhost type I32 role(i32);\n\nmod a;\n\nimport hostapi {type "
+                 "I32}\nimport b {fn pong}\n\npub fn ping(x: I32) -> I32 { pong(x) }\n\nmod b;\n\n"
+                 "import hostapi {type I32}\nimport a {fn ping}\n\npub fn pong(x: I32) -> I32 "
+                 "{ ping(x) }\n"[String])
   ));
   print(diag_of(
   , "unresolvable import: "[String]
-  , load_package("module hostapi;\n\nhost type I32 role(i32);\n\nhost fn add_i32(p0: I32, p1: "
-                 "I32) -> I32;\nmodule a;\n\nimport hostapi(I32);\n\npub fn one() -> I32 { "
-                 "1[I32] }\n\nmodule b;\n\nimport hostapi(I32);\nimport a(nope);\n\npub fn go() "
-                 "-> I32 { nope() }\n"[String])
+  , load_package("mod hostapi;\n\nhost type I32 role(i32);\n\nhost fn add_i32(p0: I32, p1: "
+                 "I32) -> I32;\nmod a;\n\nimport hostapi {type I32}\n\npub fn one() -> I32 { "
+                 "1[I32] }\n\nmod b;\n\nimport hostapi {type I32}\nimport a {fn nope}\n\npub fn "
+                 "go() -> I32 { nope() }\n"[String])
   ));
   print(diag_of(
   , "declaration before module header: "[String]
-  , load_package("pub fn stray() -> I32 { 1[I32] }\nmodule a;\n"[String])
+  , load_package("pub fn stray() -> I32 { 1[I32] }\nmod a;\n"[String])
   ));
   print(diag_of(
   , "unterminated string: "[String]
-  , load_package("module hostapi;\n\nhost type I32 role(i32);\n\nhost fn add_i32(p0: I32, p1: "
-                 "I32) -> I32;\nmodule a;\n\nimport hostapi(I32);\n\npub fn s() -> I32 { \"oops "
-                 "}\n"[String])
+  , load_package("mod hostapi;\n\nhost type I32 role(i32);\n\nhost fn add_i32(p0: I32, p1: "
+                 "I32) -> I32;\nmod a;\n\nimport hostapi {type I32}\n\npub fn s() -> I32 { "
+                 "\"oops }\n"[String])
   ));
   print(diag_of(
   , "empty type application: "[String]
-  , load_package("module hostapi;\n\nhost type I32 role(i32);\n\nhost fn add_i32(p0: I32, p1: "
-                 "I32) -> I32;\nmodule a;\n\nimport __intrinsics__;\n\nimport hostapi(I32);\n\n"
+  , load_package("mod hostapi;\n\nhost type I32 role(i32);\n\nhost fn add_i32(p0: I32, p1: "
+                 "I32) -> I32;\nmod a;\n\nimport __intrinsics__;\n\nimport hostapi {type I32}\n\n"
                  "pub fn p(x: I32) -> I32 { __fst__[](x) }\n"[String])
   ));
   print(diag_of(
   , "type argument list: "[String]
-  , load_package("module a; fn id[A](x: A) -> A { x } pub fn bad[A](x: A) -> A { id[A, "
-                 "A](x) }"[String])
+  , load_package("mod a; fn id[A](x: A) -> A { x } pub fn bad[A](x: A) -> A { id[A, A](x) "
+                 "}"[String])
   ));
   print(diag_of(
   , "type binder list: "[String]
-  , load_package("module a; pub fn id[A, B](x: A) -> A { x }"[String])
+  , load_package("mod a; pub fn id[A, B](x: A) -> A { x }"[String])
   ));
   print(diag_of(
   , "parenthesized literal type: "[String]
-  , load_package("module a; host type I32 role(i32); pub fn bad() -> I32 { 1(I32) }"[String])
+  , load_package("mod a; host type I32 role(i32); pub fn bad() -> I32 { 1(I32) }"[String])
   ));
   print(diag_of(
   , "type constructor argument list: "[String]
-  , load_package("module a; import __intrinsics__; host type Bool role(bool); type "
+  , load_package("mod a; import __intrinsics__; host type Bool role(bool); type "
                  "Carrier[A][B] = A; pub fn bad(b: Bool) { __if_then_else__[Carrier[Bool, "
                  "Bool]][.](b, .() { () }, .() { () }) }"[String])
   ));
   print(diag_of(
   , "unbound name: "[String]
-  , load_package("module hostapi;\n\nhost type I32 role(i32);\n\nhost fn add_i32(p0: I32, p1: "
-                 "I32) -> I32;\nmodule a;\n\nimport hostapi(I32);\n\npub fn u(x: I32) -> I32 { "
-                 "missing(x) }\n"[String])
+  , load_package("mod hostapi;\n\nhost type I32 role(i32);\n\nhost fn add_i32(p0: I32, p1: "
+                 "I32) -> I32;\nmod a;\n\nimport hostapi {type I32}\n\npub fn u(x: I32) -> I32 "
+                 "{ missing(x) }\n"[String])
   ));
   print(diag_of(
   , "higher-kinded host type binder: "[String]
-  , load_package("module hostapi;\n\nhost type Wrapper[*F];\n"[String])
+  , load_package("mod hostapi;\n\nhost type Wrapper[*F];\n"[String])
   ));
   print(string_concat("parser fuel: "[String], fuel_diag()))
 }

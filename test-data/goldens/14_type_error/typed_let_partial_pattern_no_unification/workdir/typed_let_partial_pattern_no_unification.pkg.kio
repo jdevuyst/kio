@@ -1,4 +1,4 @@
-package typed_let_partial_pattern_no_unification;
+pkg typed_let_partial_pattern_no_unification;
 
 build {
   cache "out/.kio-cache/";

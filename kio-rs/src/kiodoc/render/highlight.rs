@@ -170,7 +170,7 @@ mod tests {
 
     #[test]
     fn accumulated_harness_classifies_exact_display_ranges_and_retracts_edits() {
-        let markdown = "```kio {harness=steps placeholder=\"__INSERT_CODE_HERE__\" accumulate}\nmodule app;\n__INSERT_CODE_HERE__\n```\n\n```kio {@steps}\nimport provider(macro make as selected);\n```\n\n```kio {@steps}\nfn run() { selected(()) }\n```\n";
+        let markdown = "```kio {harness=steps placeholder=\"__INSERT_CODE_HERE__\" accumulate}\nmod app;\n__INSERT_CODE_HERE__\n```\n\n```kio {@steps}\nimport provider { macro make as selected }\n```\n\n```kio {@steps}\nfn run() { selected(()) }\n```\n";
         let tokens = fences(markdown, None);
         let parsed = crate::kiodoc::parse::scan(markdown);
         assert_eq!(
@@ -185,7 +185,7 @@ mod tests {
 
     #[test]
     fn self_harness_uses_end_of_module_scope_with_local_shadowing() {
-        let module = "module app; fn early() { () } macro later : . -> . { impl implementation; };";
+        let module = "mod app; fn early() { () } macro later : . -> . { impl implementation; };";
         let markdown =
             "```kio {@}\nlater(()); (.(later: . -> .) { later(()) })(.(x: .) { x })\n```";
         let tokens = fences(markdown, Some(module));
@@ -198,7 +198,7 @@ mod tests {
 
     #[test]
     fn rendered_harness_preserves_importless_macro_refinement() {
-        let markdown = "```kio {harness=body placeholder=\"__INSERT_CODE_HERE__\"}\nmodule app; import provider(macro make); fn run() { __INSERT_CODE_HERE__ }\n```\n\n```kio {@body}\nmake(())\n```\n";
+        let markdown = "```kio {harness=body placeholder=\"__INSERT_CODE_HERE__\"}\nmod app; import provider {macro make} fn run() { __INSERT_CODE_HERE__ }\n```\n\n```kio {@body}\nmake(())\n```\n";
         let html = super::super::markdown::render_html(markdown);
         assert!(
             html.contains("<span class=\"kio-entity-name-macro\">make</span>"),

@@ -1,7 +1,7 @@
 [
   {
     "name": "heading_reference_interruption",
-    "source": "/// # Heading **bold [`ref`] tail** end.\nmodule app;\n",
+    "source": "/// # Heading **bold [`ref`] tail** end.\nmod app;\n",
     "targets": [
       {
         "text": "",
@@ -37,7 +37,7 @@
   },
   {
     "name": "four_bounded_styles",
-    "source": "/// **outer __strong *italic _inner_ italic* strong__ outer**\nmodule app;\n",
+    "source": "/// **outer __strong *italic _inner_ italic* strong__ outer**\nmod app;\n",
     "targets": [
       {
         "text": "",
@@ -85,7 +85,7 @@
   },
   {
     "name": "literal_and_link_precedence",
-    "source": "/// **before ``[`hidden`]`` \\* [label](url) after**; [`live`].\n/// [key]: url/[`opaque`]\nmodule app;\n",
+    "source": "/// **before ``[`hidden`]`` \\* [label](url) after**; [`live`].\n/// [key]: url/[`opaque`]\nmod app;\n",
     "targets": [
       {
         "text": "",
@@ -127,7 +127,7 @@
   },
   {
     "name": "block_markers",
-    "source": "/// > > quote **bold**\n/// - item\n/// 12. item\n/// ***\nmodule app;\n",
+    "source": "/// > > quote **bold**\n/// - item\n/// 12. item\n/// ***\nmod app;\n",
     "targets": [
       {
         "text": "",
@@ -163,7 +163,7 @@
   },
   {
     "name": "fence_attributes_and_kio",
-    "source": "/// ```kio {check_exit_code=0}\n/// fn example() { () }\n/// ```\n/// [`after`].\nmodule app;\n",
+    "source": "/// ```kio {check_exit_code=0}\n/// fn example() { () }\n/// ```\n/// [`after`].\nmod app;\n",
     "targets": [
       {
         "text": "",
@@ -199,7 +199,7 @@
   },
   {
     "name": "independent_fences_and_unfinished_string",
-    "source": "/// ```kio\n/// \"unfinished\n/// ```\n/// [`after`].\n/// ```kio\n/// fn second() { () }\n/// ```\nmodule app;\n",
+    "source": "/// ```kio\n/// \"unfinished\n/// ```\n/// [`after`].\n/// ```kio\n/// fn second() { () }\n/// ```\nmod app;\n",
     "bodies": 2,
     "targets": [
       {
@@ -231,7 +231,7 @@
   },
   {
     "name": "self_harness_context",
-    "source": "/// ```kio {@}\n/// let value = ();\n/// value\n/// ```\n/// [`after`].\nmodule app;\n",
+    "source": "/// ```kio {@}\n/// let value = ();\n/// value\n/// ```\n/// [`after`].\nmod app;\n",
     "targets": [
       {
         "text": "",
@@ -256,7 +256,7 @@
   {
     "name": "malformed_wrapper_is_source_bounded",
     "malformedContext": true,
-    "source": "/// ```kio {@}\n/// }\n/// module escaped;\n/// \"unfinished\n/// ```\n/// [`after`].\nmodule app;\n",
+    "source": "/// ```kio {@}\n/// }\n/// module escaped;\n/// \"unfinished\n/// ```\n/// [`after`].\nmod app;\n",
     "targets": [
       {
         "text": "",
@@ -268,7 +268,7 @@
   },
   {
     "name": "multiline_kio_function_and_next_fence",
-    "source": "/// ```kio\n/// fn text() {\n/// let value = ();\n/// value }\n/// ```\n/// [`after`].\n/// ```kio\n/// fn next() { () }\n/// ```\nmodule app;\n",
+    "source": "/// ```kio\n/// fn text() {\n/// let value = ();\n/// value }\n/// ```\n/// [`after`].\n/// ```kio\n/// fn next() { () }\n/// ```\nmod app;\n",
     "bodies": 2,
     "targets": [
       {
@@ -293,7 +293,7 @@
   },
   {
     "name": "embedded_doc_is_not_recursive",
-    "source": "/// ```kio\n/// /// [`literal`]\n/// fn next() { () }\n/// ```\n/// [`after`].\nmodule app;\n",
+    "source": "/// ```kio\n/// /// [`literal`]\n/// fn next() { () }\n/// ```\n/// [`after`].\nmod app;\n",
     "targets": [
       {
         "text": "",

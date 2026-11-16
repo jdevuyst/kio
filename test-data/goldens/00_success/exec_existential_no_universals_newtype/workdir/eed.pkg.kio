@@ -1,4 +1,4 @@
-package eed;
+pkg eed;
 
 build {
   cache "out/.kio-cache/";

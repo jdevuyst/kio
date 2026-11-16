@@ -384,7 +384,7 @@ fi
 
 signature=$("$KIO_BIN" sig stage --force --stdout) || exit
 loader_scan_signature=$(printf '%s\n' "$signature" | awk '
-  /^[[:space:]]*module loader\/scan \{$/ { inside = 1 }
+  /^[[:space:]]*mod loader\/scan \{$/ { inside = 1 }
   inside { print }
   inside && /^[[:space:]]*}$/ { exit }
 ')

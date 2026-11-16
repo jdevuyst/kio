@@ -1,4 +1,4 @@
-package boolean_operand_intrinsics;
+pkg boolean_operand_intrinsics;
 
 build {
   cache "out/.kio-cache/";

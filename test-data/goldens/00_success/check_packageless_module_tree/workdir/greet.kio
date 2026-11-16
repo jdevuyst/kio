@@ -1,4 +1,4 @@
-module greet;
+mod greet;
 
 host type S role(str);
 

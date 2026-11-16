@@ -422,7 +422,7 @@ pub(super) fn query_expr_for_repl(
     // side of the evaluator boundary and is consumed into an
     // `UncheckedPrime` root before reduction.
     let module = analysis.root_package().module(&current).ok_or_else(|| {
-        ExprQueryError::PackageError(format!("module `{current}` vanished from the package"))
+        ExprQueryError::PackageError(format!("mod `{current}` vanished from the package"))
     })?;
     let typed_expr = wrap
         .extract_let_rhs(&module.module().items)
@@ -441,7 +441,7 @@ pub(super) fn query_expr_for_repl(
         .module(&current)
         .ok_or_else(|| {
             ExprQueryError::PackageError(format!(
-                "module `{current}` vanished from the lowered package"
+                "mod `{current}` vanished from the lowered package"
             ))
         })?;
     let lowered_expr = wrap
@@ -547,7 +547,7 @@ fn reduce_lowered(
     let package = checked.package();
     let source_module = package.module(module_path).ok_or_else(|| {
         ExprQueryError::PackageError(format!(
-            "module `{module_path}` vanished from the lowered package"
+            "mod `{module_path}` vanished from the lowered package"
         ))
     })?;
     let eval_expr = substitute_expr_for_eval(
@@ -989,7 +989,7 @@ mod tests {
 
     #[test]
     fn prompt_syntax_diagnostic_excludes_wrapper_enrichments() {
-        let original = "module hidden;\n";
+        let original = "mod hidden;\n";
         let source = "index([1], 0)";
         let start = original.len() as u32;
         let error = crate::error::Error::parse(
@@ -1015,15 +1015,13 @@ mod tests {
     }
 
     fn checked_structural_fault_package() -> crate::pass::typecheck_full::CheckedLoweredPackage {
-        let package_source = "\
-package repl_totality;
+        let package_source = "pkg repl_totality;
 
 bridge {
   main;
 }
 ";
-        let module_source = "\
-module main;
+        let module_source = "mod main;
 
 import __comptime__;
 
@@ -1042,14 +1040,14 @@ pure fn main(ct: __Comptime__) -> . {
   ()
 }
 ";
-        let surface_module = crate::pass::parser::parse(module_source).expect("module parses");
+        let surface_module = crate::pass::parser::parse(module_source).expect("mod parses");
         let surface_package =
-            crate::pass::parser::parse_package_file(package_source, None).expect("package parses");
+            crate::pass::parser::parse_package_file(package_source, None).expect("pkg parses");
         let (modules, package_file) = crate::pass::full::FullPipeline::lower_package(
             vec![(std::path::PathBuf::from("main.kio"), surface_module)],
             Some(surface_package),
         )
-        .expect("package lowers");
+        .expect("pkg lowers");
         let package_file =
             package_file.map(|package_file| crate::pass::resolve::PackageFileEntry {
                 file_path: std::path::PathBuf::from("repl_totality.pkg.kio"),
@@ -1058,9 +1056,9 @@ pure fn main(ct: __Comptime__) -> . {
             });
         let package =
             crate::pass::resolve::Package::build(std::path::Path::new(""), modules, package_file)
-                .expect("package resolves");
+                .expect("pkg resolves");
         crate::pass::typecheck_full::check_package_preserving_normalization(&package)
-            .expect("package type-checks")
+            .expect("pkg type-checks")
     }
 
     #[test]
@@ -1255,16 +1253,16 @@ pure fn main(ct: __Comptime__) -> . {
 
     #[test]
     fn synthetic_wrap_places_expression_after_original() {
-        let wrap = SyntheticWrap::build("module pkg/m;\n", "1 + 2", 0);
+        let wrap = SyntheticWrap::build("mod pkg/m;\n", "1 + 2", 0);
         assert_eq!(&wrap.source[wrap.expr_start..wrap.expr_end], "1 + 2");
-        assert!(wrap.source.starts_with("module pkg/m;\n"));
+        assert!(wrap.source.starts_with("mod pkg/m;\n"));
         assert!(wrap.source.contains("fn _expr0()"));
         assert!(wrap.source.contains("let _ = 1 + 2\n;"));
     }
 
     #[test]
     fn synthetic_wrap_authenticates_one_expression_and_trailing_comment() {
-        let original = "module pkg/m;\nfn existing() { () }\n";
+        let original = "mod pkg/m;\nfn existing() { () }\n";
         let wrap = SyntheticWrap::build(original, "() // trailing comment", 0);
 
         assert!(
@@ -1275,7 +1273,7 @@ pure fn main(ct: __Comptime__) -> . {
 
     #[test]
     fn synthetic_wrap_rejects_declaration_injection() {
-        let original = "module pkg/m;\n";
+        let original = "mod pkg/m;\n";
         let injected = "(); () } fn injected() { ()";
         let wrap = SyntheticWrap::build_pure(original, injected, 0);
 
@@ -1290,7 +1288,7 @@ pure fn main(ct: __Comptime__) -> . {
 
     #[test]
     fn synthetic_wrap_avoids_existing_module_identifier() {
-        let original = "module pkg/m;\npure fn _expr0(x: .) -> . { x }\n";
+        let original = "mod pkg/m;\npure fn _expr0(x: .) -> . { x }\n";
         let wrap = SyntheticWrap::build(original, "()", 0);
 
         assert_eq!(wrap.fn_name, "_expr1");
@@ -1299,7 +1297,7 @@ pure fn main(ct: __Comptime__) -> . {
 
     #[test]
     fn synthetic_wrap_does_not_capture_unresolved_query_identifier() {
-        let wrap = SyntheticWrap::build("module pkg/m;\n", "(_expr0)", 0);
+        let wrap = SyntheticWrap::build("mod pkg/m;\n", "(_expr0)", 0);
 
         assert_eq!(wrap.fn_name, "_expr1");
         assert_eq!(&wrap.source[wrap.expr_start..wrap.expr_end], "(_expr0)");
@@ -1307,14 +1305,14 @@ pure fn main(ct: __Comptime__) -> . {
 
     #[test]
     fn synthetic_wrap_reserves_identifiers_in_unlexable_query() {
-        let wrap = SyntheticWrap::build("module pkg/m;\n", "(_expr0 \"", 0);
+        let wrap = SyntheticWrap::build("mod pkg/m;\n", "(_expr0 \"", 0);
 
         assert_eq!(wrap.fn_name, "_expr1");
     }
 
     #[test]
     fn pure_synthetic_wrap_changes_only_the_function_modifier() {
-        let original = "module pkg/m;\n";
+        let original = "mod pkg/m;\n";
         let ordinary = SyntheticWrap::build(original, "call(())", 2);
         let pure = SyntheticWrap::build_pure(original, "call(())", 2);
 
@@ -1334,7 +1332,7 @@ pure fn main(ct: __Comptime__) -> . {
         // The recorded byte range must bracket exactly the expression
         // text, so the position-index width search picks the right
         // node.
-        let wrap = SyntheticWrap::build("module pkg/m;", "foo(bar)", 7);
+        let wrap = SyntheticWrap::build("mod pkg/m;", "foo(bar)", 7);
         assert_eq!(wrap.expr_end - wrap.expr_start, "foo(bar)".len());
         assert_eq!(&wrap.source[wrap.expr_start..wrap.expr_end], "foo(bar)");
     }
@@ -1344,7 +1342,7 @@ pure fn main(ct: __Comptime__) -> . {
         // A parse error at the synthetic `;` terminator must never reach
         // the user as "expected `;`" — the `;` is the wrapper's, not the
         // user's. The error span is at (or past) `expr_end`.
-        let wrap = SyntheticWrap::build("module pkg/m;", "1 +", 3);
+        let wrap = SyntheticWrap::build("mod pkg/m;", "1 +", 3);
         let scrubbed = wrap.scrub_wrapper_framing("expected `;`".to_owned(), wrap.expr_end as u32);
         assert!(
             !scrubbed.contains(';'),
@@ -1355,7 +1353,7 @@ pure fn main(ct: __Comptime__) -> . {
 
     #[test]
     fn synthetic_wrap_counter_wraps_without_collision() {
-        let original = format!("module pkg/m;\nfn _expr{}() {{ () }}", u64::MAX);
+        let original = format!("mod pkg/m;\nfn _expr{}() {{ () }}", u64::MAX);
         let wrap = SyntheticWrap::build(&original, "()", u64::MAX);
 
         assert_eq!(wrap.fn_name, "_expr0");

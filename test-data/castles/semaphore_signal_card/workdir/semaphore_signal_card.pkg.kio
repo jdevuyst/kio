@@ -1,4 +1,4 @@
-package semaphore_signal_card;
+pkg semaphore_signal_card;
 
 build {
   cache "out/.kio-cache/";

@@ -903,7 +903,7 @@ mod tests {
 
     #[test]
     fn exact_scope_excludes_self_later_and_other_namespace() {
-        let src = "module pkg/main; import other/api(Value, earlier);\nfn before() -> . { () }\nfn here(arg: .) -> . { arg }\nfn later() -> . { () }";
+        let src = "mod pkg/main; import other/api {type Value; fn earlier}\nfn before() -> . { () }\nfn here(arg: .) -> . { arg }\nfn later() -> . { () }";
         let candidates = in_scope_candidates(&parse(src), offset_after(src, "{ arg"));
         let names = labels(&candidates);
         assert!(names.contains(&"arg") && names.contains(&"before") && names.contains(&"earlier"));
@@ -915,7 +915,7 @@ mod tests {
 
     #[test]
     fn exact_scope_traverses_tuple_and_pattern_binders() {
-        let src = "module pkg/main; fn f((left: ., right: .)) -> . { ((), .(inner: .) { let .(one: ., two: .) = (left, right); inner }) }";
+        let src = "mod pkg/main; fn f((left: ., right: .)) -> . { ((), .(inner: .) { let .(one: ., two: .) = (left, right); inner }) }";
         let candidates = in_scope_candidates(&parse(src), offset_after(src, "; inner"));
         let names = labels(&candidates);
         for name in ["left", "right", "inner", "one", "two"] {
@@ -944,7 +944,7 @@ mod tests {
             "if () { INNER } else { () }",
         ] {
             let source = format!(
-                "module pkg/main; fn pair(a: ., b: .) -> . {{ a }} fn zero() -> . {{ () }} op _ + _ {{ impl pair; }}; varop [* *] {{ foldl pair zero; }}; fn outer(parent: .) -> . {{ {} }}",
+                "mod pkg/main; fn pair(a: ., b: .) -> . {{ a }} fn zero() -> . {{ () }} op _ + _ {{ impl pair; }}; op_var [* *] {{ foldl pair zero; }}; fn outer(parent: .) -> . {{ {} }}",
                 container.replace("INNER", ".[A](nested: A) { nested }")
             );
             let offset = offset_after(&source, "{ nested");
@@ -965,7 +965,7 @@ mod tests {
 
     #[test]
     fn neutral_bindings_are_sequential_and_do_not_escape() {
-        let source = "module pkg/main; fn f(parent: .) -> . { (do (bind) { let .(first: ., second: .) <- parent; let third = first; third }, parent) }";
+        let source = "mod pkg/main; fn f(parent: .) -> . { (do (bind) { let .(first: ., second: .) <- parent; let third = first; third }, parent) }";
         let module = parse(source);
         let rhs = in_scope_candidates(&module, offset_after(source, "<- parent"));
         assert!(!labels(&rhs).contains(&"first"));
@@ -982,7 +982,7 @@ mod tests {
 
     #[test]
     fn structural_forall_scope_and_signature_order_are_exact() {
-        let source = "module pkg/main; type A = .; fn f[B](value: [A] A)[C] -> B { value }";
+        let source = "mod pkg/main; type A = .; fn f[B](value: [A] A)[C] -> B { value }";
         let module = parse(source);
         let inside = type_candidates(&module, offset_after(source, "[A] A"));
         assert!(labels(&inside).contains(&"B"));
@@ -1001,10 +1001,9 @@ mod tests {
 
     #[test]
     fn builtin_imports_are_explicit_and_namespace_separated() {
-        let source =
-            "module pkg/main; import __intrinsics__; import __comptime__; fn f() -> . { () }";
+        let source = "mod pkg/main; import __intrinsics__; import __comptime__; fn f() -> . { () }";
         let module = parse(source);
-        assert!(in_scope_candidates(&module, offset_after(source, "module pkg/main;")).is_empty());
+        assert!(in_scope_candidates(&module, offset_after(source, "mod pkg/main;")).is_empty());
         let offset = offset_after(source, "{ ()");
         let values = in_scope_candidates(&module, offset);
         assert!(labels(&values).contains(&"__pair__"));
@@ -1016,7 +1015,7 @@ mod tests {
 
     #[test]
     fn existential_open_binders_do_not_leak_into_the_rhs() {
-        let source = "module pkg/main; fn f(input: .) -> . { let .(<U> payload) = input; payload }";
+        let source = "mod pkg/main; fn f(input: .) -> . { let .(<U> payload) = input; payload }";
         let module = parse(source);
         let rhs = offset_after(source, "= input");
         assert!(!labels(&type_candidates(&module, rhs)).contains(&"U"));
@@ -1028,7 +1027,7 @@ mod tests {
 
     #[test]
     fn module_level_fns_follow_source_order() {
-        let src = "module pkg/main;\npub fn run() -> . { () }\nfn helper() -> . { () }\n";
+        let src = "mod pkg/main;\npub fn run() -> . { () }\nfn helper() -> . { () }\n";
         let inside_run = in_scope_candidates(&parse(src), offset_after(src, "run() -> . { "));
         assert!(!labels(&inside_run).contains(&"run"));
         assert!(!labels(&inside_run).contains(&"helper"));
@@ -1039,11 +1038,12 @@ mod tests {
 
     #[test]
     fn current_rec_members_are_not_ordinary_values_in_member_bodies() {
-        let src = "module pkg/main;\n\
-rec(loop) {\n\
-  fn first(x: .) -> . { recur second(x) };\n\
-  fn second(y: .) -> . { recur first(y) }\n\
-}\n";
+        let src = "mod pkg/main;
+rec(loop) {
+fn first(x: .) -> . { recur second(x) };
+fn second(y: .) -> . { recur first(y) }
+}
+";
         let candidates = in_scope_candidates(&parse(src), offset_after(src, "recur first("));
         let names = labels(&candidates);
         assert!(!names.contains(&"first"), "got: {names:?}");
@@ -1053,18 +1053,19 @@ rec(loop) {\n\
 
     #[test]
     fn rec_members_are_ordinary_module_values_outside_their_group() {
-        let src = "module pkg/main;\n\
-rec(loop) {\n\
-  fn first(x: .) -> . { recur first(x) }\n\
-}\n\
-fn caller(value: .) -> . { first(value) }\n";
+        let src = "mod pkg/main;
+rec(loop) {
+fn first(x: .) -> . { recur first(x) }
+}
+fn caller(value: .) -> . { first(value) }
+";
         let candidates = in_scope_candidates(&parse(src), offset_after(src, "first(value"));
         assert!(labels(&candidates).contains(&"first"));
     }
 
     #[test]
     fn fn_params_and_let_locals_visible_only_inside_their_spans() {
-        let src = "module pkg/main;\nfn f(x: .) -> . {\n    let y = x;\n    y\n}\n";
+        let src = "mod pkg/main;\nfn f(x: .) -> . {\n    let y = x;\n    y\n}\n";
         let module = parse(src);
         // Inside the let body both the param and the binding are in scope.
         let in_body = in_scope_candidates(&module, offset_after(src, "    y"));
@@ -1075,14 +1076,14 @@ fn caller(value: .) -> . { first(value) }\n";
         assert!(labels(&in_value).contains(&"x"));
         assert!(!labels(&in_value).contains(&"y"));
         // At module level neither is.
-        let at_header = in_scope_candidates(&module, offset_after(src, "module"));
+        let at_header = in_scope_candidates(&module, offset_after(src, "mod"));
         assert!(!labels(&at_header).contains(&"x"));
         assert!(!labels(&at_header).contains(&"y"));
     }
 
     #[test]
     fn shadowing_keeps_only_the_innermost_binding() {
-        let src = "module pkg/main;\nfn f(x: .) -> . { let x = (); x }\n";
+        let src = "mod pkg/main;\nfn f(x: .) -> . { let x = (); x }\n";
         let candidates = in_scope_candidates(&parse(src), offset_after(src, "let x = (); "));
         let xs: Vec<&Candidate> = candidates.iter().filter(|c| c.label == "x").collect();
         assert_eq!(xs.len(), 1, "shadowed `x` must appear exactly once");
@@ -1091,8 +1092,7 @@ fn caller(value: .) -> . { first(value) }\n";
 
     #[test]
     fn type_candidates_offer_type_params_and_type_names_not_values() {
-        let src =
-            "module pkg/main;\ntype Pair = .;\ntype _Pair = .;\nfn f[A][_A](x: A) -> A { x }\n";
+        let src = "mod pkg/main;\ntype Pair = .;\ntype _Pair = .;\nfn f[A][_A](x: A) -> A { x }\n";
         let candidates = type_candidates(&parse(src), offset_after(src, "x: "));
         let lbls = labels(&candidates);
         assert!(lbls.contains(&"A"));
@@ -1117,10 +1117,11 @@ fn caller(value: .) -> . { first(value) }\n";
 
     #[test]
     fn type_candidates_follow_source_order_outside_recursive_scopes() {
-        let src = "module pkg/main;\n\
-type Earlier = .;\n\
-type { Current: Later { mk; get; }; };\n\
-type Later = .;\n";
+        let src = "mod pkg/main;
+type Earlier = .;
+type { Current: Later { mk; get; }; };
+type Later = .;
+";
         let candidates = type_candidates(&parse(src), offset_after(src, "Current: "));
         let names = labels(&candidates);
         assert!(names.contains(&"Earlier"), "got: {names:?}");
@@ -1130,8 +1131,9 @@ type Later = .;\n";
 
     #[test]
     fn type_candidates_include_only_explicit_recursive_singleton_scope() {
-        let src = "module pkg/main;\n\
-rec type { Tree[A]: A & Tree[A] { mk; get; }; };\n";
+        let src = "mod pkg/main;
+rec type { Tree[A]: A & Tree[A] { mk; get; }; };
+";
         let candidates = type_candidates(&parse(src), offset_after(src, "Tree[A]: "));
         let names = labels(&candidates);
         assert!(names.contains(&"Tree"), "got: {names:?}");
@@ -1140,11 +1142,12 @@ rec type { Tree[A]: A & Tree[A] { mk; get; }; };\n";
 
     #[test]
     fn type_candidates_include_every_mutual_group_head_and_respect_binder_shadowing() {
-        let src = "module pkg/main;\n\
-rec {\n\
-  type A = B;\n\
-  type { B[A]: A & A { mk; get; }; };\n\
-}\n";
+        let src = "mod pkg/main;
+rec {
+type A = B;
+type { B[A]: A & A { mk; get; }; };
+}
+";
         let candidates = type_candidates(&parse(src), offset_after(src, "B[A]: "));
         let names = labels(&candidates);
         assert!(names.contains(&"A"), "got: {names:?}");
@@ -1158,8 +1161,9 @@ rec {\n\
 
     #[test]
     fn type_candidates_include_recursive_label_alias_and_generated_heads() {
-        let src = "module pkg/main;\n\
-rec type Tree[A] = { Leaf[A]: A; } | { Branch[A]: Tree[A] & Tree[A]; };\n";
+        let src = "mod pkg/main;
+rec type Tree[A] = { Leaf[A]: A; } | { Branch[A]: Tree[A] & Tree[A]; };
+";
         let candidates = type_candidates(&parse(src), offset_after(src, "Branch[A]: "));
         let names = labels(&candidates);
         for expected in ["A", "Tree", "Leaf", "Branch"] {
@@ -1172,7 +1176,7 @@ rec type Tree[A] = { Leaf[A]: A; } | { Branch[A]: Tree[A] & Tree[A]; };\n";
 
     #[test]
     fn compact_entry_scope_keeps_owner_binders_in_ordinary_rhs_leaves() {
-        let src = "module pkg/main; type Pair[Owner] = ([Leaf] Leaf -> Leaf) & { Entry[Own]<Hidden>: Own & Hidden; };";
+        let src = "mod pkg/main; type Pair[Owner] = ([Leaf] Leaf -> Leaf) & { Entry[Own]<Hidden>: Own & Hidden; };";
         let module = parse(src);
         let leaf = type_candidates(&module, offset_after(src, "Leaf -> "));
         let leaf_names = labels(&leaf);
@@ -1189,9 +1193,10 @@ rec type Tree[A] = { Leaf[A]: A; } | { Branch[A]: Tree[A] & Tree[A]; };\n";
 
     #[test]
     fn type_candidates_include_only_earlier_unmarked_nominal_heads_inside_the_declaration() {
-        let src = "module pkg/main;\n\
-type Tree = { Leaf: .; } | { Branch: Leaf & Tree; };\n\
-type After = Leaf;\n";
+        let src = "mod pkg/main;
+type Tree = { Leaf: .; } | { Branch: Leaf & Tree; };
+type After = Leaf;
+";
         let inside = type_candidates(&parse(src), offset_after(src, "Branch: "));
         let inside_names = labels(&inside);
         assert!(
@@ -1216,14 +1221,14 @@ type After = Leaf;\n";
 
     #[test]
     fn lexical_type_candidates_use_declarations_not_arbitrary_capitalized_words() {
-        let source = "module pkg/main; type Earlier = .; fn f(x: Pair) -> Box { \"StringLeak\" } // CommentLeak\n";
+        let source = "mod pkg/main; type Earlier = .; fn f(x: Pair) -> Box { \"StringLeak\" } // CommentLeak\n";
         let candidates = lexical_type_candidates(source, source.len() as u32);
         assert_eq!(labels(&candidates), vec!["Earlier"]);
     }
 
     #[test]
     fn lexical_type_candidates_recover_explicit_recursive_scope() {
-        let source = "module pkg/main; rec { type A = B; type { B: A { mk; get; }; };";
+        let source = "mod pkg/main; rec { type A = B; type { B: A { mk; get; }; };";
         let cursor = source.find("A = ").unwrap() as u32 + 4;
         let candidates = lexical_type_candidates(source, cursor);
         assert_eq!(labels(&candidates), vec!["A", "B"]);
@@ -1233,22 +1238,22 @@ type After = Leaf;\n";
     fn lexical_type_candidates_recover_recursive_nominal_scope_without_payload_leaks() {
         for (source, expected, excluded) in [
             (
-                "module pkg/main; import pkg/dep(Imported); rec type { List[A] <U> : Pair[A][bogus[B]: ",
+                "mod pkg/main; import pkg/dep {type Imported} rec type { List[A] <U> : Pair[A][bogus[B]: ",
                 vec!["A", "U", "List", "Imported"],
                 vec!["B", "Bogus"],
             ),
             (
-                "module pkg/main; import pkg/dep(Imported); import pkg/other as other; rec type Tree[A] = { List[B] <U> : Pair[B][bogus[C]: ",
+                "mod pkg/main; import pkg/dep {type Imported} import pkg/other as other; rec type Tree[A] = { List[B] <U> : Pair[B][bogus[C]: ",
                 vec!["B", "U", "Tree", "List", "Imported"],
                 vec!["A", "C", "Bogus", "other"],
             ),
             (
-                "module pkg/main; rec type { List[*F][A][B]: ",
+                "mod pkg/main; rec type { List[*F][A][B]: ",
                 vec!["F", "A", "B", "List"],
                 vec![],
             ),
             (
-                "module pkg/main; rec type { First[A]: [X, bogus[B]: ",
+                "mod pkg/main; rec type { First[A]: [X, bogus[B]: ",
                 vec!["A", "First"],
                 vec!["X", "B", "Bogus"],
             ),
@@ -1269,7 +1274,7 @@ type After = Leaf;\n";
             }
         }
 
-        let malformed = "module pkg/main; rec type { Malformed[A B]: ";
+        let malformed = "mod pkg/main; rec type { Malformed[A B]: ";
         assert!(lexical_type_candidates(malformed, malformed.len() as u32).is_empty());
     }
 
@@ -1277,19 +1282,19 @@ type After = Leaf;\n";
     fn lexical_type_candidates_partition_nominal_entries_across_broken_payloads() {
         for (source, marker, expected, excluded) in [
             (
-                "module pkg/main; rec type { First[A]: 123; Second[B]: .; };",
+                "mod pkg/main; rec type { First[A]: 123; Second[B]: .; };",
                 "First[A]: ",
                 vec!["A", "First", "Second"],
                 vec!["B"],
             ),
             (
-                "module pkg/main; rec type { First[A]: .; Second[B]: 123; };",
+                "mod pkg/main; rec type { First[A]: .; Second[B]: 123; };",
                 "Second[B]: ",
                 vec!["B", "First", "Second"],
                 vec!["A"],
             ),
             (
-                "module pkg/main; type { First[A]: .; Second[B]: 123; };",
+                "mod pkg/main; type { First[A]: .; Second[B]: 123; };",
                 "Second[B]: ",
                 vec!["B", "First"],
                 vec!["A", "Second"],
@@ -1317,12 +1322,12 @@ type After = Leaf;\n";
     fn lexical_type_candidates_do_not_invent_rhs_reference_declarations() {
         for (source, expected, excluded) in [
             (
-                "module pkg/main; type Row = First & { Second[A]: ",
+                "mod pkg/main; type Row = First & { Second[A]: ",
                 vec!["A"],
                 vec!["First", "Second", "Row"],
             ),
             (
-                "module pkg/main; rec type Row = First & { Second[A]: ",
+                "mod pkg/main; rec type Row = First & { Second[A]: ",
                 vec!["A", "Second", "Row"],
                 vec!["First"],
             ),
@@ -1337,7 +1342,7 @@ type After = Leaf;\n";
             }
         }
 
-        let shadowed = "module pkg/main; rec type Tree[A] = { List[A]: ";
+        let shadowed = "mod pkg/main; rec type Tree[A] = { List[A]: ";
         let candidates = lexical_type_candidates(shadowed, shadowed.len() as u32);
         assert_eq!(
             candidates
@@ -1348,7 +1353,7 @@ type After = Leaf;\n";
             "only the independently bound entry parameter is active"
         );
 
-        let active_reference = "module pkg/main; rec type Row = First";
+        let active_reference = "mod pkg/main; rec type Row = First";
         let candidates = lexical_type_candidates(active_reference, active_reference.len() as u32);
         let names = labels(&candidates);
         assert!(
@@ -1362,7 +1367,7 @@ type After = Leaf;\n";
         for (source, marker, expected) in [
             (
                 concat!(
-                    "module pkg/main; type Earlier = .; ",
+                    "mod pkg/main; type Earlier = .; ",
                     "rec type { Box[A]: 123 { mk; get; }; }; ",
                     "type Broken = 123;",
                 ),
@@ -1371,7 +1376,7 @@ type After = Leaf;\n";
             ),
             (
                 concat!(
-                    "module pkg/main; type Earlier = .; rec { ",
+                    "mod pkg/main; type Earlier = .; rec { ",
                     "type A[X] = 123; ",
                     "type { B: A(.) { mk; get; }; }; ",
                     "} type Broken = 123;",
@@ -1396,7 +1401,7 @@ type After = Leaf;\n";
     #[test]
     fn lexical_type_candidates_remove_item_shaped_broken_group_payload_text() {
         let source = concat!(
-            "module pkg/main; rec { ",
+            "mod pkg/main; rec { ",
             "type { A[X]: type Fake = .; }; ",
             "type { B: . { mk; get; }; }; ",
             "}",
@@ -1417,32 +1422,32 @@ type After = Leaf;\n";
     fn lexical_type_candidates_preserve_unmarked_source_order_and_active_binders() {
         for (source, expected, excluded) in [
             (
-                "module pkg/main; import pkg/dep(Imported); type Earlier = .; type { Box[A] <E> : ",
+                "mod pkg/main; import pkg/dep {type Imported} type Earlier = .; type { Box[A] <E> : ",
                 vec!["A", "E", "Earlier", "Imported"],
                 vec!["Box"],
             ),
             (
-                "module pkg/main; import pkg/dep(Imported); type Tree[A] = { First[X]: .; List[B] <E> : ",
+                "mod pkg/main; import pkg/dep {type Imported} type Tree[A] = { First[X]: .; List[B] <E> : ",
                 vec!["B", "E", "First", "Imported"],
                 vec!["A", "Tree", "List", "X"],
             ),
             (
-                "module pkg/main; type Earlier = .; type { Box[A]<E>:",
+                "mod pkg/main; type Earlier = .; type { Box[A]<E>:",
                 vec!["A", "E", "Earlier"],
                 vec!["Box"],
             ),
             (
-                "module pkg/main; type Earlier = .; type Box[A]=",
+                "mod pkg/main; type Earlier = .; type Box[A]=",
                 vec!["A", "Earlier"],
                 vec!["Box"],
             ),
             (
-                "module pkg/main; type Earlier = .; rec type { Box[A]<E>:",
+                "mod pkg/main; type Earlier = .; rec type { Box[A]<E>:",
                 vec!["A", "E", "Box", "Earlier"],
                 vec![],
             ),
             (
-                "module pkg/main; type Earlier = .; type Tree[A]={First[X]: .;List[B]<E>:",
+                "mod pkg/main; type Earlier = .; type Tree[A]={First[X]: .;List[B]<E>:",
                 vec!["B", "E", "First", "Earlier"],
                 vec!["A", "Tree", "List", "X"],
             ),
@@ -1467,7 +1472,7 @@ type After = Leaf;\n";
     #[test]
     fn lexical_type_candidates_repair_payload_before_an_unclosed_newtype_body() {
         let source = concat!(
-            "module pkg/main; type Earlier = .; ",
+            "mod pkg/main; type Earlier = .; ",
             "type { Box[A]: Pair { mk; get",
         );
         let cursor = offset_after(source, "Box[A]: ");
@@ -1481,7 +1486,7 @@ type After = Leaf;\n";
 
     #[test]
     fn lexical_type_candidates_recover_comptime_imports_and_group_member_binders() {
-        let source = "module pkg/main; import __comptime__; type Earlier = .; rec { type A = B; type { B[X] <E> : ";
+        let source = "mod pkg/main; import __comptime__; type Earlier = .; rec { type A = B; type { B[X] <E> : ";
         let candidates = lexical_type_candidates(source, source.len() as u32);
         let names = labels(&candidates);
         for expected in ["X", "E", "A", "B", "Earlier", "Comptime_bool"] {

@@ -1,4 +1,4 @@
-dependency library;
+dep library;
 
 source {
   path "../macros.pkg.kio"

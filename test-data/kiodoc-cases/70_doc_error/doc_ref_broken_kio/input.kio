@@ -1,4 +1,4 @@
 /// References [`nonexistent`] which is not declared in this module.
-module docref/broken;
+mod docref/broken;
 
 pub fn identity(x: .) { x }

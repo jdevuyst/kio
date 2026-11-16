@@ -1,4 +1,4 @@
-package do_receiver_wrong_shape;
+pkg do_receiver_wrong_shape;
 
 build {
   cache "out/.kio-cache/";

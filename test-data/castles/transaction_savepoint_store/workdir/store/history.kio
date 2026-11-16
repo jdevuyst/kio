@@ -1,14 +1,14 @@
-module store/history;
+mod store/history;
 
 import list/core as cells;
 import list/list as lists;
-import macros/control(macro if);
-import macros/match(macro match);
-import macros/row_macros(macro select);
-import macros/spine_macros(macro widen_sum);
-import testapi(Bool, I32, String);
+import macros/control { macro if }
+import macros/match { macro match }
+import macros/row_macros { macro select }
+import macros/spine_macros { macro widen_sum }
+import testapi { type Bool; type I32; type String }
 import testapi/fmt as fmt;
-import testapi/iter(loop);
+import testapi/iter { fn loop }
 import testapi/text as text;
 
 pub type Entry = { Key: String; Value: I32 | .; Revision: I32 };

@@ -1,4 +1,4 @@
-package exec_host_io;
+pkg exec_host_io;
 
 build {
   cache "out/.kio-cache/";

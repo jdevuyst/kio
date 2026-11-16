@@ -1,4 +1,4 @@
-package unit_fn_value_reclose;
+pkg unit_fn_value_reclose;
 
 build {
   cache "out/.kio-cache/";

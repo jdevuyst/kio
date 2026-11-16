@@ -1,23 +1,23 @@
 /// This case's loading host: read the freshly-emitted guest image from stdin, load it, and call its exports.
-module testapi/main;
+mod testapi/main;
 
-import defaults(apply_default, eval_default);
-import imageio(read_image_stdin);
-import loader(Image, Lr_diag, Lr_image);
-import loader(diag_message, export_term, un_load_outcome);
-import loader/scan(load_package);
-import macros/match(macro match);
-import macros/spine_macros(macro widen_sum);
-import prime(Term);
-import result(Ev_done, Ev_stuck);
-import testapi(I32, Scalar, String);
-import testapi/fmt(int_to_string);
-import testapi/io(print);
-import testapi/iter(loop);
-import testapi/scalar(scalar_as_i32, scalar_of_i32);
-import testapi/text(string_concat);
-import value(Value);
-import value(value_to_scalar, vhost);
+import defaults { fn apply_default; fn eval_default }
+import imageio { fn read_image_stdin }
+import loader { fn diag_message; fn export_term; fn un_load_outcome }
+import loader { type Image; type Lr_diag; type Lr_image }
+import loader/scan { fn load_package }
+import macros/match { macro match }
+import macros/spine_macros { macro widen_sum }
+import prime { type Term }
+import result { type Ev_done; type Ev_stuck }
+import testapi { type I32; type Scalar; type String }
+import testapi/fmt { fn int_to_string }
+import testapi/io { fn print }
+import testapi/iter { fn loop }
+import testapi/scalar { fn scalar_as_i32; fn scalar_of_i32 }
+import testapi/text { fn string_concat }
+import value { fn value_to_scalar; fn vhost }
+import value { type Value }
 
 /// The argument list one call applies, in order.
 rec type { Vargs: . | (Value & Vargs) { mk; get } }

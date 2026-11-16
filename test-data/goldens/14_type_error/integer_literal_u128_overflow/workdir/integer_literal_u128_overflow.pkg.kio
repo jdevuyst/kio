@@ -1,4 +1,4 @@
-package integer_literal_u128_overflow;
+pkg integer_literal_u128_overflow;
 
 build {
   target js {

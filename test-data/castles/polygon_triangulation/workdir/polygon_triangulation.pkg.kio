@@ -1,4 +1,4 @@
-package polygon_triangulation;
+pkg polygon_triangulation;
 
 build {
   cache "out/.kio-cache/";

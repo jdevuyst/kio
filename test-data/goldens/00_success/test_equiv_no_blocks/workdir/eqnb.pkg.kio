@@ -1,4 +1,4 @@
-package eqnb;
+pkg eqnb;
 
 build {
   cache "out/.kio-cache/";

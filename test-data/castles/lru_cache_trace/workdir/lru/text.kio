@@ -1,8 +1,8 @@
-module lru/text;
+mod lru/text;
 
-import testapi(Bool, I32, String);
-import testapi/fmt(bool_to_string, int_to_string);
-import testapi/text(string_concat);
+import testapi { type Bool; type I32; type String }
+import testapi/fmt { fn bool_to_string; fn int_to_string }
+import testapi/text { fn string_concat }
 
 pub fn int_text(n: I32) -> String { int_to_string(n) }
 

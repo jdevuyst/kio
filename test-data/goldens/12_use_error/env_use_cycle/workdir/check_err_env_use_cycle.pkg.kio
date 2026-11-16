@@ -1,4 +1,4 @@
-package check_err_env_use_cycle;
+pkg check_err_env_use_cycle;
 
 build {
   cache "out/.kio-cache/";

@@ -1,4 +1,4 @@
-package exec_do_block_basic;
+pkg exec_do_block_basic;
 
 build {
   cache "out/.kio-cache/";

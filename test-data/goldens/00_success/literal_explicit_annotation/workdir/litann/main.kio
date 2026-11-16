@@ -1,6 +1,6 @@
-module litann/main;
+mod litann/main;
 
-import litann(Bool, F64, I32, Str);
+import litann { type Bool; type F64; type I32; type Str }
 
 fn s() -> Str { "hi"[Str] }
 

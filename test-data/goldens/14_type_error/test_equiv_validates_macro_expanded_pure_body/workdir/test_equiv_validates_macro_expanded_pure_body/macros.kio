@@ -1,7 +1,7 @@
-module test_equiv_validates_macro_expanded_pure_body/macros;
+mod test_equiv_validates_macro_expanded_pure_body/macros;
 
 import __comptime__;
-import test_equiv_validates_macro_expanded_pure_body(effect);
+import test_equiv_validates_macro_expanded_pure_body { fn effect }
 
 pure fn effect_call_impl(ct: __Comptime__, effect_term: __Checked_term__, _unit: __Checked_term__) -> __Checked_term__ {
   let unit = __type_unit__(ct);

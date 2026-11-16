@@ -22,7 +22,7 @@ GIT_AUTHOR_DATE='2020-01-01T00:00:00 +0000' \
 GIT_COMMITTER_DATE='2020-01-01T00:00:00 +0000' \
   git -C "$repository" commit --quiet -m fixture || fail "commit fixture"
 {
-  printf 'dependency lib;\n\nsource {\n'
+  printf 'dep lib;\n\nsource {\n'
   printf '  git "%s";\n  ref "main";\n' "$repository"
   printf '  path "packages/deep/lib"\n}\n'
 } > "$scratch/consumer/lib.dep.kio"

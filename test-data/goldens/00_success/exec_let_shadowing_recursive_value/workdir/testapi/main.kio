@@ -1,10 +1,10 @@
-module testapi/main;
+mod testapi/main;
 
-import macros/match(macro match);
-import macros/spine_macros(macro widen_sum);
-import testapi(Bool, Int, String);
-import testapi/fmt(int_to_string);
-import testapi/io(print);
+import macros/match { macro match }
+import macros/spine_macros { macro widen_sum }
+import testapi { type Bool; type Int; type String }
+import testapi/fmt { fn int_to_string }
+import testapi/io { fn print }
 
 rec type { List[A]: . | (A & List[A]) { mk; pub get } }
 

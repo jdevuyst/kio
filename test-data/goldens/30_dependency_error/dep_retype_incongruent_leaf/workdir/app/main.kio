@@ -1,5 +1,5 @@
-module app/main;
+mod app/main;
 
-import widget/store(wrap);
+import widget/store { fn wrap }
 
 pub fn go() { () }

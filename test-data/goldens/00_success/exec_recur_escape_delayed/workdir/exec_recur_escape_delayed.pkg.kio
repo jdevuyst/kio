@@ -1,4 +1,4 @@
-package exec_recur_escape_delayed;
+pkg exec_recur_escape_delayed;
 
 build {
   cache "out/.kio-cache/";

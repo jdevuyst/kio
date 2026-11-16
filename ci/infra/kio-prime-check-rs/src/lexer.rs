@@ -1,8 +1,8 @@
 //! Lexer for the Kio' regular-module grammar.
 //!
 //! Whitespace and `// …` line comments are trivia and dropped during
-//! lexing. Every keyword-shaped word — `module`, `import`, `as`,
-//! `pub`, `pure`, `type`, `host`, `bridge`, `package`, `fn`, `let`,
+//! lexing. Every keyword-shaped word — `mod`, `import`, `as`,
+//! `pub`, `pure`, `type`, `host`, `bridge`, `pkg`, `fn`, `let`,
 //! `mk`, `get`, and the magic `__...__` import targets —
 //! is emitted as `Ident(text)` and disambiguated by the parser based on
 //! grammatical position.
@@ -702,8 +702,8 @@ mod tests {
 
     #[test]
     fn lex_idents() {
-        let ks = kinds("module foo bar_baz");
-        assert!(matches!(ks[0], TokenKind::Ident(ref s) if s == "module"));
+        let ks = kinds("mod foo bar_baz");
+        assert!(matches!(ks[0], TokenKind::Ident(ref s) if s == "mod"));
         assert!(matches!(ks[1], TokenKind::Ident(ref s) if s == "foo"));
         assert!(matches!(ks[2], TokenKind::Ident(ref s) if s == "bar_baz"));
     }

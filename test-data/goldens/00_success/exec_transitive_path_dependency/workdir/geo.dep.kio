@@ -1,4 +1,4 @@
-dependency geo;
+dep geo;
 
 source {
   path "../library/geo/geo.pkg.kio"

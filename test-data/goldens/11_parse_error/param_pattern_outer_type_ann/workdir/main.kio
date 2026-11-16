@@ -1,4 +1,4 @@
-module main;
+mod main;
 
 // The banned form: outer type annotation on a destructuring
 // pattern. The pattern's slot types already constitute the

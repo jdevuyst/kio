@@ -1,17 +1,17 @@
-module index/report;
+mod index/report;
 
 import index/analysis as analysis;
 import index/automaton as sam;
 import index/numbers as num;
 import index/scan as scan;
-import macros/control(macro if);
-import macros/row_macros(macro select);
-import testapi(Array, Bool, I32, String);
+import macros/control { macro if }
+import macros/row_macros { macro select }
+import testapi { type Array; type Bool; type I32; type String }
 import testapi/arith as n;
 import testapi/array as a;
 import testapi/fmt as fmt;
 import testapi/io as io;
-import testapi/iter(loop);
+import testapi/iter { fn loop }
 
 fn integer(value: I32) { io.print(fmt.int_to_string(value)) }
 

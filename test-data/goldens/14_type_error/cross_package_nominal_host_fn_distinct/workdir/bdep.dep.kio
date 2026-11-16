@@ -1,4 +1,4 @@
-dependency bdep;
+dep bdep;
 
 source {
   path "../depsrc/workdir/bdep.pkg.kio"

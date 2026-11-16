@@ -1,6 +1,6 @@
-module testapi/ledger;
+mod testapi/ledger;
 
-import testapi(I128, I64, U64);
+import testapi { type I128; type I64; type U64 }
 import testapi/arith as arith;
 
 fn north_margin() -> I64 { arith.add_i64(arith.add_i64(3520, -418), 921) }

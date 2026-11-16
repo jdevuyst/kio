@@ -1,8 +1,8 @@
-signature app v(1);
+sig app v(1);
 
 v(1) {
   with {
-    module api {
+    mod api {
       rec {
         pub type A = B;
         pub type { B: A { pub mk; pub get; }; };
@@ -13,14 +13,14 @@ v(1) {
     add {
       api.A;
       api.B;
-      module api {
+      mod api {
         pub fn run() -> .;
       }
     }
   }
 }
 
-dependency lib;
+dep lib;
 
 source {
   path "../lib/lib.pkg.kio";

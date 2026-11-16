@@ -4,13 +4,13 @@
 ///
 /// The expression constructors are imported bare: here they are the vocabulary,
 /// and each exercise should read as the arithmetic it encodes.
-module rational/fixture;
+mod rational/fixture;
 
-import rational/core(fraction);
-import rational/expr(add, div, lit, mul, sub);
+import rational/core { fn fraction }
+import rational/expr { fn add; fn div; fn lit; fn mul; fn sub }
 import rational/grader as grader;
-import rational/grader(Exercise, Roster, exercise);
-import testapi(I32);
+import rational/grader { type Exercise; type Roster; fn exercise }
+import testapi { type I32 }
 
 /// Already reduced.
 fn common_denominator() -> Exercise { exercise(add(lit(1, 2), lit(1, 3)), fraction(5, 6)) }

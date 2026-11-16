@@ -32,7 +32,7 @@ mkdir -p "$castle/workdir/library"
 : >"$castle/expected.stdout"
 : >"$castle/expected.stderr"
 printf '0\n' >"$castle/expected.exit"
-printf 'module main;\n' >"$castle/workdir/main.kio"
+printf 'mod main;\n' >"$castle/workdir/main.kio"
 : >"$castle/workdir/library.dep.kio"
 printf 'host fn read_ascii_line() -> ();\n' >"$castle/workdir/library/main.kio"
 

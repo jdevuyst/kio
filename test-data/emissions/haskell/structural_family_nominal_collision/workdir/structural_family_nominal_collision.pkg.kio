@@ -1,4 +1,4 @@
-package structural_family_nominal_collision;
+pkg structural_family_nominal_collision;
 
 build {
   cache "out/.kio-cache/";

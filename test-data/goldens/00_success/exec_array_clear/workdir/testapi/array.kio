@@ -1,6 +1,6 @@
-module testapi/array;
+mod testapi/array;
 
-import testapi(Array, I32);
+import testapi { type Array; type I32 }
 
 host fn array_clear[T](items: Array[T]);
 

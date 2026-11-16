@@ -1,7 +1,7 @@
-module testapi/main;
+mod testapi/main;
 
-import macros(macro infer, macro marked, macro retain);
-import testapi(String);
+import macros { macro infer; macro marked; macro retain }
+import testapi { type String }
 import testapi/io as io;
 
 fn emit(label: String) -> String { io.print(label); "value\n" }

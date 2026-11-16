@@ -1,4 +1,4 @@
-module testapi/recursive;
+mod testapi/recursive;
 
 pub type { Hidden[A]: . { mk; get } }
 

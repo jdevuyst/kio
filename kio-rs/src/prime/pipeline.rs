@@ -266,7 +266,7 @@ mod tests {
     fn prime_pipeline_lowers_a_kio_prime_module() {
         // Per `specs/package.md` § Module-name rules, the declared
         // segments equal the file's path relative to the package root.
-        let source = r#"module x/main;
+        let source = r#"mod x/main;
 
 fn id[A](x: A) -> A { x }
 "#;
@@ -286,7 +286,7 @@ fn id[A](x: A) -> A { x }
     /// `prime::lower` rejection.
     #[test]
     fn prime_pipeline_rejects_surface_only_form() {
-        let source = r#"module x/main;
+        let source = r#"mod x/main;
 
 fn f() -> . { (.t, .f) }
 "#;
@@ -307,7 +307,7 @@ fn f() -> . { (.t, .f) }
     /// the full kio-prime front-end through the trait.
     #[test]
     fn prime_pipeline_typecheck_succeeds_for_kio_prime() {
-        let source = r#"module x/main;
+        let source = r#"mod x/main;
 
 fn id[A](x: A) -> A { x }
 "#;
@@ -331,7 +331,7 @@ fn id[A](x: A) -> A { x }
     #[test]
     #[should_panic(expected = "must not be part of the package module set")]
     fn prime_auxiliary_module_rejects_a_package_path_collision() {
-        let source = "module collision; fn id[A](value: A) -> A { value }";
+        let source = "mod collision; fn id[A](value: A) -> A { value }";
         let module = parse(source).expect("parse");
         let (lowered_modules, _) =
             PrimePipeline::lower_package(vec![(PathBuf::from("collision.kio"), module)], None)

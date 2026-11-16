@@ -48,7 +48,7 @@ PKG_SRC="$REPO_ROOT/test-data/poc/dyn_load_prime/workdir"
   --protocol testapi-dyn-load out
 EOF
 cat >"$selected/workdir/selected.pkg.kio" <<'EOF'
-package selected;
+pkg selected;
 bridge {
   testapi;
   testapi/arith;
@@ -76,7 +76,7 @@ cat >"$unrelated/run.sh" <<'EOF'
 "$KIO_RUNNER" --protocol testapi-print
 EOF
 cat >"$unrelated/workdir/unrelated.pkg.kio" <<'EOF'
-package unrelated;
+pkg unrelated;
 bridge {
   testapi;
   loader;

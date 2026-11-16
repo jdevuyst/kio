@@ -1,4 +1,4 @@
-package fmt_chain_wide_break;
+pkg fmt_chain_wide_break;
 
 build {
   cache "out/.kio-cache/";

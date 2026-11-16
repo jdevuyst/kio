@@ -1,4 +1,4 @@
-package teae;
+pkg teae;
 
 build {
   cache "out/.kio-cache/";

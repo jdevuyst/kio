@@ -1,5 +1,5 @@
-module testapi/arith;
+mod testapi/arith;
 
-import testapi(Count);
+import testapi { type Count }
 
 host fn add_count(left: Count, right: Count) -> Count;

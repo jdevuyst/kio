@@ -1,4 +1,4 @@
-package ppf;
+pkg ppf;
 
 build {
   cache "out/.kio-cache/";

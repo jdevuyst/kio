@@ -1,4 +1,4 @@
-module left;
+mod left;
 
 pub type { Token: . { pub mk; pub get } }
 

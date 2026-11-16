@@ -1,4 +1,4 @@
-module evalreg/m;
+mod evalreg/m;
 
 host type T;
 

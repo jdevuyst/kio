@@ -1,5 +1,5 @@
 /// A `Box` newtype the dependency owns, over its own `String`.
-module bdep/boxed;
+mod bdep/boxed;
 
 host type String role(str);
 

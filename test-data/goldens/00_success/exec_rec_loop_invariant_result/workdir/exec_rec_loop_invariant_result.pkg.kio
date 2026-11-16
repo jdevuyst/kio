@@ -1,4 +1,4 @@
-package exec_rec_loop_invariant_result;
+pkg exec_rec_loop_invariant_result;
 
 build {
   cache "out/.kio-cache/";

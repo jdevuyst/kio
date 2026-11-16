@@ -1,4 +1,4 @@
-package typecheck_rec_deferred_substitution_refresh;
+pkg typecheck_rec_deferred_substitution_refresh;
 
 build {
   cache "out/.kio-cache/";

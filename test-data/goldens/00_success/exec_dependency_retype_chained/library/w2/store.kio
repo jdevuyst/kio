@@ -1,4 +1,4 @@
-module store;
+mod store;
 
 host type I32 role(i32);
 

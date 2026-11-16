@@ -1,8 +1,8 @@
 /// Root module optics library defining lenses, prisms, isomorphisms, and their composition helpers.
 /// A ready-to-use library module for your own Kio package.
-module library/optics;
+mod library/optics;
 
-import library/macros/match(macro match);
+import library/macros/match { macro match }
 // optics — a ready-to-use lens / prism / iso library.
 //
 // Drop this root module file into your own Kio package and the optic API
@@ -31,13 +31,13 @@ import library/macros/match(macro match);
 // own — injecting a whole nested sum into the outer-left arm of a
 // left-nested sum — is built the adopter-natural way, through a
 // prism's own polymorphic `review`; see `demo/testapi/main`'s deep-prism tour.
-import library/macros/spine_macros(
-, macro flatten_sum
-, macro narrow_sum
-, macro one_prod
-, macro one_sum
-, macro widen_sum
-);
+import library/macros/spine_macros {
+  macro flatten_sum;
+  macro narrow_sum;
+  macro one_prod;
+  macro one_sum;
+  macro widen_sum
+}
 
 // =====================================================================
 // Lens — a getter paired with a setter

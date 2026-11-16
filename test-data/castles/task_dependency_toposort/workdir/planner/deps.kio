@@ -1,19 +1,19 @@
-module planner/deps;
+mod planner/deps;
 
-import macros/control(macro if);
-import planner/bool(both, invert);
-import planner/state(Plan_state, is_done);
-import planner/tasks(
-, compile_core
-, emit_js
-, emit_rust
-, fetch_sources
-, inspect_schema
-, package_bundle
-, release_notes
-);
-import testapi(Bool, I32);
-import testapi/arith(eq_i32);
+import macros/control { macro if }
+import planner/bool { fn both; fn invert }
+import planner/state { type Plan_state; fn is_done }
+import planner/tasks {
+  fn compile_core;
+  fn emit_js;
+  fn emit_rust;
+  fn fetch_sources;
+  fn inspect_schema;
+  fn package_bundle;
+  fn release_notes
+}
+import testapi { type Bool; type I32 }
+import testapi/arith { fn eq_i32 }
 
 fn unfinished(plan: Plan_state, task: I32) -> Bool { invert(is_done(plan, task)) }
 

@@ -1,4 +1,4 @@
-package build_export_returns_closure;
+pkg build_export_returns_closure;
 
 build {
   cache "out/.kio-cache/";

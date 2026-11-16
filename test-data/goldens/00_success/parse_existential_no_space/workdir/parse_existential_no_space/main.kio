@@ -1,6 +1,6 @@
-module parse_existential_no_space/main;
+mod parse_existential_no_space/main;
 
-import parse_existential_no_space(A);
+import parse_existential_no_space {type A}
 
 // Single existential binder followed flush against `:` — the
 // fused `>:` SymbolRun has its leading `>` peeled by

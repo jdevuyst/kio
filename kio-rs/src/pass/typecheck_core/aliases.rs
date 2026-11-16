@@ -88,7 +88,7 @@ impl<T: AliasBinderLookup + ?Sized> crate::pass::resolve::ContractBinderLookup f
 /// Bundle the alias-lookup maps and intern pool the structural
 /// type-equality helpers need: intra-module aliases declared in the
 /// module being checked, plus cross-module type aliases brought in via
-/// `import m(Foo);` where `Foo` is a `pub type`.
+/// `import m { type Foo }` where `Foo` is a `pub type`.
 ///
 /// Both `typecheck_full` and the standalone Kio'-only walker in
 /// [`crate::prime::typer`] build their own per-module env with these
@@ -3234,7 +3234,7 @@ where
 
 /// If `ty` is a `Type::Path` resolving to a type alias — either an
 /// intra-module one (declared in this module) or a cross-module one
-/// (imported via `import m(Foo);`) — substitute the alias's
+/// (imported via `import m { type Foo }`) — substitute the alias's
 /// body with type-args bound. Repeats until a non-alias head is
 /// reached. Returns the (possibly-unfolded) type.
 ///
@@ -5252,9 +5252,9 @@ mod tests {
 
     #[test]
     fn source_transport_switches_to_the_exact_provider_file_and_grafts_to_the_caller() {
-        let provider = parse_module("module provider; pub type Wrap[T] = [B] T -> B;");
-        let caller = parse_module("module caller; import provider(Wrap);");
-        let decoy = parse_module("module decoy; pub type Wrap[T] = T;");
+        let provider = parse_module("mod provider; pub type Wrap[T] = [B] T -> B;");
+        let caller = parse_module("mod caller; import provider {type Wrap}");
+        let decoy = parse_module("mod decoy; pub type Wrap[T] = T;");
         let provider_scope = crate::pass::resolve::TopLevelScope::build(&provider)
             .expect("provider declaration scope");
         let caller_scope =
@@ -6529,7 +6529,7 @@ mod tests {
 
     #[test]
     fn canonical_non_alias_composite_skips_the_materializer_arena() {
-        let module = parse_module("module owner; pub host type Leaf;");
+        let module = parse_module("mod owner; pub host type Leaf;");
         let scope =
             crate::pass::resolve::TopLevelScope::build(&module).expect("declaration-only scope");
         let package = crate::pass::resolve::Package::from_parts(
@@ -6570,7 +6570,7 @@ mod tests {
 
     #[test]
     fn nominal_free_structural_equivalence_does_not_capture_a_nominal_provider() {
-        let module = parse_module("module owner; pub host type Leaf; pub host type A;");
+        let module = parse_module("mod owner; pub host type Leaf; pub host type A;");
         let scope =
             crate::pass::resolve::TopLevelScope::build(&module).expect("declaration-only scope");
         let package = crate::pass::resolve::Package::from_parts(
@@ -6640,7 +6640,7 @@ mod tests {
 
     #[test]
     fn canonical_parameterized_nominal_skips_the_materializer_arena() {
-        let module = parse_module("module owner; pub host type Leaf; pub host type Box[A];");
+        let module = parse_module("mod owner; pub host type Leaf; pub host type Box[A];");
         let scope =
             crate::pass::resolve::TopLevelScope::build(&module).expect("declaration-only scope");
         let package = crate::pass::resolve::Package::from_parts(
@@ -6681,7 +6681,7 @@ mod tests {
     #[test]
     fn canonical_nominal_leaf_skips_the_source_alias_index() {
         const ALIASES: usize = 128;
-        let mut source = String::from("module owner; pub host type Leaf;");
+        let mut source = String::from("mod owner; pub host type Leaf;");
         for index in 0..ALIASES {
             source.push_str(&format!(" type A{index} = .;"));
         }
@@ -6726,7 +6726,7 @@ mod tests {
     #[test]
     fn canonical_composite_uses_exact_package_alias_without_source_index() {
         const UNRELATED_ALIASES: usize = 128;
-        let mut source = String::from("module owner; pub host type Leaf; pub type Alias = Leaf;");
+        let mut source = String::from("mod owner; pub host type Leaf; pub type Alias = Leaf;");
         for index in 0..UNRELATED_ALIASES {
             source.push_str(&format!(" type A{index} = .;"));
         }
@@ -6779,7 +6779,7 @@ mod tests {
         const UNRELATED_IMPORTS: usize = 64;
         const OUTPUT_LEAVES: usize = 64;
 
-        let mut source = String::from("module owner;");
+        let mut source = String::from("mod owner;");
         for index in 0..UNRELATED_IMPORTS {
             source.push_str(&format!(" import provider as p{index};"));
         }
@@ -6795,7 +6795,7 @@ mod tests {
         let module = parse_module(&source);
         let scope =
             crate::pass::resolve::TopLevelScope::build(&module).expect("declaration-only scope");
-        let provider = parse_module("module provider; pub host type Token;");
+        let provider = parse_module("mod provider; pub host type Token;");
         let provider_scope = crate::pass::resolve::TopLevelScope::build(&provider)
             .expect("provider declaration-only scope");
         let package = crate::pass::resolve::Package::from_parts(
@@ -6846,7 +6846,7 @@ mod tests {
     fn one_alias_output_reuses_its_exact_owner_entry_handle() {
         const OUTPUT_LEAVES: usize = 64;
 
-        let mut source = String::from("module owner; pub host type Leaf; pub type Expanded = ");
+        let mut source = String::from("mod owner; pub host type Leaf; pub type Expanded = ");
         for _ in 1..OUTPUT_LEAVES {
             source.push_str("Leaf & ");
         }
@@ -6902,7 +6902,7 @@ mod tests {
         const UNRELATED_IMPORTS: usize = 64;
         const OCCURRENCES: usize = 48;
 
-        let mut source = String::from("module owner;");
+        let mut source = String::from("mod owner;");
         for index in 0..UNRELATED_IMPORTS {
             source.push_str(&format!(" import provider as p{index};"));
         }
@@ -6960,7 +6960,7 @@ mod tests {
             .collect::<Vec<_>>();
         let module_path = module_segments.join("/");
         let module = parse_module(&format!(
-            "module {module_path}; pub type Inner = .; pub type Outer = Inner;"
+            "mod {module_path}; pub type Inner = .; pub type Outer = Inner;"
         ));
         let scope =
             crate::pass::resolve::TopLevelScope::build(&module).expect("declaration-only scope");
@@ -7021,8 +7021,8 @@ mod tests {
             .map(|index| format!("provider{index}"))
             .collect::<Vec<_>>();
         let provider_path = provider_segments.join("/");
-        let provider = parse_module(&format!("module {provider_path}; pub type Item = .;"));
-        let consumer = parse_module(&format!("module consumer; import {provider_path} as p;"));
+        let provider = parse_module(&format!("mod {provider_path}; pub type Item = .;"));
+        let consumer = parse_module(&format!("mod consumer; import {provider_path} as p;"));
         let provider_scope =
             crate::pass::resolve::TopLevelScope::build(&provider).expect("provider scope");
         let consumer_scope =
@@ -7093,14 +7093,18 @@ mod tests {
         let names = (0..ALIASES)
             .map(|index| format!("Alias{index}"))
             .collect::<Vec<_>>();
-        let mut provider = format!("module {provider_path};");
+        let mut provider = format!("mod {provider_path};");
         for name in &names {
             provider.push_str(&format!(" pub type {name} = .;"));
         }
         let provider = parse_module(&provider);
         let consumer = parse_module(&format!(
-            "module consumer; import {provider_path}({});",
-            names.join(", ")
+            "mod consumer; import {provider_path} {{ {} }}",
+            names
+                .iter()
+                .map(|name| format!("type {name}"))
+                .collect::<Vec<_>>()
+                .join("; ")
         ));
         let provider_scope =
             crate::pass::resolve::TopLevelScope::build(&provider).expect("provider scope");
@@ -7197,13 +7201,10 @@ mod tests {
     #[test]
     fn alias_declaration_head_resolves_each_scope_and_owner_branch() {
         let source = parse_module(
-            "module source; import provider(Host, Imported, Shared); import provider as dep; \
-             type Host[A] = dep.Host[A]; type Local = .; type Shared = dep.Shared; \
-             host type Terminal;",
+            "mod source; import provider {type Host; type Imported; type Shared} import provider as dep; type Host[A] = dep.Host[A]; type Local = .; type Shared = dep.Shared; host type Terminal;",
         );
         let provider = parse_module(
-            "module provider; pub host type Host[A]; pub type Imported = .; \
-             pub type Qualified = .; pub type Shared = .;",
+            "mod provider; pub host type Host[A]; pub type Imported = .; pub type Qualified = .; pub type Shared = .;",
         );
         let mut modules = std::collections::BTreeMap::new();
         for module in [provider, source] {
@@ -7337,9 +7338,9 @@ mod tests {
 
     #[test]
     fn qualified_alias_does_not_authorize_a_nested_module_tail() {
-        let provider = parse_module("module provider;");
-        let nested = parse_module("module provider/nested; pub type Item = .;");
-        let consumer = parse_module("module consumer; import provider as p;");
+        let provider = parse_module("mod provider;");
+        let nested = parse_module("mod provider/nested; pub type Item = .;");
+        let consumer = parse_module("mod consumer; import provider as p;");
         let provider_scope =
             crate::pass::resolve::TopLevelScope::build(&provider).expect("provider scope");
         let nested_scope =
@@ -7407,7 +7408,7 @@ mod tests {
 
     #[test]
     fn canonical_tree_flag_keeps_a_bare_alias_in_scope_lookup() {
-        let source = parse_module("module source; type Needs[A] = A;");
+        let source = parse_module("mod source; type Needs[A] = A;");
         let env = super::super::ModuleEnv::build(&source, None, None, None)
             .expect("standalone source environment");
         let mut elaborations = crate::pass::typecheck_full::Elaborations::new();
@@ -7435,7 +7436,7 @@ mod tests {
 
     #[test]
     fn canonical_composite_unfolds_exact_source_alias_without_package_entry() {
-        let source = parse_module("module aux; type B = .; type A = B;");
+        let source = parse_module("mod aux; type B = .; type A = B;");
         let alias = owner_alias_def(&source, "A").expect("local alias A");
         let local = HashMap::from([(
             "A",
@@ -7481,8 +7482,8 @@ mod tests {
 
     #[test]
     fn exact_source_non_alias_blocks_same_path_package_alias() {
-        let source = parse_module("module aux; host type A;");
-        let indexed = parse_module("module aux; type A = .;");
+        let source = parse_module("mod aux; host type A;");
+        let indexed = parse_module("mod aux; type A = .;");
         let scope =
             crate::pass::resolve::TopLevelScope::build(&indexed).expect("indexed alias scope");
         let package = crate::pass::resolve::Package::<Lowered>::from_parts(
@@ -7519,9 +7520,9 @@ mod tests {
 
     #[test]
     fn canonical_source_composite_is_terminal_over_same_path_package_import() {
-        let source = parse_module("module aux; host type A;");
-        let indexed = parse_module("module aux; import other(A);");
-        let other = parse_module("module other; pub host type A;");
+        let source = parse_module("mod aux; host type A;");
+        let indexed = parse_module("mod aux; import other {type A}");
+        let other = parse_module("mod other; pub host type A;");
         let indexed_scope =
             crate::pass::resolve::TopLevelScope::build(&indexed).expect("indexed import scope");
         let other_scope =
@@ -7586,9 +7587,9 @@ mod tests {
 
     #[test]
     fn checking_root_same_path_package_context_fails_closed_before_mixed_materialization() {
-        let source = parse_module("module aux; host type A; type Pair[X] = A & X;");
-        let package_aux = parse_module("module aux; pub host type A;");
-        let provider = parse_module("module provider; pub type Get = aux.A;");
+        let source = parse_module("mod aux; host type A; type Pair[X] = A & X;");
+        let package_aux = parse_module("mod aux; pub host type A;");
+        let provider = parse_module("mod provider; pub type Get = aux.A;");
         let aux_scope =
             crate::pass::resolve::TopLevelScope::build(&package_aux).expect("package aux scope");
         let provider_scope =
@@ -7727,9 +7728,9 @@ mod tests {
 
     #[test]
     fn equal_path_text_does_not_erase_mixed_canonical_identity() {
-        let exact = parse_module("module base; pub host type Box;");
-        let wrong = parse_module("module wrong; pub host type Box;");
-        let consumer = parse_module("module consumer; import wrong as base;");
+        let exact = parse_module("mod base; pub host type Box;");
+        let wrong = parse_module("mod wrong; pub host type Box;");
+        let consumer = parse_module("mod consumer; import wrong as base;");
         let mut modules = std::collections::BTreeMap::new();
         for module in [exact, wrong, consumer] {
             let path = module
@@ -7827,8 +7828,8 @@ mod tests {
 
     #[test]
     fn mixed_canonical_flags_accept_the_same_exact_nominal_after_descent() {
-        let base = parse_module("module base; pub host type Box;");
-        let consumer = parse_module("module consumer;");
+        let base = parse_module("mod base; pub host type Box;");
+        let consumer = parse_module("mod consumer;");
         let mut modules = std::collections::BTreeMap::new();
         for module in [base, consumer] {
             let path = module
@@ -7920,7 +7921,7 @@ mod tests {
 
     #[test]
     fn mixed_canonical_flags_do_not_override_an_exact_ambient_binder() {
-        let source = parse_module("module consumer; type A = .;");
+        let source = parse_module("mod consumer; type A = .;");
         let alias = owner_alias_def(&source, "A").expect("local decoy alias");
         let local = HashMap::from([("A", alias)]);
         let cross_module = HashMap::new();
@@ -7955,7 +7956,7 @@ mod tests {
 
     #[test]
     fn mixed_canonical_flags_keep_an_ambient_binder_distinct_from_a_nominal() {
-        let source = parse_module("module consumer; host type A;");
+        let source = parse_module("mod consumer; host type A;");
         let local = HashMap::new();
         let cross_module = HashMap::new();
         let binders = HashSet::from(["A".to_owned()]);
@@ -8007,24 +8008,10 @@ mod tests {
     #[test]
     fn type_equiv_matches_qualified_expanded_payload_to_imported_alias_payload() {
         let owner = parse_module(
-            "module type_of; \
-             pub type { Rep_unit: . { pub mk; pub get; }; }; \
-             pub type { Rep_bottom: . { pub mk; pub get; }; }; \
-             pub type { Rep_product: . { pub mk; pub get; }; }; \
-             pub type { Rep_sum: . { pub mk; pub get; }; }; \
-             pub type { Rep_function: . { pub mk; pub get; }; }; \
-             pub type { Rep_opaque: . { pub mk; pub get; }; }; \
-             pub type Type_rep_tail4 = Rep_function | Rep_opaque; \
-             pub type Type_rep_tail3 = Rep_sum | Type_rep_tail4; \
-             pub type Type_rep_tail2 = Rep_product | Type_rep_tail3; \
-             pub type Type_rep_tail1 = Rep_bottom | Type_rep_tail2;",
+            "mod type_of; pub type { Rep_unit: . { pub mk; pub get; }; }; pub type { Rep_bottom: . { pub mk; pub get; }; }; pub type { Rep_product: . { pub mk; pub get; }; }; pub type { Rep_sum: . { pub mk; pub get; }; }; pub type { Rep_function: . { pub mk; pub get; }; }; pub type { Rep_opaque: . { pub mk; pub get; }; }; pub type Type_rep_tail4 = Rep_function | Rep_opaque; pub type Type_rep_tail3 = Rep_sum | Type_rep_tail4; pub type Type_rep_tail2 = Rep_product | Type_rep_tail3; pub type Type_rep_tail1 = Rep_bottom | Type_rep_tail2;",
         );
         let consumer = parse_module(
-            "module consumer; \
-             import type_of as _elab_type_of__; \
-             import type_of(Rep_unit, Rep_bottom, Rep_product, Rep_sum, Rep_function, Rep_opaque, \
-                 Type_rep_tail1); \
-             pub type Use = Rep_unit;",
+            "mod consumer; import type_of as _elab_type_of__; import type_of {type Rep_unit; type Rep_bottom; type Rep_product; type Rep_sum; type Rep_function; type Rep_opaque; type Type_rep_tail1} pub type Use = Rep_unit;",
         );
         let mut modules = std::collections::BTreeMap::new();
         for module in [owner, consumer] {
@@ -8109,9 +8096,9 @@ mod tests {
     /// distinct (asserted by the no-package control below).
     #[test]
     fn type_equiv_unfolds_qualified_cross_module_alias_via_package() {
-        let host = parse_module("module host; host type I32 role(i32);");
-        let store = parse_module("module dep/store; import host as host; pub type I32 = host.I32;");
-        let consumer = parse_module("module consumer; pub type Unused = .;");
+        let host = parse_module("mod host; host type I32 role(i32);");
+        let store = parse_module("mod dep/store; import host as host; pub type I32 = host.I32;");
+        let consumer = parse_module("mod consumer; pub type Unused = .;");
         let mut modules = std::collections::BTreeMap::new();
         for module in [host, store, consumer] {
             let path = module
@@ -8180,11 +8167,11 @@ mod tests {
     #[test]
     fn qualified_alias_ignores_caller_local_same_leaf_alias() {
         let types = parse_module(
-            "module types; pub host type Actual role(bool); pub host type Other role(i32);",
+            "mod types; pub host type Actual role(bool); pub host type Other role(i32);",
         );
-        let dep = parse_module("module dep; import types as types; pub type Flag = types.Actual;");
+        let dep = parse_module("mod dep; import types as types; pub type Flag = types.Actual;");
         let consumer =
-            parse_module("module consumer; import types as types; type Actual = types.Other;");
+            parse_module("mod consumer; import types as types; type Actual = types.Other;");
         let mut modules = std::collections::BTreeMap::new();
         for module in [types, dep, consumer] {
             let path = module
@@ -8227,14 +8214,13 @@ mod tests {
     #[test]
     fn generic_alias_argument_keeps_caller_identity_during_owner_unfolding() {
         let types = parse_module(
-            "module types; pub host type Dep_actual role(bool); pub host type Caller_actual role(i32);",
+            "mod types; pub host type Dep_actual role(bool); pub host type Caller_actual role(i32);",
         );
         let dep = parse_module(
-            "module dep; import types as types; type Actual = types.Dep_actual; pub type Id[A] = A;",
+            "mod dep; import types as types; type Actual = types.Dep_actual; pub type Id[A] = A;",
         );
-        let consumer = parse_module(
-            "module consumer; import types as types; type Actual = types.Caller_actual;",
-        );
+        let consumer =
+            parse_module("mod consumer; import types as types; type Actual = types.Caller_actual;");
         let mut modules = std::collections::BTreeMap::new();
         for module in [types, dep, consumer] {
             let path = module
@@ -8286,15 +8272,14 @@ mod tests {
 
     #[test]
     fn compound_alias_children_keep_owner_identity_during_recursive_comparison() {
-        let base = parse_module("module base; pub host type Value role(bool);");
+        let base = parse_module("mod base; pub host type Value role(bool);");
         let wrong = parse_module(
-            "module wrong; pub host type Value role(i32); pub type Pair = Value & Value;",
+            "mod wrong; pub host type Value role(i32); pub type Pair = Value & Value;",
         );
         let owner = parse_module(
-            "module owner; import base as base; pub type Pair = base.Value & base.Value;",
+            "mod owner; import base as base; pub type Pair = base.Value & base.Value;",
         );
-        let consumer =
-            parse_module("module consumer; import wrong as base; import wrong as owner;");
+        let consumer = parse_module("mod consumer; import wrong as base; import wrong as owner;");
         let mut modules = std::collections::BTreeMap::new();
         for module in [base, wrong, owner, consumer] {
             let path = module
@@ -8335,7 +8320,7 @@ mod tests {
 
     #[test]
     fn owner_alias_expansion_respects_forall_binder_shadowing() {
-        let owner = parse_module("module type_of; type A = .;");
+        let owner = parse_module("mod type_of; type A = .;");
         let poly_body = Type::Forall {
             param: TypeParam {
                 presentation: Default::default(),
@@ -8385,7 +8370,7 @@ mod tests {
     /// the caller's alias and reopening expansion.
     #[test]
     fn unfold_top_terminates_on_qualified_self_named_alias() {
-        let owner = parse_module("module n; import m as m;");
+        let owner = parse_module("mod n; import m as m;");
         // Body `m.A` shares only the presentation leaf with the caller alias.
         let body = qualified("m", "A");
         let mut cross_module = HashMap::new();
@@ -8424,7 +8409,7 @@ mod tests {
 
     #[test]
     fn deep_canonicalization_terminates_on_qualified_self_named_alias() {
-        let owner = parse_module("module m; type A = m.A;");
+        let owner = parse_module("mod m; type A = m.A;");
         let alias = owner_alias_def(&owner, "A").expect("owner alias A");
         let local = HashMap::from([("A", alias)]);
         let cross_module = HashMap::new();
@@ -8535,7 +8520,7 @@ mod tests {
             }
         }
 
-        let owner = parse_module("module owner; type Keep[A] = A;");
+        let owner = parse_module("mod owner; type Keep[A] = A;");
         let alias = owner_alias_def(&owner, "Keep").expect("owner alias Keep");
         let local = HashMap::from([("Keep", alias)]);
         let cross_module = HashMap::new();
@@ -8602,7 +8587,7 @@ mod tests {
     #[cfg(feature = "surface")]
     #[test]
     fn deep_canonicalization_layers_forall_binders_over_the_ambient_lookup() {
-        let owner = parse_module("module owner; type A = .; type Real = .;");
+        let owner = parse_module("mod owner; type A = .; type Real = .;");
         let local = HashMap::from([
             ("A", owner_alias_def(&owner, "A").expect("owner alias A")),
             (

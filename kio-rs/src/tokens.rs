@@ -148,7 +148,7 @@ pub enum TokenKind {
     PunctuationSeparator,
     Slot,
     /// Module-path segments (the IDENTs in `module a/b/c;`, in
-    /// `import a/b(items);`'s path, in `import a/b/c as m;`, and the
+    /// `import a/b { fn item }`'s path, in `import a/b/c as m;`, and the
     /// alias target). Reserved builtin providers such as
     /// `import __intrinsics__;` occupy the same module-name slot.
     EntityNameModule,
@@ -330,13 +330,7 @@ fn dump_with_tooling_and_docs(
                 );
             }
             ToolingSyntax::Package(package) => {
-                mark_file_name(
-                    &package.name,
-                    "package",
-                    package.meta.span,
-                    raw,
-                    &mut overrides,
-                );
+                mark_file_name(&package.name, "pkg", package.meta.span, raw, &mut overrides);
             }
             ToolingSyntax::Signature(signature) => {
                 walk_signature_file(signature, raw, &mut overrides);
@@ -344,7 +338,7 @@ fn dump_with_tooling_and_docs(
             ToolingSyntax::Dependency(dependency) => {
                 mark_file_name(
                     &dependency.name,
-                    "dependency",
+                    "dep",
                     dependency.meta.span,
                     raw,
                     &mut overrides,
@@ -426,9 +420,6 @@ fn walk_signature_file(
         for changes in version.breaking.iter().chain(&version.nonbreaking) {
             for section in changes.add.iter().chain(&changes.modify) {
                 walk_signature_module(section, raw, overrides);
-            }
-            for section in &changes.remove {
-                mark_module_path(&section.path, overrides);
             }
             for reference in changes
                 .add_refs
@@ -644,7 +635,7 @@ fn ident_text(token: &LexToken) -> Option<&str> {
 ///
 /// What gets an override:
 ///
-/// - Module-path segments (top-level `module` decl, `import …(items)`
+/// - Module-path segments (top-level `mod` decl, `import … {kind name}`
 ///   path, `import … as` alias, `import __intrinsics__`) → `entity.name.module`.
 /// - Function definition names (`fn foo`, including the `pub`'d form)
 ///   → `entity.name.function`.
@@ -1031,7 +1022,7 @@ fn walk_module(m: &ast::Module<ast::Surface>, raw: &[LexToken], overrides: &mut 
     mark_keyword(
         raw,
         Span::new(m.meta.span.start, m.path.span.start),
-        "module",
+        "mod",
         TokenKind::KeywordDeclaration,
         overrides,
     );
@@ -1075,11 +1066,16 @@ fn walk_import(u: &ast::Import, raw: &[LexToken], overrides: &mut AstOverrides) 
                     ast::ImportItem::Name {
                         span,
                         alias,
-                        macro_span,
+                        kind: selected_kind,
                         ..
                     } => {
-                        let kind = if let Some(tag) = macro_span {
-                            overrides.insert(tag.start, TokenKind::KeywordDeclaration);
+                        if let Some(tag) =
+                            raw.iter().rev().find(|token| token.span.end <= span.start)
+                            && is_ident_named(tag, selected_kind.spelling())
+                        {
+                            overrides.insert(tag.span.start, TokenKind::KeywordDeclaration);
+                        }
+                        let kind = if *selected_kind == ast::ImportNameKind::Macro {
                             TokenKind::EntityNameMacroReference
                         } else {
                             TokenKind::Identifier
@@ -1282,11 +1278,6 @@ fn walk_host_type(h: &ast::HostType<ast::Surface>, raw: &[LexToken], overrides: 
             overrides,
         );
     }
-    if h.owned
-        && let Some(span) = find_last_ident_in_span(raw, h.meta.span, "owned")
-    {
-        overrides.insert(span.start, TokenKind::KeywordDeclaration);
-    }
     if let Some(s) = find_name_after_kw(raw, h.meta.span, "type", &h.name) {
         overrides.insert(s.start, TokenKind::EntityNameType);
     }
@@ -1346,8 +1337,8 @@ fn walk_literal_alias(
     raw: &[LexToken],
     overrides: &mut AstOverrides,
 ) {
-    mark_declaration_keyword(raw, a.meta.span, "literal", overrides);
-    if let Some(s) = find_name_after_kw(raw, a.meta.span, "literal", &a.name) {
+    mark_declaration_keyword(raw, a.meta.span, "lit", overrides);
+    if let Some(s) = find_name_after_kw(raw, a.meta.span, "lit", &a.name) {
         overrides.source_reference(&a.name, s, SourceNameKind::Value, true);
         overrides.insert(s.start, TokenKind::Identifier);
     }
@@ -1433,22 +1424,18 @@ fn walk_equiv(e: &ast::Equiv<ast::Surface>, raw: &[LexToken], overrides: &mut As
 }
 
 fn mark_operator_head(raw: &[LexToken], span: Span, variadic: bool, overrides: &mut AstOverrides) {
-    let keyword = if variadic { "varop" } else { "op" };
     let Some(index) = raw.iter().position(|token| {
         span.start <= token.span.start
             && token.span.end <= span.end
-            && is_ident_named(token, keyword)
+            && if variadic {
+                is_ident_named(token, "op_var")
+            } else {
+                is_ident_named(token, "op") || is_ident_named(token, "op_macro")
+            }
     }) else {
         return;
     };
     overrides.insert(raw[index].span.start, TokenKind::KeywordDeclaration);
-    if !variadic
-        && raw
-            .get(index + 1)
-            .is_some_and(|token| is_ident_named(token, "macro"))
-    {
-        overrides.insert(raw[index + 1].span.start, TokenKind::KeywordDeclaration);
-    }
 }
 
 fn walk_op(o: &ast::Op<ast::Surface>, raw: &[LexToken], overrides: &mut AstOverrides) {
@@ -1468,7 +1455,7 @@ fn walk_variadic_operator(
     raw: &[LexToken],
     overrides: &mut AstOverrides,
 ) {
-    mark_declaration_keyword(raw, f.meta.span, "varop", overrides);
+    mark_declaration_keyword(raw, f.meta.span, "op_var", overrides);
     mark_variadic_clause_head(raw, &f.spec.step.path, overrides);
     mark_callable_path(&f.spec.initializer.path, overrides);
     mark_callable_path(&f.spec.step.path, overrides);
@@ -1722,7 +1709,7 @@ fn walk_expr(e: &ast::Expr<ast::Surface>, raw: &[LexToken], overrides: &mut AstO
             // namespace/type classification on top — keeping the
             // discrimination out of the reference avoids the
             // tree-sitter lexer ambiguity that the keyword-shaped
-            // `module`/`fn`/`let` tokens have with case-classified
+            // `mod`/`fn`/`let` tokens have with case-classified
             // identifier regex alternatives). For non-path callees
             // (lambdas, sub-expressions), recurse into the callee.
             if let Path { segments, .. } = callee.as_ref() {
@@ -2120,8 +2107,8 @@ mod tests {
     #[cfg(feature = "lsp")]
     #[test]
     fn source_dependency_capture_preserves_legacy_references_and_token_roles() {
-        let source = "module main;
-            import provider(Thing, helper); import provider as q;
+        let source = "mod main;
+            import provider {type Thing; fn helper} import provider as q;
             type Alias[A] = A & Thing & q.Thing;
             type { Box: Thing { mk; get; }; };
             fn run[Thing](x: Thing) -> Thing { helper(x) }
@@ -2204,21 +2191,21 @@ mod tests {
     fn parameter_patterns_classify_written_signature_binders() {
         let cases: &[(&str, &[&str])] = &[
             (
-                "module m; fn f((rec, value)) { let(helper.rec) }",
+                "mod m; fn f((rec, value)) { let(helper.rec) }",
                 &["rec", "value"],
             ),
             (
-                "module m; fn f(scalar: ., whole: (first: ., (second: ., third: .), pair: (fourth: ., fifth: .), _: .)) { (scalar, whole, first, second, third, pair, fourth, fifth) }",
+                "mod m; fn f(scalar: ., whole: (first: ., (second: ., third: .), pair: (fourth: ., fifth: .), _: .)) { (scalar, whole, first, second, third, pair, fourth, fifth) }",
                 &[
                     "scalar", "whole", "first", "second", "third", "pair", "fourth", "fifth",
                 ],
             ),
             (
-                "module m; fn f() { .((first: ., pair: (second: ., third: .), _: .), scalar: .) { (first, pair, second, third, scalar) } }",
+                "mod m; fn f() { .((first: ., pair: (second: ., third: .), _: .), scalar: .) { (first, pair, second, third, scalar) } }",
                 &["first", "pair", "second", "third", "scalar"],
             ),
             (
-                "module m; equiv same((first: ., pair: (second: ., third: .), _: .), scalar: .) { first; first }",
+                "mod m; equiv same((first: ., pair: (second: ., third: .), _: .), scalar: .) { first; first }",
                 &["first", "pair", "second", "third", "scalar"],
             ),
         ];
@@ -2266,7 +2253,7 @@ mod tests {
 
     #[test]
     fn explicit_pattern_and_existential_lets_keep_written_source_roles() {
-        let source = "module m;
+        let source = "mod m;
             fn run[A](input: A) {
                 let .(whole: (first: A, second: A)) = pair;
                 let .(<Hidden> payload) = rhs;
@@ -2306,7 +2293,7 @@ mod tests {
     fn existential_source_roles_do_not_reclassify_authored_calls() {
         for callee in ["rhs", "(rhs)"] {
             let source = format!(
-                "module m; fn explicit() {{
+                "mod m; fn explicit() {{
                 {callee}[_](.[Hidden](payload) {{ payload }})
             }}"
             );
@@ -2335,15 +2322,15 @@ mod tests {
     fn parameter_patterns_keep_local_bindings_and_unpacked_continuations_neutral() {
         let cases: &[(&str, &[&str])] = &[
             (
-                "module m; fn f(input: .) { let .(first: ., pair: (second: ., third: .), _: .) = input; (first, pair, second, third) }",
+                "mod m; fn f(input: .) { let .(first: ., pair: (second: ., third: .), _: .) = input; (first, pair, second, third) }",
                 &["first", "pair", "second", "third"],
             ),
             (
-                "module m; fn f(input: .) { do(input) { let .(first: ., second: .) <- input; let .(third: ., fourth: .) = input; (first, second, third, fourth) } }",
+                "mod m; fn f(input: .) { do(input) { let .(first: ., second: .) <- input; let .(third: ., fourth: .) = input; (first, second, third, fourth) } }",
                 &["first", "second", "third", "fourth"],
             ),
             (
-                "module m; fn f(input: .) { let .(<A> (first: A, pair: (second: A, third: A))) = input; (first, pair, second, third) }",
+                "mod m; fn f(input: .) { let .(<A> (first: A, pair: (second: A, third: A))) = input; (first, pair, second, third) }",
                 &["first", "pair", "second", "third"],
             ),
         ];
@@ -2382,34 +2369,30 @@ mod tests {
     #[test]
     fn parameter_patterns_retain_only_validated_parameter_prefix_names() {
         let cases: &[(&str, &[&str], &[&str])] = &[
+            ("mod m; fn f((first: ., second: ", &["first", "second"], &[]),
             (
-                "module m; fn f((first: ., second: ",
-                &["first", "second"],
-                &[],
-            ),
-            (
-                "module m; fn f() { .((first: ., pair: (second: ., ",
+                "mod m; fn f() { .((first: ., pair: (second: ., ",
                 &["first", "pair", "second"],
                 &[],
             ),
             (
-                "module m; equiv same((first: ., second: ",
+                "mod m; equiv same((first: ., second: ",
                 &["first", "second"],
                 &[],
             ),
-            ("module m; fn f((first: ., Bad: .", &["first"], &["Bad"]),
+            ("mod m; fn f((first: ., Bad: .", &["first"], &["Bad"]),
             (
-                "module m; fn f() { let .(first: ., second: ",
-                &[],
-                &["first", "second"],
-            ),
-            (
-                "module m; fn f(input: .) { do(input) { let .(first: ., second: ",
+                "mod m; fn f() { let .(first: ., second: ",
                 &[],
                 &["first", "second"],
             ),
             (
-                "module m; fn f(input: .) { let .(<A> (first: A, second: ",
+                "mod m; fn f(input: .) { do(input) { let .(first: ., second: ",
+                &[],
+                &["first", "second"],
+            ),
+            (
+                "mod m; fn f(input: .) { let .(<A> (first: A, second: ",
                 &[],
                 &["first", "second"],
             ),
@@ -2446,19 +2429,19 @@ mod tests {
     fn parameter_patterns_distinguish_dot_lambdas_from_rich_let_patterns() {
         let cases = [
             (
-                "module m; fn f(input: .) { let . (first: A, second: A) = input; (first, second) }\n",
+                "mod m; fn f(input: .) { let . (first: A, second: A) = input; (first, second) }\n",
                 false,
             ),
             (
-                "module m; fn f(input: .) { let .(first: A, second: A) = input; (first, second) }\n",
+                "mod m; fn f(input: .) { let .(first: A, second: A) = input; (first, second) }\n",
                 false,
             ),
             (
-                "module m; fn f() { . [A]((first: A, second: A)) { (first, second) } }\n",
+                "mod m; fn f() { . [A]((first: A, second: A)) { (first, second) } }\n",
                 true,
             ),
             (
-                "module m; fn f() { .[A]((first: A, second: A)) { (first, second) } }\n",
+                "mod m; fn f() { .[A]((first: A, second: A)) { (first, second) } }\n",
                 true,
             ),
         ];
@@ -2500,7 +2483,7 @@ mod tests {
 
     #[test]
     fn tooling_bridge_cached_block_call_marks_only_the_macro_head() {
-        let source = "module app; import syntax(macro do as run_do); fn run(do: .) { run_do(do) { let value <- (); value } }";
+        let source = "mod app; import syntax {macro do as run_do} fn run(do: .) { run_do(do) { let value <- (); value } }";
         let module = crate::pass::parser::parse(source).unwrap();
         let cached = dump_with_module(source, &module).unwrap();
         let probed = dump(source).unwrap();
@@ -2523,7 +2506,7 @@ mod tests {
 
     #[test]
     fn tooling_bridge_cached_recursive_call_annotations_match_native_roles() {
-        let source = "module app; rec(loop) fn run(poly: .) -> . { recur(poly, cont) run(poly) }";
+        let source = "mod app; rec(loop) fn run(poly: .) -> . { recur(poly, cont) run(poly) }";
         let module = crate::pass::parser::parse(source).unwrap();
         let cached = dump_with_module(source, &module).unwrap();
         let probed = dump(source).unwrap();
@@ -2557,13 +2540,13 @@ mod tests {
     #[test]
     fn tooling_bridge_contextual_let_binders_are_not_promoted_to_keywords() {
         for source in [
-            "module app; fn run() { let let = (); let }",
-            "module app; fn run() { let .(let: .) = (); let }",
-            "module app; fn run() { let .(let: ., other: .) = ((), ()); let }",
-            "module app; fn run() { let .(let: (left: ., right: .)) = ((), ()); let }",
-            "module app; fn run() { do(bind) { let let = (); let } }",
-            "module app; fn run() { do(bind) { let let <- (); let } }",
-            "module app; fn run() { do(bind) { let .(let: ., other: .) <- (); let } }",
+            "mod app; fn run() { let let = (); let }",
+            "mod app; fn run() { let .(let: .) = (); let }",
+            "mod app; fn run() { let .(let: ., other: .) = ((), ()); let }",
+            "mod app; fn run() { let .(let: (left: ., right: .)) = ((), ()); let }",
+            "mod app; fn run() { do(bind) { let let = (); let } }",
+            "mod app; fn run() { do(bind) { let let <- (); let } }",
+            "mod app; fn run() { do(bind) { let .(let: ., other: .) <- (); let } }",
         ] {
             let module = crate::pass::parser::parse(source).unwrap();
             let cached = dump_with_module(source, &module).unwrap();
@@ -2586,16 +2569,16 @@ mod tests {
 
     #[test]
     fn tooling_bridge_cached_module_matches_probe_with_keyword_shaped_names() {
-        let source = "module keyword/module;\n\
-            import other/host as package;\n\
-            import syntax(macro scope, macro if as branch_if);\n\
-            host type Text role(str);\n\
-            pub pure fn module(module: .) -> . { let build = module; scope { build } }\n\
-            fn branch(if: .) -> . { branch_if(.t) { if } else { module(if) } }\n\
-            type { Box: . { pub(keyword/module) mk; get; }; };\n\
-            pub(keyword/module) rec type { Ring: . { mk; get; }; };\n\
-            macro macro : . -> . { captures helper.impl; impl(fills) helper.fills; };\n\
-            type { Reused: .; }; type Alias = Reused;";
+        let source = "mod keyword/module;
+import other/host as package;
+import syntax {macro scope; macro if as branch_if}
+host type Text role(str);
+pub pure fn module(module: .) -> . { let build = module; scope { build } }
+fn branch(if: .) -> . { branch_if(.t) { if } else { module(if) } }
+type { Box: . { pub(keyword/module) mk; get; }; };
+pub(keyword/module) rec type { Ring: . { mk; get; }; };
+macro macro : . -> . { captures helper.impl; impl(fills) helper.fills; };
+type { Reused: .; }; type Alias = Reused;";
         let module = crate::pass::parser::parse(source).expect("ordinary contextual names");
         let probed = dump(source).unwrap();
         let cached = dump_with_module(source, &module).unwrap();
@@ -2636,15 +2619,15 @@ mod tests {
     fn tooling_bridge_file_roots_keep_field_keywords_and_inverse_calls_separate() {
         for (source, keyword) in [
             (
-                "package package; build { target js { out \"out\"; namespace \"demo\"; } }",
+                "pkg package; build { target js { out \"out\"; namespace \"demo\"; } }",
                 "target",
             ),
             (
-                "signature signature v(1); v(1) { with { module host/type { host type Text role(str); } }; nonbreaking { add { host/type.Text; } } }",
+                "sig signature v(1); v(1) { with { mod host/type { host type Text role(str); } }; nonbreaking { add { host/type.Text; } } }",
                 "with",
             ),
             (
-                "dependency dependency; source { path \"package.pkg.kio\"; }",
+                "dep dependency; source { path \"package.pkg.kio\"; }",
                 "path",
             ),
             (
@@ -2704,7 +2687,8 @@ mod tests {
 
     #[test]
     fn tooling_bridge_failed_body_retains_proved_prefix_without_claiming_suffix() {
-        let source = "module app; fn first() { () } fn broken[A](build: A) { ? package } fn trailing() { () }";
+        let source =
+            "mod app; fn first() { () } fn broken[A](build: A) { ? package } fn trailing() { () }";
         let probe = crate::pass::parser::probe_tooling_source(source, None);
         assert!(probe.parse_error.is_some());
         let tokens = dump(source).unwrap();
@@ -2760,7 +2744,7 @@ mod tests {
 
     #[test]
     fn self_harness_doc_tokens_use_module_end_scope_and_exact_comment_ranges() {
-        let source = "module app;\n/// ```kio {@}\n/// later(()); (.(later: . -> .) { later(()) })(.(x: .) { x })\n/// ```\nfn early() { later(()) }\nmacro later : . -> . { impl implementation; };";
+        let source = "mod app;\n/// ```kio {@}\n/// later(()); (.(later: . -> .) { later(()) })(.(x: .) { x })\n/// ```\nfn early() { later(()) }\nmacro later : . -> . { impl implementation; };";
         let tokens = dump(source).unwrap();
         let calls: Vec<_> = tokens
             .iter()
@@ -2781,7 +2765,7 @@ mod tests {
     #[test]
     fn tooling_bridge_retains_nominal_member_roles_before_body_errors() {
         let (source, needle, offset, expected) = (
-            "module app; type { Box: . { mk; ? }",
+            "mod app; type { Box: . { mk; ? }",
             "mk;",
             0,
             TokenKind::EntityNameFunction,
@@ -2827,17 +2811,18 @@ mod tests {
 
     #[test]
     fn signature_module_paths_follow_exact_ast_spans() {
-        let source = "signature app v(2);\n\
-            v(1) {\n\
-              with { module context/if { pub type Item = .; } };\n\
-              breaking {\n\
-                add { added/with.Item; module added/body { pub fn item() -> .; } };\n\
-                modify { modified/with.Item; module modified/body { pub fn item() -> .; } };\n\
-                remove { removed/with.item; module removed/body { item; removed; } }\n\
-              }\n\
-            }\n\
-            v(2) { nonbreaking { remove { second/with.item; } } }\n\
-            // removed/body is a comment, not a module path\n";
+        let source = "sig app v(2);
+v(1) {
+with { mod context/if { pub type Item = .; } };
+breaking {
+add { added/with.Item; mod added/body { pub fn item() -> .; } };
+modify { modified/with.Item; mod modified/body { pub fn item() -> .; } };
+remove { removed/with.item;  removed/body.item; removed/body.removed;  }
+}
+}
+v(2) { nonbreaking { remove { second/with.item; } } }
+// removed/body is a comment, not a module path
+";
         crate::pass::parser::parse_signature_file(source, None).expect("complete signature syntax");
         let tokens = dump(source).expect("signature token stream");
         let mut expected = Vec::new();
@@ -2851,10 +2836,13 @@ mod tests {
             "removed/body",
             "second/with",
         ] {
-            let start = source.find(path).expect("module path") as u32;
             let slash = path.find('/').expect("two path segments") as u32;
-            expected.push(Span::new(start, start + slash));
-            expected.push(Span::new(start + slash + 1, start + path.len() as u32));
+            let declarations = source.split("// removed/body").next().unwrap();
+            for (start, _) in declarations.match_indices(path) {
+                let start = start as u32;
+                expected.push(Span::new(start, start + slash));
+                expected.push(Span::new(start + slash + 1, start + path.len() as u32));
+            }
         }
         assert_eq!(
             tokens
@@ -2866,7 +2854,7 @@ mod tests {
         );
         for (needle, offset, word) in [
             ("removed/with.item", "removed/with.".len(), "item"),
-            ("item; removed;", "item; ".len(), "removed"),
+            ("removed/body.removed", "removed/body.".len(), "removed"),
         ] {
             let start = (source.find(needle).unwrap() + offset) as u32;
             assert!(tokens.iter().any(|token| {
@@ -2878,8 +2866,7 @@ mod tests {
 
     #[test]
     fn malformed_import_keeps_sibling_and_next_declaration_roles() {
-        let source =
-            "module c; import missing/provider(op _ = _, Kept); fn after(value: .) -> . { value }";
+        let source = "mod c; import missing/provider {op _ = _; type Kept} fn after(value: .) -> . { value }";
         assert!(crate::pass::parser::parse(source).is_err());
         assert!(crate::pass::parser::parse_lazy(source).is_err());
         let (_, errors) = crate::pass::parser::parse_recover_imports(source)
@@ -2917,7 +2904,7 @@ mod tests {
 
     #[test]
     fn imported_operator_ast_keeps_parameter_classification() {
-        let source = "module app/main; import app/syntax(varop [% %], op _ => _); fn run(value: .) -> . { [% value => value %] }";
+        let source = "mod app/main; import app/syntax {op_var [% %]; op _ => _} fn run(value: .) -> . { [% value => value %] }";
         let value_start = source.find("value").expect("parameter binder") as u32;
         let module =
             crate::pass::parser::parse(source).expect("provider-independent consumer parse");
@@ -2931,13 +2918,7 @@ mod tests {
 
     #[test]
     fn declaration_callable_path_leaves_are_function_references() {
-        let source = "module x; \
-            op _ + _ { impl local; }; \
-            varop [* *] { \
-              foldr Box.push helpers.empty; \
-              finalize helpers.Box.finish; \
-            }; \
-            macro demo : . -> . { impl helper.run; };";
+        let source = "mod x; op _ + _ { impl local; }; op_var [* *] { foldr Box.push helpers.empty; finalize helpers.Box.finish; }; macro demo : . -> . { impl helper.run; };";
         let classified = dump(source).expect("token dump");
 
         for leaf in ["local", "empty", "push", "finish", "run"] {
@@ -2953,15 +2934,7 @@ mod tests {
 
     #[test]
     fn ordinary_ufcs_and_recursive_callees_are_function_references() {
-        let source = "module x; \
-            host fn loop[S][R](step: S -> (S | R), state: S) -> R; \
-            fn call_target(x: .) -> . { x } \
-            fn ufcs_target(x: .) -> . { x } \
-            rec(loop) fn recursive(x: .) -> . { \
-              let _ = call_target(x); \
-              let _ = x.>ufcs_target; \
-              recur recursive(x) \
-            }";
+        let source = "mod x; host fn loop[S][R](step: S -> (S | R), state: S) -> R; fn call_target(x: .) -> . { x } fn ufcs_target(x: .) -> . { x } rec(loop) fn recursive(x: .) -> . { let _ = call_target(x); let _ = x.>ufcs_target; recur recursive(x) }";
         let probe = crate::pass::parser::probe_tooling_source(source, None);
         assert!(
             probe.syntax.is_some(),
@@ -2991,7 +2964,7 @@ mod tests {
             ("x.>outer[A](inner(x))", vec!["outer", "inner"]),
             ("factory(x)[A](inner(x)).<x", vec!["factory", "inner"]),
         ] {
-            let source = format!("module m; fn run[A](x: A) {{ {body} }}");
+            let source = format!("mod m; fn run[A](x: A) {{ {body} }}");
             let probe = crate::pass::parser::probe_tooling_source(&source, None);
             assert!(
                 probe.parse_error.is_none(),
@@ -3027,7 +3000,7 @@ mod tests {
         for name in [
             "foo", "op", "import", "variadic", "foldl1", "finalize", "fold", "role", "if",
         ] {
-            let source = format!("module m;\nfn {name}(");
+            let source = format!("mod m;\nfn {name}(");
             let definition = dump(&source)
                 .expect("lexical fallback token dump")
                 .into_iter()
@@ -3041,7 +3014,7 @@ mod tests {
             );
         }
 
-        let source = "module m;\nequiv law(";
+        let source = "mod m;\nequiv law(";
         let law = dump(source)
             .expect("lexical fallback token dump")
             .into_iter()
@@ -3049,7 +3022,7 @@ mod tests {
             .expect("equivalence-name token");
         assert_eq!(law.kind, TokenKind::EntityNameFunction);
 
-        let source = "module m;\nfn op[A]";
+        let source = "mod m;\nfn op[A]";
         let op = dump(source)
             .expect("lexical fallback token dump")
             .into_iter()
@@ -3060,15 +3033,7 @@ mod tests {
 
     #[test]
     fn invalid_empty_ufcs_keeps_proved_callees_without_claiming_later_body_calls() {
-        let source = "module x; \
-            host fn loop[S][R](step: S -> (S | R), state: S) -> R; \
-            fn call_target(x: .) -> . { x } \
-            fn ufcs_target(x: .) -> . { x } \
-            rec(loop) fn recursive(x: .) -> . { \
-              let _ = call_target(x); \
-              let _ = x.>ufcs_target(); \
-              recur recursive(x) \
-            }";
+        let source = "mod x; host fn loop[S][R](step: S -> (S | R), state: S) -> R; fn call_target(x: .) -> . { x } fn ufcs_target(x: .) -> . { x } rec(loop) fn recursive(x: .) -> . { let _ = call_target(x); let _ = x.>ufcs_target(); recur recursive(x) }";
         let probe = crate::pass::parser::probe_tooling_source(source, None);
         assert!(
             matches!(probe.parse_error, Some(Error::Parse(ref diagnostic)) if diagnostic.message.contains("explicitly empty UFCS"))
@@ -3111,9 +3076,9 @@ mod tests {
 
     #[test]
     fn item_signature_probe_uses_lazy_header_without_reclassifying_deferred_body() {
-        let source = "module kio_doc;\n\
-            import syntax(varop [* *]);\n\
-            pub fn combine[A](left: A, right: A) -> A { [* left, right ? left *] }";
+        let source = "mod kio_doc;
+import syntax {op_var [* *]}
+pub fn combine[A](left: A, right: A) -> A { [* left, right ? left *] }";
         assert!(
             crate::pass::parser::parse(source).is_err(),
             "malformed body must not supply eager structural facts"
@@ -3148,7 +3113,7 @@ mod tests {
 
     #[test]
     fn lexical_keyword_spellings_are_neutral_without_parser_facts() {
-        let source = "if else match fn newtype type literal labels alias op varop fold equiv module import use from pub pure package pkg bridge host upstream downstream source build dependency lock resolved signature with breaking nonbreaking add modify remove auto let";
+        let source = "if else match fn newtype type lit labels alias op op_macro op_var fold equiv mod import use from pub pure pkg bridge host upstream downstream source build dep lock resolved sig with breaking nonbreaking add modify remove auto let";
         let tokens = dump_lexical(&lex(source).unwrap(), &[], source);
         assert!(
             tokens
@@ -3171,7 +3136,7 @@ mod tests {
 
     #[test]
     fn qualified_import_alias_matching_the_provider_leaf_is_a_module_name() {
-        let source = "module app/main; import app/value as value;";
+        let source = "mod app/main; import app/value as value;";
         let tokens = dump(source).expect("token dump");
         let occurrences = source
             .match_indices("value")
@@ -3193,7 +3158,7 @@ mod tests {
     #[test]
     fn as_is_a_keyword_only_in_grammar_positions() {
         let source = concat!(
-            "module contextual/keywords;\n",
+            "mod contextual/keywords;\n",
             "import app/as as as;\n",
             "fn identity(as: .) -> . {\n",
             "  as\n",
@@ -3240,8 +3205,8 @@ mod tests {
 
     #[test]
     fn grouped_callable_fields_preserve_bracket_tokens() {
-        let source = "module app; op _ + _ { impl ((ops.add)) }\n\
-            varop [] { foldl ((ops.step)) ((ops.base)); finalize ((ops.finish)) }";
+        let source = "mod app; op _ + _ { impl ((ops.add)) }
+op_var [] { foldl ((ops.step)) ((ops.base)); finalize ((ops.finish)) }";
         let module = crate::pass::parser::parse(source).unwrap();
         let tokens = dump_with_module(source, &module).unwrap();
         for (start, ch) in source
@@ -3284,7 +3249,7 @@ mod tests {
             "foldl ((finalize)) ((helpers.finalize)); finalize ((()))",
             "finalize ((())); foldl ((helpers.finalize)) ((finalize))",
         ] {
-            let source = format!("module app; varop [] {{ {fields} }}");
+            let source = format!("mod app; op_var [] {{ {fields} }}");
             let module = crate::pass::parser::parse(&source).unwrap();
             let tokens = dump_with_module(&source, &module).unwrap();
             assert_eq!(tokens, dump(&source).unwrap());
@@ -3311,7 +3276,7 @@ mod tests {
     fn variadic_words_are_keywords_only_at_their_grammar_positions() {
         for mode in ["foldl", "foldr", "foldl1", "foldr1"] {
             let source = format!(
-                "module variadic/pkg;
+                "mod variadic/pkg;
                 import variadic/helpers as helper;
                 fn variadic(value: .) -> . {{ value }}
                 fn ordinary() -> . {{
@@ -3319,7 +3284,7 @@ mod tests {
                     let member = helper.variadic;
                     variadic(())
                 }}
-                varop [* *] {{
+                op_var [* *] {{
                     {mode} helper.{mode} helper.variadic;
                     finalize helper.finalize;
                 }};"
@@ -3334,13 +3299,13 @@ mod tests {
                     .expect("token at source position")
             };
             for (needle, offset, kind) in [
-                ("module variadic", 7, TokenKind::EntityNameModule),
+                ("mod variadic", 4, TokenKind::EntityNameModule),
                 ("import variadic", 7, TokenKind::EntityNameModule),
                 ("fn variadic", 3, TokenKind::EntityNameFunction),
                 ("bare = variadic", 7, TokenKind::Identifier),
                 ("member = helper.variadic", 16, TokenKind::Identifier),
                 ("variadic(())", 0, TokenKind::EntityNameFunctionReference),
-                ("varop [*", 0, TokenKind::KeywordDeclaration),
+                ("op_var [*", 0, TokenKind::KeywordDeclaration),
                 ("finalize helper", 0, TokenKind::KeywordDeclaration),
                 ("helper.finalize", 7, TokenKind::EntityNameFunctionReference),
             ] {
@@ -3364,9 +3329,9 @@ mod tests {
 
     #[test]
     fn import_tags_do_not_reclassify_ordinary_selected_names() {
-        let source = "module app;
-            import providers/op(op, import, variadic, foldl, foldr1, finalize, Op,
-                op _ + _, varop [% %]);
+        let source = "mod app;
+            import providers/op {fn op; fn import; fn variadic; fn foldl; fn foldr1; fn finalize; type Op;
+                op _ + _; op_var [% %]}
             fn op(import: .) -> . { import }
             fn import(value: .) -> . { value }";
         let module = crate::pass::parser::parse(source).expect("all explicit namespaces");
@@ -3380,28 +3345,28 @@ mod tests {
                 .kind
         };
         assert_eq!(at("import providers", 0), TokenKind::KeywordDeclaration);
-        assert_eq!(at("/op(", 1), TokenKind::EntityNameModule);
-        assert_eq!(at("(op,", 1), TokenKind::Identifier);
-        for name in ["import,", "variadic,", "foldl,", "foldr1,", "finalize,"] {
+        assert_eq!(at("/op {", 1), TokenKind::EntityNameModule);
+        assert_eq!(at("fn op;", 3), TokenKind::Identifier);
+        for name in ["import;", "variadic;", "foldl;", "foldr1;", "finalize;"] {
             assert_eq!(at(name, 0), TokenKind::Identifier, "{name}");
         }
-        assert_eq!(at("Op,", 0), TokenKind::Identifier);
+        assert_eq!(at("Op;", 0), TokenKind::Identifier);
         assert_eq!(at("op _ +", 0), TokenKind::KeywordDeclaration);
-        assert_eq!(at("varop [%", 0), TokenKind::KeywordDeclaration);
-        assert_eq!(at("fn op", 3), TokenKind::EntityNameFunction);
+        assert_eq!(at("op_var [%", 0), TokenKind::KeywordDeclaration);
+        assert_eq!(at("fn op(import", 3), TokenKind::EntityNameFunction);
         assert_eq!(at("op(import:", 3), TokenKind::VariableParameter);
         assert_eq!(at("{ import }", 2), TokenKind::Identifier);
-        assert_eq!(at("fn import", 3), TokenKind::EntityNameFunction);
+        assert_eq!(at("fn import(value", 3), TokenKind::EntityNameFunction);
     }
 
     #[test]
     fn macro_operator_tags_and_implementation_have_distinct_roles() {
-        let source = "module app; import syntax(op macro _ && .__); op macro # ._ { impl selected; } fn run(value: .) { # value }";
+        let source = "mod app; import syntax {op_macro _ && .__} op_macro # ._ { impl selected; } fn run(value: .) { # value }";
         let module = crate::pass::parser::parse(source).unwrap();
         let tokens = dump_with_module(source, &module).unwrap();
         for (needle, kind) in [
-            ("macro _", TokenKind::KeywordDeclaration),
-            ("macro #", TokenKind::KeywordDeclaration),
+            ("op_macro _", TokenKind::KeywordDeclaration),
+            ("op_macro #", TokenKind::KeywordDeclaration),
             ("selected", TokenKind::EntityNameMacroReference),
         ] {
             let start = source.find(needle).unwrap() as u32;
@@ -3426,11 +3391,11 @@ mod tests {
         );
         for mode in ["foldl", "foldr", "foldl1", "foldr1"] {
             let source = format!(
-                "varop [% %] {{ {mode} helper.{mode} helper.variadic; finalize helper.finalize; }};"
+                "op_var [% %] {{ {mode} helper.{mode} helper.variadic; finalize helper.finalize; }};"
             );
             let tokens = dumped_text(&source);
             assert_eq!(
-                tokens.iter().find(|(text, _)| *text == "varop").unwrap().1,
+                tokens.iter().find(|(text, _)| *text == "op_var").unwrap().1,
                 "keyword.declaration"
             );
             let modes = tokens
@@ -3526,7 +3491,7 @@ mod tests {
     #[cfg(all(feature = "surface", feature = "lsp"))]
     fn recursive_call_inside_an_operator_operand_remains_a_member_fact() {
         let source = concat!(
-            "module pkg/main;\n",
+            "mod pkg/main;\n",
             "host fn loop[S][R](step: S -> (S | R), state: S) -> R;\n",
             "fn choose(left: ., right: .) -> . { left }\n",
             "op _ + _ { impl choose; };\n",
@@ -3555,7 +3520,7 @@ mod tests {
 
     #[test]
     fn signature_version_heads_are_keywords_not_call_heads() {
-        let got = dumped_text("signature app v(1);\nv(1) { nonbreaking { add {} } }");
+        let got = dumped_text("sig app v(1);\nv(1) { nonbreaking { add {} } }");
         let version_heads = got
             .iter()
             .filter(|(text, _)| *text == "v")
@@ -3569,13 +3534,7 @@ mod tests {
 
     #[test]
     fn macro_calls_follow_imports_shadowing_grouping_and_source_order() {
-        let source = "module app; import syntax(macro source as selected, macro x1); \
-            fn outer(x: .) { selected(x); (selected)(x); \
-                (.(selected: . -> .) { selected(()) })(selected(x)); \
-                .x. { x1(()) }; selected(x) } \
-            fn before() { later(()) } \
-            macro later : . -> . { impl implementation; }; \
-            fn after() { later(()) }";
+        let source = "mod app; import syntax {macro source as selected; macro x1} fn outer(x: .) { selected(x); (selected)(x); (.(selected: . -> .) { selected(()) })(selected(x)); .x. { x1(()) }; selected(x) } fn before() { later(()) } macro later : . -> . { impl implementation; }; fn after() { later(()) }";
         let classified = dumped_text(source);
         assert_eq!(
             classified
@@ -3617,7 +3576,7 @@ mod tests {
 
     #[test]
     fn macro_import_edit_retracts_call_refinement() {
-        let source = "module app; import syntax(macro build as make); fn run() { make(()) }";
+        let source = "mod app; import syntax {macro build as make} fn run() { make(()) }";
         let edited = source.replace("macro build", "build");
         assert!(dumped_text(source).contains(&("make", "entity.name.macro")));
         assert!(
@@ -3638,8 +3597,7 @@ mod tests {
                 "{source}"
             );
         }
-        let source = "module app; import syntax(varop [! !], macro helper); \
-            fn run(x: .) { [!x!]; [![!x!]!]; ([!x!]); [!x.>tail!]; [! helper(x) !] }";
+        let source = "mod app; import syntax {op_var [! !]; macro helper} fn run(x: .) { [!x!]; [![!x!]!]; ([!x!]); [!x.>tail!]; [! helper(x) !] }";
         let classified = dumped_text(source);
         assert!(!classified.iter().any(|(text, _)| *text == "x!"));
         assert!(classified.contains(&("helper", "entity.name.macro")));
@@ -3661,7 +3619,7 @@ mod tests {
     #[test]
     fn default_is_an_ordinary_value_name() {
         let source = concat!(
-            "module source; import provider(default as ordinary);\n",
+            "mod source; import provider {fn default as ordinary}\n",
             "pub fn default(default: .) -> . { default }\n",
         );
         let actual = dumped_text(source)
@@ -3722,7 +3680,7 @@ mod tests {
 
     #[test]
     fn square_brackets_are_structural_in_every_context() {
-        let src = "module x; fn id[, *F,][,, **G,,,][A](f: F(A), x: A) -> A { x }";
+        let src = "mod x; fn id[, *F,][,, **G,,,][A](f: F(A), x: A) -> A { x }";
         let got = dumped_text(src);
         let binder_symbols: Vec<_> = got
             .into_iter()
@@ -3807,7 +3765,7 @@ mod tests {
 
     #[test]
     fn placeholder_family_uses_ordinary_identifier_roles() {
-        let source = "module x; import m(op _ + _); fn main() -> . { .t. { print(t1) } + () }";
+        let source = "mod x; import m {op _ + _} fn main() -> . { .t. { print(t1) } + () }";
         let module = crate::pass::parser::parse(source).expect("complete module parses");
         let raw = lex(source).expect("lex");
         let start = source.find("t1").expect("numbered reference") as u32;
@@ -3940,12 +3898,12 @@ mod tests {
     fn end_to_end_smoke_module_header() {
         // A small slice of a regular module file, checked end-to-end:
         // module declaration, import statement, fn definition with body.
-        let src = "module foo;\nimport baz(bar);\nfn id(x) { x }\n";
+        let src = "mod foo;\nimport baz {fn bar}\nfn id(x) { x }\n";
         let json = to_json(&dump(src).unwrap());
-        // Module decl: `module` kw.decl, `foo` ident, `;` separator.
+        // Module decl: `mod` kw.decl, `foo` ident, `;` separator.
         assert!(
-            json.contains("\"start\": 0, \"end\": 6, \"kind\": \"keyword.declaration\""),
-            "missing `module` kw.decl in:\n{json}"
+            json.contains("\"start\": 0, \"end\": 3, \"kind\": \"keyword.declaration\""),
+            "missing `mod` kw.decl in:\n{json}"
         );
         // Import: the declaration keyword and module-owned provider have distinct roles.
         assert!(
@@ -3974,19 +3932,25 @@ mod tests {
 
     #[test]
     fn module_path_segments_classify_as_entity_name_module() {
-        // `module a/b;` — both path segments are module names; the
-        // leading `module` keyword stays at keyword.declaration.
-        let src = "module a/b;\n";
+        // Both path segments are module names; the leading keyword stays at
+        // keyword.declaration.
+        let src = "mod a/b;\n";
         let toks = dumped(src);
-        assert_eq!(find_kind_at(&toks, 0), Some("keyword.declaration")); // module
-        assert_eq!(find_kind_at(&toks, 7), Some("entity.name.module")); // a
-        assert_eq!(find_kind_at(&toks, 9), Some("entity.name.module")); // b
+        assert_eq!(find_kind_at(&toks, 0), Some("keyword.declaration"));
+        assert_eq!(
+            find_kind_at(&toks, src.find("a/b").unwrap() as u32),
+            Some("entity.name.module")
+        );
+        assert_eq!(
+            find_kind_at(&toks, src.find("b;").unwrap() as u32),
+            Some("entity.name.module")
+        );
     }
 
     #[test]
     fn import_path_classifies_as_entity_name_module() {
         // Every written provider segment has the module-name role.
-        let src = "module m;\nimport bar/baz(foo);\n";
+        let src = "mod m;\nimport bar/baz {fn foo}\n";
         let toks = dumped(src);
         for name in ["bar", "baz"] {
             let start = src.find(name).expect("provider segment") as u32;
@@ -3997,7 +3961,7 @@ mod tests {
     #[test]
     fn import_intrinsics_target_classifies_as_entity_name_module() {
         // The reserved builtin provider shares the ordinary module-name role.
-        let src = "module m;\nimport __intrinsics__;\n";
+        let src = "mod m;\nimport __intrinsics__;\n";
         let toks = dumped(src);
         let target = src.find("__intrinsics__").expect("builtin provider") as u32;
         assert_eq!(find_kind_at(&toks, target), Some("entity.name.module"));
@@ -4010,22 +3974,25 @@ mod tests {
         // `x` are variable.parameter, and the `x` body reference
         // stays identifier (parameter uses aren't refined in this
         // pass). The return-type `A` reference is a type reference.
-        let src = "module m;\nfn id[A](x: A) -> A { x }\n";
+        let src = "mod m;\nfn id[A](x: A) -> A { x }\n";
         let toks = dumped(src);
-        // `id` at byte 13 (after `fn ` at 10-12 + space).
-        assert_eq!(find_kind_at(&toks, 13), Some("entity.name.function"));
-        // `A` (type binder inside `[A]`) at byte 16.
-        assert_eq!(find_kind_at(&toks, 16), Some("variable.parameter"));
-        // `x` value param at byte 19.
-        assert_eq!(find_kind_at(&toks, 19), Some("variable.parameter"));
-        // `x` body reference at byte 32 — stays identifier.
-        assert_eq!(find_kind_at(&toks, 32), Some("identifier"));
+        for (needle, offset, kind) in [
+            ("id[A]", 0, "entity.name.function"),
+            ("[A]", 1, "variable.parameter"),
+            ("(x:", 1, "variable.parameter"),
+            ("{ x }", 2, "identifier"),
+        ] {
+            assert_eq!(
+                find_kind_at(&toks, (src.find(needle).unwrap() + offset) as u32),
+                Some(kind)
+            );
+        }
     }
 
     #[test]
     fn nominal_name_and_fixed_members_classify() {
         // Ordinary and marked type names receive the same semantic roles.
-        let src = "module m;\npub type { Box[A]: A { pub mk; pub get; }; }\npub type { _Box[_A]: _A { pub mk; pub get; }; }\n";
+        let src = "mod m;\npub type { Box[A]: A { pub mk; pub get; }; }\npub type { _Box[_A]: _A { pub mk; pub get; }; }\n";
         let toks = dumped_text(src);
         for name in ["Box", "_Box"] {
             assert!(
@@ -4053,10 +4020,7 @@ mod tests {
 
     #[test]
     fn bracketed_call_type_arguments_classify_as_types_by_exact_spelling() {
-        let src = "module m; fn id[A](x: A) -> A { x } \
-                   fn use_types[A][_A](x: A, y: _A) -> _A { \
-                     let _ = id[A](x); id[_A](y) \
-                   }";
+        let src = "mod m; fn id[A](x: A) -> A { x } fn use_types[A][_A](x: A, y: _A) -> _A { let _ = id[A](x); id[_A](y) }";
         let toks = dumped(src);
         for call in ["id[A](x)", "id[_A](y)"] {
             let type_arg = src.find(call).unwrap() + "id[".len();
@@ -4070,7 +4034,7 @@ mod tests {
 
     #[test]
     fn compact_nominal_entries_and_existing_operands_classify_as_types() {
-        let src = "module m; type Person = { Name: String; Age: Int { mk; pub get; }; } | (Existing & Other);";
+        let src = "mod m; type Person = { Name: String; Age: Int { mk; pub get; }; } | (Existing & Other);";
         let toks = dumped_text(src);
         for name in [
             "Person", "Name", "Age", "String", "Int", "Existing", "Other",
@@ -4090,7 +4054,7 @@ mod tests {
 
     #[test]
     fn nominal_declarations_and_constructor_keep_distinct_roles() {
-        let src = "module m;\ntype { Red: .; Blue: .; };\nfn pick() -> Red { Red.mk(()) }\n";
+        let src = "mod m;\ntype { Red: .; Blue: .; };\nfn pick() -> Red { Red.mk(()) }\n";
         crate::pass::parser::parse(src).expect("nominal declaration and constructor syntax");
         let toks = dump(src).expect("token dump");
         for (needle, expected) in [
@@ -4111,7 +4075,7 @@ mod tests {
 
     #[test]
     fn alias_tokens_distinguish_binding_qualifier_and_target_leaf() {
-        let source = "module m; type Item = item.Original; type Other = Item;";
+        let source = "mod m; type Item = item.Original; type Other = Item;";
         crate::pass::parser::parse(source).expect("ordinary aliases");
         let tokens = dump(source).expect("alias token dump");
         let kind_at = |start: usize| {
@@ -4135,7 +4099,7 @@ mod tests {
     #[test]
     fn repeated_qualified_nominal_members_classify_the_callable_leaf() {
         let src = concat!(
-            "module m;\n",
+            "mod m;\n",
             "fn forms(row: item.Item) -> . {\n",
             "  let accessed = item.Item.get(row);\n",
             "  let updated = item.Item.mk(accessed);\n",
@@ -4167,10 +4131,12 @@ mod tests {
         // `fn main() -> . { print("hi") }` — `print` is the call's
         // callee path; classify the trailing segment as
         // entity.name.function.
-        let src = "module m;\nfn main() -> . { print(\"hi\") }\n";
+        let src = "mod m;\nfn main() -> . { print(\"hi\") }\n";
         let toks = dumped(src);
-        // `print` at byte 27.
-        assert_eq!(find_kind_at(&toks, 27), Some("entity.name.function"));
+        assert_eq!(
+            find_kind_at(&toks, src.find("print").unwrap() as u32),
+            Some("entity.name.function")
+        );
     }
 
     #[test]
@@ -4182,7 +4148,7 @@ mod tests {
 
     #[test]
     fn malformed_imported_operator_body_keeps_lazy_header_roles() {
-        let src = "module x;\n\nimport m(op _ + _, op _ ? _, foo);\n\nfn main() -> . { .x. { print(x1) } + () ? }\n";
+        let src = "mod x;\n\nimport m {op _ + _; op _ ? _; fn foo}\n\nfn main() -> . { .x. { print(x1) } + () ? }\n";
         assert!(
             crate::pass::parser::parse(src).is_err(),
             "the incomplete final operator must keep the body deferred"

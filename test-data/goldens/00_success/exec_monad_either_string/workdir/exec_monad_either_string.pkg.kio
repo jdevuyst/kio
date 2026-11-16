@@ -1,4 +1,4 @@
-package exec_monad_either_string;
+pkg exec_monad_either_string;
 
 build {
   cache "out/.kio-cache/";

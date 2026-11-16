@@ -1,5 +1,5 @@
-module selective;
+mod selective;
 
-import store(Token);
+import store { type Token }
 
 pub fn keep(value: Token) -> Token { value }

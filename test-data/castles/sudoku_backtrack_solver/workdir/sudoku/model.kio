@@ -1,8 +1,8 @@
 /// The shapes the solver threads: one bundle of mutable state, the search
 /// verdict, the statistics, and the heuristic's answer.
-module sudoku/model;
+mod sudoku/model;
 
-import testapi(Array, I32);
+import testapi { type Array; type I32 }
 
 /// Everything one solve mutates, in one value.
 ///

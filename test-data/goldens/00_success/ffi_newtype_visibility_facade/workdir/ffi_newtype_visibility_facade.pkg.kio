@@ -1,4 +1,4 @@
-package ffi_newtype_visibility_facade;
+pkg ffi_newtype_visibility_facade;
 
 build {
   cache "out/.kio-cache/";

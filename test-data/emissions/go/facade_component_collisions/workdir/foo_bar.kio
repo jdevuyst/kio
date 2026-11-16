@@ -1,3 +1,3 @@
-module foo_bar;
+mod foo_bar;
 
 pub fn value() { () }

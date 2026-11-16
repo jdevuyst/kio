@@ -8,45 +8,55 @@
 /// Removing an order shifts the queue behind it down one slot. Swapping
 /// the last order into the hole would be cheaper and would destroy the
 /// arrival order the queue exists to hold.
-module book/book;
+mod book/book;
 
-import book/num(int_eq, not);
-import book/order(Order, Side, Trade, id_of, is_buy, price_of, ranks_ahead, remaining_of, side_of);
-import macros/control(macro if);
-import macros/match(macro match);
-import macros/row_macros(macro select);
-import macros/spine_macros(macro widen_sum);
-import testapi(Array, Bool, I32);
-import testapi/arith(add_i32, leq_i32, sub_i32);
-import testapi/array(
-, array_get
-, array_len
-, array_make_empty
-, array_make_filled
-, array_pop_back
-, array_push
-, array_set
-);
-import testapi/iter(loop);
+import book/num { fn int_eq; fn not }
+import book/order {
+  type Order;
+  type Side;
+  type Trade;
+  fn id_of;
+  fn is_buy;
+  fn price_of;
+  fn ranks_ahead;
+  fn remaining_of;
+  fn side_of
+}
+import macros/control { macro if }
+import macros/match { macro match }
+import macros/row_macros { macro select }
+import macros/spine_macros { macro widen_sum }
+import testapi { type Array; type Bool; type I32 }
+import testapi/arith { fn add_i32; fn leq_i32; fn sub_i32 }
+import testapi/array {
+  fn array_get;
+  fn array_len;
+  fn array_make_empty;
+  fn array_make_filled;
+  fn array_pop_back;
+  fn array_push;
+  fn array_set
+}
+import testapi/iter { fn loop }
 
 pub type Book = { Bids: Array[Order]; Asks: Array[Order]; Tape: Array[Trade]; Ledger: Array[I32] };
 
 /// Every quantity that enters or leaves the book lands in one of these
 /// cells. Nothing here is derived from the tape, which is what lets the
 /// final invariant check the tape against a total it did not produce.
-literal entered_cell = 0;
+lit entered_cell = 0;
 
-literal cancelled_cell = 1;
+lit cancelled_cell = 1;
 
-literal cancel_count_cell = 2;
+lit cancel_count_cell = 2;
 
-literal reduced_cell = 3;
+lit reduced_cell = 3;
 
-literal unfilled_cell = 4;
+lit unfilled_cell = 4;
 
-literal next_id_cell = 5;
+lit next_id_cell = 5;
 
-literal ledger_size = 6;
+lit ledger_size = 6;
 
 pub fn new_book() -> Book {
   (

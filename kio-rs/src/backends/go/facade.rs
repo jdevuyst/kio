@@ -2386,9 +2386,8 @@ mod prepared_tests {
                 )
             })
             .collect();
-        let package_source = format!(
-            "package pkg; build {{ target go {{ out \"out/go/\"; }} }} bridge {{ {bridge} }}"
-        );
+        let package_source =
+            format!("pkg pkg; build {{ target go {{ out \"out/go/\"; }} }} bridge {{ {bridge} }}");
         let package_file =
             parse_package_file(&package_source, None).expect("parse facade test package file");
         let (modules, package_file) =
@@ -2489,24 +2488,7 @@ mod prepared_tests {
     #[test]
     fn traversal_distinguishes_finite_nesting_from_demanded_cycles() {
         let package = package(
-            "module api; \
-             host type I32 role(i32); \
-             pub type { Id[A]: A { pub mk; pub get; }; }; \
-             pub type { Const[A]: . { pub mk; pub get; }; }; \
-             pub rec type { Self_cycle: Self_cycle { pub mk; pub get; }; }; \
-             rec { \
-               pub type { Left: Right { pub mk; pub get; }; }; \
-               pub type { Right: Left { pub mk; pub get; }; }; \
-             } \
-             rec { \
-               pub type { Cut: Carrier { pub mk; pub get; }; }; \
-               pub type { Carrier: Cut { pub mk; get; }; }; \
-             } \
-             host fn nested(value: Id[Id[I32]]) -> Id[Id[I32]]; \
-             host fn constant(value: Const[Self_cycle]) -> Const[Self_cycle]; \
-             host fn self_recursive(value: Self_cycle) -> Self_cycle; \
-             host fn mutual_recursive(value: Left) -> Left; \
-             host fn carrier_cut(value: Cut) -> Cut;",
+            "mod api; host type I32 role(i32); pub type { Id[A]: A { pub mk; pub get; }; }; pub type { Const[A]: . { pub mk; pub get; }; }; pub rec type { Self_cycle: Self_cycle { pub mk; pub get; }; }; rec { pub type { Left: Right { pub mk; pub get; }; }; pub type { Right: Left { pub mk; pub get; }; }; } rec { pub type { Cut: Carrier { pub mk; pub get; }; }; pub type { Carrier: Cut { pub mk; get; }; }; } host fn nested(value: Id[Id[I32]]) -> Id[Id[I32]]; host fn constant(value: Const[Self_cycle]) -> Const[Self_cycle]; host fn self_recursive(value: Self_cycle) -> Self_cycle; host fn mutual_recursive(value: Left) -> Left; host fn carrier_cut(value: Cut) -> Cut;",
         );
         let prepared = PreparedBoundaryCallableSites::collect_live(&package)
             .expect("prepare recursive facade sites");
@@ -2547,11 +2529,7 @@ mod prepared_tests {
 
     #[test]
     fn recursive_skin_identity_is_root_order_and_extension_invariant() {
-        let declarations = "module api; host type I32 role(i32); \
-            rec { \
-              pub type { Left[A]: (. | (A & Right[A])) { pub mk; pub get; }; }; \
-              pub type { Right[A]: (. | (A & Left[A])) { pub mk; pub get; }; }; \
-            }";
+        let declarations = "mod api; host type I32 role(i32); rec { pub type { Left[A]: (. | (A & Right[A])) { pub mk; pub get; }; }; pub type { Right[A]: (. | (A & Left[A])) { pub mk; pub get; }; }; }";
         let left = "host fn left(value: Left[I32]) -> Left[I32];";
         let right = "host fn right(value: Right[I32]) -> Right[I32];";
         let extension = "pub rec type { Other[A]: (. | Other[A]) { pub mk; pub get; }; };";
@@ -2584,11 +2562,7 @@ mod prepared_tests {
     #[test]
     fn hkt_partial_head_restores_captured_provenance() {
         let package = package(
-            "module api; \
-             host type I32 role(i32); \
-             pub type { Id[A]: A { pub mk; pub get; }; }; \
-             pub type { N[*F][A]: F[A] { pub mk; pub get; }; }; \
-             host fn hkt(value: N[N[Id]][ I32]) -> N[N[Id]][ I32];",
+            "mod api; host type I32 role(i32); pub type { Id[A]: A { pub mk; pub get; }; }; pub type { N[*F][A]: F[A] { pub mk; pub get; }; }; host fn hkt(value: N[N[Id]][ I32]) -> N[N[Id]][ I32];",
         );
         let prepared =
             PreparedBoundaryCallableSites::collect_live(&package).expect("prepare HKT facade site");
@@ -2607,11 +2581,7 @@ mod prepared_tests {
     #[test]
     fn live_transparent_bound_uses_pair_actions_from_the_resolved_source() {
         let package = package(
-            "module api; \
-             host type I32 role(i32); \
-             pub type { Id[A]: A { pub mk; pub get; }; }; \
-             host fn wrapped_function(value: Id[I32 -> I32]) -> .; \
-             host fn wrapped_forall(value: Id[[A] A -> A]) -> .;",
+            "mod api; host type I32 role(i32); pub type { Id[A]: A { pub mk; pub get; }; }; host fn wrapped_function(value: Id[I32 -> I32]) -> .; host fn wrapped_forall(value: Id[[A] A -> A]) -> .;",
         );
         let prepared = PreparedBoundaryCallableSites::collect_live(&package)
             .expect("prepare transparent action facade sites");
@@ -2651,10 +2621,7 @@ mod prepared_tests {
     #[test]
     fn ignored_transparent_argument_does_not_seed_root_shell_inventory() {
         let package = package(
-            "module api; \
-             host type I32 role(i32); \
-             pub type { Const[A]: . { pub mk; pub get; }; }; \
-             host fn ignore(value: Const[I32 & I32]) -> Const[I32 & I32];",
+            "mod api; host type I32 role(i32); pub type { Const[A]: . { pub mk; pub get; }; }; host fn ignore(value: Const[I32 & I32]) -> Const[I32 & I32];",
         );
         let prepared = PreparedBoundaryCallableSites::collect_live(&package)
             .expect("prepare lazy facade site");
@@ -2680,10 +2647,7 @@ mod prepared_tests {
     #[test]
     fn contextual_sum_rows_are_site_local_and_instantiation_exact() {
         let package = package(
-            "module api; \
-             host type I32 role(i32); \
-             host type Str role(str); \
-             host fn sums(value: ((I32 | Str) & (Str | I32))) -> .;",
+            "mod api; host type I32 role(i32); host type Str role(str); host fn sums(value: ((I32 | Str) & (Str | I32))) -> .;",
         );
         let prepared =
             PreparedBoundaryCallableSites::collect_live(&package).expect("prepare contextual sums");
@@ -2730,10 +2694,7 @@ mod prepared_tests {
     #[test]
     fn nominal_projection_preserves_an_opaque_payload_of_a_transparent_outer() {
         let package = package(
-            "module api; \
-             pub type { Hidden: . { mk; get; }; }; \
-             pub type { Outer: Hidden { pub mk; pub get; }; }; \
-             type { Private_outer: Hidden { pub mk; pub get; }; };",
+            "mod api; pub type { Hidden: . { mk; get; }; }; pub type { Outer: Hidden { pub mk; pub get; }; }; type { Private_outer: Hidden { pub mk; pub get; }; };",
         );
         let prepared = PreparedBoundaryCallableSites::collect_live(&package)
             .expect("prepare nested nominal visibility");
@@ -2762,9 +2723,7 @@ mod prepared_tests {
     #[test]
     fn paired_entry_consumes_interleaved_heads_once() {
         let package = package(
-            "module api; \
-             host type I32 role(i32); \
-             host fn staged[A](first: I32)[B](second: I32) -> I32;",
+            "mod api; host type I32 role(i32); host fn staged[A](first: I32)[B](second: I32) -> I32;",
         );
         let prepared =
             PreparedBoundaryCallableSites::collect_live(&package).expect("prepare staged facade");
@@ -2786,10 +2745,7 @@ mod prepared_tests {
     #[test]
     fn ordinary_church_payload_does_not_mint_existential_projector_capability() {
         let package = package(
-            "module api; \
-             pub type { Church: [R] ([Hidden] . -> R) -> R { \
-               pub mk; pub get; \
-             }; };",
+            "mod api; pub type { Church: [R] ([Hidden] . -> R) -> R { pub mk; pub get; }; };",
         );
         let prepared = PreparedBoundaryCallableSites::collect_live(&package)
             .expect("prepare ordinary Church-shaped newtype sites");
@@ -2816,13 +2772,7 @@ mod prepared_tests {
     #[test]
     fn existential_member_capability_owns_identity_and_right_spine_cuts() {
         let package = package(
-            "module api; \
-             pub type { Single <Hidden>: Hidden { \
-               pub mk; pub get; \
-             }; }; \
-             pub type { Packed[A] <Hidden> <Secret>: A & Hidden & Secret { \
-               pub mk; pub get; \
-             }; };",
+            "mod api; pub type { Single <Hidden>: Hidden { pub mk; pub get; }; }; pub type { Packed[A] <Hidden> <Secret>: A & Hidden & Secret { pub mk; pub get; }; };",
         );
         let prepared = PreparedBoundaryCallableSites::collect_live(&package)
             .expect("prepare existential newtype sites");
@@ -2977,11 +2927,7 @@ mod prepared_tests {
     #[test]
     fn existential_projector_accepts_a_canonical_nullary_unit_payload() {
         let package = package(
-            "module api; \
-             pub type Erased[A] = .; \
-             pub type { Empty <Hidden>: Erased[Hidden] { \
-               pub mk; pub get; \
-             }; };",
+            "mod api; pub type Erased[A] = .; pub type { Empty <Hidden>: Erased[Hidden] { pub mk; pub get; }; };",
         );
         let prepared = PreparedBoundaryCallableSites::collect_live(&package)
             .expect("prepare nullary existential projector");
@@ -3015,11 +2961,7 @@ mod prepared_tests {
     #[test]
     fn canonical_unit_source_is_nullary_after_recovery() {
         let package = package(
-            "module api; \
-             host type I32 role(i32); \
-             host fn abi_zero() -> .; \
-             host fn explicit_unit(value: .) -> .; \
-             host fn grouped(first: I32, rest: I32 & I32) -> .;",
+            "mod api; host type I32 role(i32); host fn abi_zero() -> .; host fn explicit_unit(value: .) -> .; host fn grouped(first: I32, rest: I32 & I32) -> .;",
         );
         let prepared = PreparedBoundaryCallableSites::collect_live(&package)
             .expect("prepare zero-argument facade sites");
@@ -3068,13 +3010,13 @@ mod prepared_tests {
 
     #[test]
     fn retained_semantic_entry_contextualizes_interleaved_heads_without_execution() {
-        let package = package("module api;");
+        let package = package("mod api;");
         let signature = parse_signature_file(
-            r#"signature pkg v(2);
+            r#"sig pkg v(2);
 v(1) {
   nonbreaking {
     add {
-      module api {
+      mod api {
         host fn old[A](first: A)[B](second: B & A) -> A & B;
       }
     }
@@ -3083,9 +3025,9 @@ v(1) {
 v(2) {
   nonbreaking {
     remove {
-      module api {
-        old;
-      }
+
+        api.old;
+
     }
   }
 }
@@ -3164,13 +3106,13 @@ v(2) {
 
     #[test]
     fn retained_compound_and_carrier_emit_declarations_but_no_live_site() {
-        let package = package("module api;");
+        let package = package("mod api;");
         let signature = parse_signature_file(
-            r#"signature pkg v(2);
+            r#"sig pkg v(2);
 v(1) {
   nonbreaking {
     add {
-      module api {
+      mod api {
         type { Carrier: . { pub mk; get; }; };
         host fn old(value: (. | (. & Carrier))) -> .;
       }
@@ -3180,10 +3122,10 @@ v(1) {
 v(2) {
   nonbreaking {
     remove {
-      module api {
-        Carrier;
-        old;
-      }
+
+        api.Carrier;
+        api.old;
+
     }
   }
 }
@@ -3221,10 +3163,7 @@ v(2) {
 
     #[test]
     fn bridged_opaque_inventory_emits_carrier_without_callable_sites() {
-        let package = package(
-            "module api; \
-             pub type { Opaque: . { mk; get; }; };",
-        );
+        let package = package("mod api; pub type { Opaque: . { mk; get; }; };");
         let prepared = PreparedBoundaryCallableSites::collect_live(&package)
             .expect("prepare opaque-only inventory");
         let catalog = GoFacadeCatalog::prepare(&prepared).expect("realize opaque-only inventory");
@@ -3237,10 +3176,7 @@ v(2) {
 
     #[test]
     fn unrelated_same_leaf_inventory_only_adds_its_identity_derived_carrier() {
-        let api = "module api; \
-            host type I32 role(i32); \
-            pub type { Token: . { mk; get; }; }; \
-            host fn stable(value: (I32 | Token)) -> (I32 | Token);";
+        let api = "mod api; host type I32 role(i32); pub type { Token: . { mk; get; }; }; host fn stable(value: (I32 | Token)) -> (I32 | Token);";
         let base_package = package(api);
         let base_prepared = PreparedBoundaryCallableSites::collect_live(&base_package)
             .expect("prepare base open-world facade");
@@ -3250,11 +3186,7 @@ v(2) {
         let extended_package = package_sources(
             &[
                 ("api", api),
-                (
-                    "other",
-                    "module other; \
-                     pub type { Token: . { mk; get; }; };",
-                ),
+                ("other", "mod other; pub type { Token: . { mk; get; }; };"),
             ],
             "api; other;",
         );

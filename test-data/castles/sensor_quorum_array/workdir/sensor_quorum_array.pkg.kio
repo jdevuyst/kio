@@ -1,4 +1,4 @@
-package sensor_quorum_array;
+pkg sensor_quorum_array;
 
 build {
   cache "out/.kio-cache/";

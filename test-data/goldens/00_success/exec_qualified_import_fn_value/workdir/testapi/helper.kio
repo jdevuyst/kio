@@ -1,6 +1,6 @@
-module testapi/helper;
+mod testapi/helper;
 
-import testapi(String);
-import testapi/io(print);
+import testapi { type String }
+import testapi/io { fn print }
 
 pub fn greet(s: String) { print(s) }

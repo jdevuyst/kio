@@ -26,15 +26,15 @@ fn outer_braced_entries_accept_one_redundant_suffix() {
         "rec(loop) { fn f() { () }; fn g() { () } }",
         "equiv same { (); () }",
         "op _ + _ { impl add }",
-        "varop [* *] { foldr1 step seed }",
+        "op_var [* *] { foldr1 step seed }",
         "macro apply : . -> . { impl run }",
     ] {
         for suffix in ["", ";"] {
-            let source = format!("module sample; {item}{suffix}");
+            let source = format!("mod sample; {item}{suffix}");
             let parsed = module(&source);
             assert_eq!(
                 parsed.items[0].span().end as usize,
-                "module sample; ".len() + item.len(),
+                "mod sample; ".len() + item.len(),
                 "{source}"
             );
             let editable = match &parsed.items[0] {
@@ -57,10 +57,7 @@ fn outer_braced_entries_accept_one_redundant_suffix() {
             assert!(!printed.trim_end().ends_with(';'), "{printed}");
             module(&printed);
         }
-        assert!(
-            parse(&format!("module sample; {item};;")).is_err(),
-            "{item}"
-        );
+        assert!(parse(&format!("mod sample; {item};;")).is_err(), "{item}");
     }
 }
 
@@ -68,12 +65,12 @@ fn outer_braced_entries_accept_one_redundant_suffix() {
 fn strict_nested_edges_preserve_repeat_and_empty_policy() {
     for body in [
         "op _ + _ { ; impl add; }",
-        "varop [* *] { ; foldr1 step seed; finalize finish; }",
+        "op_var [* *] { ; foldr1 step seed; finalize finish; }",
         "macro apply : . -> . { ; captures (helper); impl run; }",
         "rec(loop) { ; fn f() { () }; fn g() { () }; }",
         "rec { ; type A = B; type { B : . { mk; get } }; }",
     ] {
-        module(&format!("module sample; {body}"));
+        module(&format!("mod sample; {body}"));
     }
     for body in [
         "op _ + _ { ;; impl add }",
@@ -82,22 +79,22 @@ fn strict_nested_edges_preserve_repeat_and_empty_policy() {
         "rec(loop) { fn f() { () } fn g() { () } }",
         "rec { type A = B;; type B = . }",
     ] {
-        assert!(parse(&format!("module sample; {body}")).is_err(), "{body}");
+        assert!(parse(&format!("mod sample; {body}")).is_err(), "{body}");
     }
-    assert!(parse_package_file("package sample; bridge {}", None).is_ok());
+    assert!(parse_package_file("pkg sample; bridge {}", None).is_ok());
     for source in [
-        "package sample; bridge {;}",
-        "package sample; bridge {;; sample}",
-        "package sample; bridge {sample;;}",
+        "pkg sample; bridge {;}",
+        "pkg sample; bridge {;; sample}",
+        "pkg sample; bridge {sample;;}",
     ] {
         assert!(parse_package_file(source, None).is_err(), "{source}");
     }
-    assert!(parse_package_file("package sample; bridge {; sample;}", None).is_ok());
+    assert!(parse_package_file("pkg sample; bridge {; sample;}", None).is_ok());
 }
 
 #[test]
 fn run_tolerant_fields_allow_edges_and_require_peer_separators() {
-    module("module sample; type { Box : . { ;; mk;; get;; } }");
+    module("mod sample; type { Box : . { ;; mk;; get;; } }");
     assert!(
         parse_build_block_body(
             ";; cache ();; docs {;; md \"docs\";;}; target js {;; out \"out\";;};;"
@@ -107,15 +104,9 @@ fn run_tolerant_fields_allow_edges_and_require_peer_separators() {
     assert!(parse_build_block_body("cache () docs {md \"docs\"}").is_err());
     assert!(parse_build_block_body("target js {} target rust {}").is_err());
     assert!(
-        parse_dependency_file(
-            "dependency lib; source {;; git \"url\";; ref \"main\";;};",
-            None
-        )
-        .is_ok()
+        parse_dependency_file("dep lib; source {;; git \"url\";; ref \"main\";;};", None).is_ok()
     );
-    assert!(
-        parse_dependency_file("dependency lib; source {git \"url\" ref \"main\"}", None).is_err()
-    );
+    assert!(parse_dependency_file("dep lib; source {git \"url\" ref \"main\"}", None).is_err());
     assert!(
         parse_lock_file(
             "lock lib; resolved {;; git \"url\"; ref \"main\"; commit \"abc\"; sig \"digest\";;};",
@@ -130,32 +121,29 @@ fn nonbraced_outer_entries_keep_terminators_and_commas() {
     for body in [
         "type A = .",
         "host type A",
-        "host type A { owned }",
         "host fn f() -> .",
         "type Row = { Flag: . }",
-        "literal one = 1",
+        "lit one = 1",
     ] {
-        assert!(parse(&format!("module sample; {body}")).is_err(), "{body}");
-        assert!(parse(&format!("module sample; {body};")).is_ok(), "{body}");
+        assert!(parse(&format!("mod sample; {body}")).is_err(), "{body}");
+        assert!(parse(&format!("mod sample; {body};")).is_ok(), "{body}");
     }
-    assert!(
-        parse("module sample; varop [* *] {foldr1 step seed} fn f() { [* (); () *] }").is_err()
-    );
-    assert!(parse("module sample; fn f() { let x = (); }").is_err());
+    assert!(parse("mod sample; op_var [* *] {foldr1 step seed} fn f() { [* (); () *] }").is_err());
+    assert!(parse("mod sample; fn f() { let x = (); }").is_err());
 }
 
 #[test]
 fn signature_nested_sections_and_mixed_entries_own_separators() {
-    let source = "signature sample v(1); v(1) {; with {; module names {; import other as o; type A = .; type { Box : A {mk; get} }; };}; nonbreaking {; add {; names.A; module api {; pub fn get() -> .;};};};};";
+    let source = "sig sample v(1); v(1) {; with {; mod names {; import other as o; type A = .; type { Box : A {mk; get} }; };}; nonbreaking {; add {; names.A; mod api {; pub fn get() -> .;};};};};";
     let parsed = parse_signature_file(source, None).unwrap();
     let printed = crate::sig::emit_signature_file(&parsed);
     let reparsed =
         parse_signature_file(&printed, None).unwrap_or_else(|error| panic!("{printed}\n{error:?}"));
     assert_eq!(printed, crate::sig::emit_signature_file(&reparsed));
     for invalid in [
-        "signature sample v(1); v(1) {with {module names {type A = .}} nonbreaking {add {names.A}}}",
-        "signature sample v(1); v(1) {nonbreaking {add {module one {} module two {}}}}",
-        "signature sample v(1); v(1) {nonbreaking {add {names.A;;}}}",
+        "sig sample v(1); v(1) {with {mod names {type A = .}} nonbreaking {add {names.A}}}",
+        "sig sample v(1); v(1) {nonbreaking {add {mod one {} mod two {}}}}",
+        "sig sample v(1); v(1) {nonbreaking {add {names.A;;}}}",
     ] {
         assert!(parse_signature_file(invalid, None).is_err(), "{invalid}");
     }
@@ -166,15 +154,15 @@ fn removed_separator_comments_survive_each_file_kind() {
     let sources = [
         (
             0,
-            "module sample; fn f() { () } // note1\n; // note2\nfn g() { () } // note3\n; // note4\n",
+            "mod sample; fn f() { () } // note1\n; // note2\nfn g() { () } // note3\n; // note4\n",
         ),
         (
             1,
-            "package sample; build {; target js {; out \"out\" // note1\n; // note2\n}; // note3\n} // note4\n;",
+            "pkg sample; build {; target js {; out \"out\" // note1\n; // note2\n}; // note3\n} // note4\n;",
         ),
         (
             2,
-            "dependency lib; source {; git \"url\"; // note1\nref \"main\" // note2\n; // note3\n} // note4\n;",
+            "dep lib; source {; git \"url\"; // note1\nref \"main\" // note2\n; // note3\n} // note4\n;",
         ),
         (
             3,
@@ -182,7 +170,7 @@ fn removed_separator_comments_survive_each_file_kind() {
         ),
         (
             4,
-            "signature sample v(1); v(1) {; nonbreaking {; add {; module api {; type A = . // note1\n; // note2\n}; // note3\n};};} // note4\n;",
+            "sig sample v(1); v(1) {; nonbreaking {; add {; mod api {; type A = . // note1\n; // note2\n}; // note3\n};};} // note4\n;",
         ),
     ];
     fn format(kind: usize, source: &str) -> String {
@@ -214,11 +202,11 @@ fn removed_separator_comments_survive_each_file_kind() {
 fn compact_declaration_outer_comments_have_one_owner() {
     for item in [
         "op _ + _ { impl add }",
-        "varop [* *] { foldr1 step seed }",
+        "op_var [* *] { foldr1 step seed }",
         "macro apply : . -> . { impl run }",
     ] {
         for following in ["", "fn next() { () }"] {
-            let source = format!("module sample; {item} // outside_marker\n; {following}");
+            let source = format!("mod sample; {item} // outside_marker\n; {following}");
             let printed = crate::pretty::pretty_module(&module(&source));
             assert_eq!(printed.matches("outside_marker").count(), 1, "{printed}");
             assert_eq!(printed, crate::pretty::pretty_module(&module(&printed)));
@@ -228,7 +216,7 @@ fn compact_declaration_outer_comments_have_one_owner() {
 
 #[test]
 fn signature_import_peer_diagnostic_inserts_owned_separator() {
-    let source = "signature sample v(1); v(1) { nonbreaking { add { module api { import one as o import two as t; type A = . } } } }";
+    let source = "sig sample v(1); v(1) { nonbreaking { add { mod api { import one as o import two as t; type A = . } } } }";
     let error = parse_signature_file(source, None).expect_err("missing import separator");
     let [fix] = error.diagnostic().fixes() else {
         panic!("one exact separator insertion: {error:?}")

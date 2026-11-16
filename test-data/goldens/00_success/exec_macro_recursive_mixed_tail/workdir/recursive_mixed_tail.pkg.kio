@@ -1,4 +1,4 @@
-package recursive_mixed_tail;
+pkg recursive_mixed_tail;
 
 build {
   target js {

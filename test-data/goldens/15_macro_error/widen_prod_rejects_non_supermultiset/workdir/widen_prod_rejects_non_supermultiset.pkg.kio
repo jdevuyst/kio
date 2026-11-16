@@ -1,4 +1,4 @@
-package widen_prod_rejects_non_supermultiset;
+pkg widen_prod_rejects_non_supermultiset;
 
 build {
   cache "out/.kio-cache/";

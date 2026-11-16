@@ -1,4 +1,4 @@
-package build_rec_loop_recursive_state;
+pkg build_rec_loop_recursive_state;
 
 build {
   cache "out/.kio-cache/";

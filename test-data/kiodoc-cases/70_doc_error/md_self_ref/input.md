@@ -6,7 +6,7 @@ module, so `{@}` is a runner error here. A `.md` snippet references a
 declared harness with `{@NAME}`, or is standalone with `{}`.
 
 ```kio {@}
-module kiodoc;
+mod kiodoc;
 
 pub fn greet() { () }
 ```

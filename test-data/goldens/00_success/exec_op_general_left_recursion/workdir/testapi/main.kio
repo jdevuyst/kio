@@ -1,8 +1,8 @@
-module testapi/main;
+mod testapi/main;
 
-import testapi(Int, String);
-import testapi/fmt(int_to_string);
-import testapi/io(print);
+import testapi { type Int; type String }
+import testapi/fmt { fn int_to_string }
+import testapi/io { fn print }
 
 fn choose(a: Int, b: Int, c: Int) -> Int { b }
 

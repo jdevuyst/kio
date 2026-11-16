@@ -2145,10 +2145,11 @@ mod tests {
 
     /// Current-module source plus an independently populated command catalog.
     fn walk_set() -> NameSet {
-        let src = "module demo/main;\n\
-             pub fn factorial(n: .) -> . { n }\n\
-             fn add(x: ., y: .) -> . { x }\n\
-             op _ + __ { impl add }\n";
+        let src = "mod demo/main;
+pub fn factorial(n: .) -> . { n }
+fn add(x: ., y: .) -> . { x }
+op _ + __ { impl add }
+";
         NameSet {
             items: vec![ItemEntry {
                 short_name: "factorial".to_owned(),
@@ -2230,7 +2231,7 @@ mod tests {
     #[test]
     fn comptime_literal_completion_uses_current_module_import() {
         let mut set = walk_set();
-        set.current_module_src = Some("module demo/main; import __comptime__;".to_owned());
+        set.current_module_src = Some("mod demo/main; import __comptime__;".to_owned());
         let provider = AstScopeProvider::new(&set);
         let completion = complete(&set, &provider, "__", 2);
         assert_eq!(completion.replace, 0..2);
@@ -2250,7 +2251,7 @@ mod tests {
                 .iter()
                 .all(|candidate| candidate.label != "__.t__")
         );
-        set.current_module_src = Some("module demo/main;".to_owned());
+        set.current_module_src = Some("mod demo/main;".to_owned());
         assert!(
             AstScopeProvider::new(&set)
                 .completion("__", 2)
@@ -2472,9 +2473,7 @@ mod tests {
 
     #[test]
     fn compact_nominals_use_ordinary_type_selectors_and_kinds() {
-        let source = "module pkg/api; pub type Color = { Red: .; Green: .; }; \
-            rec { type { Node: Tail; }; type Tail = Node; } \
-            type { Box: . { mk; get; }; }";
+        let source = "mod pkg/api; pub type Color = { Red: .; Green: .; }; rec { type { Node: Tail; }; type Tail = Node; } type { Box: . { mk; get; }; }";
         let session = session_with(&[("pkg/api", source)]);
         let mut names = NameSet::from_session(&session);
         names.current_module_src = Some(source.to_owned());
@@ -2530,7 +2529,7 @@ mod tests {
     #[test]
     fn alias_completion_uses_ordinary_type_names() {
         let source = concat!(
-            "module pkg/api; fn field() -> . { () } ",
+            "mod pkg/api; fn field() -> . { () } ",
             "pub type { Original: .; } pub type Field = Original;",
         );
         let session = session_with(&[("pkg/api", source)]);
@@ -2615,9 +2614,20 @@ mod tests {
     fn complete_end_to_end_over_a_loaded_session() {
         let root = std::path::PathBuf::from("/kio-repl-tests/completion-exact");
         let files = std::collections::BTreeMap::from([
-            (root.join("demo.pkg.kio"), "package demo; bridge { demo/**; }".to_owned()),
-            (root.join("demo/main.kio"), "module demo/main; pub fn factorial(n: .) -> . { n } pub fn factory(n: .) -> . { n }".to_owned()),
-            (root.join("demo/other.kio"), "module demo/other; import __intrinsics__; fn foreign_private() -> . { () }".to_owned()),
+            (
+                root.join("demo.pkg.kio"),
+                "pkg demo; bridge { demo/**; }".to_owned(),
+            ),
+            (
+                root.join("demo/main.kio"),
+                "mod demo/main; pub fn factorial(n: .) -> . { n } pub fn factory(n: .) -> . { n }"
+                    .to_owned(),
+            ),
+            (
+                root.join("demo/other.kio"),
+                "mod demo/other; import __intrinsics__; fn foreign_private() -> . { () }"
+                    .to_owned(),
+            ),
         ]);
         let mut session = Session::new_in_memory(root, files);
         for path in ["demo/other", "demo/main"] {
@@ -2674,16 +2684,16 @@ mod tests {
         let mut files = std::collections::BTreeMap::new();
         files.insert(
             root.join("app.pkg.kio"),
-            "package app;\n\nbridge {\n  app/**;\n}\n".to_owned(),
+            "pkg app;\n\nbridge {\n  app/**;\n}\n".to_owned(),
         );
         files.insert(
             root.join("app/syntax.kio"),
-            "module app/syntax;\npub fn choose(left: ., right: .) -> . { left }\npub op ? _ : _ { impl choose }\n"
+            "mod app/syntax;\npub fn choose(left: ., right: .) -> . { left }\npub op ? _ : _ { impl choose }\n"
                 .to_owned(),
         );
         files.insert(
             root.join("app/main.kio"),
-            "module app/main;\nimport app/syntax(op ? _ : _);\npub fn factorial(value: .) -> . { value }\nfn run() -> . { ? () : () }\n"
+            "mod app/main;\nimport app/syntax {op ? _ : _}\npub fn factorial(value: .) -> . { value }\nfn run() -> . { ? () : () }\n"
                 .to_owned(),
         );
         let mut session = Session::new_in_memory(root, files);
@@ -2710,9 +2720,9 @@ mod tests {
         // An `op _ + __ { impl add }` produces an OperatorEntry keyed on the
         // token spelling and binding `add` — never an ItemEntry.
         let module = crate::pass::parser::parse(
-            "module pkg/m;\nfn add(x: ., y: .) -> . { x }\nop _ + __ { impl add }\n",
+            "mod pkg/m;\nfn add(x: ., y: .) -> . { x }\nop _ + __ { impl add }\n",
         )
-        .expect("module parses");
+        .expect("mod parses");
         let mut items = Vec::new();
         let mut operators = Vec::new();
         for item in &module.items {
@@ -2729,13 +2739,9 @@ mod tests {
     #[test]
     fn collect_item_indexes_every_rec_member() {
         let module = crate::pass::parser::parse(
-            "module pkg/m; \
-             rec(loop) { \
-               fn local(value: .) -> . { recur exported(value) }; \
-               pub fn exported(value: .) -> . { recur local(value) } \
-             }",
+            "mod pkg/m; rec(loop) { fn local(value: .) -> . { recur exported(value) }; pub fn exported(value: .) -> . { recur local(value) } }",
         )
-        .expect("module parses");
+        .expect("mod parses");
         let mut items = Vec::new();
         let mut operators = Vec::new();
         collect_item("pkg/m", &module.items[0], &mut items, &mut operators);

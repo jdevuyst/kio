@@ -1,4 +1,4 @@
-package specialized_callable;
+pkg specialized_callable;
 
 build {
   target python {

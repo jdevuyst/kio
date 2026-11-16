@@ -1,5 +1,5 @@
-module main;
+mod main;
 
-import provider(chosen);
+import provider { fn chosen }
 
 pub fn run() { chosen() }

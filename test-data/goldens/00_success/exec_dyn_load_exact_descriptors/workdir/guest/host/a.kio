@@ -1,4 +1,4 @@
-module host/a;
+mod host/a;
 
 host type Value role(i32);
 

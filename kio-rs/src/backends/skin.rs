@@ -1017,7 +1017,7 @@ mod tests {
                 (module_file_path(&parsed), parsed)
             })
             .collect();
-        let package_file = parse_package_file("package scopecheck;\nbridge { main; }", None)
+        let package_file = parse_package_file("pkg scopecheck;\nbridge { main; }", None)
             .expect("parse package file");
         let (lowered_modules, lowered_package_file) =
             FullPipeline::lower_package(parsed_modules, Some(package_file)).expect("lower package");
@@ -1101,19 +1101,11 @@ mod tests {
     #[cfg(feature = "surface")]
     #[test]
     fn unbridged_public_declarations_do_not_change_bridged_shape_claims() {
-        let main = "module main; \
-                    host type Number role(i32); \
-                    pub fn keep(value: (Number & Number)) -> (Number & Number) { value }";
+        let main = "mod main; host type Number role(i32); pub fn keep(value: (Number & Number)) -> (Number & Number) { value }";
         let base = build_package_with_modules(&[main]);
         let with_unbridged = build_package_with_modules(&[
             main,
-            "module extra; \
-             host type Text role(str); \
-             pub fn distract(value: (Text & Text)) -> (Text & Text) { value } \
-             pub type { Noise: (Text | Text) { \
-               pub mk; \
-               pub get; \
-             }; };",
+            "mod extra; host type Text role(str); pub fn distract(value: (Text & Text)) -> (Text & Text) { value } pub type { Noise: (Text | Text) { pub mk; pub get; }; };",
         ]);
 
         assert_swift_facade_unchanged(&base, &with_unbridged, &["extra__Noise"]);
@@ -1122,39 +1114,11 @@ mod tests {
     #[cfg(feature = "surface")]
     #[test]
     fn local_binders_cannot_resolve_to_unrelated_newtypes_in_carrier_storage() {
-        let main = "module main; \
-                    host type Exact; \
-                    pub type { Existential <U>: U { \
-                      mk; \
-                      get; \
-                    }; }; \
-                    pub type { Rank_n: [U] U { \
-                      mk; \
-                      get; \
-                    }; }; \
-                    type { Hidden <V>: V { \
-                      mk; \
-                      get; \
-                    }; }; \
-                    pub type { Outer: Hidden { \
-                      mk; \
-                      get; \
-                    }; }; \
-                    type { Inner[A]: A { \
-                      mk; \
-                      get; \
-                    }; }; \
-                    pub type { Nested <U>: Inner[U] { \
-                      mk; \
-                      get; \
-                    }; };";
+        let main = "mod main; host type Exact; pub type { Existential <U>: U { mk; get; }; }; pub type { Rank_n: [U] U { mk; get; }; }; type { Hidden <V>: V { mk; get; }; }; pub type { Outer: Hidden { mk; get; }; }; type { Inner[A]: A { mk; get; }; }; pub type { Nested <U>: Inner[U] { mk; get; }; };";
         let base = build_package_with_modules(&[main]);
         let with_same_leaf = build_package_with_modules(&[
             main,
-            "module extra; \
-             import main(Exact); \
-             type { U: Exact { mk; get; }; }; \
-             type { V: Exact { mk; get; }; };",
+            "mod extra; import main {type Exact} type { U: Exact { mk; get; }; }; type { V: Exact { mk; get; }; };",
         ]);
 
         assert_swift_facade_unchanged(&base, &with_same_leaf, &["extra__U", "extra__V"]);
@@ -1184,18 +1148,10 @@ mod tests {
     #[cfg(feature = "surface")]
     #[test]
     fn recursive_newtype_resolution_is_module_scoped() {
-        let main = "module main; \
-                    pub rec type { Chain: . | Chain { \
-                      pub mk; \
-                      pub get; \
-                    }; };";
+        let main = "mod main; pub rec type { Chain: . | Chain { pub mk; pub get; }; };";
         let base = build_package_with_modules(&[main]);
         let with_same_leaf = build_package_with_modules(&[
-            "module aaa; \
-             pub type { Chain: . { \
-               pub mk; \
-               pub get; \
-             }; };",
+            "mod aaa; pub type { Chain: . { pub mk; pub get; }; };",
             main,
         ]);
 
@@ -1273,17 +1229,7 @@ mod tests {
     #[test]
     fn typed_ffi_artifacts_observe_ordered_and_nested_binder_scope() {
         let package = build_package(
-            "module main; \
-             host type Str role(str); \
-             pub type { T: Str { pub mk; pub get; }; }; \
-             pub type { Pack <T>: T { pub mk; pub get; }; }; \
-             pub type { Poly: [T] T -> T { pub mk; pub get; }; }; \
-             pub type { Capture[A]: [T] A -> T { pub mk; pub get; }; }; \
-             host fn nested(f: [T] T -> T) -> Str; \
-             host fn ordered(value: T)[T](later: T) -> T; \
-             host fn packed(value: Pack) -> Pack; \
-             host fn poly(value: Poly) -> Poly; \
-             host fn capture(value: Capture[T]) -> Capture[T];",
+            "mod main; host type Str role(str); pub type { T: Str { pub mk; pub get; }; }; pub type { Pack <T>: T { pub mk; pub get; }; }; pub type { Poly: [T] T -> T { pub mk; pub get; }; }; pub type { Capture[A]: [T] A -> T { pub mk; pub get; }; }; host fn nested(f: [T] T -> T) -> Str; host fn ordered(value: T)[T](later: T) -> T; host fn packed(value: Pack) -> Pack; host fn poly(value: Poly) -> Poly; host fn capture(value: Capture[T]) -> Capture[T];",
         );
         let descriptor = crate::host_descriptor::build_host_descriptor(&package);
         let capture_ty = descriptor

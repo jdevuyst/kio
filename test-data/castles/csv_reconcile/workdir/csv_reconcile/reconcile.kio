@@ -1,14 +1,14 @@
-module csv_reconcile/reconcile;
+mod csv_reconcile/reconcile;
 
 import csv_reconcile/model as model;
-import csv_reconcile/model(State);
-import macros/control(macro if);
-import macros/match(macro match);
-import macros/spine_macros(macro widen_sum);
-import testapi(Bool, I32, String);
+import csv_reconcile/model { type State }
+import macros/control { macro if }
+import macros/match { macro match }
+import macros/spine_macros { macro widen_sum }
+import testapi { type Bool; type I32; type String }
 import testapi/fmt as fmt;
 import testapi/io as io;
-import testapi/iter(loop);
+import testapi/iter { fn loop }
 import testapi/text as text;
 
 fn cat(left: String, right: String) -> String { text.string_concat(left, right) }

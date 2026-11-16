@@ -1,8 +1,8 @@
-signature app v(3);
+sig app v(3);
 
 v(1) {
   with {
-    module api {
+    mod api {
       rec {
         pub type { A: A | B { pub mk; pub get } };
         pub type { B: B | A { pub mk; pub get } }
@@ -19,7 +19,7 @@ v(1) {
 
 v(2) {
   with {
-    module api {
+    mod api {
       rec {
         pub type { A: (A | B) | . { pub mk; pub get } };
         pub type { B: B | A { pub mk; pub get } }
@@ -29,7 +29,7 @@ v(2) {
   breaking {
     modify {
       api.A;
-      module api {
+      mod api {
         pub type { A: (A | B) | . { pub mk; pub get } }
       }
     }

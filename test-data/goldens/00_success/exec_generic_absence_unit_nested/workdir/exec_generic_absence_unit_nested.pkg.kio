@@ -1,4 +1,4 @@
-package exec_generic_absence_unit_nested;
+pkg exec_generic_absence_unit_nested;
 
 build {
   cache "out/.kio-cache/";

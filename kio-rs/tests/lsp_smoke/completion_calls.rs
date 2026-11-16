@@ -32,7 +32,7 @@ fn lsp_protocol_completion_argument_head_tracks_current_public_type() {
     ];
     let source = |declaration: &str, callee: &str| {
         format!(
-            "module pkg/main; type Item = .; {declaration} pub fn run(value: .) -> . {{ {callee}(value) }}"
+            "mod pkg/main; type Item = .; {declaration} pub fn run(value: .) -> . {{ {callee}(value) }}"
         )
     };
     let path = dir.write("pkg/main.kio", &source(sources[0].0, sources[0].1));

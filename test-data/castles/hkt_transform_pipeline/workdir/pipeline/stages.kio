@@ -1,41 +1,48 @@
-module pipeline/stages;
+mod pipeline/stages;
 
-import hkt/testapi/main(Box, Extract, Functor, Identity, Monad, Pure);
-import macros/control(macro if);
-import macros/row_macros(macro select);
-import macros/sequence(macro do);
-import pipeline/domain(
-, Approvals
-, Approved
-, Delta
-, Field_name
-, First_sample
-, Form_event
-, Form_name
-, Pipeline_summary
-, Report_name
-, Route
-, Sample_name
-, Score_total
-, Second_sample
-, Stage_score
-, Telemetry_sample
-, Third_sample
-, Urgent
-);
-import pipeline/hkt_instances(
-, box_extract
-, box_functor
-, box_monad
-, box_pure
-, identity_extract
-, identity_functor
-, identity_monad
-, identity_pure
-);
-import testapi(Bool, I32, String);
-import testapi/fmt(bool_to_string, int_to_string);
-import testapi/text(string_concat, string_eq);
+import hkt/testapi/main {
+  type Box;
+  type Extract;
+  type Functor;
+  type Identity;
+  type Monad;
+  type Pure
+}
+import macros/control { macro if }
+import macros/row_macros { macro select }
+import macros/sequence { macro do }
+import pipeline/domain {
+  type Approvals;
+  type Approved;
+  type Delta;
+  type Field_name;
+  type First_sample;
+  type Form_event;
+  type Form_name;
+  type Pipeline_summary;
+  type Report_name;
+  type Route;
+  type Sample_name;
+  type Score_total;
+  type Second_sample;
+  type Stage_score;
+  type Telemetry_sample;
+  type Third_sample;
+  type Urgent
+}
+import pipeline/hkt_instances {
+  fn box_extract;
+  fn box_functor;
+  fn box_monad;
+  fn box_pure;
+  fn identity_extract;
+  fn identity_functor;
+  fn identity_monad;
+  fn identity_pure
+}
+import testapi { type Bool; type I32; type String }
+import testapi/fmt { fn bool_to_string; fn int_to_string }
+import testapi/text { fn string_concat; fn string_eq }
 
 fn join3(a: String, b: String, c: String) -> String { string_concat(a, string_concat(b, c)) }
 

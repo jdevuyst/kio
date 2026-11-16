@@ -1,4 +1,4 @@
-package lexical_closure_interpreter;
+pkg lexical_closure_interpreter;
 
 build {
   cache "out/.kio-cache/";

@@ -1,4 +1,4 @@
-module word_api/word_nodes;
+mod word_api/word_nodes;
 
 pub type { _Word_box__[Item_type]: Item_type { pub mk; pub get } }
 

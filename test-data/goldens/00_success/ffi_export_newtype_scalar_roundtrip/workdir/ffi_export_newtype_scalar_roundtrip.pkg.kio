@@ -1,4 +1,4 @@
-package ffi_export_newtype_scalar_roundtrip;
+pkg ffi_export_newtype_scalar_roundtrip;
 
 build {
   cache "out/.kio-cache/";

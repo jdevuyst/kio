@@ -1,6 +1,6 @@
-module main;
+mod main;
 
-import macros/control(Bool, macro if);
+import macros/control { type Bool; macro if }
 
 fn identity_a[A](value: A) -> A { value }
 

@@ -1,16 +1,16 @@
-module systems/solution;
+mod systems/solution;
 
 import list/core as c;
 import list/list as l;
 import list_host as integers;
-import macros/control(macro if);
-import macros/match(macro match);
-import macros/row_macros(macro select);
-import macros/spine_macros(macro widen_sum);
+import macros/control { macro if }
+import macros/match { macro match }
+import macros/row_macros { macro select }
+import macros/spine_macros { macro widen_sum }
 import systems/matrix as m;
 import systems/rational as q;
 import systems/reduce as reduction;
-import testapi(Bool, I32);
+import testapi { type Bool; type I32 }
 
 pub type Family = { Particular: m.Row; Directions: m.Matrix; Free_columns: c.List[I32] };
 

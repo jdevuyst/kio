@@ -1,7 +1,7 @@
 # Accumulating snippets
 
 <!--kio {harness=sample placeholder="__INSERT__" accumulate}
-module sample;
+mod sample;
 
 __INSERT__
 -->

@@ -1,4 +1,4 @@
-package vec_demo;
+pkg vec_demo;
 
 build {
   cache "out/.kio-cache/";

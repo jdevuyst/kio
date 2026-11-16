@@ -1,16 +1,16 @@
-module terms;
+mod terms;
 
 import list/core as lists;
 import list/list as traversal;
-import macros/control(macro if);
-import macros/match(macro match);
-import macros/row_macros(macro select);
-import macros/spine_macros(macro widen_sum);
-import testapi(Bool, I32, String);
+import macros/control { macro if }
+import macros/match { macro match }
+import macros/row_macros { macro select }
+import macros/spine_macros { macro widen_sum }
+import testapi { type Bool; type I32; type String }
 import testapi/arith as arith;
 import testapi/fmt as fmt;
-import testapi/iter(loop);
-import testapi/text(string_concat);
+import testapi/iter { fn loop }
+import testapi/text { fn string_concat }
 
 pub type { Variable: I32 }
 

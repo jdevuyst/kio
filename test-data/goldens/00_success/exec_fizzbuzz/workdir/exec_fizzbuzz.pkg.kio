@@ -1,4 +1,4 @@
-package exec_fizzbuzz;
+pkg exec_fizzbuzz;
 
 build {
   cache "out/.kio-cache/";

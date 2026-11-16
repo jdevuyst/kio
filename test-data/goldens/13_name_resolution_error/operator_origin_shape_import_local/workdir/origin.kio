@@ -1,4 +1,4 @@
-module origin;
+mod origin;
 
 pub fn choose(a: ., b: .) { a }
 

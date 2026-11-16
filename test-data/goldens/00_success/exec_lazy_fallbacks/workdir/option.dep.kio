@@ -1,4 +1,4 @@
-dependency option;
+dep option;
 
 source {
   path "../../../../poc/option/workdir/option.pkg.kio"

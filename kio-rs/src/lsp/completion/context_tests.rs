@@ -19,9 +19,15 @@ fn complete_marked(kind: &str, marked: &str) -> (String, CompletionList) {
 
 #[test]
 fn completed_import_selector_keeps_alias_choice_at_recovered_close() {
-    for selector in ["Entry", "value", "macro choose", "op _ + _", "varop [* *]"] {
-        for close in ["", ");"] {
-            let marked = format!("module app; import dep/api({selector} |{close}");
+    for selector in [
+        "type Entry",
+        "fn value",
+        "macro choose",
+        "op _ + _",
+        "op_var [* *]",
+    ] {
+        for close in ["", "}"] {
+            let marked = format!("mod app; import dep/api {{{selector} |{close}");
             let (_, result) = complete_marked("", &marked);
             assert!(!result.is_incomplete, "{marked}: {result:?}");
             assert_eq!(
@@ -36,17 +42,25 @@ fn completed_import_selector_keeps_alias_choice_at_recovered_close() {
         }
     }
     for marked in [
-        "module app; import dep/api(|",
-        "module app; import dep/api(Entry, |",
+        "mod app; import dep/api {|",
+        "mod app; import dep/api {type Entry; |",
     ] {
         let (_, result) = complete_marked("", marked);
         assert!(
             result.is_incomplete,
             "missing provider remains incomplete: {marked}"
         );
-        assert!(result.items.is_empty(), "{marked}: {result:?}");
+        assert_eq!(
+            result
+                .items
+                .iter()
+                .map(|item| item.label.as_str())
+                .collect::<Vec<_>>(),
+            vec!["fn", "type", "lit", "macro", "op", "op_macro", "op_var"],
+            "{marked}: {result:?}"
+        );
     }
-    let (_, result) = complete_marked("", "module app; import dep/api(Entry as |");
+    let (_, result) = complete_marked("", "mod app; import dep/api {type Entry as |");
     assert!(!result.is_incomplete);
     assert!(
         result.items.is_empty(),
@@ -59,14 +73,10 @@ fn parser_context_file_identity_precedes_comment_and_binder_suppression() {
     for (kind, header, marked) in [
         (
             ".pkg",
-            "package app;",
+            "pkg app;",
             "build { target js { baseline |latest } }",
         ),
-        (
-            ".dep",
-            "dependency app;",
-            "source { |path \"app.pkg.kio\"; }",
-        ),
+        (".dep", "dep app;", "source { |path \"app.pkg.kio\"; }"),
         (
             ".lock",
             "lock app;",
@@ -74,10 +84,10 @@ fn parser_context_file_identity_precedes_comment_and_binder_suppression() {
         ),
         (
             ".sig",
-            "signature app v(1);",
-            "|v(1) { nonbreaking { add { module main { pub type A = .; } } } }",
+            "sig app v(1);",
+            "|v(1) { nonbreaking { add { mod main { pub type A = .; } } } }",
         ),
-        ("", "module app;", "|fn run() { () }"),
+        ("", "mod app;", "|fn run() { () }"),
     ] {
         for marked in [
             format!("{header} {marked}"),
@@ -117,22 +127,22 @@ fn parser_context_file_identity_precedes_comment_and_binder_suppression() {
 fn parser_context_recursive_nominal_payload_recovery_keeps_type_scope() {
     for (marked, expected, excluded) in [
         (
-            "module app; import pkg/dep(Imported); rec type { List[A] <U> : Pair[A][bogus[B]: |",
+            "mod app; import pkg/dep {type Imported} rec type { List[A] <U> : Pair[A][bogus[B]: |",
             vec!["A", "U", "List", "Imported"],
             vec!["B", "Bogus"],
         ),
         (
-            "module app; import pkg/dep(Imported); rec type Tree[A] = { List[B] <U> : Pair[B][bogus[C]: |",
+            "mod app; import pkg/dep {type Imported} rec type Tree[A] = { List[B] <U> : Pair[B][bogus[C]: |",
             vec!["B", "U", "Tree", "List", "Imported"],
             vec!["A", "C", "Bogus"],
         ),
         (
-            "module app; rec type { First[A]: Pair[A][bogus[B]: ]; Second[C]: |",
+            "mod app; rec type { First[A]: Pair[A][bogus[B]: ]; Second[C]: |",
             vec!["C", "First", "Second"],
             vec!["A", "B", "Bogus"],
         ),
         (
-            "module app; import pkg/dep(Pair); type Tree[A] = { List[B]: B; } & Pair[|",
+            "mod app; import pkg/dep {type Pair} type Tree[A] = { List[B]: B; } & Pair[|",
             vec!["A", "List", "Pair"],
             vec!["B", "Tree"],
         ),
@@ -157,10 +167,10 @@ fn parser_context_recursive_nominal_payload_recovery_keeps_type_scope() {
         }
     }
     for marked in [
-        "module app; rec type { Malformed[A B]: |",
-        "module app; rec type { List[A] <U> : Pair[A][bogus[B]: // A|",
-        "module app; rec type { List[A] <U> : Pair[A][bogus[B]: \"A|",
-        "module app; rec type { First[A]: Pair[A][bogus[B]: ]; Se|cond[C]: . };",
+        "mod app; rec type { Malformed[A B]: |",
+        "mod app; rec type { List[A] <U> : Pair[A][bogus[B]: // A|",
+        "mod app; rec type { List[A] <U> : Pair[A][bogus[B]: \"A|",
+        "mod app; rec type { First[A]: Pair[A][bogus[B]: ]; Se|cond[C]: . };",
     ] {
         assert!(complete_marked("", marked).1.items.is_empty(), "{marked}");
     }
@@ -169,26 +179,22 @@ fn parser_context_recursive_nominal_payload_recovery_keeps_type_scope() {
 #[test]
 fn parser_context_closed_vocabularies_cover_file_kinds_and_retract_fields() {
     for (kind, source, expected) in [
-        ("", "|", vec!["module"]),
-        (".pkg", "|", vec!["package"]),
-        (".dep", "|", vec!["dependency"]),
+        ("", "|", vec!["mod"]),
+        (".pkg", "|", vec!["pkg"]),
+        (".dep", "|", vec!["dep"]),
         (".lock", "|", vec!["lock"]),
-        (".sig", "|", vec!["signature"]),
+        (".sig", "|", vec!["sig"]),
         (
             ".pkg",
-            "package app; build { cache (); |",
+            "pkg app; build { cache (); |",
             vec!["docs", "target"],
         ),
         (
             ".pkg",
-            "package app; build { target rust {} |",
+            "pkg app; build { target rust {} |",
             vec!["cache", "docs", "target"],
         ),
-        (
-            ".dep",
-            "dependency app; source { |",
-            vec!["git", "path", "ref"],
-        ),
+        (".dep", "dep app; source { |", vec!["git", "path", "ref"]),
         (
             ".lock",
             "lock app; resolved { |",
@@ -196,10 +202,10 @@ fn parser_context_closed_vocabularies_cover_file_kinds_and_retract_fields() {
         ),
         (
             ".sig",
-            "signature app v(1); v(1) { |",
+            "sig app v(1); v(1) { |",
             vec!["breaking", "nonbreaking", "with"],
         ),
-        ("", "module app; type { A: . { mk; |", vec!["get", "pub"]),
+        ("", "mod app; type { A: . { mk; |", vec!["get", "pub"]),
     ] {
         let (_, result) = complete_marked(kind, source);
         let mut labels: Vec<_> = result
@@ -220,16 +226,16 @@ fn parser_context_closed_vocabularies_cover_file_kinds_and_retract_fields() {
 fn parser_context_required_named_continuations_remain_available() {
     let mut failures = Vec::new();
     for (kind, source, expected) in [
-        ("", "module app; host |", vec!["fn", "pub", "type"]),
-        ("", "module app; macro make: . { impl(|", vec!["fills"]),
+        ("", "mod app; host |", vec!["fn", "pub", "type"]),
+        ("", "mod app; macro make: . { impl(|", vec!["fills"]),
         (
             ".dep",
-            "dependency app; source { path \"app.pkg.kio\"; } rehost dep/api |",
+            "dep app; source { path \"app.pkg.kio\"; } rehost dep/api |",
             vec!["to"],
         ),
         (
             ".dep",
-            "dependency app; source { path \"app.pkg.kio\"; } retype dep/api.Type |",
+            "dep app; source { path \"app.pkg.kio\"; } retype dep/api.Type |",
             vec!["to"],
         ),
     ] {
@@ -253,8 +259,8 @@ fn parser_context_required_named_continuations_remain_available() {
 #[test]
 fn parser_context_argument_keywords_require_the_recursive_owner() {
     for source in [
-        "module app; fn target(x: .) { x } fn run() { target(|",
-        "module app; fn target(x: .) { x } rec(group) fn run(x: .) { .(y: .) { target(|",
+        "mod app; fn target(x: .) { x } fn run() { target(|",
+        "mod app; fn target(x: .) { x } rec(group) fn run(x: .) { .(y: .) { target(|",
     ] {
         let (_, result) = complete_marked("", source);
         assert!(
@@ -272,13 +278,13 @@ fn parser_context_argument_head_requires_current_public_type() {
     let mut failures = Vec::new();
     for callee in ["identity", "choose"] {
         let source = format!(
-            "module app/main; type Item = .; fn identity(value: .) -> . {{ value }} fn choose[A](value: A) -> A {{ value }} fn run(value: .) -> . {{ {callee}(value) }}"
+            "mod app/main; type Item = .; fn identity(value: .) -> . {{ value }} fn choose[A](value: A) -> A {{ value }} fn run(value: .) -> . {{ {callee}(value) }}"
         );
         let file = root.join("app/main.kio");
         let files = std::collections::BTreeMap::from([
             (
                 root.join("app.pkg.kio"),
-                "package app; bridge { app/**; }".to_owned(),
+                "pkg app; bridge { app/**; }".to_owned(),
             ),
             (file.clone(), source.clone()),
         ]);
@@ -329,7 +335,7 @@ fn parser_context_target_ids_exclude_other_written_targets() {
     let mut failures = Vec::new();
     for (source, expected) in [
         (
-            "package app; build { target rust {} target |",
+            "pkg app; build { target rust {} target |",
             &[
                 "go",
                 "haskell",
@@ -342,7 +348,7 @@ fn parser_context_target_ids_exclude_other_written_targets() {
             ][..],
         ),
         (
-            "package app; build { target ru|st {} }",
+            "pkg app; build { target ru|st {} }",
             &[
                 "go",
                 "haskell",
@@ -356,7 +362,7 @@ fn parser_context_target_ids_exclude_other_written_targets() {
             ][..],
         ),
         (
-            "package app; build { target | {} target rust {} }",
+            "pkg app; build { target | {} target rust {} }",
             &[
                 "go",
                 "haskell",
@@ -386,9 +392,9 @@ fn parser_context_target_ids_exclude_other_written_targets() {
 #[test]
 fn named_target_completion_follows_backend_not_name() {
     for marked in [
-        "package app; build { target rust {} target (|",
-        "package app; build { target (rust, \"native\") {} target (|",
-        "package app; build { target (ru|st, \"native\") {} }",
+        "pkg app; build { target rust {} target (|",
+        "pkg app; build { target (rust, \"native\") {} target (|",
+        "pkg app; build { target (ru|st, \"native\") {} }",
     ] {
         let (_, result) = complete_marked(".pkg", marked);
         let mut labels: Vec<_> = result
@@ -416,15 +422,15 @@ fn named_target_completion_follows_backend_not_name() {
     }
     for (marked, expected) in [
         (
-            "package app; build { target (rust, \"web\") { | } }",
+            "pkg app; build { target (rust, \"web\") { | } }",
             vec!["baseline", "namespace", "out", "thread_safety"],
         ),
         (
-            "package app; build { target (js, \"rust\") { | } }",
+            "pkg app; build { target (js, \"rust\") { | } }",
             vec!["baseline", "namespace", "out"],
         ),
         (
-            "package app; build { target (rust, \"native\") { out \"out\"; | } }",
+            "pkg app; build { target (rust, \"native\") { out \"out\"; | } }",
             vec!["baseline", "namespace", "thread_safety"],
         ),
     ] {
@@ -439,20 +445,20 @@ fn named_target_completion_follows_backend_not_name() {
         assert!(!result.is_incomplete, "{marked}");
     }
     for marked in [
-        "package app; build { target (js, |",
-        "package app; build { target (js, \"we|b\") {} }",
+        "pkg app; build { target (js, |",
+        "pkg app; build { target (js, \"we|b\") {} }",
     ] {
         let (_, result) = complete_marked(".pkg", marked);
         assert!(result.items.is_empty(), "{marked}: {result:?}");
     }
     let (_, result) = complete_marked(
         ".pkg",
-        "package app; build { target (js, \"web\") {} target | }",
+        "pkg app; build { target (js, \"web\") {} target | }",
     );
     assert!(result.items.iter().any(|item| item.label == "js"));
     let (_, result) = complete_marked(
         ".pkg",
-        "package app; build { target (js, \"rust\") {} target | }",
+        "pkg app; build { target (js, \"rust\") {} target | }",
     );
     assert!(!result.items.iter().any(|item| item.label == "rust"));
 }
@@ -461,9 +467,9 @@ fn named_target_completion_follows_backend_not_name() {
 fn parser_context_rec_annotations_require_an_eligible_structural_owner() {
     let mut invalid = Vec::new();
     for (marked, expected) in [
-        ("module app; fn run() { recur(|", vec![]),
+        ("mod app; fn run() { recur(|", vec![]),
         (
-            "module app; rec(drive) fn run(x: .) -> . { .(y: .) { recur(|",
+            "mod app; rec(drive) fn run(x: .) -> . { .(y: .) { recur(|",
             vec!["escape"],
         ),
     ] {
@@ -477,7 +483,7 @@ fn parser_context_rec_annotations_require_an_eligible_structural_owner() {
             invalid.push((marked, result.items));
         }
     }
-    let (_, result) = complete_marked("", "module app; rec(drive) fn run(x: .) -> . { recur(|");
+    let (_, result) = complete_marked("", "mod app; rec(drive) fn run(x: .) -> . { recur(|");
     if result.items.iter().any(|item| item.label == "poly") {
         invalid.push(("monomorphic group", result.items));
     }
@@ -490,7 +496,7 @@ fn parser_context_qualified_nominals_keep_scope_order_and_identity_aliases() {
         let (_, result) = complete_marked(
             "",
             &format!(
-                "module app; type {{ Box[A]: A {{ mk; get; }}; }}; type Alias[A] = Box[A]; fn run() {{ {head}.|"
+                "mod app; type {{ Box[A]: A {{ mk; get; }}; }}; type Alias[A] = Box[A]; fn run() {{ {head}.|"
             ),
         );
         assert_eq!(
@@ -504,7 +510,7 @@ fn parser_context_qualified_nominals_keep_scope_order_and_identity_aliases() {
     }
     let (_, result) = complete_marked(
         "",
-        "module app; fn run() { Later.| } type { Later: . { mk; get; }; };",
+        "mod app; fn run() { Later.| } type { Later: . { mk; get; }; };",
     );
     assert!(
         result.items.is_empty(),
@@ -513,7 +519,7 @@ fn parser_context_qualified_nominals_keep_scope_order_and_identity_aliases() {
     );
     let (_, result) = complete_marked(
         "",
-        "module app; type Record = { Field: .; }; fn run() { Record.|",
+        "mod app; type Record = { Field: .; }; fn run() { Record.|",
     );
     assert_eq!(
         result
@@ -528,12 +534,12 @@ fn parser_context_qualified_nominals_keep_scope_order_and_identity_aliases() {
 #[test]
 fn parser_context_suppresses_literals_comments_and_binder_introductions() {
     for source in [
-        "module app; fn earlier() { () } fn run() { \"lit|eral\" }",
-        "module app; fn earlier() { () } fn run() { 12|3 }",
-        "module app; fn earlier() { () } fn run() { .t| }",
-        "module app; fn earlier() { () } fn run() { // ear|lier\n () }",
-        "module app; fn earlier() { () } fn run(new|name: .) { () }",
-        "module app; fn earlier() { () } fn run() { let new|name = (); () }",
+        "mod app; fn earlier() { () } fn run() { \"lit|eral\" }",
+        "mod app; fn earlier() { () } fn run() { 12|3 }",
+        "mod app; fn earlier() { () } fn run() { .t| }",
+        "mod app; fn earlier() { () } fn run() { // ear|lier\n () }",
+        "mod app; fn earlier() { () } fn run(new|name: .) { () }",
+        "mod app; fn earlier() { () } fn run() { let new|name = (); () }",
     ] {
         let (_, result) = complete_marked("", source);
         assert!(result.items.is_empty(), "{source}: {:?}", result.items);
@@ -544,22 +550,22 @@ fn parser_context_suppresses_literals_comments_and_binder_introductions() {
 fn parser_context_incomplete_scope_and_type_namespace_are_exact() {
     for (source, included, excluded) in [
         (
-            "module app; fn earlier() { () } fn run(value: .) { let local = value; |",
+            "mod app; fn earlier() { () } fn run(value: .) { let local = value; |",
             vec!["earlier", "value", "local"],
             vec!["run"],
         ),
         (
-            "module app; type Earlier = .; fn run[A](value: A) -> A|",
+            "mod app; type Earlier = .; fn run[A](value: A) -> A|",
             vec!["Earlier", "A"],
             vec!["run", "value"],
         ),
         (
-            "module app; fn run() { .(local: .) { | } }",
+            "mod app; fn run() { .(local: .) { | } }",
             vec!["local"],
             vec!["run"],
         ),
         (
-            "module app; rec(loop) fn run(value: .) -> . { recur ru|n(value) }",
+            "mod app; rec(loop) fn run(value: .) -> . { recur ru|n(value) }",
             vec!["run"],
             vec!["value"],
         ),
@@ -581,7 +587,7 @@ fn parser_context_incomplete_scope_and_type_namespace_are_exact() {
 
 #[test]
 fn parser_context_edit_replaces_the_whole_atom() {
-    let (source, result) = complete_marked(".pkg", "package app; build { ca|che (); }");
+    let (source, result) = complete_marked(".pkg", "pkg app; build { ca|che (); }");
     let item = result
         .items
         .iter()

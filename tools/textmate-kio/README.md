@@ -18,8 +18,8 @@ consumer's dynamic operator grammar.
 TextMate uses bounded `begin` / `end` states for strings, module-first import
 paths and selection groups, and variadic callable clauses. An import's
 written grammar is sufficient; no provider is read. Token quotation and
-variadic separator semicolons stay inside the parenthesized selection list.
-Grammar-owned `op`/`varop` tags and four-mode/finalizer clause heads receive
+variadic separator semicolons stay inside the braced selection list.
+Import-kind tags and four-mode/finalizer clause heads receive
 keyword scopes; ordinary contextual names keep identifier or entity scopes.
 Positive declaration-head scopes require bounded same-line syntax evidence.
 An incomplete or line-split head and its unresolved contextual words stay

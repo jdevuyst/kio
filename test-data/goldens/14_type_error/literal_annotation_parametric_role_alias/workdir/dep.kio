@@ -1,4 +1,4 @@
-module dep;
+mod dep;
 
 import provider as p;
 

@@ -1,4 +1,4 @@
-module main;
+mod main;
 
 fn before() { Later.get(Later.mk(())) }
 

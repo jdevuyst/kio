@@ -1,4 +1,4 @@
-package beta;
+pkg beta;
 
 build {
   target js {

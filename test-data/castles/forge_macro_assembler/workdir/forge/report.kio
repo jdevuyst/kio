@@ -4,24 +4,39 @@
 /// the disassembled image, everything it emitted, the registers it left
 /// behind, why it stopped, and what it spent. A rejected one shows the
 /// reason assembly turned it down.
-module forge/report;
+mod forge/report;
 
 import forge/assemble as asm;
 import forge/disasm as d;
 import forge/isa as i;
-import forge/isa(Reg);
+import forge/isa { type Reg }
 import forge/list as l;
 import forge/program as p;
-import forge/program(Duplicate_label, Image, Items, Macros, Undefined_label, Unknown_macro);
+import forge/program {
+  type Duplicate_label;
+  type Image;
+  type Items;
+  type Macros;
+  type Undefined_label;
+  type Unknown_macro
+}
 import forge/text as t;
 import forge/vm as vm;
-import forge/vm(Faulted, Halted, Out_of_fuel, Ran_off, Stop, Vm, Words);
-import macros/control(macro if);
-import macros/match(macro match);
-import macros/row_macros(macro select);
-import testapi(Bool, I32, String);
-import testapi/arith(add_i32, sub_i32);
-import testapi/iter(loop);
+import forge/vm {
+  type Faulted;
+  type Halted;
+  type Out_of_fuel;
+  type Ran_off;
+  type Stop;
+  type Vm;
+  type Words
+}
+import macros/control { macro if }
+import macros/match { macro match }
+import macros/row_macros { macro select }
+import testapi { type Bool; type I32; type String }
+import testapi/arith { fn add_i32; fn sub_i32 }
+import testapi/iter { fn loop }
 
 /// What the driver carries across the suite: programs assembled, programs
 /// rejected, and machine steps spent.

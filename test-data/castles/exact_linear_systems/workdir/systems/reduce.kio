@@ -1,16 +1,16 @@
-module systems/reduce;
+mod systems/reduce;
 
 import list/core as c;
 import list/list as l;
 import list_host as integers;
-import macros/control(macro if);
-import macros/match(macro match);
-import macros/spine_macros(macro widen_sum);
+import macros/control { macro if }
+import macros/match { macro match }
+import macros/spine_macros { macro widen_sum }
 import systems/matrix as m;
 import systems/rational as q;
-import testapi(Bool, I32);
+import testapi { type Bool; type I32 }
 import testapi/arith as a;
-import testapi/iter(loop);
+import testapi/iter { fn loop }
 
 pub type Reduction = { Reduced: m.Matrix; Pivots: c.List[I32]; Swaps: I32 };
 

@@ -5,11 +5,7 @@ use crate::ast::{Meta, Prime, TypeRecGroup};
 #[cfg(feature = "cli")]
 fn projected_type_rec_analysis_keeps_import_validation_at_the_module_boundary() {
     let module = crate::pass::parser::parse(
-        "module api; import __comptime__; \
-         rec { \
-             type { Left: . | Right { mk; get; }; }; \
-             type { Right: . | Left { mk; get; }; }; \
-         }",
+        "mod api; import __comptime__; rec { type { Left: . | Right { mk; get; }; }; type { Right: . | Left { mk; get; }; }; }",
     )
     .expect("parse a recursive declaration graph with compile-time import metadata");
     let Item::TypeRecGroup(group) = &module.items[0] else {
@@ -30,7 +26,7 @@ fn projected_type_rec_analysis_keeps_import_validation_at_the_module_boundary() 
 }
 
 fn independent_group(count: usize) -> (String, TypeRecGroup<Prime>, TypeRecAnalysis) {
-    let mut source = String::from("module x;\nrec {\n");
+    let mut source = String::from("mod x;\nrec {\n");
     for index in 0..count {
         source.push_str(&format!(
             "type {{ Loop{index}: . | Loop{index} {{ mk; get; }}; }};\n"
@@ -143,7 +139,7 @@ fn recursive_group_repairs_reconstruct_parent_separators() {
         "; type { A: . | B { mk; get }; }; type { B: . | A { mk; get }; }; type C = .;",
     ] {
         for suffix in ["", ";", " // outer comment\n;"] {
-            let source = format!("module x; rec {{ {body} }}{suffix}");
+            let source = format!("mod x; rec {{ {body} }}{suffix}");
             let module =
                 crate::prime::lower::lower_module(crate::pass::parser::parse(&source).unwrap())
                     .unwrap();
@@ -185,7 +181,7 @@ fn implicit_group_wrap_inserts_only_missing_braced_peer_separator() {
 
     for suffix in ["", ";", " // between declaration and suffix\n;"] {
         let source = format!(
-            "module x; type {{ A: . | B {{ mk; get }}; }}{suffix}\ntype {{ B: . | A {{ mk; get }}; }}"
+            "mod x; type {{ A: . | B {{ mk; get }}; }}{suffix}\ntype {{ B: . | A {{ mk; get }}; }}"
         );
         let module = source_module(&source);
         let error = Resolver::check_module(&module).expect_err("implicit mutual group");
@@ -233,7 +229,7 @@ fn cyclic_component_classification_split_fix_is_linear() {
     assert_eq!(fix, expected_fix(&group));
     let repaired = apply_fix(&source, &fix);
     let expected = format!(
-        "module x;\n{}\n",
+        "mod x;\n{}\n",
         (0..COUNT)
             .map(|index| format!("rec type {{ Loop{index}: . | Loop{index} {{ mk; get; }}; }};"))
             .collect::<Vec<_>>()
@@ -276,13 +272,14 @@ fn cyclic_component_classification_resolver_diagnostic_is_linear() {
 
 #[test]
 fn cyclic_component_classification_preserves_mixed_partitions() {
-    let source = "module x; rec {\n\
-        type Alias = Left;\n\
-        /// Left member.\n\
-        pub type { Left: Right { pub mk; get; }; };\n\
-        type { Right: Left { mk; get; }; };\n\
-        type { Alone: Alone { mk; get; }; };\n\
-        type Base = .;\n}";
+    let source = "mod x; rec {
+type Alias = Left;
+/// Left member.
+pub type { Left: Right { pub mk; get; }; };
+type { Right: Left { mk; get; }; };
+type { Alone: Alone { mk; get; }; };
+type Base = .;
+}";
     let mut module =
         crate::prime::lower::lower_module(crate::pass::parser::parse(source).unwrap()).unwrap();
     let Item::TypeRecGroup(group) = module.items.pop().unwrap() else {

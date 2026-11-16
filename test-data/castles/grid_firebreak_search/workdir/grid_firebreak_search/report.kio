@@ -1,18 +1,18 @@
-module grid_firebreak_search/report;
+mod grid_firebreak_search/report;
 
-import grid_firebreak_search/model(
-, Blocked
-, Candidate_count
-, Frontier_count
-, Plan
-, Score
-, Selected
-, Spend
-);
+import grid_firebreak_search/model {
+  type Blocked;
+  type Candidate_count;
+  type Frontier_count;
+  type Plan;
+  type Score;
+  type Selected;
+  type Spend
+}
 import grid_firebreak_search/search as search;
-import macros/control(macro if);
-import macros/row_macros(macro select);
-import testapi(Array, Bool, I32, String);
+import macros/control { macro if }
+import macros/row_macros { macro select }
+import testapi { type Array; type Bool; type I32; type String }
 import testapi/arith as arith;
 import testapi/array as array;
 import testapi/fmt as fmt;

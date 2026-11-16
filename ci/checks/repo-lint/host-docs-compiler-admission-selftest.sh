@@ -111,7 +111,7 @@ EOF
 
 cat >"$fake_repo/docs/hosts/java.md" <<'EOF'
 ```kio {file}
-package greeter;
+pkg greeter;
 ```
 
 ```java
@@ -280,7 +280,7 @@ grep -q 'host-fence compile SKIPPED' "$scratch/optional.log"
 
 cat >"$fake_repo/docs/hosts/ts.md" <<'EOF'
 ```kio {file}
-package greeter;
+pkg greeter;
 ```
 
 ```ts
@@ -312,7 +312,7 @@ printf '#!/bin/sh\nexit 1\n' >"$scratch/python-bin/mise"
 chmod +x "$scratch/python-bin/pyright" "$scratch/python-bin/mise"
 cat >"$scratch/python-good.md" <<'EOF'
 ```kio {file}
-package greeter;
+pkg greeter;
 ```
 
 ```python

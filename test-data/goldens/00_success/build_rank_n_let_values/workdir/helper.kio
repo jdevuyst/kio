@@ -1,4 +1,4 @@
-module helper;
+mod helper;
 
 pub fn identity[A](value: A) -> A { value }
 

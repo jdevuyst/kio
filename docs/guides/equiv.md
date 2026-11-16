@@ -19,10 +19,10 @@ bridge {
   kiodoc;
 }
 
-module kiodoc;
+mod kiodoc;
 
 import __intrinsics__;
-import control(macro scope);
+import control {macro scope}
 
 host type String role(str);
 host fn print(value: String);

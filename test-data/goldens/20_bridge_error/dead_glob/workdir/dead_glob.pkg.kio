@@ -1,4 +1,4 @@
-package dead_glob;
+pkg dead_glob;
 
 build {
   cache "out/.kio-cache/";

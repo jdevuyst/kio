@@ -1,4 +1,4 @@
-module store/qualified;
+mod store/qualified;
 
 import store as source;
 

@@ -1,4 +1,4 @@
-module provider;
+mod provider;
 
 /// Current declaration documentation.
 pub fn chosen() { missing }

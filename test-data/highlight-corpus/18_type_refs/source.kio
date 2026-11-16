@@ -1,4 +1,4 @@
-module m;
+mod m;
 
 pub type Pair[A][B] = A & B;
 

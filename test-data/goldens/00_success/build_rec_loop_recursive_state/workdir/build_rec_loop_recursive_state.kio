@@ -1,4 +1,4 @@
-module build_rec_loop_recursive_state;
+mod build_rec_loop_recursive_state;
 
 host type Bool role(bool);
 

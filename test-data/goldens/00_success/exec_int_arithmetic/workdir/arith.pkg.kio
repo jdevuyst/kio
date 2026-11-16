@@ -1,4 +1,4 @@
-package arith;
+pkg arith;
 
 build {
   cache "out/.kio-cache/";

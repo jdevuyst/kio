@@ -1,4 +1,4 @@
-module right;
+mod right;
 
 host type Shared role(i32);
 

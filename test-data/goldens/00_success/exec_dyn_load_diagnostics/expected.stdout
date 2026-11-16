@@ -1,13 +1,13 @@
 truncated body: dyn_load_prime: malformed image — module `b`, fn `broken`: expected `,` or `)` in an argument list
 import cycle: dyn_load_prime: malformed image — the module imports form a cycle among: a, b
 unresolvable import: dyn_load_prime: malformed image — module `b` imports `nope` from `a`, which declares no such item
-declaration before module header: dyn_load_prime: malformed image — a declaration appears before the first `module` header at line 1, column 1
+declaration before module header: dyn_load_prime: malformed image — a declaration appears before the first `mod` header at line 1, column 1
 unterminated string: dyn_load_prime: malformed image — unterminated string literal — no closing `"` before end-of-input at line 10, column 21
 empty type application: dyn_load_prime: malformed image — module `a`, fn `p`: expected one type argument in `[...]` at line 12, column 35
-type argument list: dyn_load_prime: malformed image — module `a`, fn `bad`: expected `]` after one type argument at line 1, column 68
-type binder list: dyn_load_prime: malformed image — expected one kind-marked type binder inside `[...]` at line 1, column 22
-parenthesized literal type: dyn_load_prime: malformed image — module `a`, fn `bad`: a literal must carry a bracketed type annotation at line 1, column 59
-type constructor argument list: dyn_load_prime: malformed image — module `a`, fn `bad`: dyn_load_prime: host type argument: dyn_load_prime: malformed exact host-function signature: expected `]` after one type argument at line 1, column 124
+type argument list: dyn_load_prime: malformed image — module `a`, fn `bad`: expected `]` after one type argument at line 1, column 65
+type binder list: dyn_load_prime: malformed image — expected one kind-marked type binder inside `[...]` at line 1, column 19
+parenthesized literal type: dyn_load_prime: malformed image — module `a`, fn `bad`: a literal must carry a bracketed type annotation at line 1, column 56
+type constructor argument list: dyn_load_prime: malformed image — module `a`, fn `bad`: dyn_load_prime: host type argument: dyn_load_prime: malformed exact host-function signature: expected `]` after one type argument at line 1, column 121
 unbound name: dyn_load_prime: malformed image — module `a`, fn `u`: unbound name `missing` at line 10, column 27
 higher-kinded host type binder: dyn_load_prime: malformed host type `hostapi.Wrapper`: host type parameters must have kind `*`
 parser fuel: parser step budget exhausted — the declaration body is unreasonably large, or the image is malformed in a way that stalls the parse

@@ -1,4 +1,4 @@
-module a_/b;
+mod a_/b;
 
 host type Edge;
 

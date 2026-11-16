@@ -1,8 +1,8 @@
-module geom;
+mod geom;
 
-import ops(swap);
+import ops { fn swap }
 import vec as v;
-import vec(Vec2, fst);
+import vec { type Vec2; fn fst }
 
 // Two more intra-dependency reference forms, both of which must be
 // re-rooted with the dependency: a qualified-alias import (`use vec as

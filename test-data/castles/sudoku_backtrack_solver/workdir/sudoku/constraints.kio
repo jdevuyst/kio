@@ -7,28 +7,28 @@
 /// three slots per placement. The undo touches the same three. That
 /// symmetry is the whole discipline: `unplace` is `place` with the value
 /// flipped back, so the tables can never drift away from the board.
-module sudoku/constraints;
+mod sudoku/constraints;
 
-import macros/control(macro if);
-import macros/row_macros(macro select);
+import macros/control { macro if }
+import macros/row_macros { macro select }
 import sudoku/geometry as geo;
-import sudoku/model(
-, Board
-, Box_of
-, Col_of
-, Row_of
-, Stack_cell
-, Stack_digit
-, Used_box
-, Used_col
-, Used_row
-, Work
-);
+import sudoku/model {
+  type Board;
+  type Box_of;
+  type Col_of;
+  type Row_of;
+  type Stack_cell;
+  type Stack_digit;
+  type Used_box;
+  type Used_col;
+  type Used_row;
+  type Work
+}
 import sudoku/num as num;
-import testapi(Array, Bool, I32);
-import testapi/arith(add_i32, leq_i32);
-import testapi/array(array_get, array_make_empty, array_make_filled, array_set);
-import testapi/iter(loop);
+import testapi { type Array; type Bool; type I32 }
+import testapi/arith { fn add_i32; fn leq_i32 }
+import testapi/array { fn array_get; fn array_make_empty; fn array_make_filled; fn array_set }
+import testapi/iter { fn loop }
 
 fn mark(work: Work, cell: I32, digit: I32, value: I32) {
   let row = array_get(work.>select { Row_of.get }, cell);

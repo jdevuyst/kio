@@ -1,4 +1,4 @@
-module hkt/testapi;
+mod hkt/testapi;
 
 import testapi as _rehost_hegfhdhegbhagj;
 

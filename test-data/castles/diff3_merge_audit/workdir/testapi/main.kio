@@ -10,7 +10,7 @@
 /// way by both, or a conflict. `diff3/render` prints the merged document —
 /// with conflict markers around the text it could not reconcile — and then
 /// an audit of what the merge did.
-module testapi/main;
+mod testapi/main;
 
 import diff3/lcs as lcs;
 import diff3/merge as merge;

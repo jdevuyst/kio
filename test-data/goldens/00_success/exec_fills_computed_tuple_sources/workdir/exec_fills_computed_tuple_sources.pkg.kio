@@ -1,4 +1,4 @@
-package exec_fills_computed_tuple_sources;
+pkg exec_fills_computed_tuple_sources;
 
 build {
   cache "out/.kio-cache/";

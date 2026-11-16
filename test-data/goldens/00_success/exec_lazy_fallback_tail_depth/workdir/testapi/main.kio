@@ -1,7 +1,7 @@
-module testapi/main;
+mod testapi/main;
 
-import shared/fallback/countdown(countdown);
-import testapi/fmt(int_to_string);
-import testapi/io(print);
+import shared/fallback/countdown { fn countdown }
+import testapi/fmt { fn int_to_string }
+import testapi/io { fn print }
 
 pub fn main() { print(int_to_string(countdown(5000))); print("\n") }

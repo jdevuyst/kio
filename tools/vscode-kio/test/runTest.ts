@@ -45,7 +45,7 @@ function mode(): Mode {
 
 // Fixtures the activation / highlighting suites open. They sit flat at
 // the workspace root and are staged only for the mock launch: a real
-// server resolves their `module` paths against the workspace root and
+// server resolves their `mod` paths against the workspace root and
 // rejects the mismatch as a parse error, which is not the diagnostic
 // the real launch is there to assert.
 const FLAT_FIXTURES = [

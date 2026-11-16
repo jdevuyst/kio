@@ -1,4 +1,4 @@
-package xmalias;
+pkg xmalias;
 
 build {
   cache "out/.kio-cache/";

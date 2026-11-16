@@ -1,14 +1,14 @@
-module ml/schemes;
+mod ml/schemes;
 
 import list/core as lists;
 import list/list as walk;
-import macros/control(macro if);
-import macros/match(macro match);
-import macros/spine_macros(macro widen_sum);
+import macros/control { macro if }
+import macros/match { macro match }
+import macros/spine_macros { macro widen_sum }
 import ml/types as types;
-import testapi(Bool, I32, String);
+import testapi { type Bool; type I32; type String }
 import testapi/arith as arith;
-import testapi/iter(loop);
+import testapi/iter { fn loop }
 import testapi/text as text;
 
 pub type Scheme = lists.List[I32] & types.Ty;

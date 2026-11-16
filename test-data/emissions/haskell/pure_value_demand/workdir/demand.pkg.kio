@@ -1,4 +1,4 @@
-package demand;
+pkg demand;
 
 build {
   target haskell {

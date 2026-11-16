@@ -1,4 +1,4 @@
-module demo/ops;
+mod demo/ops;
 
 pub fn choose(left: ., right: .) { left }
 
@@ -21,7 +21,7 @@ pub op _ + _ { impl choose }
 pub op _ (=) _ { impl choose }
 
 /// Fold a bracketed sequence.
-pub varop [* *] { foldr choose empty }
+pub op_var [* *] { foldr choose empty }
 
 pub fn local() { () + () }
 

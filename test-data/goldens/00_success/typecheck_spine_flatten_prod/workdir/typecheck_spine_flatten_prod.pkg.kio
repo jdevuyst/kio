@@ -1,4 +1,4 @@
-package typecheck_spine_flatten_prod;
+pkg typecheck_spine_flatten_prod;
 
 build {
   cache "out/.kio-cache/";

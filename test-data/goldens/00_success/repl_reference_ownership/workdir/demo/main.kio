@@ -1,7 +1,7 @@
-module demo/main;
+mod demo/main;
 
 import demo/a as first;
-import demo/a(Field, Num, Original, macro build, truth);
+import demo/a { type Field; type Num; type Original; lit truth; macro build }
 import demo/b as second;
 
 fn literal_use() -> Num { truth[Num] }

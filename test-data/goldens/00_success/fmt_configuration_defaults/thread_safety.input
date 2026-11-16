@@ -1,4 +1,4 @@
-package pkg;
+pkg pkg;
 build {
   target (rust, "sending") { out "out/send/"; thread_safety ((send)) };
   target (rust, "sharing") { out "out/sync/"; thread_safety (sync) };

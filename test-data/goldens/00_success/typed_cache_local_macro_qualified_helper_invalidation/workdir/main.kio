@@ -1,4 +1,4 @@
-module main;
+mod main;
 
 import __comptime__;
 import provider as helper;

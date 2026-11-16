@@ -1,4 +1,4 @@
-package scoped_role_constraints;
+pkg scoped_role_constraints;
 
 build {
   cache "out/.kio-cache/";

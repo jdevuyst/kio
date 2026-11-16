@@ -1,8 +1,8 @@
-module host/m;
+mod host/m;
 
 import __intrinsics__;
 
-import host(A, B, source);
+import host { type A; type B; fn source }
 
 // `swap` flips the two arms of a sum. It is the canonical opaque-sum
 // transformation: the scrutinee `s` is an `equiv` parameter, so its

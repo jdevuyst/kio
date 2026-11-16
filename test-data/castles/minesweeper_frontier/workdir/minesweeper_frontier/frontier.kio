@@ -1,20 +1,20 @@
-module minesweeper_frontier/frontier;
+mod minesweeper_frontier/frontier;
 
-import macros/control(macro if);
-import minesweeper_frontier/model(
-, cell_count
-, cell_index
-, eq_i32
-, height
-, last_index
-, mine_at
-, revealed_at
-, width
-);
-import testapi(Array, Bool, I32);
+import macros/control { macro if }
+import minesweeper_frontier/model {
+  fn cell_count;
+  fn cell_index;
+  fn eq_i32;
+  fn height;
+  fn last_index;
+  fn mine_at;
+  fn revealed_at;
+  fn width
+}
+import testapi { type Array; type Bool; type I32 }
 import testapi/arith as arith;
 import testapi/array as array;
-import testapi/iter(loop);
+import testapi/iter { fn loop }
 
 pub fn class_remote() -> I32 { 0 }
 

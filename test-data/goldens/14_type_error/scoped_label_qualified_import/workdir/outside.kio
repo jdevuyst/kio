@@ -1,4 +1,4 @@
-module outside;
+mod outside;
 
 import scope/origin as origin;
 

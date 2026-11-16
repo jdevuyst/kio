@@ -1,6 +1,6 @@
-module curp/m;
+mod curp/m;
 
-import curp(mk);
+import curp { fn mk }
 
 fn pass_second(u: .)(v: .) { v }
 

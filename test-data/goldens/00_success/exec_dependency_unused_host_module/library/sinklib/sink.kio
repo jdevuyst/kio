@@ -1,4 +1,4 @@
-module sink;
+mod sink;
 
 // A host-using module the consumer never imports. It declares a host fn
 // the consumer's runner protocol does not supply; because it is not

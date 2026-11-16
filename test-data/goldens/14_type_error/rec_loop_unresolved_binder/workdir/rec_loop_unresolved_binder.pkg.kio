@@ -1,4 +1,4 @@
-package rec_loop_unresolved_binder;
+pkg rec_loop_unresolved_binder;
 
 build {
   target js {

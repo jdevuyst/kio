@@ -1,4 +1,4 @@
-package exec_dyn_load_wrapped_params;
+pkg exec_dyn_load_wrapped_params;
 
 build {
   cache "out/.kio-cache/";

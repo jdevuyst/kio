@@ -1,7 +1,7 @@
-module main;
+mod main;
 
-import macros/control(Bool, macro if);
-import macros/row_macros(macro with);
+import macros/control { type Bool; macro if }
+import macros/row_macros { macro with }
 
 host type First_payload;
 

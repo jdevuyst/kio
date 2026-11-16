@@ -1,4 +1,4 @@
-module origin;
+mod origin;
 
 pub type { Box[A]: A & A { pub mk; pub get } }
 

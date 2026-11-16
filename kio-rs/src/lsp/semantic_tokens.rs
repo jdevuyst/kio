@@ -485,7 +485,7 @@ mod tests {
 
     #[test]
     fn compact_nominals_and_rhs_references_use_ordinary_type_tokens() {
-        let source = "module x; type { Field: .; }; type Row = Field | { Other: .; };";
+        let source = "mod x; type { Field: .; }; type Row = Field | { Other: .; };";
         let tokens = semantic_tokens(source).expect("semantic tokens");
         assert_eq!(
             tokens
@@ -505,7 +505,7 @@ mod tests {
 
     #[test]
     fn selective_nominal_import_is_an_ordinary_reference_semantic_token() {
-        let source = "module x; import origin(Field);";
+        let source = "mod x; import origin {type Field}";
         let tokens = semantic_tokens(source).expect("semantic tokens");
         let field = semantic_token_at(source, &tokens.data, "Field").expect("nominal token");
         assert_eq!(field.token_type, TT_VARIABLE);
@@ -601,7 +601,7 @@ mod tests {
 
     #[test]
     fn semantic_tokens_keyword_is_classified() {
-        let result = semantic_tokens("module demo;").unwrap();
+        let result = semantic_tokens("mod demo;").unwrap();
         assert_eq!(result.data[0].token_type, TT_KEYWORD);
         let ordinary = semantic_tokens("fn").unwrap();
         assert_eq!(ordinary.data.len(), 1);
@@ -611,7 +611,7 @@ mod tests {
     #[test]
     fn semantic_tokens_classify_marked_type_names_as_types() {
         let source =
-            "module m; type Alias = .; type _Alias = Alias; fn id[T][_T](x: T) -> _Alias { x }";
+            "mod m; type Alias = .; type _Alias = Alias; fn id[T][_T](x: T) -> _Alias { x }";
         let tokens = semantic_tokens(source).expect("semantic tokens");
         for name in ["Alias", "_Alias"] {
             let alias = semantic_token_at(source, &tokens.data, name).expect("type token");
@@ -626,10 +626,7 @@ mod tests {
 
     #[test]
     fn semantic_tokens_classify_bracketed_call_type_arguments_by_spelling() {
-        let source = "module m; fn id[A](x: A) -> A { x } \
-                      fn use_types[A][_A](x: A, y: _A) -> _A { \
-                        let _ = id[A](x); id[_A](y) \
-                      }";
+        let source = "mod m; fn id[A](x: A) -> A { x } fn use_types[A][_A](x: A, y: _A) -> _A { let _ = id[A](x); id[_A](y) }";
         let tokens = semantic_tokens(source).expect("semantic tokens");
         for call in ["id[A](x)", "id[_A](y)"] {
             let byte = source.find(call).unwrap() + "id[".len();
@@ -707,7 +704,7 @@ mod tests {
 
     #[test]
     fn semantic_tokens_refine_selected_macro_calls_and_retract_after_edit() {
-        let src = "module m; import provider(macro build as selected); fn f(x: .) { selected(x) }";
+        let src = "mod m; import provider {macro build as selected} fn f(x: .) { selected(x) }";
         let result = semantic_tokens(src).unwrap();
         let call = semantic_token_at(src, &result.data, "selected(x)").expect("macro call");
         assert_eq!(call.token_type, TT_MACRO);
@@ -721,8 +718,8 @@ mod tests {
     #[test]
     fn semantic_tokens_contextual_pure_calls_are_functions() {
         for src in [
-            "module m; fn caller(x: A) -> A { pure(x) }",
-            "module m; fn caller(x: A) -> A { helpers.pure(x) }",
+            "mod m; fn caller(x: A) -> A { pure(x) }",
+            "mod m; fn caller(x: A) -> A { helpers.pure(x) }",
         ] {
             let tokens = semantic_tokens(src).expect("semantic tokens");
             let pure = semantic_token_at(src, &tokens.data, "pure").expect("pure call token");
@@ -732,13 +729,14 @@ mod tests {
 
     #[test]
     fn semantic_tokens_callable_declaration_targets_are_readonly_references() {
-        let src = "module m;\n\
-            fn declared() -> . { () }\n\
-            op _ + _ { impl op_target; };\n\
-            varop [* *] {\n\
-              foldr step_target base_target; finalize finish_target;\n\
-            };\n\
-            macro demo : . -> . { impl macro_target; };\n";
+        let src = "mod m;
+fn declared() -> . { () }
+op _ + _ { impl op_target; };
+op_var [* *] {
+foldr step_target base_target; finalize finish_target;
+};
+macro demo : . -> . { impl macro_target; };
+";
         let tokens = semantic_tokens(src).expect("semantic tokens");
 
         let declaration =
@@ -781,7 +779,7 @@ mod tests {
     #[test]
     fn semantic_tokens_fn_def_name_is_function_with_declaration() {
         // `fn foo() -> . { () }` — `foo` is `EntityNameFunction`.
-        let src = "module m;\nfn foo() -> . { () }\n";
+        let src = "mod m;\nfn foo() -> . { () }\n";
         let result = semantic_tokens(src).unwrap();
         // Find the token at the byte offset of `foo` (byte 13 in src).
         // Since tokens are delta-encoded, decode to absolute positions

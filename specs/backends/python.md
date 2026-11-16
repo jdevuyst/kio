@@ -575,7 +575,7 @@ Given a package `hello` with:
 
 ```kio
 // hello.pkg.kio
-package hello;
+pkg hello;
 
 build {
   cache "out/.kio-cache/";
@@ -593,7 +593,7 @@ bridge {
 
 ```kio
 // hello.kio
-module hello;
+mod hello;
 
 host type String role(str);
 host fn print(s: String);
@@ -601,9 +601,9 @@ host fn print(s: String);
 
 ```kio
 // hello/main.kio
-module hello/main;
+mod hello/main;
 
-import hello(String, print);
+import hello {type String; fn print}
 
 pub fn main() { print("hello\n"[String]) }
 ```

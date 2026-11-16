@@ -1,16 +1,16 @@
-module store/transactions;
+mod store/transactions;
 
 import list/core as cells;
 import list/list as lists;
-import macros/control(macro if);
-import macros/match(macro match);
-import macros/row_macros(macro select, macro with);
-import macros/spine_macros(macro widen_sum);
+import macros/control { macro if }
+import macros/match { macro match }
+import macros/row_macros { macro select; macro with }
+import macros/spine_macros { macro widen_sum }
 import store/history as history;
-import testapi(Bool, I32, String);
+import testapi { type Bool; type I32; type String }
 import testapi/arith as arith;
 import testapi/fmt as fmt;
-import testapi/iter(loop);
+import testapi/iter { fn loop }
 import testapi/text as text;
 
 pub type Savepoint = { Name: String; Saved: history.Snapshot };

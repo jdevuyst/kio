@@ -1,4 +1,4 @@
-module testapi;
+mod testapi;
 
 host type F64 role(f64);
 

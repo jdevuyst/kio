@@ -8,18 +8,17 @@ fn signature_integer_values_preserve_separators_and_canonical_versions() {
         ("1_0", 10),
         ("4294967295", u32::MAX),
     ] {
-        let source = format!("signature app v({digits});");
+        let source = format!("sig app v({digits});");
         let signature = parse_signature_file(&source, None).unwrap();
         assert_eq!(signature.version, expected);
         let rendered = crate::sig::emit_signature_file(&signature);
-        assert!(rendered.contains(&format!("signature app v({expected});")));
+        assert!(rendered.contains(&format!("sig app v({expected});")));
         assert_eq!(
             parse_signature_file(&rendered, None).unwrap().version,
             expected
         );
     }
-    let source =
-        "signature app v(1); v(0001) { nonbreaking { add { module api { pub fn run() -> .; } } } }";
+    let source = "sig app v(1); v(0001) { nonbreaking { add { mod api { pub fn run() -> .; } } } }";
     let signature = parse_signature_file(source, None).unwrap();
     assert_eq!(signature.version, 1);
     assert_eq!(signature.versions[0].version, 1);
@@ -33,7 +32,7 @@ fn signature_integer_values_preserve_separators_and_canonical_versions() {
 #[test]
 fn signature_integer_values_preserve_range_and_history_validation() {
     for digits in ["4294967296", "999999999999999999999999999", "-0", "-1"] {
-        let source = format!("signature app v({digits});");
+        let source = format!("sig app v({digits});");
         let error = parse_signature_file(&source, None).unwrap_err();
         assert!(
             error.diag().1.contains("out of range"),
@@ -42,10 +41,10 @@ fn signature_integer_values_preserve_range_and_history_validation() {
         let span = error.diag().0;
         assert_eq!(&source[span.start as usize..span.end as usize], digits);
     }
-    let error = parse_signature_file("signature app v(0);", None).unwrap_err();
+    let error = parse_signature_file("sig app v(0);", None).unwrap_err();
     assert!(error.diag().1.contains("N >= 1"), "{error:?}");
     let error = parse_signature_file(
-        "signature app v(1); v(1) { nonbreaking { add { module api {} } } } v(01) { nonbreaking { add { module api {} } } }",
+        "sig app v(1); v(1) { nonbreaking { add { mod api {} } } } v(01) { nonbreaking { add { mod api {} } } }",
         None,
     ).unwrap_err();
     assert!(error.diag().1.contains("duplicate `v(1)`"), "{error:?}");
@@ -53,7 +52,7 @@ fn signature_integer_values_preserve_range_and_history_validation() {
 
 #[test]
 fn signature_versions_do_not_admit_floating_point_or_point_free_exponents() {
-    let error = parse_signature_file("signature app v(1.0e0);", None).unwrap_err();
+    let error = parse_signature_file("sig app v(1.0e0);", None).unwrap_err();
     assert!(error.diag().1.contains("expected a version number"));
     for digits in [
         "1e12",
@@ -63,7 +62,7 @@ fn signature_versions_do_not_admit_floating_point_or_point_free_exponents() {
         "-4_2E+0_3",
         "0e999999999999999999999999999",
     ] {
-        let source = format!("signature app v({digits});");
+        let source = format!("sig app v({digits});");
         let error = parse_signature_file(&source, None).unwrap_err();
         assert!(
             error

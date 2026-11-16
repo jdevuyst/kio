@@ -1,4 +1,4 @@
-module main;
+mod main;
 
 op + _ { impl Box.mk }
 

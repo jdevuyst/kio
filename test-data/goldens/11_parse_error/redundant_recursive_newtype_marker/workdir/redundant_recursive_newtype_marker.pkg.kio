@@ -1,4 +1,4 @@
-package redundant_recursive_newtype_marker;
+pkg redundant_recursive_newtype_marker;
 
 build {
   target js {

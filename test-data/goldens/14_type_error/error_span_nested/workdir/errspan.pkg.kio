@@ -1,4 +1,4 @@
-package errspan;
+pkg errspan;
 
 build {
   cache "out/.kio-cache/";

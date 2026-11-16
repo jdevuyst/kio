@@ -1,6 +1,6 @@
-module main;
+mod main;
 
-import macros(macro natural, macro required);
+import macros { macro natural; macro required }
 
 fn choose[A](left: A, _right: A) -> A { left }
 

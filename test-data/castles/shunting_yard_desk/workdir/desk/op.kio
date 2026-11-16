@@ -14,12 +14,12 @@
 ///   * / %    2   left-associative
 ///   + -      1   left-associative
 /// ```
-module desk/op;
+mod desk/op;
 
-import macros/match(macro match);
-import macros/row_macros(macro select);
-import macros/spine_macros(macro widen_sum);
-import testapi(Bool, I32, String);
+import macros/match { macro match }
+import macros/row_macros { macro select }
+import macros/spine_macros { macro widen_sum }
+import testapi { type Bool; type I32; type String }
 
 pub type Binop =
   { Plus: . } | { Minus: . } | { Times: . } | { Divide: . } | { Modulo: . } | { Power: . }

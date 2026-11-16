@@ -1,9 +1,9 @@
-signature fixture v(1);
+sig fixture v(1);
 
 v(1) {
   nonbreaking {
     add {
-      module api {
+      mod api {
         pub fn run() -> .;
       }
     }

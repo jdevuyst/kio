@@ -1,8 +1,8 @@
-module testapi/main;
+mod testapi/main;
 
-import macros/match(macro match);
-import macros/spine_macros(macro widen_sum);
-import testapi(I32, String);
+import macros/match { macro match }
+import macros/spine_macros { macro widen_sum }
+import testapi { type I32; type String }
 import testapi/fmt as fmt;
 import testapi/io as io;
 import testapi/iter as iter;

@@ -1,9 +1,9 @@
-module testapi/main;
+mod testapi/main;
 
-import testapi(I32);
-import testapi/arith(add_i32);
-import testapi/fmt(int_to_string);
-import testapi/io(print);
+import testapi { type I32 }
+import testapi/arith { fn add_i32 }
+import testapi/fmt { fn int_to_string }
+import testapi/io { fn print }
 
 // A five-parameter function-valued newtype payload. Construction,
 // projection, and invocation must preserve the complete source grouping.

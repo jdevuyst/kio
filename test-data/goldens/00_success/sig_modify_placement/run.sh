@@ -9,7 +9,7 @@
 # change. Recording it (`stage --force`) must:
 #
 #   (1) refuse without `--force` (the change is breaking) -> exit 40;
-#   (2) write a `modify { module api { ... pub fn f() -> H } }` block
+#   (2) write a `modify { mod api { ... pub fn f() -> H } }` block
 #       under v(2)'s `breaking` section (NOT an add/remove pair);
 #   (3) round-trip: `commit` seals it and the next `kio sig status`
 #       returns 0 — the sealed history replays to the live surface and
@@ -52,7 +52,7 @@ expect_exit 0 "$KIO_BIN" sig status
 
 # Reshape `f`: same name, drop the parameter. A breaking signature change.
 cat > api.kio <<'API'
-module api;
+mod api;
 
 host type H role(i32);
 

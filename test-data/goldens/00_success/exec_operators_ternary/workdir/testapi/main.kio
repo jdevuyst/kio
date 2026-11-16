@@ -1,9 +1,9 @@
-module testapi/main;
+mod testapi/main;
 
-import testapi(I32);
-import testapi/arith(add_i32);
-import testapi/fmt(i32_to_string);
-import testapi/io(print);
+import testapi { type I32 }
+import testapi/arith { fn add_i32 }
+import testapi/fmt { fn i32_to_string }
+import testapi/io { fn print }
 
 fn cond(p: I32, t: I32, e: I32) -> I32 { add_i32(p, add_i32(t, e)) }
 

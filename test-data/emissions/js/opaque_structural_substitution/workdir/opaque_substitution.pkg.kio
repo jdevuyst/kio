@@ -1,4 +1,4 @@
-package opaque_substitution;
+pkg opaque_substitution;
 
 build {
   target js {

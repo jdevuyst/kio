@@ -8,31 +8,31 @@
 /// ranges over the whole database. `solve_delta` is the semi-naive one -
 /// it admits only derivations in which at least one goal consumes a fact
 /// that is new this round. Their difference is the point of the program.
-module datalog/unify;
+mod datalog/unify;
 
-import datalog/atom(
-, Args
-, Atom
-, Atoms
-, T_const
-, T_var
-, Term
-, args_of
-, mk_atom
-, pred_of
-, tconst
-, tvar
-);
+import datalog/atom {
+  type Args;
+  type Atom;
+  type Atoms;
+  type T_const;
+  type T_var;
+  type Term;
+  fn args_of;
+  fn mk_atom;
+  fn pred_of;
+  fn tconst;
+  fn tvar
+}
 import datalog/list as list;
 import datalog/subst as subst;
-import datalog/subst(Some_const);
-import macros/control(macro if);
-import macros/match(macro match);
-import macros/row_macros(macro select);
-import macros/spine_macros(macro widen_sum);
-import testapi(Bool, I32);
-import testapi/arith(eq_i32);
-import testapi/iter(loop);
+import datalog/subst { type Some_const }
+import macros/control { macro if }
+import macros/match { macro match }
+import macros/row_macros { macro select }
+import macros/spine_macros { macro widen_sum }
+import testapi { type Bool; type I32 }
+import testapi/arith { fn eq_i32 }
+import testapi/iter { fn loop }
 
 type Maybe_subst = { Some_subst: subst.Subst } | { No_subst: . };
 

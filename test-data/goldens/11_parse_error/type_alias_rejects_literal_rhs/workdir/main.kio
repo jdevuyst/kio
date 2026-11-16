@@ -1,4 +1,4 @@
-module type_alias_rejects_literal_rhs/main;
+mod type_alias_rejects_literal_rhs/main;
 
 // A type alias RHS must be a type expression, so a literal RHS
 // (here `100(I32)`) is a parse error.

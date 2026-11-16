@@ -4,10 +4,10 @@
 /// name a character (this tier has no string indexing), so `mark` selects one
 /// by number and the renderer resolves it here. The pen itself never chooses
 /// — it always lays down `stroke_code`.
-module turtle/glyph;
+mod turtle/glyph;
 
-import macros/control(macro if);
-import testapi(Bool, I32, String);
+import macros/control { macro if }
+import testapi { type Bool; type I32; type String }
 import turtle/num as num;
 
 /// An empty cell.

@@ -1,4 +1,4 @@
-module shared/dict/macros/testapi;
+mod shared/dict/macros/testapi;
 
 import shared/testapi as _rehost_hegfhdhegbhagj;
 

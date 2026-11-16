@@ -1,13 +1,13 @@
-module rs/polynomial;
+mod rs/polynomial;
 
 import list/core as c;
 import list/list as l;
-import macros/control(macro if);
-import macros/match(macro match);
+import macros/control { macro if }
+import macros/match { macro match }
 import rs/field as f;
-import testapi(Bool, I32);
+import testapi { type Bool; type I32 }
 import testapi/arith as a;
-import testapi/iter(loop);
+import testapi/iter { fn loop }
 
 pub type Polynomial = c.List[I32];
 

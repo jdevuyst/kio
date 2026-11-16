@@ -2,13 +2,13 @@
 /// array type, so the training corpus, the chain's successor tallies, the
 /// generated lines, and the draw trace are all instantiations of this cons
 /// list.
-module ballad/list;
+mod ballad/list;
 
-import macros/match(macro match);
-import macros/spine_macros(macro widen_sum);
-import testapi(I32);
-import testapi/arith(add_i32);
-import testapi/iter(loop);
+import macros/match { macro match }
+import macros/spine_macros { macro widen_sum }
+import testapi { type I32 }
+import testapi/arith { fn add_i32 }
+import testapi/iter { fn loop }
 
 /// The nominal type ties the recursive knot.
 pub rec type { List[A]: . | (A & List[A]) { pub mk; pub get } }

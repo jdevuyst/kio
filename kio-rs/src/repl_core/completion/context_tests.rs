@@ -2,9 +2,9 @@ use super::*;
 
 #[test]
 fn block_ufcs_labels_complete_before_the_receiver_suffix() {
-    let source = "module provider; pub macro choose : (. & . & .) -> . { trailing product; trailing product otherwise; impl implementation }";
+    let source = "mod provider; pub macro choose : (. & . & .) -> . { trailing product; trailing product otherwise; impl implementation }";
     let mut names = NameSet {
-        current_module_src: Some("module app; import provider(macro choose);".to_owned()),
+        current_module_src: Some("mod app; import provider {macro choose}".to_owned()),
         expression_provider_sources: std::collections::BTreeMap::from([(
             "provider".to_owned(),
             Arc::from(source),
@@ -49,9 +49,9 @@ fn block_ufcs_labels_complete_before_the_receiver_suffix() {
 
 #[test]
 fn neutral_block_labels_use_only_the_current_selected_header() {
-    let source = "module provider; pub macro choose : (. & .) -> . { trailing product; trailing product otherwise; impl implementation }";
+    let source = "mod provider; pub macro choose : (. & .) -> . { trailing product; trailing product otherwise; impl implementation }";
     let mut names = NameSet {
-        current_module_src: Some("module app; import provider(macro choose);".to_owned()),
+        current_module_src: Some("mod app; import provider {macro choose}".to_owned()),
         expression_provider_sources: std::collections::BTreeMap::from([(
             "provider".to_owned(),
             Arc::from(source),
@@ -99,7 +99,7 @@ fn neutral_block_labels_use_only_the_current_selected_header() {
 fn names() -> NameSet {
     NameSet {
         current_module_src: Some(
-            "module app; type Item = .; fn identity[A](x: A) -> A { x }".to_owned(),
+            "mod app; type Item = .; fn identity[A](x: A) -> A { x }".to_owned(),
         ),
         ..Default::default()
     }
@@ -122,7 +122,7 @@ fn parser_context_repl_suppresses_literals_and_binders() {
 #[test]
 fn parser_context_repl_incomplete_expression_carriers_keep_real_bindings() {
     let names = NameSet {
-        current_module_src: Some("module app; fn identity(x: .) -> . { x } fn add(x: ., y: .) { x } op _ + __ { impl add; };".to_owned()),
+        current_module_src: Some("mod app; fn identity(x: .) -> . { x } fn add(x: ., y: .) { x } op _ + __ { impl add; };".to_owned()),
         ..Default::default()
     };
     let provider = AstScopeProvider::new(&names);
@@ -187,7 +187,7 @@ fn parser_context_repl_namespace_follows_the_typed_name_head() {
 #[test]
 fn parser_context_repl_underscore_prefix_retains_the_complete_atom() {
     let names = NameSet {
-        current_module_src: Some("module app; type Item = .; type _Item = .; fn identity[A](x: A) -> A { x } fn _identity(x: .) -> . { x }".to_owned()),
+        current_module_src: Some("mod app; type Item = .; type _Item = .; fn identity[A](x: A) -> A { x } fn _identity(x: .) -> . { x }".to_owned()),
         ..Default::default()
     };
     let provider = AstScopeProvider::new(&names);
@@ -225,19 +225,19 @@ fn parser_context_repl_known_value_argument_excludes_type_names() {
     let files = std::collections::BTreeMap::from([
         (
             root.join("app.pkg.kio"),
-            "package app; bridge { app/**; }".to_owned(),
+            "pkg app; bridge { app/**; }".to_owned(),
         ),
         (
             root.join("app/main.kio"),
-            "module app/main; import app/provider(remote); import app/provider as api; type Item = .; type { Box: . { mk; get; }; }; type Alias = Box; fn identity(x: .) -> . { x } fn choose[A](x: A) -> A { x } fn staged(value: .)[A](x: A) -> A { x }".to_owned(),
+            "mod app/main; import app/provider {fn remote} import app/provider as api; type Item = .; type { Box: . { mk; get; }; }; type Alias = Box; fn identity(x: .) -> . { x } fn choose[A](x: A) -> A { x } fn staged(value: .)[A](x: A) -> A { x }".to_owned(),
         ),
         (
             root.join("app/provider.kio"),
-            "module app/provider; pub fn remote(x: .) -> . { x } pub type { Box: . { pub mk; get; }; }; pub type Alias = Box; pub type { Poly[A]: A { pub mk; get; }; }; type { Secret: . { pub mk; get; }; };".to_owned(),
+            "mod app/provider; pub fn remote(x: .) -> . { x } pub type { Box: . { pub mk; get; }; }; pub type Alias = Box; pub type { Poly[A]: A { pub mk; get; }; }; type { Secret: . { pub mk; get; }; };".to_owned(),
         ),
         (
             root.join("app/poly.kio"),
-            "module app/poly; type Item = .; fn identity[A](x: A) -> A { x }".to_owned(),
+            "mod app/poly; type Item = .; fn identity[A](x: A) -> A { x }".to_owned(),
         ),
     ]);
     let mut session = Session::new_in_memory(root, files);
@@ -338,7 +338,7 @@ fn parser_context_repl_replaces_whole_atom_without_inventing_bindings() {
 #[test]
 fn parser_context_repl_routes_expression_operators() {
     let names = NameSet {
-        current_module_src: Some("module app; fn identity(x: .) { x } op _ + __ { impl identity; }; op ~ _ { impl identity; }; varop [* *] { foldl identity identity; };".to_owned()),
+        current_module_src: Some("mod app; fn identity(x: .) { x } op _ + __ { impl identity; }; op ~ _ { impl identity; }; op_var [* *] { foldl identity identity; };".to_owned()),
         ..Default::default()
     };
     let provider = AstScopeProvider::new(&names);
@@ -362,7 +362,7 @@ fn parser_context_repl_routes_expression_operators() {
 #[test]
 fn parser_context_repl_nominal_and_identity_alias_members() {
     let names = NameSet {
-        current_module_src: Some("module app; type { Box[A]: A { mk; get; }; }; type Alias[A] = Box[A]; type Partial = Box;".to_owned()),
+        current_module_src: Some("mod app; type { Box[A]: A { mk; get; }; }; type Alias[A] = Box[A]; type Partial = Box;".to_owned()),
         ..Default::default()
     };
     let provider = AstScopeProvider::new(&names);
@@ -387,7 +387,7 @@ fn parser_context_repl_nominal_and_identity_alias_members() {
 fn parser_context_repl_replaces_started_symbol_word_once() {
     let names = NameSet {
         current_module_src: Some(
-            "module app; fn choose(x: ., y: .) { x } op _ &&++ _ { impl choose; };".to_owned(),
+            "mod app; fn choose(x: ., y: .) { x } op _ &&++ _ { impl choose; };".to_owned(),
         ),
         ..Default::default()
     };

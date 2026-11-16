@@ -1,5 +1,5 @@
-module syntax;
+mod syntax;
 
 pub op _ => _ { impl entry }
 
-pub varop [% %] { foldr pair empty }
+pub op_var [% %] { foldr pair empty }

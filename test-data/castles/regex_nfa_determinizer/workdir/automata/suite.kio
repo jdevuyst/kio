@@ -3,12 +3,12 @@
 /// The patterns are chosen so that the two kinds of merging stay
 /// distinguishable — determinization folding many NFA states into one DFA
 /// state, and refinement folding several DFA states into one block.
-module automata/suite;
+mod automata/suite;
 
-import automata/pattern(Pattern, alt, cat, chr, opt, plus, star);
-import automata/seq(Ints, List, cons, empty, one);
-import automata/symbol(code_a, code_b, code_c);
-import testapi(I32);
+import automata/pattern { type Pattern; fn alt; fn cat; fn chr; fn opt; fn plus; fn star }
+import automata/seq { type Ints; type List; fn cons; fn empty; fn one }
+import automata/symbol { fn code_a; fn code_b; fn code_c }
+import testapi { type I32 }
 
 fn a() -> Pattern { chr(code_a()) }
 

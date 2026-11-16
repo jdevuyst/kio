@@ -1,9 +1,9 @@
-module macros;
+mod macros;
 
 import __intrinsics__;
 
 import __comptime__;
-import testapi(String);
+import testapi { type String }
 
 // Build a term-level fn that receives a packet
 // `((String & String) -> String) & String & String` and applies the

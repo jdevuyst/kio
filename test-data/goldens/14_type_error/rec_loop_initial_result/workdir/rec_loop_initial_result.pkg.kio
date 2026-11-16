@@ -1,4 +1,4 @@
-package rec_loop_initial_result;
+pkg rec_loop_initial_result;
 
 build {
   target js {

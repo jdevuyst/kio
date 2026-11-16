@@ -1,4 +1,4 @@
-package bdep;
+pkg bdep;
 
 build {
   cache "out/.kio-cache/";

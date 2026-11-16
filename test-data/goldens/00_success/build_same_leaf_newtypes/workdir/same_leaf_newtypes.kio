@@ -1,4 +1,4 @@
-module same_leaf_newtypes;
+mod same_leaf_newtypes;
 
 host type I32 role(i32);
 

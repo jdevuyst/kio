@@ -1,4 +1,4 @@
-module main;
+mod main;
 
 import __intrinsics__;
 
@@ -14,7 +14,7 @@ pub pure fn append(_head: ., _tail: .) { () }
 
 pub op _ + _ { impl append }
 
-pub varop [* *] { foldr append empty }
+pub op_var [* *] { foldr append empty }
 
 pub pure fn id[A](value: A) -> A { value }
 

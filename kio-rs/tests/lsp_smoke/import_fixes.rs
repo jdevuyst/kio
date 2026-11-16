@@ -2,9 +2,9 @@ use super::*;
 
 fn open_import_case(source: &str, provider: &str) -> (TempDir, LspProcess, String, Value) {
     let dir = TempDir::new("import-typo-fix");
-    dir.write("probe.pkg.kio", "package probe;\n");
+    dir.write("probe.pkg.kio", "pkg probe;\n");
     dir.write("support.kio", provider);
-    let path = dir.write("main.kio", "module main;\n");
+    let path = dir.write("main.kio", "mod main;\n");
     let uri = path_to_file_uri(&path);
     let mut lsp = LspProcess::spawn();
     lsp.initialize(&path_to_file_uri(dir.path()));
@@ -22,14 +22,14 @@ fn open_import_case(source: &str, provider: &str) -> (TempDir, LspProcess, Strin
 fn selective_import_typo_repairs_only_the_written_name_and_rechecks() {
     for (source, provider, typo, replacement) in [
         (
-            "module main;\r\nimport support(\r\n\t// 😀 suggested name\r\n\thepler, // preserve the other selection\r\n\tkeep\r\n);\r\npub fn main() { helper(); keep() }\r\n",
-            "module support; pub fn helper() { () } pub fn keep() { () }",
+            "mod main;\r\nimport support {\r\n\t// 😀 suggested name\r\n\tfn hepler; // preserve the other selection\r\n\tfn keep\r\n}\r\npub fn main() { helper(); keep() }\r\n",
+            "mod support; pub fn helper() { () } pub fn keep() { () }",
             "hepler",
             "helper",
         ),
         (
-            "module main;\nimport support(Hepler);\npub fn main(value: Helper) -> Helper { value }\n",
-            "module support; pub type Helper = .;",
+            "mod main;\nimport support {type Hepler}\npub fn main(value: Helper) -> Helper { value }\n",
+            "mod support; pub type Helper = .;",
             "Hepler",
             "Helper",
         ),
@@ -63,11 +63,11 @@ fn selective_import_typo_repairs_only_the_written_name_and_rechecks() {
 #[test]
 fn selective_import_typo_does_not_offer_invisible_or_distant_names() {
     for provider in [
-        "module support; fn helper() { () }",
-        "module support; pub(support) fn helper() { () }",
-        "module support; pub fn unrelated() { () }",
+        "mod support; fn helper() { () }",
+        "mod support; pub(support) fn helper() { () }",
+        "mod support; pub fn unrelated() { () }",
     ] {
-        let source = "module main; import support(hepler); pub fn main() { () }";
+        let source = "mod main; import support {fn hepler} pub fn main() { () }";
         let (_dir, mut lsp, uri, diagnostic) = open_import_case(source, provider);
         assert!(diagnostic["data"]["fixes"].is_null(), "{diagnostic}");
         assert_eq!(
@@ -80,10 +80,10 @@ fn selective_import_typo_does_not_offer_invisible_or_distant_names() {
 
 #[test]
 fn selective_import_typo_does_not_choose_between_equally_near_names() {
-    let source = "module main; import support(heper); pub fn main() { () }";
+    let source = "mod main; import support {fn heper} pub fn main() { () }";
     let (_dir, mut lsp, uri, diagnostic) = open_import_case(
         source,
-        "module support; pub fn helper() { () } pub fn heaper() { () }",
+        "mod support; pub fn helper() { () } pub fn heaper() { () }",
     );
     assert_eq!(diagnostic["data"]["help"], "did you mean `heaper`?");
     assert!(diagnostic["data"]["fixes"].is_null(), "{diagnostic}");
@@ -98,12 +98,12 @@ fn selective_import_typo_does_not_choose_between_equally_near_names() {
 #[test]
 fn selective_import_typo_withholds_repairs_that_expose_another_error() {
     for source in [
-        "module main; import support(hepler); fn helper() { () } pub fn main() { helper() }",
-        "module main; import support(helper, hepler); pub fn main() { helper() }",
-        "module main; import support(hepler); pub fn main() { hepler() }",
+        "mod main; import support {fn hepler} fn helper() { () } pub fn main() { helper() }",
+        "mod main; import support {fn helper; fn hepler} pub fn main() { helper() }",
+        "mod main; import support {fn hepler} pub fn main() { hepler() }",
     ] {
         let (_dir, mut lsp, uri, diagnostic) =
-            open_import_case(source, "module support; pub fn helper() { () }");
+            open_import_case(source, "mod support; pub fn helper() { () }");
         assert_eq!(
             diagnostic["data"]["fixes"][0]["edits"][0]["replacement"],
             "helper"
@@ -118,16 +118,16 @@ fn selective_import_typo_withholds_repairs_that_expose_another_error() {
 
 #[test]
 fn selective_import_typo_rechecks_current_provider_overlay() {
-    let source = "module main; import support(hepler); pub fn main() { helper() }";
+    let source = "mod main; import support {fn hepler} pub fn main() { helper() }";
     let (dir, mut lsp, uri, diagnostic) =
-        open_import_case(source, "module support; pub fn helper() { () }");
+        open_import_case(source, "mod support; pub fn helper() { () }");
     let initial = send_code_action(&mut lsp, &uri, &diagnostic);
     assert_eq!(initial["result"].as_array().unwrap().len(), 1, "{initial}");
     let provider_uri = path_to_file_uri(&dir.path().join("support.kio"));
     lsp.send_notification(
         "textDocument/didOpen",
         json!({"textDocument": {"uri": provider_uri, "languageId": "kio", "version": 1,
-            "text": "module support; fn helper() { () }"}}),
+            "text": "mod support; fn helper() { () }"}}),
     );
     let stale_provider = send_code_action(&mut lsp, &uri, &diagnostic);
     assert_eq!(stale_provider["result"], json!([]), "{stale_provider}");
@@ -135,16 +135,16 @@ fn selective_import_typo_rechecks_current_provider_overlay() {
 }
 
 fn assert_provider_growth_invalidates_fix(typo: &str, added: &str) {
-    let source = format!("module main; import support({typo}); pub fn main() {{ () }}");
+    let source = format!("mod main; import support {{fn {typo}}} pub fn main() {{ () }}");
     let (dir, mut lsp, uri, diagnostic) =
-        open_import_case(&source, "module support; pub fn helper() { () }");
+        open_import_case(&source, "mod support; pub fn helper() { () }");
     let initial = send_code_action(&mut lsp, &uri, &diagnostic);
     assert_eq!(initial["result"].as_array().unwrap().len(), 1, "{initial}");
     let provider_uri = path_to_file_uri(&dir.path().join("support.kio"));
     lsp.send_notification(
             "textDocument/didOpen",
             json!({"textDocument": {"uri": provider_uri, "languageId": "kio", "version": 1,
-                "text": format!("module support; pub fn helper() {{ () }} pub fn {added}() {{ () }}")}}),
+                "text": format!("mod support; pub fn helper() {{ () }} pub fn {added}() {{ () }}")}}),
         );
     let stale_provider = send_code_action(&mut lsp, &uri, &diagnostic);
     assert_eq!(stale_provider["result"], json!([]), "{stale_provider}");

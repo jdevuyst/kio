@@ -1,7 +1,7 @@
-module testapi/main;
+mod testapi/main;
 
-import testapi(String);
-import testapi/io(print);
+import testapi { type String }
+import testapi/io { fn print }
 
 // Explicit Kio'-target round-trip: build to Kio', then re-build
 // the emitted Kio' source through the impl's primary target. The

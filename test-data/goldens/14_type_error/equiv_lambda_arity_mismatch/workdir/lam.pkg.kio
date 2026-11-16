@@ -1,4 +1,4 @@
-package lam;
+pkg lam;
 
 build {
   cache "out/.kio-cache/";

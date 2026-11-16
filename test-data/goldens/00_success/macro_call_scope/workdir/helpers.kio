@@ -1,4 +1,4 @@
-module helpers;
+mod helpers;
 
 import __comptime__;
 

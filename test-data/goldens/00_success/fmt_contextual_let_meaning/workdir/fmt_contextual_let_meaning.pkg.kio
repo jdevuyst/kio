@@ -1,4 +1,4 @@
-package fmt_contextual_let_meaning;
+pkg fmt_contextual_let_meaning;
 
 build {
   cache "out/.kio-cache/";

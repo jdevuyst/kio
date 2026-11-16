@@ -1,7 +1,7 @@
-module provider;
+mod provider;
 
 import __comptime__;
-import macros/control(macro scope);
+import macros/control { macro scope }
 
 pure fn choose_impl(ct: __Comptime__, _unit: __Checked_term__) -> __Checked_term__ {
   scope {

@@ -16,7 +16,7 @@ Kio' is a build target, not a diagnostic flag. Add a `kio-prime`
 target to the package's package file:
 
 ```kio {variant=package}
-package app;
+pkg app;
 
 build {
   cache "out/.kio-cache/";
@@ -53,7 +53,7 @@ disappears:
 | `match` | A decision tree built from intrinsics and let-bound handlers |
 | `do` blocks | Nested calls to the receiver's `bind` |
 | Placeholder lambdas | Explicit lambdas with generated parameters |
-| Compact nominal groups, `literal` aliases, operators, `equiv` | Lowered or removed before the Kio' boundary |
+| Compact nominal groups, `lit` aliases, operators, `equiv` | Lowered or removed before the Kio' boundary |
 
 If the Kio' is surprising, the issue is earlier than the backend:
 resolution, typechecking, elaboration, or lowering. If the Kio'

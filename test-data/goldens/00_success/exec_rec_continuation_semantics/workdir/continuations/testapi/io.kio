@@ -1,6 +1,6 @@
-module continuations/testapi/io;
+mod continuations/testapi/io;
 
-import continuations/testapi(String);
+import continuations/testapi { type String }
 import testapi/io as _rehost_hegfhdhegbhagjcpgjgp;
 
 pub fn print(p0: String) { _rehost_hegfhdhegbhagjcpgjgp.print(p0) }

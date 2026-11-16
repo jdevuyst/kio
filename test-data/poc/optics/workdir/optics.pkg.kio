@@ -1,4 +1,4 @@
-package optics;
+pkg optics;
 
 build {
   cache "out/.kio-cache/";

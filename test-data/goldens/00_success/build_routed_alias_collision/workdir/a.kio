@@ -1,4 +1,4 @@
-module a;
+mod a;
 
 host type Shared role(bool);
 

@@ -61,7 +61,7 @@ pub enum GroupKind {
 }
 
 /// The skeleton of one source file. Children are the file's top-
-/// level nodes in source order — typically a `module` statement,
+/// level nodes in source order — typically a `mod` statement,
 /// any `import` statements, and one node per item, separated by
 /// statement boundaries.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -708,7 +708,7 @@ mod tests {
         // skeleton has a sequence of leaf tokens for the header
         // and the fn signature, then a Brace group for the body
         // containing a Paren group for `()`.
-        let file = build_str("module x; fn foo() -> . { () }");
+        let file = build_str("mod x; fn foo() -> . { () }");
         // The brace group is the last child.
         let brace = file
             .children
@@ -760,11 +760,11 @@ mod tests {
         // open / children / close in source order.
         let sources = [
             "",
-            "module x;",
-            "module x; fn foo() -> . { () }",
+            "mod x;",
+            "mod x; fn foo() -> . { () }",
             "(a, b, c)",
             "{ a; b }",
-            "module x; fn f(p: I32) -> I32 { let y = p; y }",
+            "mod x; fn f(p: I32) -> I32 { let y = p; y }",
         ];
         for src in sources {
             assert_eq!(cursor_kinds(src), lex_kinds(src), "src = {src:?}");

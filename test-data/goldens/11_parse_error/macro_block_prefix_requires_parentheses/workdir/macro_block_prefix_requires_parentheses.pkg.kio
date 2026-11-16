@@ -1,4 +1,4 @@
-package macro_block_prefix_requires_parentheses;
+pkg macro_block_prefix_requires_parentheses;
 
 build {
   target js {

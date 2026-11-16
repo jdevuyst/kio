@@ -1,4 +1,4 @@
-package eovsi;
+pkg eovsi;
 
 build {
   cache "out/.kio-cache/";

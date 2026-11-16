@@ -1,4 +1,4 @@
-package exec_rec_cont_monadic_first_rhs;
+pkg exec_rec_cont_monadic_first_rhs;
 
 build {
   cache "out/.kio-cache/";

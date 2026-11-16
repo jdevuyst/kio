@@ -1,4 +1,4 @@
-package exec_recursive_comptime_newtype_boundary;
+pkg exec_recursive_comptime_newtype_boundary;
 
 build {
   cache "out/.kio-cache/";

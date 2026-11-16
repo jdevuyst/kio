@@ -1,4 +1,4 @@
-package lru_cache_trace;
+pkg lru_cache_trace;
 
 build {
   cache "out/.kio-cache/";

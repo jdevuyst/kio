@@ -14,21 +14,21 @@
 ///
 /// So a reader of node `i` never looks down, and a descent *through* node `i`
 /// must first hand `tags[i]` to both children.
-module seg/tree;
+mod seg/tree;
 
-import macros/control(macro if);
-import macros/row_macros(macro select);
-import seg/agg(Agg, agg, agg_min, agg_sum, combine, leaf_agg, shift);
-import seg/meter(Meter, bump_push, bump_work, new_meter, pushes, work);
-import seg/num(half, int_eq, int_lt, not);
-import testapi(Array, Bool, I32);
-import testapi/arith(add_i32, leq_i32, mul_i32, sub_i32);
-import testapi/array(array_get, array_make_filled, array_set);
-import testapi/iter(loop);
+import macros/control { macro if }
+import macros/row_macros { macro select }
+import seg/agg { type Agg; fn agg; fn agg_min; fn agg_sum; fn combine; fn leaf_agg; fn shift }
+import seg/meter { type Meter; fn bump_push; fn bump_work; fn new_meter; fn pushes; fn work }
+import seg/num { fn half; fn int_eq; fn int_lt; fn not }
+import testapi { type Array; type Bool; type I32 }
+import testapi/arith { fn add_i32; fn leq_i32; fn mul_i32; fn sub_i32 }
+import testapi/array { fn array_get; fn array_make_filled; fn array_set }
+import testapi/iter { fn loop }
 
 /// A recursive segment tree over `n` leaves never indexes past `4n` in a
 /// heap layout, so that is the allocation.
-literal heap_factor = 4;
+lit heap_factor = 4;
 
 pub type Tree = { Sums: Array[I32]; Mins: Array[I32]; Tags: Array[I32]; Leaves: I32; Gauge: Meter };
 

@@ -1,4 +1,4 @@
-package damb;
+pkg damb;
 
 build {
   cache "out/.kio-cache/";

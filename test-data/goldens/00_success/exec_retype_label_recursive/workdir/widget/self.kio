@@ -1,4 +1,4 @@
-module widget/self;
+mod widget/self;
 
 import core/self as _rehost_gdgphcgfcphdgfgmgg;
 

@@ -1,4 +1,4 @@
-module identity;
+mod identity;
 
 pub fn k(x: .) { x }
 

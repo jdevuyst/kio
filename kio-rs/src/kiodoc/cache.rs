@@ -698,7 +698,7 @@ mod tests {
         let dir = tempdir();
         fs::write(
             dir.join("pkg.pkg.kio"),
-            "package pkg;\n\nbuild {\n  cache ();\n}\n",
+            "pkg pkg;\n\nbuild {\n  cache ();\n}\n",
         )
         .unwrap();
         let c = DocCache::resolve_from_workspace(&dir);
@@ -709,7 +709,7 @@ mod tests {
     #[test]
     fn resolve_from_workspace_no_build_block_disabled() {
         let dir = tempdir();
-        fs::write(dir.join("pkg.pkg.kio"), "package pkg;\n").unwrap();
+        fs::write(dir.join("pkg.pkg.kio"), "pkg pkg;\n").unwrap();
         let c = DocCache::resolve_from_workspace(&dir);
         assert!(!c.is_enabled());
         let _ = fs::remove_dir_all(&dir);
@@ -720,7 +720,7 @@ mod tests {
         let dir = tempdir();
         fs::write(
             dir.join("pkg.pkg.kio"),
-            "package pkg;\n\nbuild {\n  cache \"out/.kio-cache/\";\n}\n",
+            "pkg pkg;\n\nbuild {\n  cache \"out/.kio-cache/\";\n}\n",
         )
         .unwrap();
         let c = DocCache::resolve_from_workspace(&dir);
@@ -738,8 +738,8 @@ mod tests {
     #[test]
     fn resolve_from_workspace_multiple_package_files_disabled() {
         let dir = tempdir();
-        fs::write(dir.join("a.pkg.kio"), "package a;\n").unwrap();
-        fs::write(dir.join("b.pkg.kio"), "package b;\n").unwrap();
+        fs::write(dir.join("a.pkg.kio"), "pkg a;\n").unwrap();
+        fs::write(dir.join("b.pkg.kio"), "pkg b;\n").unwrap();
         // Ambiguous: don't pick one; treat as no cache directory.
         let c = DocCache::resolve_from_workspace(&dir);
         assert!(!c.is_enabled());

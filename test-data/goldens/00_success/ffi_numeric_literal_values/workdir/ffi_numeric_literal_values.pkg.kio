@@ -1,4 +1,4 @@
-package ffi_numeric_literal_values;
+pkg ffi_numeric_literal_values;
 
 build {
   cache "out/.kio-cache/";

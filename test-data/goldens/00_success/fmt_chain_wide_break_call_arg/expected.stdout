@@ -1,4 +1,4 @@
-module main;
+mod main;
 
 fn wrap[A](x: A) ->
   | Click_event_kind_one_pretty_long_name
@@ -12,7 +12,7 @@ fn wrap[A](x: A) ->
   | Focus_event_kind_three_lengthy
   | Drag_event_kind_four_yet_more][A](x)
 }
-module main;
+mod main;
 
 fn wrap[A](x: A) ->
   | Click_event_kind_one_pretty_long_name

@@ -1,4 +1,4 @@
-module pkg;
+mod pkg;
 
 host type S role(str);
 

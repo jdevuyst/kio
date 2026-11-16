@@ -1,4 +1,4 @@
-package exec_curried_module_fn_value;
+pkg exec_curried_module_fn_value;
 
 build {
   cache "out/.kio-cache/";

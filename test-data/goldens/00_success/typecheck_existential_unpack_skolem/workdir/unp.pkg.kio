@@ -1,4 +1,4 @@
-package unp;
+pkg unp;
 
 build {
   cache "out/.kio-cache/";

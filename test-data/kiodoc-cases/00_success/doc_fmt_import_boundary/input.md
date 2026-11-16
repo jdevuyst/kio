@@ -1,28 +1,28 @@
 # Imports across a snippet boundary
 
 <!--kio {file}
-module host;
+mod host;
 
 host type String role(str);
 -->
 
 <!--kio {file}
-module names;
+mod names;
 
-import host(String);
+import host {type String}
 
 pub type Name = String;
 -->
 
 <!--kio {harness=consumer file placeholder="__SNIPPET__"}
-module consumer;
+mod consumer;
 
 __SNIPPET__
 -->
 
 ```kio {@consumer}
-import names(Name);
-import host(String);
+import names {type Name}
+import host {type String}
 
 fn show(value: Name) -> String { value }
 ```

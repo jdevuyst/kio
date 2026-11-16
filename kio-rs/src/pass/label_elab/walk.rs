@@ -699,7 +699,6 @@ pub trait DesugaredToLowered {
             name,
             type_params,
             role,
-            owned,
             meta: Meta { span, .. },
             doc,
         } = h;
@@ -707,7 +706,6 @@ pub trait DesugaredToLowered {
             name,
             type_params,
             role,
-            owned,
             meta: Meta::new(span),
             doc,
         })

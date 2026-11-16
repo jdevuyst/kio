@@ -1,4 +1,4 @@
-module a_;
+mod a_;
 
 host fn c();
 

@@ -1,4 +1,4 @@
-package fn_param_body_flow_rejected;
+pkg fn_param_body_flow_rejected;
 
 build {
   cache "out/.kio-cache/";

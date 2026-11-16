@@ -5,19 +5,19 @@
 /// lands on a leaf. The two paths therefore share nothing but the tree, so
 /// decoding the encoded message back to the original is a genuine check on the
 /// tree rather than on a single shared lookup.
-module huffman/codec;
+mod huffman/codec;
 
-import huffman/code(Bits, Entry, bits_for);
-import huffman/list(List, cons, is_empty, nil, rev_onto, reverse);
-import huffman/tree(Fork_key, Fork_left, Fork_right, Fork_weight);
-import huffman/tree(Leaf_symbol, Leaf_weight);
-import huffman/tree(Node);
-import macros/control(macro if);
-import macros/match(macro match);
-import macros/row_macros(macro select);
-import testapi(Bool, I32);
-import testapi/arith(eq_i32);
-import testapi/iter(loop);
+import huffman/code { type Bits; type Entry; fn bits_for }
+import huffman/list { type List; fn cons; fn is_empty; fn nil; fn rev_onto; fn reverse }
+import huffman/tree { type Fork_key; type Fork_left; type Fork_right; type Fork_weight }
+import huffman/tree { type Leaf_symbol; type Leaf_weight }
+import huffman/tree { type Node }
+import macros/control { macro if }
+import macros/match { macro match }
+import macros/row_macros { macro select }
+import testapi { type Bool; type I32 }
+import testapi/arith { fn eq_i32 }
+import testapi/iter { fn loop }
 
 rec(loop) fn encode_onto(rows: List[Entry], symbols: List[I32], acc: Bits) -> Bits {
   match(symbols.>List.get) {

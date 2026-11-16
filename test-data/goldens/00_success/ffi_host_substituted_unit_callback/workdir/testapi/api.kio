@@ -1,6 +1,6 @@
-module testapi/api;
+mod testapi/api;
 
-import testapi(Text);
+import testapi { type Text }
 
 pub type Callback[A] = A -> Text;
 

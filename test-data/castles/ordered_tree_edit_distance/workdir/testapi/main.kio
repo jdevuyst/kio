@@ -1,8 +1,8 @@
-module testapi/main;
+mod testapi/main;
 
 import fixtures as fixtures;
 import report as report;
-import testapi(I32, String);
+import testapi { type I32; type String }
 import testapi/array as array;
 import testapi/io as io;
 

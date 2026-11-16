@@ -1,4 +1,4 @@
-module shared/dict_host;
+mod shared/dict_host;
 
 import shared/testapi as api;
 import shared/testapi/arith as arith;

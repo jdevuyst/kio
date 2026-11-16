@@ -1,4 +1,4 @@
-package exec_dyn_load_arrow_result_parentheses;
+pkg exec_dyn_load_arrow_result_parentheses;
 
 build {
   cache "out/.kio-cache/";

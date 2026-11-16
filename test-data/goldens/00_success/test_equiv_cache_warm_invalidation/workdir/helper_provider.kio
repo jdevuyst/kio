@@ -1,4 +1,4 @@
-module helper_provider;
+mod helper_provider;
 
 fn hidden() { () }
 

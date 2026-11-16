@@ -1,6 +1,6 @@
-module testapi/main;
+mod testapi/main;
 
-import expression_formatter/render(render_report);
-import testapi/io(print);
+import expression_formatter/render { fn render_report }
+import testapi/io { fn print }
 
 pub fn main() { print(render_report()) }

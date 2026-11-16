@@ -1,4 +1,4 @@
-package exec_testapi_text_full_fmt_env;
+pkg exec_testapi_text_full_fmt_env;
 
 build {
   cache "out/.kio-cache/";

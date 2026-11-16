@@ -22,8 +22,7 @@ use crate::pretty::pretty_package_file;
 use crate::tokens;
 
 #[cfg(feature = "surface")]
-const HELP: &str = "\
-Usage: kio debug <subcommand> [args]
+const HELP: &str = "Usage: kio debug <subcommand> [args]
 
 Internal dumpers for CI and tooling. Not part of the public CLI
 surface ({base}/specs/cli.md does not specify these); the spellings may
@@ -50,8 +49,7 @@ Options:
   -h, --help      Show this help and exit.";
 
 #[cfg(not(feature = "surface"))]
-const HELP: &str = "\
-Usage: kio debug <subcommand> [args]
+const HELP: &str = "Usage: kio debug <subcommand> [args]
 
 Internal dumpers for CI and tooling. Not part of the public CLI
 surface ({base}/specs/cli.md does not specify these); the spellings may
@@ -441,7 +439,7 @@ mod tests {
 
     #[test]
     fn baseline_package_uses_the_package_ast_and_validates_before_rewriting() {
-        let source = r#"package app;
+        let source = r#"pkg app;
 build {
   target (ts, "first") { out "out/first"; baseline ((latest)) };
   target (ts, "second") { out "out/second"; baseline () };
@@ -512,7 +510,7 @@ build {
             assert!(prepare_baseline_package(source, Some("app"), "ts", baseline).is_err());
         }
         for invalid in ["baseline unknown", "baseline (); baseline latest"] {
-            let source = format!("package app; build {{ target ts {{ out \"out\"; {invalid} }} }}");
+            let source = format!("pkg app; build {{ target ts {{ out \"out\"; {invalid} }} }}");
             assert!(prepare_baseline_package(&source, Some("app"), "ts", "v5_0").is_err());
         }
     }
@@ -522,15 +520,15 @@ build {
         let fixtures = [
             (
                 "closing brace in comment",
-                "package app;\nbuild {\n  target ts {\n    // }\n    out \"out/ts/\";\n  };\n  target kio-prime {}\n}\n",
+                "pkg app;\nbuild {\n  target ts {\n    // }\n    out \"out/ts/\";\n  };\n  target kio-prime {}\n}\n",
             ),
             (
                 "opening brace in string",
-                "package app;\nbuild { target ts { out \"out/{ts}/\"; }; target kio-prime { out \"old/\"; } }\n",
+                "pkg app;\nbuild { target ts { out \"out/{ts}/\"; }; target kio-prime { out \"old/\"; } }\n",
             ),
             (
                 "commented target decoy",
-                "package app;\nbuild {\n  // target kio-prime {\n  target ts {}\n}\n",
+                "pkg app;\nbuild {\n  // target kio-prime {\n  target ts {}\n}\n",
             ),
         ];
         for (name, source) in fixtures {
@@ -561,13 +559,10 @@ build {
         }
 
         for (source, target) in [
-            ("package app;\n", "ts"),
+            ("pkg app;\n", "ts"),
+            ("pkg app;\nbuild { target js { out \"out/js/\"; } }\n", "ts"),
             (
-                "package app;\nbuild { target js { out \"out/js/\"; } }\n",
-                "ts",
-            ),
-            (
-                "package app;\nbuild { target kio-prime { out \"out/prime/\"; } }\n",
+                "pkg app;\nbuild { target kio-prime { out \"out/prime/\"; } }\n",
                 "kio-prime",
             ),
         ] {
@@ -589,7 +584,7 @@ build {
 
     #[test]
     fn roundtrip_named_targets_do_not_confuse_names_with_backends() {
-        let source = r#"package app; build {
+        let source = r#"pkg app; build {
             target (ts, "kio-prime") { out "old"; namespace "app" };
             target (js, "__kio_roundtrip_target") { out "decoy" };
             target (js, "__kio_roundtrip_prime") { out "other" }
@@ -614,7 +609,7 @@ build {
         assert_eq!(build.targets[1].name(), ROUNDTRIP_PRIME_NAME);
         assert!(
             prepare_kio_prime_roundtrip_package(
-                r#"package app; build { target (kio-prime, "js") {} }"#,
+                r#"pkg app; build { target (kio-prime, "js") {} }"#,
                 Some("app"),
                 "js"
             )
@@ -628,7 +623,7 @@ build {
         let temp = tempfile::tempdir().expect("source tree");
         let consumer = temp.path().join("a/b/c.kio");
         let provider = temp.path().join("a/d/e.kio");
-        let source = "module a/b/c; import a/d/e(varop [% %]); fn make(x: A) -> A { x } fn run(value: A) -> A { let identity = .(inner: A) -> A { inner }; identity([% (make(value), value) %]) }";
+        let source = "mod a/b/c; import a/d/e {op_var [% %]} fn make(x: A) -> A { x } fn run(value: A) -> A { let identity = .(inner: A) -> A { inner }; identity([% (make(value), value) %]) }";
         let offset = source.find("inner").expect("lambda parameter") as u32;
         std::fs::create_dir_all(provider.parent().unwrap()).unwrap();
         for present in [false, true] {

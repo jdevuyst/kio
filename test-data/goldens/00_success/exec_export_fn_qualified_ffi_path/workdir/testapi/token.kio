@@ -1,5 +1,5 @@
-module testapi/token;
+mod testapi/token;
 
-import testapi(String);
+import testapi { type String }
 
 pub type { Token: String { pub mk; pub get } }

@@ -1,4 +1,4 @@
-module rank_n_pair;
+mod rank_n_pair;
 
 fn identity[A](value: A) -> A { value }
 

@@ -1,12 +1,12 @@
 /// Higher-kinded types worked example, NOT a drop-in library: it demonstrates
 /// kinded brands, instance dictionaries, and do-block syntax together.
-module testapi/main;
+mod testapi/main;
 
-import macros/derive(macro derive);
-import macros/sequence(macro do);
-import testapi(String);
-import testapi/io(print);
-import testapi/text(string_concat);
+import macros/derive { macro derive }
+import macros/sequence { macro do }
+import testapi { type String }
+import testapi/io { fn print }
+import testapi/text { fn string_concat }
 
 // Higher-kinded types worked example — NOT a drop-in library.
 //

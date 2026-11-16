@@ -1,4 +1,4 @@
-module main;
+mod main;
 
 fn f(a: A, b: A) -> A { a }
 fn g(a: A, b: A) -> A { a }

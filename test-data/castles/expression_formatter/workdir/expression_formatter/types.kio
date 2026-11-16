@@ -1,6 +1,6 @@
-module expression_formatter/types;
+mod expression_formatter/types;
 
-import testapi(Bool, Int, String);
+import testapi { type Bool; type Int; type String }
 
 pub type Token = {
   Token_kind: String;

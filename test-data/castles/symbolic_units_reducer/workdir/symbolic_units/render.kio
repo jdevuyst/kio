@@ -1,25 +1,25 @@
-module symbolic_units/render;
+mod symbolic_units/render;
 
-import macros/match(macro match);
-import macros/row_macros(macro select);
-import symbolic_units/model(
-, Expr
-, Kilogram
-, Kilogram_exp
-, Meter
-, Meter_exp
-, Pow
-, Product
-, Quotient
-, Score
-, Second
-, Second_exp
-, Summary
-);
+import macros/match { macro match }
+import macros/row_macros { macro select }
+import symbolic_units/model {
+  type Expr;
+  type Kilogram;
+  type Kilogram_exp;
+  type Meter;
+  type Meter_exp;
+  type Pow;
+  type Product;
+  type Quotient;
+  type Score;
+  type Second;
+  type Second_exp;
+  type Summary
+}
 import symbolic_units/text as text;
-import testapi(I32, String);
+import testapi { type I32; type String }
 import testapi/fmt as fmt;
-import testapi/iter(loop);
+import testapi/iter { fn loop }
 
 pub rec(loop) fn source(value: Expr) -> String {
   match(Expr.get(value)) {

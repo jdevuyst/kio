@@ -1,34 +1,34 @@
 /// Rendering: the grids, the verdict, the independent re-check, and the
 /// search statistics.
-module sudoku/report;
+mod sudoku/report;
 
-import macros/control(macro if);
-import macros/match(macro match);
-import macros/row_macros(macro select);
+import macros/control { macro if }
+import macros/match { macro match }
+import macros/row_macros { macro select }
 import sudoku/geometry as geo;
-import sudoku/model(
-, Backtracks
-, Board
-, Exhausted
-, Max_depth
-, Outcome
-, Placements
-, Report
-, Solved
-, Steps
-, Unsolvable
-, Verdict
-, Work
-);
+import sudoku/model {
+  type Backtracks;
+  type Board;
+  type Exhausted;
+  type Max_depth;
+  type Outcome;
+  type Placements;
+  type Report;
+  type Solved;
+  type Steps;
+  type Unsolvable;
+  type Verdict;
+  type Work
+}
 import sudoku/num as num;
 import sudoku/verify as verify;
-import testapi(Array, Bool, I32, String);
-import testapi/arith(add_i32, leq_i32, sub_i32);
-import testapi/array(array_get);
-import testapi/fmt(bool_to_string, int_to_string);
-import testapi/io(print);
-import testapi/iter(loop);
-import testapi/text(string_concat);
+import testapi { type Array; type Bool; type I32; type String }
+import testapi/arith { fn add_i32; fn leq_i32; fn sub_i32 }
+import testapi/array { fn array_get }
+import testapi/fmt { fn bool_to_string; fn int_to_string }
+import testapi/io { fn print }
+import testapi/iter { fn loop }
+import testapi/text { fn string_concat }
 
 fn cat(left: String, right: String) -> String { string_concat(left, right) }
 

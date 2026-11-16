@@ -1,4 +1,4 @@
-package exec_narrow_prod_basic;
+pkg exec_narrow_prod_basic;
 
 build {
   cache "out/.kio-cache/";

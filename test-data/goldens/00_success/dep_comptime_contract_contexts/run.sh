@@ -38,7 +38,7 @@ for context in unsealed sealed; do
   git clone --quiet --bare "$src" "$bare" || fail "cannot create $context repository"
 
   cat > "$consumer/contract.dep.kio" <<EOF
-dependency contract;
+dep contract;
 
 source {
   git "$bare";

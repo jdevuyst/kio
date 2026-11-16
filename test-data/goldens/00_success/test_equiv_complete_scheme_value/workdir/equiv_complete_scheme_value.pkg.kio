@@ -1,4 +1,4 @@
-package equiv_complete_scheme_value;
+pkg equiv_complete_scheme_value;
 
 build {
   cache "out/.kio-cache/";

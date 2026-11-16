@@ -1,4 +1,4 @@
-module store;
+mod store;
 
 pub fn wrap(x: .) { x }
 

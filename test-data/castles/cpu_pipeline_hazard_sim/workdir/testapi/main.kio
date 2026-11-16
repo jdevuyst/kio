@@ -7,27 +7,27 @@
 /// the program is what is held constant. The cycle counts must differ --
 /// that is the whole point of a bypass network -- and the architectural
 /// state must not.
-module testapi/main;
+mod testapi/main;
 
-import cpu/machine(Forwarding, Mem, Prog, Regs);
-import cpu/machine(initial, new_memory, new_registers, same_words);
-import cpu/num(and);
-import cpu/pipeline(run);
-import cpu/program(build);
-import cpu/report(
-, blank
-, counters
-, dump_memory
-, dump_registers
-, heading
-, headline
-, labeled
-, line
-, pipeline_header
-, program_listing
-, yes_no
-);
-import testapi(Bool, String);
+import cpu/machine { fn initial; fn new_memory; fn new_registers; fn same_words }
+import cpu/machine { type Forwarding; type Mem; type Prog; type Regs }
+import cpu/num { fn and }
+import cpu/pipeline { fn run }
+import cpu/program { fn build }
+import cpu/report {
+  fn blank;
+  fn counters;
+  fn dump_memory;
+  fn dump_registers;
+  fn heading;
+  fn headline;
+  fn labeled;
+  fn line;
+  fn pipeline_header;
+  fn program_listing;
+  fn yes_no
+}
+import testapi { type Bool; type String }
 
 pub fn main() {
   let prog = build();

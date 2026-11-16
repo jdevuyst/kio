@@ -2,17 +2,17 @@
 /// text: a pattern arrives already shaped as a tree, because this castle is
 /// about what happens *after* parsing. The six node kinds are exactly the
 /// input alphabet of Thompson's construction.
-module automata/pattern;
+mod automata/pattern;
 
-import automata/symbol(letter);
-import macros/control(macro if);
-import macros/match(macro match);
-import macros/row_macros(macro select);
-import macros/spine_macros(macro widen_sum);
-import testapi(Bool, I32, String);
-import testapi/arith(lt_i32);
-import testapi/iter(loop);
-import testapi/text(string_concat);
+import automata/symbol { fn letter }
+import macros/control { macro if }
+import macros/match { macro match }
+import macros/row_macros { macro select }
+import macros/spine_macros { macro widen_sum }
+import testapi { type Bool; type I32; type String }
+import testapi/arith { fn lt_i32 }
+import testapi/iter { fn loop }
+import testapi/text { fn string_concat }
 
 rec {
   pub type Node =

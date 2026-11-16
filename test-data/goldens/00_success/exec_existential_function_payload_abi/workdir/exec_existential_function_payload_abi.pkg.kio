@@ -1,4 +1,4 @@
-package exec_existential_function_payload_abi;
+pkg exec_existential_function_payload_abi;
 
 build {
   cache "out/.kio-cache/";

@@ -1,4 +1,4 @@
-package fmt_named_entry_order;
+pkg fmt_named_entry_order;
 
 bridge {
   ; fmt_named_entry_order/** // bridge tail

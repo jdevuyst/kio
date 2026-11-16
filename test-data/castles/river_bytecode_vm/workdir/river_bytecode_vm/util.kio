@@ -1,11 +1,11 @@
-module river_bytecode_vm/util;
+mod river_bytecode_vm/util;
 
-import macros/control(macro if);
+import macros/control { macro if }
 import river_bytecode_vm/constants as c;
-import testapi(Bool, I32, String);
-import testapi/arith(add_i32, eq_i32);
-import testapi/fmt(bool_to_string, int_to_string);
-import testapi/text(string_concat);
+import testapi { type Bool; type I32; type String }
+import testapi/arith { fn add_i32; fn eq_i32 }
+import testapi/fmt { fn bool_to_string; fn int_to_string }
+import testapi/text { fn string_concat }
 
 pub fn not(value: Bool) -> Bool {
   if(value) { .f } else { .t }

@@ -1,16 +1,16 @@
-module grammar/context;
+mod grammar/context;
 
-import syntax(
-  op _ ? _ : ___,
-  op __ + _,
-  varop [% %],
-  varop [],
-  op,
-  variadic
-  );
+import syntax {
+  op _ ? _ : ___;
+  op __ + _;
+  op_var [% %];
+  op_var [];
+  fn op;
+  fn variadic
+  }
 
-varop [+ +] { foldl targets.foldl targets.variadic; };
-varop
+op_var [+ +] { foldl targets.foldl targets.variadic; };
+op_var
 [-
 -]
 {
@@ -19,8 +19,8 @@ varop
   targets.finalize;
   finalize targets.Box.foldl1;
 };
-varop [* *] { foldl1 targets.foldl1 targets.variadic; };
-varop [/ /] { foldr1 targets.foldr1 targets.import; };
+op_var [* *] { foldl1 targets.foldl1 targets.variadic; };
+op_var [/ /] { foldr1 targets.foldr1 targets.import; };
 
 fn import(value: .) -> . { value }
 fn op(value: .) -> . { value }

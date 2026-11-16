@@ -1,4 +1,4 @@
-package gate_symbolic_eval;
+pkg gate_symbolic_eval;
 
 build {
   cache "out/.kio-cache/";

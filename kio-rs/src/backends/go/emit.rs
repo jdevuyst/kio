@@ -72,17 +72,17 @@ mod facade_consumer_tests {
     #[test]
     fn native_docs_follow_selected_public_declarations() {
         let package = package(
-            "module api;\n\
-            /// HOST-GENERIC-DOC\n\
-            host type Box[A];\n\
-            /// HOST-FN-DOC\n\
-            host fn effect() -> .;\n\
-            /// OPAQUE-DOC\n\
-            pub type { Token: . { pub mk; get; }; };\n\
-            /// EXPORT-DOC big.Int\n\
-            pub fn call() -> . { effect() }\n\
-            /// PRIVATE-DOC\n\
-            fn hidden() -> . { () }",
+            "mod api;
+/// HOST-GENERIC-DOC
+host type Box[A];
+/// HOST-FN-DOC
+host fn effect() -> .;
+/// OPAQUE-DOC
+pub type { Token: . { pub mk; get; }; };
+/// EXPORT-DOC big.Int
+pub fn call() -> . { effect() }
+/// PRIVATE-DOC
+fn hidden() -> . { () }",
         );
         let emitted = lower_package(&package, "pkg").expect("emit documented Go");
         assert!(emitted.host_go.contains("// HOST-FN-DOC\n"));
@@ -105,7 +105,7 @@ mod facade_consumer_tests {
     #[test]
     fn native_docs_preserve_executable_bigint_imports() {
         let package = package(
-            "module api; host type Integer role(i128); pub fn identity(value: Integer) -> Integer { value }",
+            "mod api; host type Integer role(i128); pub fn identity(value: Integer) -> Integer { value }",
         );
         let emitted = lower_package(&package, "pkg").expect("emit actual bigint binding");
         assert!(emitted.host_go.contains("\"math/big\""));
@@ -115,9 +115,7 @@ mod facade_consumer_tests {
     #[test]
     fn boolean_inline_operands_use_native_operators() {
         let package = package(
-            "module api; import __intrinsics__; host type Bool role(bool); \
-             pub fn conjunction(left: Bool, right: Bool) -> Bool { __and__[Bool](left, .() { right }) } \
-             pub fn disjunction(left: Bool, right: Bool) -> Bool { __or__[Bool](left, .() { right }) }",
+            "mod api; import __intrinsics__; host type Bool role(bool); pub fn conjunction(left: Bool, right: Bool) -> Bool { __and__[Bool](left, .() { right }) } pub fn disjunction(left: Bool, right: Bool) -> Bool { __or__[Bool](left, .() { right }) }",
         );
         let emitted = lower_package(&package, "pkg").expect("emit native Boolean operations");
         for (name, operator) in [("conjunction", " && "), ("disjunction", " || ")] {
@@ -132,7 +130,7 @@ mod facade_consumer_tests {
 
     fn package(source: &str) -> Package<Routed> {
         let parsed = parse(source).expect("parse Go facade test module");
-        let package_file = parse_package_file("package pkg; bridge { api; }", None)
+        let package_file = parse_package_file("pkg pkg; bridge { api; }", None)
             .expect("parse Go facade test package file");
         let (modules, package_file) = FullPipeline::lower_package(
             vec![(PathBuf::from("api.kio"), parsed)],
@@ -163,7 +161,7 @@ mod facade_consumer_tests {
         expected = "check_literal_annotation established an exact role-typed host annotation"
     )]
     fn routed_invariant_non_host_literal_panics() {
-        let package = package("module api; pub fn unit() -> . { () }");
+        let package = package("mod api; pub fn unit() -> . { () }");
         let prepared = PreparedBoundaryCallableSites::collect_live(&package).unwrap();
         let facades = GoFacadeCatalog::prepare(&prepared).unwrap();
         let roles = HostRoleTable::new();
@@ -273,15 +271,7 @@ mod facade_consumer_tests {
     #[test]
     fn native_parameters_preserve_source_groups_and_function_value_domains() {
         let package = package(
-            "module api; host type I32 role(i32); \
-             host fn split(left: I32, right: I32) -> I32; \
-             host fn packed(pair: I32 & I32) -> I32; \
-             host fn mixed(left: I32, pair: I32 & I32) -> I32; \
-             host fn callback(step: (I32 & I32) -> I32) -> I32; \
-             pub fn first(left: I32, _right: I32) -> I32 { left } \
-             pub fn second((left: I32, _right: I32)) -> I32 { left } \
-             pub fn staged(left: I32)(_right: I32) -> I32 { left } \
-             pub fn returned(left: I32) -> I32 -> I32 { .(_right) { left } }",
+            "mod api; host type I32 role(i32); host fn split(left: I32, right: I32) -> I32; host fn packed(pair: I32 & I32) -> I32; host fn mixed(left: I32, pair: I32 & I32) -> I32; host fn callback(step: (I32 & I32) -> I32) -> I32; pub fn first(left: I32, _right: I32) -> I32 { left } pub fn second((left: I32, _right: I32)) -> I32 { left } pub fn staged(left: I32)(_right: I32) -> I32 { left } pub fn returned(left: I32) -> I32 -> I32 { .(_right) { left } }",
         );
         let emitted = lower_package(&package, "product").expect("emit grouped Go boundaries");
         let pair = format!("Product[{I32_HOST}, {I32_HOST}]");
@@ -322,10 +312,7 @@ mod facade_consumer_tests {
     #[test]
     fn host_unit_return_has_no_clause_and_unit_parameter_is_publicly_nullary() {
         let package = package(
-            "module api; \
-             host type Text role(str); \
-             host fn sink(value: Text) -> .; \
-             host fn unit_arg(value: .) -> Text;",
+            "mod api; host type Text role(str); host fn sink(value: Text) -> .; host fn unit_arg(value: .) -> Text;",
         );
         let emitted = lower_package(&package, "pkg").expect("emit Go facade package");
         assert!(
@@ -359,10 +346,7 @@ mod facade_consumer_tests {
     #[test]
     fn roleless_host_binding_is_exact_across_the_complete_public_root() {
         let package = package(
-            "module api; \
-             host type Token; \
-             host fn round(value: Token) -> Token; \
-             pub fn exported(value: Token) -> Token { value }",
+            "mod api; host type Token; host fn round(value: Token) -> Token; pub fn exported(value: Token) -> Token { value }",
         );
         let emitted = lower_package(&package, "pkg").expect("emit exact Go host binding");
         let binding = "KioHost_M1_C3_apiN5_Token";
@@ -409,10 +393,7 @@ mod facade_consumer_tests {
     #[test]
     fn role_binding_uses_exact_host_type_and_declaration_keyed_adapters() {
         let package = package(
-            "module api; \
-             host type Count role(i32); \
-             host fn round(value: Count) -> Count; \
-             pub fn via(value: Count) -> Count { round(value) }",
+            "mod api; host type Count role(i32); host fn round(value: Count) -> Count; pub fn via(value: Count) -> Count { round(value) }",
         );
         let emitted = lower_package(&package, "pkg").expect("emit exact Go role binding");
         let binding = "KioHost_M1_C3_apiN5_Count";
@@ -442,10 +423,7 @@ mod facade_consumer_tests {
     #[test]
     fn parameterized_host_binding_uses_a_declaration_owned_typed_carrier() {
         let package = package(
-            "module api; \
-             host type I32 role(i32); \
-             host type Box[A]; \
-             host fn round(value: Box[I32]) -> Box[I32];",
+            "mod api; host type I32 role(i32); host type Box[A]; host fn round(value: Box[I32]) -> Box[I32];",
         );
         let emitted = lower_package(&package, "pkg").expect("emit Go host carrier");
         let atom = "KioIndexNominal_M1_C3_apiN3_I32[KioHost_M1_C3_apiN3_I32]";
@@ -477,12 +455,7 @@ mod facade_consumer_tests {
     #[test]
     fn stage_selection_uses_lexical_names_and_only_semantic_captures() {
         let package = package(
-            "module api; \
-             pub type { Box[A]: A { pub mk; get; }; }; \
-             pub type { Poly: [B] B -> Box[B] { pub mk; pub get; }; }; \
-             pub type { Keep[A]: [C] C -> (A & C) { pub mk; pub get; }; }; \
-             pub fn outer[A](a: A) -> Poly { Poly.mk(.[B](b: B) { Box.mk(b) }) } \
-             pub fn sparse[A][B](a: A, b: B) -> Keep[B] { Keep.mk(.[C](c: C) { (b, c) }) }",
+            "mod api; pub type { Box[A]: A { pub mk; get; }; }; pub type { Poly: [B] B -> Box[B] { pub mk; pub get; }; }; pub type { Keep[A]: [C] C -> (A & C) { pub mk; pub get; }; }; pub fn outer[A](a: A) -> Poly { Poly.mk(.[B](b: B) { Box.mk(b) }) } pub fn sparse[A][B](a: A, b: B) -> Keep[B] { Keep.mk(.[C](c: C) { (b, c) }) }",
         );
         let emitted = lower_package(&package, "pkg").expect("emit selected transparent stages");
         assert!(
@@ -521,10 +494,7 @@ mod facade_consumer_tests {
     #[test]
     fn contextual_sum_rows_capture_only_referenced_indices_and_prepare_host_arguments() {
         let package = package(
-            "module api; host type Number role(i32); host type Vault[A]; \
-             host fn choose() -> (. | Number); \
-             pub fn sparse() -> [A] A -> [B] B -> (. | Number) { .[A](a: A)[B](b: B) { choose() } } \
-             pub fn round[A](value: Vault[. | A]) -> Vault[. | A] { value }",
+            "mod api; host type Number role(i32); host type Vault[A]; host fn choose() -> (. | Number); pub fn sparse() -> [A] A -> [B] B -> (. | Number) { .[A](a: A)[B](b: B) { choose() } } pub fn round[A](value: Vault[. | A]) -> Vault[. | A] { value }",
         );
         let emitted =
             lower_package(&package, "pkg").expect("emit exact contextual sum dependencies");
@@ -555,9 +525,7 @@ mod facade_consumer_tests {
                 result = format!("[{name}] {name} -> {result}");
                 body = format!(".[{name}](value: {name}) {{ {body} }}");
             }
-            let package = package(&format!(
-                "module api; pub fn stage() -> {result} {{ {body} }}"
-            ));
+            let package = package(&format!("mod api; pub fn stage() -> {result} {{ {body} }}"));
             let emitted = lower_package(&package, "pkg").expect("emit nested source stages");
             assert_eq!(
                 emitted
@@ -581,11 +549,7 @@ mod facade_consumer_tests {
     #[test]
     fn boundary_view_helpers_do_not_expand_the_generic_handle_method_set() {
         let package = package(
-            "module api; host type Number role(i32); host type Vault[A]; \
-             host fn store[A](value: Vault[A]) -> Vault[A]; \
-             pub type { Box[A]: A { pub mk; get; }; }; \
-             pub fn round(value: Box[Number]) -> Box[Number] { value } \
-             pub fn identity[A](value: A) -> A { value }",
+            "mod api; host type Number role(i32); host type Vault[A]; host fn store[A](value: Vault[A]) -> Vault[A]; pub type { Box[A]: A { pub mk; get; }; }; pub fn round(value: Box[Number]) -> Box[Number] { value } pub fn identity[A](value: A) -> A { value }",
         );
         let prepared = PreparedBoundaryCallableSites::collect(&package, None).unwrap();
         let facades = GoFacadeCatalog::prepare(&prepared).unwrap();
@@ -630,8 +594,7 @@ mod facade_consumer_tests {
     #[test]
     fn generic_public_member_preparation_is_owned_by_host_declarations() {
         let private_package = package(
-            "module api; host type Number role(i32); host type Vault[A]; \
-             pub type { Applied[*F][A]: F[A] { pub mk; get; }; };",
+            "mod api; host type Number role(i32); host type Vault[A]; pub type { Applied[*F][A]: F[A] { pub mk; get; }; };",
         );
         let emitted =
             lower_package(&private_package, "pkg").expect("emit constructor-only host preparation");
@@ -647,8 +610,7 @@ mod facade_consumer_tests {
         assert!(!emitted.pkg_go.contains("Api__Applied_get"));
 
         let public_projector = package(
-            "module api; host type Number role(i32); host type Vault[A]; \
-             pub type { Applied[*F][A]: F[A] { pub mk; pub get; }; };",
+            "mod api; host type Number role(i32); host type Vault[A]; pub type { Applied[*F][A]: F[A] { pub mk; pub get; }; };",
         );
         let public_emitted =
             lower_package(&public_projector, "pkg").expect("emit public projector control");
@@ -658,20 +620,13 @@ mod facade_consumer_tests {
     #[test]
     fn exact_host_binding_is_open_world_under_an_unrelated_declaration() {
         let before = lower_package(
-            &package(
-                "module api; \
-                 host type Count role(i32); \
-                 host fn round(value: Count) -> Count;",
-            ),
+            &package("mod api; host type Count role(i32); host fn round(value: Count) -> Count;"),
             "pkg",
         )
         .expect("emit Go host binding before the unrelated declaration");
         let after = lower_package(
             &package(
-                "module api; \
-                 host type Count role(i32); \
-                 host fn round(value: Count) -> Count; \
-                 fn unrelated(value: .) -> . { value }",
+                "mod api; host type Count role(i32); host fn round(value: Count) -> Count; fn unrelated(value: .) -> . { value }",
             ),
             "pkg",
         )
@@ -683,7 +638,7 @@ mod facade_consumer_tests {
     #[test]
     fn facade_declarations_form_a_complete_go_source_file() {
         let package = package(
-            "module api; host type I32 role(i32); host fn round(value: I32 | I32) -> I32 | I32;",
+            "mod api; host type I32 role(i32); host fn round(value: I32 | I32) -> I32 | I32;",
         );
         let emitted = lower_package(&package, "pkg").expect("emit Go facade package");
         assert!(
@@ -699,9 +654,7 @@ mod facade_consumer_tests {
     #[test]
     fn interleaved_heads_flatten_value_slots_and_keep_exact_host_bindings() {
         let package = package(
-            "module api; \
-             host type Text role(str); \
-             host fn ordered(value: Text)[T](later: T) -> Text;",
+            "mod api; host type Text role(str); host fn ordered(value: Text)[T](later: T) -> Text;",
         );
         let emitted = lower_package(&package, "pkg").expect("emit Go facade package");
         assert!(
@@ -724,9 +677,7 @@ mod facade_consumer_tests {
     #[test]
     fn forall_aliases_retain_stages_and_function_legs_are_recursive() {
         let package = package(
-            "module api; \
-             host type Text role(str); \
-             host fn use_callback(callback: [T] T -> T) -> Text;",
+            "mod api; host type Text role(str); host fn use_callback(callback: [T] T -> T) -> Text;",
         );
         let emitted = lower_package(&package, "pkg").expect("emit Go facade package");
         assert!(
@@ -774,7 +725,7 @@ mod facade_consumer_tests {
         for depth in [4, 8] {
             let ty = format!("{}.", ". -> ".repeat(depth));
             let package = package(&format!(
-                "module api; pub fn round(value: {ty}) -> {ty} {{ value }}"
+                "mod api; pub fn round(value: {ty}) -> {ty} {{ value }}"
             ));
             let emitted = lower_package(&package, "pkg").expect("emit nested Value views");
             // Two public roots, each with one In and Out closure per stage.
@@ -795,7 +746,7 @@ mod facade_consumer_tests {
 
     #[test]
     fn opaque_newtype_keeps_a_handle_without_callable_members() {
-        let package = package("module api; pub type { Token: . { mk; get; }; };");
+        let package = package("mod api; pub type { Token: . { mk; get; }; };");
         let emitted = lower_package(&package, "pkg").expect("emit Go facade package");
         assert!(
             emitted
@@ -814,15 +765,7 @@ mod facade_consumer_tests {
     #[test]
     fn transparent_both_aliases_recurse_into_sum_and_function_payloads() {
         let package = package(
-            "module api; \
-             host type I32 role(i32); \
-             pub type { Wrapped_sum: I32 | I32 { \
-               pub mk; pub get; \
-             }; }; \
-             pub type { Wrapped_fn: I32 -> I32 { \
-               pub mk; pub get; \
-             }; }; \
-             host fn consume(sum: Wrapped_sum, callback: Wrapped_fn) -> .;",
+            "mod api; host type I32 role(i32); pub type { Wrapped_sum: I32 | I32 { pub mk; pub get; }; }; pub type { Wrapped_fn: I32 -> I32 { pub mk; pub get; }; }; host fn consume(sum: Wrapped_sum, callback: Wrapped_fn) -> .;",
         );
         let emitted = lower_package(&package, "pkg").expect("emit transparent aliases");
 
@@ -851,9 +794,7 @@ mod facade_consumer_tests {
     #[test]
     fn nested_product_and_sum_alias_paths_keep_every_context_constructible() {
         let package = package(
-            "module api; \
-             host type I32 role(i32); \
-             host fn nested(value: I32 & (I32 | I32)) -> ((I32 | I32) | I32);",
+            "mod api; host type I32 role(i32); host fn nested(value: I32 & (I32 | I32)) -> ((I32 | I32) | I32);",
         );
         let emitted = lower_package(&package, "pkg").expect("emit nested aliases");
 
@@ -879,13 +820,13 @@ mod facade_consumer_tests {
 
     #[test]
     fn retained_nested_aliases_emit_without_live_methods_or_capabilities() {
-        let package = package("module api;");
+        let package = package("mod api;");
         let replayed = replayed_interface(
-            r#"signature pkg v(3);
+            r#"sig pkg v(3);
 v(1) {
   nonbreaking {
     add {
-      module api {
+      mod api {
         host fn old(value: . & (. | .)) -> ((. | .) | (. & .));
       }
     }
@@ -894,9 +835,9 @@ v(1) {
 v(2) {
   nonbreaking {
     remove {
-      module api {
-        old;
-      }
+
+        api.old;
+
     }
   }
 }
@@ -947,13 +888,13 @@ v(2) {
 
     #[test]
     fn retained_host_type_is_a_deprecated_nominal_not_a_current_host_selection() {
-        let package = package("module api; host type Live; host fn current() -> . & .;");
+        let package = package("mod api; host type Live; host fn current() -> . & .;");
         let replayed = replayed_interface(
-            r#"signature pkg v(3);
+            r#"sig pkg v(3);
 v(1) {
   nonbreaking {
     add {
-      module api {
+      mod api {
         host type Legacy role(i32);
         host fn old() -> Legacy & .;
       }
@@ -963,10 +904,10 @@ v(1) {
 v(2) {
   nonbreaking {
     remove {
-      module api {
-        Legacy;
-        old;
-      }
+
+        api.Legacy;
+        api.old;
+
     }
   }
 }
@@ -1035,13 +976,13 @@ v(2) {
 
     #[test]
     fn retained_newtype_carrier_is_deprecated_without_a_package_capability() {
-        let package = package("module api;");
+        let package = package("mod api;");
         let replayed = replayed_interface(
-            r#"signature pkg v(3);
+            r#"sig pkg v(3);
 v(1) {
   nonbreaking {
     add {
-      module api {
+      mod api {
         type { Token: . { pub mk; get; }; };
         host fn old(value: Token) -> .;
       }
@@ -1051,10 +992,10 @@ v(1) {
 v(2) {
   nonbreaking {
     remove {
-      module api {
-        Token;
-        old;
-      }
+
+        api.Token;
+        api.old;
+
     }
   }
 }
@@ -1081,14 +1022,7 @@ v(2) {
     #[test]
     fn direct_host_call_preserves_source_groups_unit_effects_and_left_to_right_order() {
         let package = package(
-            "module api; \
-             host type I32 role(i32); \
-             host fn unit_effect() -> .; \
-             host fn value_effect() -> I32; \
-             host fn direct(unit: ., grouped: I32 & I32) -> I32; \
-             pub fn call() -> I32 { \
-               direct(unit_effect(), (value_effect(), value_effect())) \
-             }",
+            "mod api; host type I32 role(i32); host fn unit_effect() -> .; host fn value_effect() -> I32; host fn direct(unit: ., grouped: I32 & I32) -> I32; pub fn call() -> I32 { direct(unit_effect(), (value_effect(), value_effect())) }",
         );
         let emitted = lower_package(&package, "pkg").expect("emit regrouped direct host call");
         assert!(
@@ -1164,12 +1098,7 @@ v(2) {
     #[test]
     fn interleaved_host_value_replays_type_heads_and_regroups_its_product_source() {
         let package = package(
-            "module api; \
-             host type I32 role(i32); \
-             host fn staged[A](first: I32)[B](second: I32 & I32) -> I32; \
-             pub fn call(first: I32, second: I32, third: I32) -> I32 { \
-               staged[I32]( first)[ I32]( (second, third)) \
-             }",
+            "mod api; host type I32 role(i32); host fn staged[A](first: I32)[B](second: I32 & I32) -> I32; pub fn call(first: I32, second: I32, third: I32) -> I32 { staged[I32]( first)[ I32]( (second, third)) }",
         );
         let emitted = lower_package(&package, "pkg").expect("emit interleaved host value");
         assert!(
@@ -1195,9 +1124,7 @@ v(2) {
     #[test]
     fn exported_interleaved_heads_replay_in_order_from_source_groups() {
         let package = package(
-            "module api; \
-             host type I32 role(i32); \
-             pub fn staged[A](first: I32)[B](second: I32 & I32) -> I32 { first }",
+            "mod api; host type I32 role(i32); pub fn staged[A](first: I32)[B](second: I32 & I32) -> I32 { first }",
         );
         let emitted = lower_package(&package, "pkg").expect("emit interleaved export");
         assert!(
@@ -1218,13 +1145,7 @@ v(2) {
     #[test]
     fn generic_newtype_heads_replay_and_church_payload_stays_an_ordinary_projector() {
         let package = package(
-            "module api; \
-             pub type { Generic[A]: A { \
-               pub mk; pub get; \
-             }; }; \
-             pub type { Church: [R] ([Hidden] . -> R) -> R { \
-               pub mk; pub get; \
-             }; };",
+            "mod api; pub type { Generic[A]: A { pub mk; pub get; }; }; pub type { Church: [R] ([Hidden] . -> R) -> R { pub mk; pub get; }; };",
         );
         let emitted = lower_package(&package, "pkg").expect("emit generic newtype members");
 
@@ -1261,13 +1182,7 @@ v(2) {
     #[test]
     fn existential_projectors_share_one_grouped_signature_alias_and_invocation_cut() {
         let package = package(
-            "module api; \
-             pub type { Single <Hidden>: Hidden { \
-               pub mk; pub get; \
-             }; }; \
-             pub type { Packed[A] <Hidden> <Secret>: A & Hidden & Secret { \
-               pub mk; pub get; \
-             }; };",
+            "mod api; pub type { Single <Hidden>: Hidden { pub mk; pub get; }; }; pub type { Packed[A] <Hidden> <Secret>: A & Hidden & Secret { pub mk; pub get; }; };",
         );
         let emitted = lower_package(&package, "pkg").expect("emit existential projectors");
 
@@ -1364,11 +1279,7 @@ v(2) {
     #[test]
     fn nullary_existential_payload_calls_the_continuation_without_a_unit_argument() {
         let package = package(
-            "module api; \
-             pub type Erased[A] = .; \
-             pub type { Empty <Hidden>: Erased[Hidden] { \
-               pub mk; pub get; \
-             }; };",
+            "mod api; pub type Erased[A] = .; pub type { Empty <Hidden>: Erased[Hidden] { pub mk; pub get; }; };",
         );
         let emitted = lower_package(&package, "pkg").expect("emit nullary existential projector");
         let projector = emitted_method(&emitted.pkg_go, "Get");
@@ -1478,8 +1389,7 @@ pub fn lower_package_with_signature(
 ) -> Result<GoPackage, EmitError> {
     package.package_file().ok_or_else(|| {
         EmitError::unsupported(
-            "Go emitter requires a package file (`<pkg>.pkg.kio`); \
-             a package without one has no package boundary to expose",
+            "Go emitter requires a package file (`<pkg>.pkg.kio`); a package without one has no package boundary to expose",
         )
     })?;
 

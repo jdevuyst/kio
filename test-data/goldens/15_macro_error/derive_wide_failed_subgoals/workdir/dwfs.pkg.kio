@@ -1,4 +1,4 @@
-package dwfs;
+pkg dwfs;
 
 build {
   cache "out/.kio-cache/";

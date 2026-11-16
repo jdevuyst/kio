@@ -1,8 +1,8 @@
-module testapi/main;
+mod testapi/main;
 
-import macros/control(macro if);
-import testapi(Bool, String);
-import testapi/io(print);
+import macros/control { macro if }
+import testapi { type Bool; type String }
+import testapi/io { fn print }
 
 // The `else if` chain parses to the same right-spined
 // `Expr::IfElse` AST as the nested `} else { if … }`. With

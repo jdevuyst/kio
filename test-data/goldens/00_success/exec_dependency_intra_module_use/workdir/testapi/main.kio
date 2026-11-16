@@ -1,8 +1,8 @@
-module testapi/main;
+mod testapi/main;
 
-import geomlib/geom(first_after_swap);
-import testapi(String);
-import testapi/io(print);
+import geomlib/geom { fn first_after_swap }
+import testapi { type String }
+import testapi/io { fn print }
 
 // Thread a host `String` through `geomlib/geom`, whose body reaches
 // two sibling dependency modules: `vec` (via a `use vec as v;`

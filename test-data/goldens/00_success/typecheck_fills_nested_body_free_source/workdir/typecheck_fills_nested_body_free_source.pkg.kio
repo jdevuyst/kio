@@ -1,4 +1,4 @@
-package typecheck_fills_nested_body_free_source;
+pkg typecheck_fills_nested_body_free_source;
 
 build {
   cache "out/.kio-cache/";

@@ -108,7 +108,7 @@ EOF
 chmod +x "$scratch/bin with space/sccache"
 
 cat >"$scratch/cases/00_standard/workdir/fixture.pkg.kio" <<'EOF'
-package fixture;
+pkg fixture;
 
 build {
   target js {

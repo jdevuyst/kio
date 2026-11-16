@@ -1,4 +1,4 @@
-module testapi/types;
+mod testapi/types;
 
 pub type { Poly_thunk: [A] . -> . { pub mk; pub get } }
 

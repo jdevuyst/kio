@@ -1,4 +1,4 @@
-package polynomial_list_lab;
+pkg polynomial_list_lab;
 
 build {
   cache "out/.kio-cache/";

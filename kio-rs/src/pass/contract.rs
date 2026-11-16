@@ -345,22 +345,22 @@ where
 mod tests {
     #[test]
     fn contract_imports_preserve_metadata_without_relaxing_prime_modules() {
-        let comptime = crate::pass::parser::parse("module x; import __comptime__;")
+        let comptime = crate::pass::parser::parse("mod x; import __comptime__;")
             .expect("parse compile-time import")
             .imports;
         super::check_imports(&comptime).expect("bodyless contract retains the type environment");
         crate::prime::lower::check_imports(&comptime)
             .expect_err("executable Prime cannot import compile-time capabilities");
 
-        let intrinsics = crate::pass::parser::parse("module x; import __intrinsics__;")
+        let intrinsics = crate::pass::parser::parse("mod x; import __intrinsics__;")
             .expect("parse intrinsic import")
             .imports;
         super::check_imports(&intrinsics).expect("contract intrinsic import");
         crate::prime::lower::check_imports(&intrinsics).expect("Prime intrinsic import");
 
         for source in [
-            "module x; import provider(macro tag);",
-            "module x; import provider(op _ + _);",
+            "mod x; import provider {macro tag}",
+            "mod x; import provider {op _ + _}",
         ] {
             let imports = crate::pass::parser::parse(source)
                 .expect("parse surface selector")

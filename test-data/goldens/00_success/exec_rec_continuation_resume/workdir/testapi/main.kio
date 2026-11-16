@@ -1,10 +1,10 @@
-module testapi/main;
+mod testapi/main;
 
-import macros/control(macro if);
-import testapi(Bool, I32, String);
+import macros/control { macro if }
+import testapi { type Bool; type I32; type String }
 import testapi/arith as arith;
 import testapi/io as io;
-import testapi/iter(loop);
+import testapi/iter { fn loop }
 
 rec(loop) fn deep(n: I32) -> Bool {
   if(arith.leq_i32(n, 0)) {

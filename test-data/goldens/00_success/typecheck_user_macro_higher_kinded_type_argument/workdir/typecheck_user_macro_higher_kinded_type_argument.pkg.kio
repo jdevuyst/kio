@@ -1,4 +1,4 @@
-package typecheck_user_macro_higher_kinded_type_argument;
+pkg typecheck_user_macro_higher_kinded_type_argument;
 
 build {
   cache "out/.kio-cache/";

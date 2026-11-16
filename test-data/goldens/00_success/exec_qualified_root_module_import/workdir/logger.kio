@@ -1,6 +1,6 @@
-module logger;
+mod logger;
 
-import testapi(String);
-import testapi/io(print);
+import testapi { type String }
+import testapi/io { fn print }
 
 pub fn log_line(s: String) { print(s) }

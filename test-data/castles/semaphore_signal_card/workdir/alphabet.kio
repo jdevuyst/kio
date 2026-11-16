@@ -1,6 +1,6 @@
-module alphabet;
+mod alphabet;
 
-import testapi(Bool, String);
+import testapi { type Bool; type String }
 
 // The three Bool facts are recorded, not derived from the bearings: this host
 // offers no string comparison, so a letter cannot inspect its own arm strings.

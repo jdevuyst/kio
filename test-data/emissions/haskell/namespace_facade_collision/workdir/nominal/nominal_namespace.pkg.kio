@@ -1,4 +1,4 @@
-package nominal_namespace;
+pkg nominal_namespace;
 
 build {
   cache "out/.kio-cache/";

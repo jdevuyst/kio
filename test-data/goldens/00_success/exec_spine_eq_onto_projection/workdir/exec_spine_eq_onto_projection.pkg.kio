@@ -1,4 +1,4 @@
-package exec_spine_eq_onto_projection;
+pkg exec_spine_eq_onto_projection;
 
 build {
   cache "out/.kio-cache/";

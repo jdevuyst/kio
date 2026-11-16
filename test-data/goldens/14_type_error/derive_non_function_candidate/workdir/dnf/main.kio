@@ -1,7 +1,7 @@
-module dnf/main;
+mod dnf/main;
 
-import dnf(I32);
-import macros/derive(macro derive);
+import dnf { type I32 }
+import macros/derive { macro derive }
 
 pub type { Box[A]: A { pub mk; pub get } }
 

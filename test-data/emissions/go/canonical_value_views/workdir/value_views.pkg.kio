@@ -1,4 +1,4 @@
-package value_views;
+pkg value_views;
 
 build {
   target go {

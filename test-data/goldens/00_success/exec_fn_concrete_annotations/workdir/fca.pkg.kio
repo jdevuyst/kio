@@ -1,4 +1,4 @@
-package fca;
+pkg fca;
 
 build {
   cache "out/.kio-cache/";

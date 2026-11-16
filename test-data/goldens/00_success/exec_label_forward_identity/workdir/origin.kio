@@ -1,5 +1,5 @@
-module origin;
+mod origin;
 
-import testapi(String);
+import testapi { type String }
 
 pub type { Item: String { pub mk; pub get } }

@@ -444,22 +444,15 @@ mod tests {
         let package = routed_package(&[
             (
                 "owner.kio",
-                "module owner; \
-                 pub type { Token: . { mk; get; }; }; \
-                 pub type { Field[A]: [T] T -> (A & Token) { \
-                     mk; get; \
-                 }; };",
+                "mod owner; pub type { Token: . { mk; get; }; }; pub type { Field[A]: [T] T -> (A & Token) { mk; get; }; };",
             ),
             (
                 "actual.kio",
-                "module actual; \
-                 pub type { Token: (. & .) { mk; get; }; };",
+                "mod actual; pub type { Token: (. & .) { mk; get; }; };",
             ),
             (
                 "consumer.kio",
-                "module consumer; \
-                 import owner(Field); \
-                 import actual(Token);",
+                "mod consumer; import owner {type Field} import actual {type Token}",
             ),
         ]);
         let resolution = NewtypeResolution::build(&package);
@@ -486,37 +479,19 @@ mod tests {
         let package = routed_package(&[
             (
                 "owner.kio",
-                "module owner; \
-                 pub type { Box[A]: A { \
-                     pub mk; pub get; \
-                 }; };",
+                "mod owner; pub type { Box[A]: A { pub mk; pub get; }; };",
             ),
             (
                 "decoy.kio",
-                "module decoy; \
-                 pub type { Box[A]: . { \
-                     pub mk; pub get; \
-                 }; };",
+                "mod decoy; pub type { Box[A]: . { pub mk; pub get; }; };",
             ),
             (
                 "consumer.kio",
-                "module consumer; \
-                 import owner as selected; \
-                 import decoy as other; \
-                 fn qualified_wrap[A](value: A) -> selected.Box[A] { \
-                     selected.Box.mk[A]( value) \
-                 } \
-                 fn qualified_unwrap[A](value: selected.Box[A]) -> A { \
-                     selected.Box.get[A]( value) \
-                 } \
-                 fn preserve_decoy[A](value: other.Box[A]) -> other.Box[A] { value }",
+                "mod consumer; import owner as selected; import decoy as other; fn qualified_wrap[A](value: A) -> selected.Box[A] { selected.Box.mk[A]( value) } fn qualified_unwrap[A](value: selected.Box[A]) -> A { selected.Box.get[A]( value) } fn preserve_decoy[A](value: other.Box[A]) -> other.Box[A] { value }",
             ),
             (
                 "local.kio",
-                "module local; \
-                 type { Box[A]: A { mk; get; }; }; \
-                 fn local_wrap[A](value: A) -> Box[A] { Box.mk[A]( value) } \
-                 fn local_unwrap[A](value: Box[A]) -> A { Box.get[A]( value) }",
+                "mod local; type { Box[A]: A { mk; get; }; }; fn local_wrap[A](value: A) -> Box[A] { Box.mk[A]( value) } fn local_unwrap[A](value: Box[A]) -> A { Box.get[A]( value) }",
             ),
         ]);
         let resolution = NewtypeResolution::build(&package);
@@ -547,26 +522,15 @@ mod tests {
         let package = routed_package(&[
             (
                 "actual.kio",
-                "module actual; \
-                 pub type { Box[A]: . { \
-                     pub mk; pub get; \
-                 }; };",
+                "mod actual; pub type { Box[A]: . { pub mk; pub get; }; };",
             ),
             (
                 "selected.kio",
-                "module selected; \
-                 pub type { Box[A]: A { \
-                     pub mk; pub get; \
-                 }; };",
+                "mod selected; pub type { Box[A]: A { pub mk; pub get; }; };",
             ),
             (
                 "consumer.kio",
-                "module consumer; \
-                 import selected as actual; \
-                 import actual as selected; \
-                 fn wrap[A](value: A) -> actual.Box[A] { \
-                     actual.Box.mk[A]( value) \
-                 }",
+                "mod consumer; import selected as actual; import actual as selected; fn wrap[A](value: A) -> actual.Box[A] { actual.Box.mk[A]( value) }",
             ),
         ]);
         let definition = function(&package, "consumer", "wrap");
@@ -590,20 +554,18 @@ mod tests {
             .filter(|line| !line.trim_start().starts_with("///"))
             .collect::<Vec<_>>()
             .join("\n")
-            .replace("host type Bool role(bool);", "import testapi(Bool);");
+            .replace("host type Bool role(bool);", "import testapi {type Bool}");
         let package = routed_package(&[
             ("control.kio", &control),
-            ("testapi.kio", "module testapi; host type Bool role(bool);"),
+            ("testapi.kio", "mod testapi; host type Bool role(bool);"),
             (
                 "selected.kio",
-                "module selected; import testapi(Bool); pub type Card = { Flag: Bool; };",
+                "mod selected; import testapi {type Bool} pub type Card = { Flag: Bool; };",
             ),
-            ("decoy.kio", "module decoy; pub type Card = { Flag: .; };"),
+            ("decoy.kio", "mod decoy; pub type Card = { Flag: .; };"),
             (
                 "consumer.kio",
-                "module consumer; import control(macro if); import testapi(Bool); import decoy as selected; \
-                 import selected as chosen; fn choose(card: chosen.Card) -> Bool { \
-                 let payload = chosen.Flag.get(card); if (payload) { .t } else { .f } }",
+                "mod consumer; import control {macro if} import testapi {type Bool} import decoy as selected; import selected as chosen; fn choose(card: chosen.Card) -> Bool { let payload = chosen.Flag.get(card); if (payload) { .t } else { .f } }",
             ),
         ]);
         let definition = function(&package, "consumer", "choose");
@@ -628,13 +590,13 @@ mod tests {
         let package = routed_package(&[
             (
                 "owner.kio",
-                "module owner; pub fn identity[A](value: A) -> A { value }",
+                "mod owner; pub fn identity[A](value: A) -> A { value }",
             ),
             (
                 "local.kio",
-                "module local; fn local_identity[A](value: A) -> A { value }",
+                "mod local; fn local_identity[A](value: A) -> A { value }",
             ),
-            ("consumer.kio", "module consumer; import owner(identity);"),
+            ("consumer.kio", "mod consumer; import owner {fn identity}"),
         ]);
         let resolution = NewtypeResolution::build(&package);
         let span = crate::span::Span::new(0, 0);
@@ -677,10 +639,7 @@ mod tests {
     fn returned_forall_type_application_reconstructs_its_exact_result() {
         let package = routed_package(&[(
             "test.kio",
-            "module test; \
-             host type N; \
-             host fn produce(_unit: .) -> [A] A; \
-             fn caller() -> N { produce()[N] }",
+            "mod test; host type N; host fn produce(_unit: .) -> [A] A; fn caller() -> N { produce()[N] }",
         )]);
         let definition = function(&package, "test", "caller");
         assert!(matches!(definition.body, Expr::LowTypeApplication { .. }));

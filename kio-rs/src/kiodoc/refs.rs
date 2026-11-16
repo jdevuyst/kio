@@ -869,7 +869,7 @@ mod tests {
     #[test]
     fn selective_operator_references_keep_grammar_and_token_aliases_only() {
         let module =
-            crate::pass::parser::parse("module app; import provider(op _ + _, op ! _);").unwrap();
+            crate::pass::parser::parse("mod app; import provider {op _ + _; op ! _}").unwrap();
         let scope = module_scope_from_surface(&module);
         assert!(
             check_refs_in_module(
@@ -1071,7 +1071,7 @@ mod tests {
     #[test]
     fn alias_selectors_keep_visibility_and_nonvalue_identity() {
         let module = crate::pass::parser::parse(concat!(
-            "module pkg/api; pub fn field() -> . { () } ",
+            "mod pkg/api; pub fn field() -> . { () } ",
             "pub type Field = Original; type Hidden = Original;",
         ))
         .unwrap();
@@ -1094,7 +1094,7 @@ mod tests {
         );
         assert_eq!(resolve_in_module("hidden", &local), RefOutcome::Unresolved);
         let consumer =
-            crate::pass::parser::parse("module pkg/main; import pkg/api(Field);").unwrap();
+            crate::pass::parser::parse("mod pkg/main; import pkg/api {type Field}").unwrap();
         assert_eq!(
             resolve_in_module("Field", &module_scope_from_surface(&consumer)),
             RefOutcome::Resolved
@@ -1125,7 +1125,7 @@ mod tests {
     #[test]
     fn module_scope_indexes_each_nominal_declaration_once() {
         let module = crate::pass::parser::parse(
-            "module x; type { Field: .; } type Row = Field & { Other: .; };",
+            "mod x; type { Field: .; } type Row = Field & { Other: .; };",
         )
         .expect("parse compact declarations");
         let scope = module_scope_from_surface(&module);
@@ -1162,10 +1162,7 @@ mod tests {
     #[test]
     fn nominal_scope_uses_only_local_declarations_and_exact_visibility() {
         let module = crate::pass::parser::parse(
-            "module pkg/main; import pkg/other(Imported); \
-             type { Local: .; } pub(pkg) type { Scoped: .; } \
-             pub type Public = { Exported: .; }; \
-             type { Explicit: . { mk; get; }; }",
+            "mod pkg/main; import pkg/other {type Imported} type { Local: .; } pub(pkg) type { Scoped: .; } pub type Public = { Exported: .; }; type { Explicit: . { mk; get; }; }",
         )
         .unwrap();
         let local = module_scope_from_surface(&module);
@@ -1195,7 +1192,7 @@ mod tests {
     fn nominal_scope_does_not_duplicate_an_alias_head() {
         // Scope extraction precedes duplicate-declaration validation; it must
         // not manufacture a second kind for the same written alias name.
-        let module = crate::pass::parser::parse("module x; type Field = { Field: .; };").unwrap();
+        let module = crate::pass::parser::parse("mod x; type Field = { Field: .; };").unwrap();
         let scope = module_scope_from_surface(&module);
         let kinds = scope
             .type_level
@@ -1211,8 +1208,9 @@ mod tests {
             for constructor in ["", "pub(api) ", "pub "] {
                 for projector in ["", "pub(api) ", "pub "] {
                     let module = crate::pass::parser::parse(&format!(
-                        "module api; {outer}type {{ Box: . {{ {constructor}mk; {projector}get; }}; }}"
-                    )).unwrap();
+                        "mod api; {outer}type {{ Box: . {{ {constructor}mk; {projector}get; }}; }}"
+                    ))
+                    .unwrap();
                     let local = module_scope_from_surface(&module);
                     let public = module_scope_from_surface_for_boundary(&module);
                     for name in ["Box", "Box.mk", "Box.get"] {
@@ -1237,8 +1235,7 @@ mod tests {
     #[test]
     fn compact_nominal_members_keep_each_explicit_visibility() {
         let module = crate::pass::parser::parse(
-            "module api; pub type Alias = { Token: . { mk; pub get; }; }; \
-             pub type { Default: .; Scoped: . { pub(api) mk; pub get; }; }",
+            "mod api; pub type Alias = { Token: . { mk; pub get; }; }; pub type { Default: .; Scoped: . { pub(api) mk; pub get; }; }",
         )
         .unwrap();
         let local = module_scope_from_surface(&module);
@@ -1281,10 +1278,7 @@ mod tests {
     #[test]
     fn boundary_imports_and_private_recursive_roles_are_not_reexports() {
         let module = crate::pass::parser::parse(
-            "module api; import other(imported, Field); import elsewhere as alias; import __intrinsics__; \
-             rec { pub type { Visible: . | Hidden { mk; pub get; }; }; \
-             type { Hidden: . | Visible { pub mk; pub get; }; }; } \
-             pub type Row = Field & { Owned: .; };"
+            "mod api; import other {fn imported; type Field} import elsewhere as alias; import __intrinsics__; rec { pub type { Visible: . | Hidden { mk; pub get; }; }; type { Hidden: . | Visible { pub mk; pub get; }; }; } pub type Row = Field & { Owned: .; };"
         ).unwrap();
         let scope = module_scope_from_surface_for_boundary(&module);
         for name in [

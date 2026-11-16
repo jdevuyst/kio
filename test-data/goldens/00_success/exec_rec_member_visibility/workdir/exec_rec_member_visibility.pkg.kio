@@ -1,4 +1,4 @@
-package exec_rec_member_visibility;
+pkg exec_rec_member_visibility;
 
 build {
   cache "out/.kio-cache/";

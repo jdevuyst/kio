@@ -1,9 +1,9 @@
-module regex/bytes;
+mod regex/bytes;
 
-import macros/match(macro match);
-import testapi(Bool, I32, String);
-import testapi/fmt(int_to_string);
-import testapi/text(string_code_at, string_eq);
+import macros/match { macro match }
+import testapi { type Bool; type I32; type String }
+import testapi/fmt { fn int_to_string }
+import testapi/text { fn string_code_at; fn string_eq }
 
 pub fn byte_text_at(text: String, index: I32) -> String {
   match(string_code_at(text, index)) {

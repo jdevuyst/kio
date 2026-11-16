@@ -1,4 +1,4 @@
-package exec_power;
+pkg exec_power;
 
 build {
   cache "out/.kio-cache/";

@@ -1,23 +1,41 @@
 /// The transcript. Everything the coder computed, in the order it computed it,
 /// so a run can be read and checked without the source beside it.
-module huffman/render;
+mod huffman/render;
 
-import huffman/code(Bits, Entry, Entry_bits, Entry_freq, Entry_len, Entry_symbol);
-import huffman/freq(Count, Count_freq, Count_symbol);
-import huffman/list(List, fold, for_each, len);
-import huffman/message(glyph);
-import huffman/report(Alphabet, Baseline_bits, Coded_bits, Fixed_width, Savings);
-import huffman/report(Milli_bits_each, Saved_bits, Saved_permille, Symbol_count);
-import huffman/text(cat, cat3, cat4, line, num, pad_num, pad_text);
-import huffman/tree(Node, Step, is_leaf, key, symbol_or, weight);
-import huffman/tree(Step_left, Step_merged, Step_right);
-import macros/control(macro if);
-import macros/match(macro match);
-import macros/row_macros(macro select);
-import testapi(Bool, I32, String);
-import testapi/arith(add_i32, eq_i32);
-import testapi/io(print);
-import testapi/iter(loop);
+import huffman/code {
+  type Bits;
+  type Entry;
+  type Entry_bits;
+  type Entry_freq;
+  type Entry_len;
+  type Entry_symbol
+}
+import huffman/freq { type Count; type Count_freq; type Count_symbol }
+import huffman/list { type List; fn fold; fn for_each; fn len }
+import huffman/message { fn glyph }
+import huffman/report {
+  type Alphabet;
+  type Baseline_bits;
+  type Coded_bits;
+  type Fixed_width;
+  type Savings
+}
+import huffman/report {
+  type Milli_bits_each;
+  type Saved_bits;
+  type Saved_permille;
+  type Symbol_count
+}
+import huffman/text { fn cat; fn cat3; fn cat4; fn line; fn num; fn pad_num; fn pad_text }
+import huffman/tree { type Node; type Step; fn is_leaf; fn key; fn symbol_or; fn weight }
+import huffman/tree { type Step_left; type Step_merged; type Step_right }
+import macros/control { macro if }
+import macros/match { macro match }
+import macros/row_macros { macro select }
+import testapi { type Bool; type I32; type String }
+import testapi/arith { fn add_i32; fn eq_i32 }
+import testapi/io { fn print }
+import testapi/iter { fn loop }
 
 fn bit_glyph(bit: I32) -> String {
   if(eq_i32(bit, 0)) { "0" } else { "1" }

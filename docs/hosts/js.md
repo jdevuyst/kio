@@ -17,7 +17,7 @@ the newest baseline until `kio fmt` pins them to its concrete name. See
 A package emits to JavaScript by declaring a `js` target in `<pkg>.pkg.kio`:
 
 ```kio {variant=package}
-package greeter;
+pkg greeter;
 
 build {
   cache "out/.kio-cache/";
@@ -80,7 +80,7 @@ is supplied as `greeter.print`:
 
 ```kio {variant=module}
 // greeter.kio
-module greeter;
+mod greeter;
 
 host type String role(str);
 
@@ -193,7 +193,7 @@ alone does not decide this: the field's behavior does.
 `greeter.pkg.kio`:
 
 ```kio {variant=package}
-package greeter;
+pkg greeter;
 
 build {
   cache "out/.kio-cache/";
@@ -213,7 +213,7 @@ bridge {
 `greeter.kio` declares the host capability:
 
 ```kio {file}
-module greeter;
+mod greeter;
 
 host type String role(str);
 host fn print(p0: String);
@@ -222,7 +222,7 @@ host fn print(p0: String);
 `greeter/main.kio` imports it and exports `main`:
 
 <!--kio {file}
-package greeter;
+pkg greeter;
 
 build {
   cache "out/.kio-cache/";
@@ -239,17 +239,17 @@ bridge {
 -->
 
 <!--kio {harness=greeter_js_main file placeholder="__SNIPPET__"}
-module greeter/main;
+mod greeter/main;
 
-import greeter(String, print);
+import greeter {type String; fn print}
 
 __SNIPPET__
 -->
 
-```kio {@greeter_js_main placeholder={"module greeter/main;":"","import greeter(String, print);":""}}
-module greeter/main;
+```kio {@greeter_js_main placeholder={"mod greeter/main;":"","import greeter {type String; fn print}":""}}
+mod greeter/main;
 
-import greeter(String, print);
+import greeter {type String; fn print}
 
 pub fn main() { print("hello from kio\n") }
 ```

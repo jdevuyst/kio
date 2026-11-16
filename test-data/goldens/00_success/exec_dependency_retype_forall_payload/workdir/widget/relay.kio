@@ -1,6 +1,6 @@
-module widget/relay;
+mod widget/relay;
 
-import core/store(Dict);
-import widget/store(I32, relay_dict);
+import core/store { type Dict }
+import widget/store { type I32; fn relay_dict }
 
 pub fn relay_via() -> Dict { relay_dict() }

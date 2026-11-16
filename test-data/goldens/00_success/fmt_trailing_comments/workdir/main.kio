@@ -1,6 +1,6 @@
-module main;
+mod main;
 
-import macros/control(macro scope);
+import macros/control {macro scope}
 
 fn f(x: I32) -> I32 {
   let y = x;

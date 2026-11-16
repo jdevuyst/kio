@@ -1,4 +1,4 @@
-package do_constant_receiver;
+pkg do_constant_receiver;
 
 build {
   target js {

@@ -1,7 +1,7 @@
-module testapi/main;
+mod testapi/main;
 
-import macros/match(macro match);
-import macros/spine_macros(macro widen_sum);
+import macros/match { macro match }
+import macros/spine_macros { macro widen_sum }
 import testapi as t;
 import testapi/arith as a;
 

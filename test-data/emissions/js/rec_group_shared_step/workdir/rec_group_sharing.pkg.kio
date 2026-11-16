@@ -1,4 +1,4 @@
-package rec_group_sharing;
+pkg rec_group_sharing;
 
 build {
   target js {

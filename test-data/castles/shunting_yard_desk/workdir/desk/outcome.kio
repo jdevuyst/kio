@@ -5,14 +5,14 @@
 /// dispatches it with `match` exactly the way it dispatches a success. The
 /// seven arms are the complete failure surface of an integer desk calculator
 /// over this grammar, and the fixture exercises every one of them.
-module desk/outcome;
+mod desk/outcome;
 
-import desk/list(List, cons, count, nil);
-import desk/num(int_eq);
-import macros/match(macro match);
-import macros/row_macros(macro select);
-import macros/spine_macros(macro widen_sum);
-import testapi(Bool, I32, String);
+import desk/list { type List; fn cons; fn count; fn nil }
+import desk/num { fn int_eq }
+import macros/match { macro match }
+import macros/row_macros { macro select }
+import macros/spine_macros { macro widen_sum }
+import testapi { type Bool; type I32; type String }
 
 pub type Fault_kind =
   | { Bad_token: . }

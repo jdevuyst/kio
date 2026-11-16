@@ -1,4 +1,4 @@
-package ffi_host_constructor_substitution;
+pkg ffi_host_constructor_substitution;
 
 build {
   cache "out/.kio-cache/";

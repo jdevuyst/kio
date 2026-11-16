@@ -1,9 +1,9 @@
 /// The workbench's fixture polynomials.
-module poly/fixtures;
+mod poly/fixtures;
 
-import list/list(varop [] as [* *]);
+import list/list { op_var [] as [* *] }
 import poly/core as core;
-import testapi(I32);
+import testapi { type I32 }
 
 /// `3x^2 - 2x + 5`.
 pub fn p() -> core.Poly { core.of_coeffs([* 5, -2, 3 *]) }

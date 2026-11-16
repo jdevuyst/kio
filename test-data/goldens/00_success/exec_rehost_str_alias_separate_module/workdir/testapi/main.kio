@@ -1,9 +1,9 @@
-module testapi/main;
+mod testapi/main;
 
-import app/rehost(tag);
-import testapi(String);
-import testapi/io(print);
-import testapi/text(string_concat);
+import app/rehost { fn tag }
+import testapi { type String }
+import testapi/io { fn print }
+import testapi/text { fn string_concat }
 
 pub fn main() {
   // `print` / `string_concat` take the host `testapi.String` (role(str)).

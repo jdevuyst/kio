@@ -2,6 +2,6 @@
 ///
 /// This is broken: [`@signature nonexistent`].
 /// This is also broken: [`@source also_missing`].
-module brokendir/main;
+mod brokendir/main;
 
 pub fn identity(x: .) { x }

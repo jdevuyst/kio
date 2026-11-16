@@ -1,4 +1,4 @@
-dependency optics;
+dep optics;
 
 source {
   path "../../../poc/optics/workdir/optics.pkg.kio"

@@ -1,4 +1,4 @@
-package typecheck_macro_iso_bijection;
+pkg typecheck_macro_iso_bijection;
 
 build {
   cache "out/.kio-cache/";

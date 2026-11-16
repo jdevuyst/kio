@@ -1,6 +1,6 @@
-module testapi/main;
+mod testapi/main;
 
 import logger as log;
-import testapi(String);
+import testapi { type String }
 
 pub fn main() { log.log_line("via root module alias"[String]) }

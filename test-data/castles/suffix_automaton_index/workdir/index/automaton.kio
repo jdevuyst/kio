@@ -1,12 +1,12 @@
-module index/automaton;
+mod index/automaton;
 
 import index/numbers as num;
-import macros/control(macro if);
-import macros/row_macros(macro record, macro select, macro with);
-import testapi(Array, Bool, I32);
+import macros/control { macro if }
+import macros/row_macros { macro record; macro select; macro with }
+import testapi { type Array; type Bool; type I32 }
 import testapi/arith as n;
 import testapi/array as a;
-import testapi/iter(loop);
+import testapi/iter { fn loop }
 
 pub type State = { Longest: I32; Suffix: I32; Ends: I32; Transitions: Array[I32]; Copied_from: I32 };
 

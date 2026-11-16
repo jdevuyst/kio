@@ -1,4 +1,4 @@
-package dict_private_node;
+pkg dict_private_node;
 
 build {
   cache "out/.kio-cache/";

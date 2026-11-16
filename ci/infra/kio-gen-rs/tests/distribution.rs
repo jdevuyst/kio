@@ -759,7 +759,7 @@ fn surface_forms_appear_in_corpus() {
         assert!(
             root.contains(
                 "pub pure fn kio_gen_fold_step(_value: I32, _acc: I32) -> I32 { 0[I32] }"
-            ) && root.contains("pub varop [* *] { foldr1 kio_gen_fold_step kio_gen_fold_seed }\n")
+            ) && root.contains("pub op_var [* *] { foldr1 kio_gen_fold_step kio_gen_fold_seed }\n")
                 && root.contains("equiv kio_gen_seeded_fold_singleton { [* 2[I32] *]; 2[I32] }")
                 && root.contains("equiv kio_gen_seeded_fold_step { [* 1[I32], 2[I32] *]; 0[I32] }"),
             "surface-mode prog.kio missing nonvacuous seeded variadic-operator coverage"
@@ -769,7 +769,7 @@ fn surface_forms_appear_in_corpus() {
             "surface-mode prog.kio missing mixed nominal/type declaration"
         );
         for witness in [
-            "pub varop [] { foldr1 kio_gen_fold_step kio_gen_fold_seed }",
+            "pub op_var [] { foldr1 kio_gen_fold_step kio_gen_fold_seed }",
             "equiv kio_gen_bare_fold_singleton { [2[I32]]; 2[I32] }",
             "equiv kio_gen_bare_fold_step { [1[I32], 2[I32]]; 0[I32] }",
             "equiv kio_gen_prefix_chain { !? !? 2[I32]; 2[I32] }",

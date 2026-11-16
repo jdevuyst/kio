@@ -1,4 +1,4 @@
-package typecheck_spine_fit;
+pkg typecheck_spine_fit;
 
 build {
   cache "out/.kio-cache/";

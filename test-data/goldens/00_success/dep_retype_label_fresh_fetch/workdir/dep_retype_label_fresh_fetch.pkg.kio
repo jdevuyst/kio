@@ -1,4 +1,4 @@
-package dep_retype_label_fresh_fetch;
+pkg dep_retype_label_fresh_fetch;
 
 build {
   target js {

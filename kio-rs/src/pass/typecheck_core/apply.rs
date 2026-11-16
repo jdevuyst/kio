@@ -22513,7 +22513,7 @@ mod tests {
     fn sequence_routes_accept_only_semantic_unit() {
         let module = crate::prime::lower::lower_module(
             crate::pass::parser::parse(
-                "module main; type Alias = .; type A = .; type Pair = . & .;
+                "mod main; type Alias = .; type A = .; type Pair = . & .;
                  type { Token: . { mk; get } }
                  fn subject() { value; () }",
             )
@@ -22629,8 +22629,7 @@ mod tests {
     #[test]
     fn rec_loop_diagnostic_does_not_add_ordinary_planning_work() {
         let package = resolved_lowered_test_package(
-            "module main; host fn drive[S][R](step: S -> (S | R), state: S) -> R; \
-             rec(drive) fn again(x: .) { recur again(x) }",
+            "mod main; host fn drive[S][R](step: S -> (S | R), state: S) -> R; rec(drive) fn again(x: .) { recur again(x) }",
         );
         let module = &package.module("main").unwrap().module;
         let function = module
@@ -22669,10 +22668,7 @@ mod tests {
     #[test]
     fn rec_loop_diagnostic_nested_roots_retry_and_drain_without_body_blame() {
         let package = resolved_lowered_test_package(
-            "module main; host fn drive[S][R](step: S -> (S | R), state: S) -> R; \
-             host fn phantom[T](value: .) -> .; \
-             rec(drive) fn again(value: .) { recur again(value) } \
-             fn good(value: .) { value } fn bad(value: .) { phantom(value) }",
+            "mod main; host fn drive[S][R](step: S -> (S | R), state: S) -> R; host fn phantom[T](value: .) -> .; rec(drive) fn again(value: .) { recur again(value) } fn good(value: .) { value } fn bad(value: .) { phantom(value) }",
         );
         let module = &package.module("main").unwrap().module;
         let body = |name: &str| {
@@ -22798,7 +22794,7 @@ mod tests {
     #[cfg(feature = "surface")]
     #[test]
     fn deferred_callback_edge_requires_its_current_lexical_function_binding() {
-        let package = resolved_lowered_test_package("module main;");
+        let package = resolved_lowered_test_package("mod main;");
         let module = &package.module("main").expect("main module").module;
         let env = super::super::ModuleEnv::build(module, None, None, Some(&package))
             .expect("environment");
@@ -22908,7 +22904,7 @@ mod tests {
     fn retained_local_direct_and_leaf_uses_preserve_open_rank_n_scope() {
         use super::super::env::{reset_retained_local_work, retained_local_work};
         for body in ["step(())", "accept(step)"] {
-            let source = format!("module main;
+            let source = format!("mod main;
                 type {{ Box[A]: A {{ mk; get; }}; }};
                 host fn accept[*F](step: [A] A -> F[A]) -> F[.];
                 host fn collect[*F](body: ([A] A -> F[A]) -> F[.], later: F[.]) -> F[.];
@@ -22946,7 +22942,7 @@ mod tests {
         use super::super::env::{reset_retained_local_work, retained_local_work};
         for invalid in [true, false] {
             let later = if invalid { ". -> ." } else { "." };
-            let source = format!("module main;
+            let source = format!("mod main;
                 type {{ Box[A]: A {{ mk; get; }}; }};
                 host fn collect[*F](body: ([A] A -> F[A]) -> F[.], later: F[.]) -> F[.];
                 host fn outer[T](value: T, later: .) -> T;
@@ -23012,7 +23008,7 @@ mod tests {
         for body in ["step(())", "accept(step)"] {
             for commit in [false, true] {
                 let source = format!(
-                    "module main;
+                    "mod main;
                     host fn accept[R](step: [A] A -> R) -> R;
                     fn witness(step: [A] A -> .) -> . {{ {body} }}"
                 );
@@ -23340,7 +23336,7 @@ mod tests {
     #[test]
     fn rec_order_function_shell_shares_one_goal_across_direct_and_bare_uses() {
         let package = resolved_lowered_test_package(
-            "module main;
+            "mod main;
              host type I32;
              host fn combine(left: I32, right: I32) -> I32;
              host fn consume_fn(function: I32 -> I32, value: I32) -> I32;",
@@ -23395,7 +23391,7 @@ mod tests {
         use crate::ast::{ExpressionOccurrence, NodeId, RecQuotePlan};
         for valid in [true, false] {
             let package = resolved_lowered_test_package(
-                "module main;
+                "mod main;
                  host type Public;
                  host type Runtime;
                  host type Other;
@@ -23516,7 +23512,7 @@ mod tests {
     fn recursive_quotation_keeps_known_public_context_without_inventing_unknown_input() {
         use crate::ast::{ExpressionOccurrence, NodeId, RecQuotePlan};
         let package = resolved_lowered_test_package(
-            "module main; host type Public; host type Runtime;
+            "mod main; host type Public; host type Runtime;
              host fn done(value: Public) -> Runtime;
              host fn make[A]() -> A;
              fn operand() { make() }",
@@ -23617,7 +23613,7 @@ mod tests {
     #[test]
     fn recursive_quotation_source_capture_preserves_polymorphic_binders() {
         let package = resolved_lowered_test_package(
-            "module main; fn operand() { .[A](value: A) -> A { value } }",
+            "mod main; fn operand() { .[A](value: A) -> A { value } }",
         );
         let module = &package.module("main").unwrap().module;
         let env = super::super::ModuleEnv::build(module, None, None, Some(&package)).unwrap();
@@ -23664,7 +23660,7 @@ mod tests {
     #[test]
     fn nested_rec_order_function_shells_keep_distinct_owner_local_goals() {
         let package = resolved_lowered_test_package(
-            "module main;
+            "mod main;
              host type I32;
              host fn combine(left: I32, right: I32) -> I32;",
         );
@@ -23744,7 +23740,7 @@ mod tests {
     #[test]
     fn rec_order_function_shell_rejects_conflicting_sibling_inputs() {
         let package = resolved_lowered_test_package(
-            "module main;
+            "mod main;
              host type I32;
              host type String;
              host fn combine(left: I32, right: I32) -> I32;",
@@ -23796,8 +23792,7 @@ mod tests {
     #[cfg(feature = "surface")]
     #[test]
     fn rec_order_function_shell_uses_the_closed_lexical_header_before_its_body() {
-        let package =
-            resolved_lowered_test_package("module main; host type I32; host type String;");
+        let package = resolved_lowered_test_package("mod main; host type I32; host type String;");
         let module = &package.module("main").expect("main module").module;
         let env = super::super::ModuleEnv::build(module, None, None, Some(&package))
             .expect("function-shell module environment");
@@ -23853,7 +23848,7 @@ mod tests {
     #[cfg(feature = "surface")]
     #[test]
     fn rec_order_function_shell_reports_an_underdetermined_result_goal() {
-        let package = resolved_lowered_test_package("module main; host type I32;");
+        let package = resolved_lowered_test_package("mod main; host type I32;");
         let module = &package.module("main").expect("main module").module;
         let env = super::super::ModuleEnv::build(module, None, None, Some(&package))
             .expect("function-shell module environment");
@@ -23916,7 +23911,7 @@ mod tests {
     #[cfg(feature = "surface")]
     #[test]
     fn annotation_free_expected_body_keeps_the_legacy_pending_flow() {
-        let package = resolved_lowered_test_package("module main; host type I32;");
+        let package = resolved_lowered_test_package("mod main; host type I32;");
         let module = &package.module("main").expect("main module").module;
         let env = super::super::ModuleEnv::build(module, None, None, Some(&package))
             .expect("legacy recursive-order module environment");
@@ -23968,7 +23963,7 @@ mod tests {
     #[test]
     fn rec_order_function_shell_publication_rolls_back_with_outer_failure() {
         let package = resolved_lowered_test_package(
-            "module main;
+            "mod main;
              host type I32;
              host fn combine(left: I32, right: I32) -> I32;
              host fn consume_fn(function: I32 -> I32, value: I32) -> I32;",
@@ -24028,7 +24023,7 @@ mod tests {
     }
 
     #[cfg(feature = "surface")]
-    const DIRECT_PAIR_LAMBDA_BODY_SOURCE: &str = "module main;
+    const DIRECT_PAIR_LAMBDA_BODY_SOURCE: &str = "mod main;
          host type I32;
          host type String;
          host type N;
@@ -24123,7 +24118,7 @@ mod tests {
     #[cfg(feature = "surface")]
     #[test]
     fn root_publication_waits_for_fallible_recursive_order_planning_before_atomic_commit() {
-        let module = parse("module main;").expect("parse");
+        let module = parse("mod main;").expect("parse");
         let (modules, _) =
             FullPipeline::lower_package(vec![(PathBuf::from("main.kio"), module)], None)
                 .expect("lower Kio");
@@ -24222,7 +24217,7 @@ mod tests {
     #[cfg(feature = "surface")]
     #[test]
     fn two_layer_goal_route_preserves_expected_flow_and_later_forall_boundaries() {
-        let declarations = "module main;
+        let declarations = "mod main;
              host type I32;
              host type String;
              host type Marker;
@@ -24267,7 +24262,7 @@ mod tests {
         }
 
         let error = module_alias_call_binder_outcome(
-            "module main;
+            "mod main;
              host type I32;
              host type Marker;
              host fn route_unbound[A](_marker: Marker) -> I32 -> A;
@@ -24332,7 +24327,7 @@ mod tests {
         }
 
         let module = parse(
-            "module main;
+            "mod main;
              host type I32;
              host type Marker;
              host fn marker_then[A](_marker: Marker) -> I32 -> A;
@@ -24465,7 +24460,7 @@ mod tests {
     #[test]
     fn explicit_call_type_argument_kinds_cover_every_seeder_transactionally() {
         let module = parse(
-            "module main;
+            "mod main;
              host type I32;
              type { Box[A]: A { mk; get; }; };",
         )
@@ -24858,7 +24853,7 @@ mod tests {
     #[test]
     fn incomplete_type_prefix_placeholder_does_not_allocate_a_goal() {
         let module = parse(
-            "module main;
+            "mod main;
              host type I32;
              host fn partial[A][B]() -> B;
              fn witness() -> [B] . -> B { partial[_] }",
@@ -24909,7 +24904,7 @@ mod tests {
     #[test]
     #[should_panic(expected = "binder replacements were read through a different inference owner")]
     fn binder_replacements_reject_another_real_goal_owner() {
-        let module = parse("module main;").expect("parse");
+        let module = parse("mod main;").expect("parse");
         let (modules, _) =
             FullPipeline::lower_package(vec![(PathBuf::from("main.kio"), module)], None)
                 .expect("lower Kio");
@@ -24942,17 +24937,17 @@ mod tests {
     #[test]
     fn goal_call_substitution_retains_canonical_argument_identity() {
         let source = parse(
-            "module source;
+            "mod source;
              pub type { Actual: . { mk; get; }; };",
         )
         .expect("parse source module");
         let other = parse(
-            "module other;
+            "mod other;
              pub type { Actual: . { mk; get; }; };",
         )
         .expect("parse colliding module");
         let main = parse(
-            "module main;
+            "mod main;
              import source as real;
              import other as source;
              type { Local: . { mk; get; }; };",
@@ -25084,7 +25079,7 @@ mod tests {
     #[cfg(feature = "surface")]
     #[test]
     fn ordinary_value_cursor_completion_consumes_the_cursor() {
-        let module = parse("module main;").expect("parse");
+        let module = parse("mod main;").expect("parse");
         let (modules, _) =
             FullPipeline::lower_package(vec![(PathBuf::from("main.kio"), module)], None)
                 .expect("lower Kio");
@@ -25142,8 +25137,8 @@ mod tests {
     #[test]
     fn general_ordinary_root_composes_recursive_value_families() {
         let module = parse(
-            "module main;
-             import control(Bool, macro if);
+            "mod main;
+             import control {type Bool; macro if}
 
              host type I32;
              fn id[T](value: T) -> T { value }
@@ -25219,7 +25214,7 @@ mod tests {
     #[test]
     fn general_ordinary_root_infers_literal_from_typed_sibling() {
         let module = parse(
-            "module main;
+            "mod main;
              host type First role(i32);
              host type Second role(i32);
              fn same[T](_first: T, second: T) -> T { second }
@@ -25295,7 +25290,7 @@ mod tests {
             ("host type Bool role(bool);", ".t", "Bool"),
         ] {
             let source = format!(
-                "module main;
+                "mod main;
                  {role_declaration}
                  fn identity[T](value: T) -> T {{ value }}
                  fn witness() -> {expected_name} {{ identity({literal_source}[{expected_name}]) }}"
@@ -25367,7 +25362,7 @@ mod tests {
     #[test]
     fn general_ordinary_root_rolls_back_conflicting_literal_siblings() {
         let module = parse(
-            "module main;
+            "mod main;
              host type I32 role(i32);
              host type Str role(str);
              fn same[T](first: T, _second: T) -> T { first }
@@ -25463,7 +25458,7 @@ mod tests {
     #[test]
     fn mixed_type_only_residual_publication_is_root_atomic() {
         let module = parse(
-            "module main;
+            "mod main;
              host type I32;
              host type String;
              type { Box[A]: A { mk; get; }; };
@@ -25629,7 +25624,7 @@ mod tests {
     #[test]
     fn general_ordinary_root_composes_a_computed_callee() {
         let module = parse(
-            "module main;
+            "mod main;
              host type I32;
              fn retain(function: I32 -> I32) -> I32 -> I32 { function }
              fn apply(function: I32 -> I32, value: I32) -> I32 {
@@ -25695,7 +25690,7 @@ mod tests {
     #[test]
     fn selecting_call_supplies_a_lambda_its_concrete_expected_type() {
         let module = parse(
-            "module main;
+            "mod main;
              host type Witness;
              fn consume(_f: Witness -> Witness)(_value: Witness) -> . { () }
              fn witness(value: Witness) -> . {
@@ -25766,7 +25761,7 @@ mod tests {
     #[test]
     fn selecting_call_checks_a_concrete_parameter_lambda_before_its_body() {
         let module = parse(
-            "module main;
+            "mod main;
              host type Witness;
              host fn make[A]() -> A;
              fn consume(_f: Witness -> Witness, _value: Witness) -> . { () }
@@ -25826,7 +25821,7 @@ mod tests {
 
     #[cfg(feature = "surface")]
     fn completion_control_provider() -> String {
-        let provider = r#"module mechanisms;
+        let provider = r#"mod mechanisms;
             import __comptime__;
             pure fn invoke(ct: __Comptime__, thunk: __Checked_term__) -> __Checked_term__ {
                 __term_call__(ct, __term_type__(ct, thunk), thunk, __term_unit__(ct))
@@ -25905,7 +25900,7 @@ mod tests {
         }
         for (label, declarations, bodies, actions, waiting) in cases {
             let main = format!(
-                "module main; import mechanisms(macro choose_lazy, macro enter_now, macro infer_unit); host type Flag role(bool); host fn supply[A]() -> A; {declarations}"
+                "mod main; import mechanisms {{macro choose_lazy; macro enter_now; macro infer_unit}} host type Flag role(bool); host fn supply[A]() -> A; {declarations}"
             );
             let (modules, _) = FullPipeline::lower_package(
                 vec![
@@ -25983,12 +25978,7 @@ mod tests {
             ("infer_unit()", "enter_now(.() { supply() })", 3, 3),
         ] {
             let main = format!(
-                "module main; import mechanisms(macro choose_lazy, macro enter_now, macro infer_unit); \
-                 host type Caller_flag role(bool); host fn supply[A]() -> A; \
-                 fn result() -> . {{ \
-                   let chosen = choose_lazy(.t[Caller_flag])(.() {{ {left} }})(.() {{ {right} }}); \
-                   chosen \
-                 }}"
+                "mod main; import mechanisms {{macro choose_lazy; macro enter_now; macro infer_unit}} host type Caller_flag role(bool); host fn supply[A]() -> A; fn result() -> . {{ let chosen = choose_lazy(.t[Caller_flag])(.() {{ {left} }})(.() {{ {right} }}); chosen }}"
             );
             let (modules, _) = FullPipeline::lower_package(
                 vec![
@@ -26057,7 +26047,7 @@ mod tests {
     #[test]
     fn selecting_call_waits_for_a_later_lambda_to_pin_the_shared_slot() {
         let module = parse(
-            "module main;
+            "mod main;
              host type Witness;
              host fn make[A]() -> A;
              fn consume[T](_left: T, _right: T) -> . { () }
@@ -26118,7 +26108,7 @@ mod tests {
     #[test]
     fn selecting_multi_parameter_lambda_waits_for_a_later_product_spine() {
         let module = parse(
-            "module main;
+            "mod main;
              host type Witness;
              fn consume[P][R](_function: P -> R, _value: P) -> . { () }
              fn witness(left: Witness, right: Witness) -> . {
@@ -26143,7 +26133,7 @@ mod tests {
     #[test]
     fn selecting_call_waits_through_a_nested_provisional_lambda() {
         let module = parse(
-            "module main;
+            "mod main;
              host type Witness;
              host fn make[A]() -> A;
              fn consume[T](_left: T, _right: T) -> . { () }
@@ -26199,7 +26189,7 @@ mod tests {
     #[test]
     fn selecting_call_retains_a_partial_return_annotation_for_later_checking() {
         let module = parse(
-            "module main;
+            "mod main;
              host type Witness;
              host type Marker;
              host fn marker() -> Marker;
@@ -26256,7 +26246,7 @@ mod tests {
     #[test]
     fn declined_immediate_lambda_transfers_the_exact_plan_without_goal_precommit() {
         let module = parse(
-            "module main;
+            "mod main;
              host type I32;
              fn witness() -> [B] I32 -> I32 {
                .[A][B](value: _) { value }[I32]
@@ -26346,10 +26336,7 @@ mod tests {
                 .0
         }
 
-        let retained = package(
-            "module main; \
-             fn witness() -> . -> . { .(value: .) -> . { value } }",
-        );
+        let retained = package("mod main; fn witness() -> . -> . { .(value: .) -> . { value } }");
         let module = &retained.module("main").expect("main module").module;
         let (item_index, def) = module
             .items
@@ -26373,9 +26360,7 @@ mod tests {
         assert_eq!(retained_work.expected_lambda, 0);
 
         let expected_lambda = parse(
-            "module main; \
-             fn consume[T](_function: T -> T) -> . { () } \
-             fn witness() -> . { consume[.](.(value) { value }) }",
+            "mod main; fn consume[T](_function: T -> T) -> . { () } fn witness() -> . { consume[.](.(value) { value }) }",
         )
         .expect("parse standalone Prime expected-lambda witness");
         let (expected_lambda, _) = crate::prime::pipeline::PrimePipeline::lower_package(
@@ -26417,9 +26402,10 @@ mod tests {
             for body in ["value", "ignored"] {
                 let arguments = arguments.replace("BODY", body);
                 let source = format!(
-                    "module main;\n\
-                     host fn keep[T]({parameters}) -> T;\n\
-                     fn witness[U](value: U) -> U {{ keep[U]({arguments}) }}\n"
+                    "mod main;
+host fn keep[T]({parameters}) -> T;
+fn witness[U](value: U) -> U {{ keep[U]({arguments}) }}
+"
                 );
                 let full = typecheck_surface_source(&source, "contextual rank-N binder");
                 let module = parse(&source).expect("parse contextual rank-N Prime witness");
@@ -26472,7 +26458,7 @@ mod tests {
     #[test]
     fn standalone_partial_return_annotation_still_rejects() {
         let module = parse(
-            "module main;
+            "mod main;
              host type Witness;
              host type Marker;
              host fn marker() -> Marker;
@@ -26523,7 +26509,7 @@ mod tests {
     #[test]
     fn standalone_concrete_parameter_lambda_still_synthesizes() {
         let module = parse(
-            "module main;
+            "mod main;
              host type Witness;
              fn witness() -> Witness -> Witness { .(item: Witness) { item } }",
         )
@@ -26575,7 +26561,7 @@ mod tests {
     #[test]
     fn general_ordinary_root_checks_written_call_stages_from_retained_values() {
         let module = parse(
-            "module main;
+            "mod main;
              host type Second role(i32);
              host type String;
              fn make_pair(left: Second, right: Second) -> Second & Second { (left, right) }
@@ -26683,7 +26669,7 @@ mod tests {
     #[test]
     fn later_sibling_closes_an_expected_dependent_result() {
         let module = parse(
-            "module main;
+            "mod main;
              host type I32;
              host type Marker;
              host fn make_wrapped[A]() -> A & Marker;
@@ -26730,7 +26716,7 @@ mod tests {
     #[test]
     fn later_sibling_can_require_multiple_causal_result_equation_attempts() {
         let module = parse(
-            "module main;
+            "mod main;
              host type I32 role(i32);
              host fn make[A][ B](value: A) -> B & .;
              fn same[T](_left: T, _right: T) -> . { () }
@@ -26754,7 +26740,7 @@ mod tests {
     #[test]
     fn result_equation_discharges_after_immediate_literal_completion() {
         let module = parse(
-            "module main;
+            "mod main;
              host type I32 role(i32);
              fn literal() -> I32 { 0[I32] }",
         )
@@ -26972,7 +26958,7 @@ mod tests {
     #[cfg(feature = "surface")]
     #[test]
     fn retained_leaf_equation_retries_only_after_structural_progress() {
-        let module = parse("module main;").expect("parse retained-leaf scheduler witness");
+        let module = parse("mod main;").expect("parse retained-leaf scheduler witness");
         let (modules, _) =
             FullPipeline::lower_package(vec![(PathBuf::from("main.kio"), module)], None)
                 .expect("lower retained-leaf scheduler witness");
@@ -27157,7 +27143,7 @@ mod tests {
     #[test]
     fn final_deferred_result_equations_report_canonical_error_in_both_orientations() {
         for reverse in [false, true] {
-            let module = parse("module main;").expect("parse Final deferral witness");
+            let module = parse("mod main;").expect("parse Final deferral witness");
             let (modules, _) =
                 FullPipeline::lower_package(vec![(PathBuf::from("main.kio"), module)], None)
                     .expect("lower Final deferral witness");
@@ -27358,7 +27344,7 @@ mod tests {
     fn deep_expectation_chain_classifies_and_supplies_on_bounded_stack() {
         with_bounded_stack(|| {
             const DEPTH: usize = 4096;
-            let module = parse("module main;").expect("parse expectation-chain module");
+            let module = parse("mod main;").expect("parse expectation-chain module");
             let (modules, _) =
                 FullPipeline::lower_package(vec![(PathBuf::from("main.kio"), module)], None)
                     .expect("lower expectation-chain module");
@@ -27438,7 +27424,7 @@ mod tests {
     fn deep_successor_chain_finds_user_macro_transcript_on_bounded_stack() {
         with_bounded_stack(|| {
             const DEPTH: usize = 4096;
-            let module = parse("module main;").expect("parse transcript-chain module");
+            let module = parse("mod main;").expect("parse transcript-chain module");
             let (modules, _) =
                 FullPipeline::lower_package(vec![(PathBuf::from("main.kio"), module)], None)
                     .expect("lower transcript-chain module");
@@ -27570,7 +27556,7 @@ mod tests {
     #[test]
     fn ordinary_value_cursor_preserves_whole_function_scheme_completion() {
         let module = parse(
-            "module main;
+            "mod main;
              pure fn identity[A](value: A) -> A { value }",
         )
         .expect("parse polymorphic path module");
@@ -27642,7 +27628,7 @@ mod tests {
     #[test]
     fn connected_call_planning_bounds_common_and_dynamic_work() {
         let module = parse(
-            "module main;
+            "mod main;
              host type Tag;
              host type I32;
              fn hold[A](value: A) -> Tag -> A { .(_tag: Tag) { value } }
@@ -27779,7 +27765,7 @@ mod tests {
         fn scaling_package(source: &str) -> Package {
             let module = parse(source).expect("parse natural-boundary scaling witness");
             let mut sources = vec![(PathBuf::from("main.kio"), module)];
-            if source.contains("import control(") {
+            if source.contains("import control {") {
                 sources.push((
                     PathBuf::from("control.kio"),
                     parse(include_str!(
@@ -27847,12 +27833,7 @@ mod tests {
 
         fn prelude(extra: &str) -> String {
             format!(
-                "module main; \
-                 host type Bool role(bool); \
-                 host fn make[A]() -> A; \
-                 fn id[A](value: A) -> A {{ value }} \
-                 fn same[A](_left: A, _right: A) -> . {{ () }} \
-                 {extra}"
+                "mod main; host type Bool role(bool); host fn make[A]() -> A; fn id[A](value: A) -> A {{ value }} fn same[A](_left: A, _right: A) -> . {{ () }} {extra}"
             )
         }
 
@@ -27860,8 +27841,8 @@ mod tests {
             prelude(extra)
                 .replace("host type Bool role(bool);", "")
                 .replacen(
-                    "module main;",
-                    "module main; import control(Bool, macro if);",
+                    "mod main;",
+                    "mod main; import control {type Bool; macro if}",
                     1,
                 )
         }
@@ -28062,7 +28043,7 @@ mod tests {
     #[test]
     fn returned_polytype_accepts_a_fully_explicit_higher_rank_type_argument() {
         let module = parse(
-            "module main;
+            "mod main;
              host type Reflected;
              host fn returned_type(token: .) -> [A] Reflected;
              fn witness(token: .) -> Reflected {
@@ -28114,7 +28095,7 @@ mod tests {
     #[test]
     fn product_call_binder_control_without_same_named_module_alias() {
         let outcome = module_alias_call_binder_outcome(
-            "module main;
+            "mod main;
              host type X;
              host type Y;
              host type P;
@@ -28132,7 +28113,7 @@ mod tests {
     #[test]
     fn same_named_product_alias_does_not_capture_call_binder() {
         let outcome = module_alias_call_binder_outcome(
-            "module main;
+            "mod main;
              host type X;
              host type Y;
              host type P;
@@ -28151,7 +28132,7 @@ mod tests {
     #[test]
     fn unit_call_binder_control_without_same_named_module_alias() {
         let outcome = module_alias_call_binder_outcome(
-            "module main;
+            "mod main;
              host type P;
              fn witness(source: [A] A -> . -> A, value: P) -> P {
                let .(local: [A] A -> . -> A) = source;
@@ -28166,7 +28147,7 @@ mod tests {
     #[test]
     fn same_named_unit_alias_does_not_capture_call_binder() {
         let outcome = module_alias_call_binder_outcome(
-            "module main;
+            "mod main;
              host type P;
              type A = .;
              fn witness(source: [A] A -> . -> A, value: P) -> P {
@@ -28182,7 +28163,7 @@ mod tests {
     #[test]
     fn twice_call_binder_control_without_same_named_module_alias() {
         assert_module_alias_does_not_capture_call_binder(
-            "module main;
+            "mod main;
              type Twice[T] = T & T;
              fn witness[A](source: Twice[A] -> . -> ., left: A, right: A) -> . {
                let .(local: Twice[A] -> . -> .) = source;
@@ -28196,7 +28177,7 @@ mod tests {
     #[test]
     fn same_named_module_alias_does_not_capture_twice_call_binder() {
         assert_module_alias_does_not_capture_call_binder(
-            "module main;
+            "mod main;
              type Twice[T] = T & T;
              type A = .;
              fn witness[A](source: Twice[A] -> . -> ., left: A, right: A) -> . {
@@ -28211,7 +28192,7 @@ mod tests {
     #[test]
     fn selected_polymorphic_non_function_chains_decline_to_general_dispatch() {
         assert_module_alias_does_not_capture_call_binder(
-            "module main;
+            "mod main;
              host type I32;
              type Poly = [A] A;
              fn direct(poly: [A] A, value: I32) -> I32 {
@@ -28226,7 +28207,7 @@ mod tests {
             "raw and alias-backed polymorphic non-function",
         );
         let error = module_alias_call_binder_outcome(
-            "module main;
+            "mod main;
              fn bad(poly: [A] A) -> . { poly[.](()) }",
             "explicit non-function specialization",
         )
@@ -28238,7 +28219,7 @@ mod tests {
     #[test]
     fn selected_single_layer_non_function_call_reports_structured_error() {
         let error = module_alias_call_binder_outcome(
-            "module main;
+            "mod main;
              host type I32;
              fn bad(value: I32) -> . { value(()) }",
             "selected single-layer non-function",
@@ -28254,7 +28235,7 @@ mod tests {
     #[test]
     fn written_successor_reports_solved_non_function_type() {
         let error = module_alias_call_binder_outcome(
-            "module main;
+            "mod main;
              fn identity[A](value: A) -> A { value }
              fn bad() -> . { identity(())(()) }",
             "solved written-call successor",
@@ -28270,7 +28251,7 @@ mod tests {
     #[test]
     fn selecting_empty_call_distinguishes_residual_from_unit_application() {
         let module = parse(
-            "module main;
+            "mod main;
              host type N;
              fn identity[A](value: A) -> A { value }
              host fn make[A]() -> A;
@@ -28412,7 +28393,7 @@ mod tests {
     #[test]
     fn only_a_source_empty_packet_applies_an_instantiated_unit_domain() {
         assert_module_alias_does_not_capture_call_binder(
-            "module main;
+            "mod main;
              host type N;
              type Unit_alias = .;
              fn identity[A](value: A) -> A { value }
@@ -28432,7 +28413,7 @@ mod tests {
         );
 
         let error = module_alias_call_binder_outcome(
-            "module main;
+            "mod main;
              host type N;
              fn identity[A](value: A) -> A { value }
              fn consume(_function: N -> N) -> . { () }
@@ -28443,7 +28424,7 @@ mod tests {
         assert_eq!(error, "type mismatch: expected `N -> N`, found `.`");
 
         let error = module_alias_call_binder_outcome(
-            "module main;
+            "mod main;
              host type N;
              fn identity[A](value: A) -> A { value }
              fn consume(_function: N -> N) -> . { () }
@@ -28461,7 +28442,7 @@ mod tests {
     #[test]
     fn retained_abstraction_survives_staged_user_macro_package_check() {
         let provider = parse(
-            "module provider;
+            "mod provider;
              import __comptime__;
              pure fn retained[A](seed: A) -> [B] B -> A {
                .[B](_value: B) { seed }
@@ -28474,8 +28455,8 @@ mod tests {
         )
         .expect("parse retained-abstraction macro provider");
         let consumer = parse(
-            "module main;
-             import provider(macro stage);
+            "mod main;
+             import provider {macro stage}
              fn witness() -> . { stage() }",
         )
         .expect("parse retained-abstraction macro consumer");
@@ -28501,7 +28482,7 @@ mod tests {
     #[test]
     fn ordinary_frontier_infers_a_nested_product_of_polymorphic_values() {
         let module = parse(
-            "module main;
+            "mod main;
              host type N;
              fn identity[A](value: A) -> A { value }
              fn consume[T](_candidates: T, tail: N) -> N { tail }
@@ -28527,7 +28508,7 @@ mod tests {
     #[test]
     fn tuple_direct_intrinsic_and_ordinary_pair_calls_share_exact_prime_types() {
         let module = parse(
-            "module main;
+            "mod main;
              import __intrinsics__;
              host type N;
              fn identity[A](value: A) -> A { value }
@@ -28626,7 +28607,7 @@ mod tests {
     #[test]
     fn failed_later_sibling_does_not_publish_a_retained_nested_call() {
         let module = parse(
-            "module main;
+            "mod main;
              host type I32;
              host type String;
              host fn make[A]() -> A;
@@ -28809,7 +28790,7 @@ mod tests {
     fn nested_immediate_lambda_rolls_back_when_later_sibling_fails() {
         reset_direct_lambda_work();
         let module = parse(
-            "module main;
+            "mod main;
              host type I32;
              host type String;
              fn same[T](_left: T, _right: T) -> T { _left }
@@ -29111,7 +29092,7 @@ mod tests {
     #[cfg(feature = "surface")]
     #[test]
     fn multi_layer_immediate_lambda_rolls_back_a_late_mismatch_atomically() {
-        let source = "module main;
+        let source = "mod main;
              host type I32;
              host type String;
              fn bad(left: I32, wrong: String) -> I32 {
@@ -29462,7 +29443,7 @@ mod tests {
     #[test]
     fn public_ordinary_call_check_is_root_atomic_across_one_and_two_layers() {
         let module = parse(
-            "module main;
+            "mod main;
              host type I32;
              host type String;
              fn same[T](first: T, _second: T) -> T { first }
@@ -29679,7 +29660,7 @@ mod tests {
     #[test]
     fn public_root_ufcs_synth_is_root_atomic_across_one_and_two_layers() {
         let module = parse(
-            "module main;
+            "mod main;
              host type I32;
              host type String;
              fn same[T](first: T, _second: T) -> T { first }
@@ -29847,7 +29828,7 @@ mod tests {
     #[test]
     fn computed_callee_publication_is_root_atomic() {
         let module = parse(
-            "module main;
+            "mod main;
              host type I32;
              host type String;
              fn retain[A](value: A) -> A { value }
@@ -30098,7 +30079,7 @@ mod tests {
     #[test]
     fn computed_callee_adoption_preserves_forall_boundaries() {
         let module = parse(
-            "module main;
+            "mod main;
              host type I32;
              fn retain[A](value: A) -> A { value }
              fn poly[A](value: A) -> A { value }
@@ -30152,7 +30133,7 @@ mod tests {
     #[test]
     fn general_ordinary_root_preserves_inferred_suffix_on_partial_prefix() {
         let module = parse(
-            "module main;
+            "mod main;
              host type I32;
              host type String;
              type { Pack[A]<U>: A & U { mk; get; }; };
@@ -30255,7 +30236,7 @@ mod tests {
     #[test]
     fn constructor_suffix_publication_is_root_atomic() {
         let module = parse(
-            "module main;
+            "mod main;
              host type I32;
              host type String;
              type { Pack[A]<U>: A & U { mk; get; }; };
@@ -30503,7 +30484,7 @@ mod tests {
     #[test]
     fn recursive_computed_callee_publication_is_root_atomic() {
         let module = parse(
-            "module main;
+            "mod main;
              host type Seed;
              host type Tag;
              host type I32;
@@ -30647,7 +30628,7 @@ mod tests {
     #[test]
     fn direct_callee_type_publication_is_root_atomic() {
         let module = parse(
-            "module main;
+            "mod main;
              host type I32;
              host type String;
              fn same[T](_left: T, _right: T) -> . { () }
@@ -30773,7 +30754,7 @@ mod tests {
         }
 
         let module = parse(
-            "module main;
+            "mod main;
              host type I32;
              host type String;
              fn consume[T](_make: . -> T, _later: T) -> . { () }
@@ -30900,7 +30881,7 @@ mod tests {
     #[test]
     fn failed_later_sibling_does_not_publish_a_sequence_tail() {
         let module = parse(
-            "module main;
+            "mod main;
              host type I32;
              host type String;
              fn consume(_make: . -> I32, _later: I32) -> . { () }
@@ -31009,8 +30990,8 @@ mod tests {
     #[test]
     fn failed_later_sibling_does_not_publish_a_conditional_recipe() {
         let module = parse(
-            "module main;
-             import control(Bool, macro if);
+            "mod main;
+             import control {type Bool; macro if}
 
              host type I32;
              host type String;
@@ -31142,13 +31123,13 @@ mod tests {
     #[cfg(feature = "surface")]
     #[test]
     fn failed_later_sibling_does_not_publish_literal_requalification() {
-        let types = parse("module types; pub host type Value role(i32);")
+        let types = parse("mod types; pub host type Value role(i32);")
             .expect("parse literal payload provider");
         let provider = parse(
-            "module provider; import types as types; pub fn identity(value: types.Value) -> types.Value { value }",
+            "mod provider; import types as types; pub fn identity(value: types.Value) -> types.Value { value }",
         ).expect("parse identity provider");
         let main = parse(
-            "module main; import provider as provider; host type I32; host type String;
+            "mod main; import provider as provider; host type I32; host type String;
              fn consume[T](_value: T, _later: I32) -> . { () }
              fn bad(wrong: String) -> . { consume(provider.identity(0), wrong) }
              fn good(right: I32) -> . { consume(provider.identity(0), right) }",
@@ -31258,7 +31239,7 @@ mod tests {
     #[cfg(feature = "surface")]
     #[test]
     fn repeated_pending_pair_checks_source_once_and_publication_is_transactional() {
-        let module = parse("module main; import __intrinsics__; host type I32; host type String;")
+        let module = parse("mod main; import __intrinsics__; host type I32; host type String;")
             .expect("parse pending-pair rollback witness");
         let (modules, _) =
             FullPipeline::lower_package(vec![(PathBuf::from("main.kio"), module)], None)
@@ -31451,7 +31432,7 @@ mod tests {
     #[test]
     fn repeated_pending_source_retains_in_flight_lambda_completion() {
         let module = parse(
-            r#"module main;
+            r#"mod main;
             import __comptime__;
             host fn supply[A]() -> A;
             pure fn unit_checked(ct: __Comptime__, _result: ., _unit: __Checked_term__) -> __Checked_term__ {
@@ -31571,9 +31552,9 @@ mod tests {
         extra: &str,
     ) -> PendingSourceControl {
         let source_text = format!(
-            r#"module main;
+            r#"mod main;
             import __comptime__;
-            import mechanisms(macro choose_lazy);
+            import mechanisms {{macro choose_lazy}}
             host type Bool role(bool);
             {extra}
             host fn supply[A]() -> A;
@@ -31773,7 +31754,7 @@ mod tests {
     #[cfg(feature = "surface")]
     #[test]
     fn pending_source_checked_alias_does_not_certify_its_rhs() {
-        let module = parse("module main; fn retained_source() -> . -> . { .() { missing } } fn witness() -> . -> . { pending }")
+        let module = parse("mod main; fn retained_source() -> . -> . { .() { missing } } fn witness() -> . -> . { pending }")
             .expect("parse unchecked source control");
         let (modules, _) =
             FullPipeline::lower_package(vec![(PathBuf::from("main.kio"), module)], None)
@@ -31896,7 +31877,7 @@ mod tests {
     #[cfg(feature = "surface")]
     #[test]
     fn computed_callee_bridge_reuses_checked_rec_order_transactionally() {
-        let module = parse("module main; host type I32;").expect("parse computed Bridge witness");
+        let module = parse("mod main; host type I32;").expect("parse computed Bridge witness");
         let (modules, _) =
             FullPipeline::lower_package(vec![(PathBuf::from("main.kio"), module)], None)
                 .expect("lower computed Bridge witness");
@@ -32066,7 +32047,7 @@ mod tests {
     #[cfg(feature = "surface")]
     #[test]
     fn lambda_bridge_reuses_rec_order_checked_by_an_earlier_sibling() {
-        let module = parse("module main; host type I32;").expect("parse lambda Bridge witness");
+        let module = parse("mod main; host type I32;").expect("parse lambda Bridge witness");
         let (modules, _) =
             FullPipeline::lower_package(vec![(PathBuf::from("main.kio"), module)], None)
                 .expect("lower lambda Bridge witness");
@@ -32177,7 +32158,7 @@ mod tests {
     #[cfg(feature = "surface")]
     #[test]
     fn scope_exit_restores_lambda_let_and_expected_body_rec_order_before_later_sibling() {
-        let module = parse("module main; host type I32;").expect("parse scope-exit witness");
+        let module = parse("mod main; host type I32;").expect("parse scope-exit witness");
         let (modules, _) =
             FullPipeline::lower_package(vec![(PathBuf::from("main.kio"), module)], None)
                 .expect("lower scope-exit witness");
@@ -32317,7 +32298,7 @@ mod tests {
     #[cfg(feature = "surface")]
     #[test]
     fn mixed_pending_pair_preserves_lexical_error_order() {
-        let module = parse("module main; import __intrinsics__; host type I32;")
+        let module = parse("mod main; import __intrinsics__; host type I32;")
             .expect("parse mixed pending-pair order witness");
         let (modules, _) =
             FullPipeline::lower_package(vec![(PathBuf::from("main.kio"), module)], None)
@@ -32403,7 +32384,7 @@ mod tests {
     #[cfg(feature = "surface")]
     #[test]
     fn nested_rec_order_synthesis_does_not_publish_before_outer_root_success() {
-        let module = parse("module main;").expect("parse nested RecOrder rollback witness");
+        let module = parse("mod main;").expect("parse nested RecOrder rollback witness");
         let (modules, _) =
             FullPipeline::lower_package(vec![(PathBuf::from("main.kio"), module)], None)
                 .expect("lower nested RecOrder rollback witness");
@@ -32485,7 +32466,7 @@ mod tests {
     #[cfg(feature = "surface")]
     #[test]
     fn staged_rec_order_publication_rolls_back_with_later_root_failure() {
-        let module = parse("module main;").expect("parse staged RecOrder rollback witness");
+        let module = parse("mod main;").expect("parse staged RecOrder rollback witness");
         let (modules, _) =
             FullPipeline::lower_package(vec![(PathBuf::from("main.kio"), module)], None)
                 .expect("lower staged RecOrder rollback witness");
@@ -32666,7 +32647,7 @@ mod tests {
         }
 
         let module = parse(
-            "module main;
+            "mod main;
              host type Marker;
              host type I32;
              host type String;
@@ -32871,15 +32852,15 @@ mod tests {
     #[test]
     fn selectively_imported_host_ufcs_uses_the_unified_route_once() {
         let dep = parse(
-            "module dep;
+            "mod dep;
              pub host type Marker;
              pub host type I32;
              pub host fn lift[A](_marker: Marker) -> A;",
         )
         .expect("parse imported-host provider");
         let main = parse(
-            "module main;
-             import dep(lift, Marker, I32);
+            "mod main;
+             import dep {fn lift; type Marker; type I32}
              fn same3[T](_first: T, _second: T, _third: T) -> . { () }
              fn good(good_marker: Marker, good_left: I32, good_right: I32) -> . {
                  same3(good_marker.>lift, good_left, good_right)
@@ -32976,7 +32957,7 @@ mod tests {
     #[test]
     fn rejected_immediate_binderless_lambda_does_not_publish_metadata() {
         let module = parse(
-            "module main;
+            "mod main;
              host type I32;
              host type String;
              fn bad(argument: I32) -> String {
@@ -33238,7 +33219,7 @@ mod tests {
     #[test]
     fn rejected_multi_parameter_immediate_lambda_does_not_publish_metadata() {
         let module = parse(
-            "module main;
+            "mod main;
              host type I32;
              host type String;
              fn bad(first: I32, middle: String, last: I32) -> I32 {
@@ -33413,7 +33394,7 @@ mod tests {
             }
             lambda.push_str(" { () }");
             lambda.push_str(&arguments);
-            format!("module main; fn witness() -> . {{ {lambda} }}")
+            format!("mod main; fn witness() -> . {{ {lambda} }}")
         }
 
         fn check(depth: usize, holes: bool) -> LambdaOwnerWork {
@@ -33462,7 +33443,7 @@ mod tests {
     #[test]
     fn sparse_lambda_slice_retains_an_ancestor_goal_beneath_forall() {
         let module = parse(
-            "module main;
+            "mod main;
              host type I32;
              fn consume[T](_function: [X] ([A] A -> T) -> [Y] . -> .) -> . { () }
              fn witness() -> . {
@@ -33491,7 +33472,7 @@ mod tests {
     #[test]
     fn rejected_all_concrete_immediate_lambda_does_not_publish_metadata() {
         let module = parse(
-            "module main;
+            "mod main;
              host type I32;
              host type String;
              fn bad(first: I32, middle: String, last: I32) -> I32 {
@@ -33617,7 +33598,7 @@ mod tests {
     #[test]
     fn rejected_product_packed_immediate_lambda_does_not_publish_metadata() {
         let module = parse(
-            "module main;
+            "mod main;
              host type I32;
              host type String;
              host type N;
@@ -33769,7 +33750,7 @@ mod tests {
     #[test]
     fn rejected_direct_pair_immediate_lambda_argument_does_not_publish_metadata() {
         let module = parse(
-            "module main;
+            "mod main;
              host type I32;
              host type String;
              host type N;
@@ -34047,7 +34028,7 @@ mod tests {
     #[test]
     fn product_packed_immediate_lambdas_round_trip_to_prime() {
         let module = parse(
-            "module main;
+            "mod main;
              host type I32;
              host type String;
              host type N;
@@ -34205,7 +34186,7 @@ mod tests {
     #[test]
     fn direct_pair_immediate_lambda_arguments_round_trip_to_prime() {
         let module = parse(
-            "module main;
+            "mod main;
              host type I32;
              host type String;
              host type N;
@@ -34450,7 +34431,7 @@ mod tests {
     #[test]
     fn inferred_pair_lambda_body_accepts_a_structural_polytype_member() {
         let module = parse(
-            "module main;
+            "mod main;
              host type N;
              fn identity[A](value: A) -> A { value }
              fn take[T](_factory: N -> T, _value: N) -> . { () }
@@ -34489,7 +34470,7 @@ mod tests {
     #[test]
     fn immediate_lambda_whole_polytype_round_trips_to_prime() {
         let module = parse(
-            "module main;
+            "mod main;
              fn keep_polymorphic(value: [A] A -> A) -> [A] A -> A {
                  .(function) { function }(value)
              }",
@@ -34545,7 +34526,7 @@ mod tests {
     #[test]
     fn immediate_lambda_infers_complete_higher_kinded_scheme_parameter() {
         let module = parse(
-            "module main;
+            "mod main;
              fn identity_hkt[*G](value: G[.]) -> G[.] { value }
              type { Box[A]: A { mk; get; }; };
              type { Wrap[A]: A { mk; get; }; };
@@ -34718,10 +34699,7 @@ mod tests {
                 [.](())[Remote]((), 42[Remote], pair_same())",
         ] {
             let source = format!(
-                "module main; host type Remote role(i32); host type Other role(i32); \
-                 host fn pair_same[A]() -> A & A; \
-                 fn identity[A](value: A) -> A {{ value }} \
-                 fn witness() -> . {{ {body} }}"
+                "mod main; host type Remote role(i32); host type Other role(i32); host fn pair_same[A]() -> A & A; fn identity[A](value: A) -> A {{ value }} fn witness() -> . {{ {body} }}"
             );
             let package = resolved_lowered_test_package(&source);
             let normalized = crate::pass::alpha_normalize::normalize_package(&package);
@@ -34749,8 +34727,7 @@ mod tests {
             ".(_missing, _known: Remote) -> Remote { _missing }(42, 42[Remote])",
         ] {
             let source = format!(
-                "module main; host type Remote role(i32); \
-                 fn witness() -> . {{ let value = {body}; () }}"
+                "mod main; host type Remote role(i32); fn witness() -> . {{ let value = {body}; () }}"
             );
             let package = resolved_lowered_test_package(&source);
             assert!(
@@ -34775,8 +34752,7 @@ mod tests {
                 (known)(known)"#,
         ] {
             let source = format!(
-                "module main; host type String role(str); \
-                 fn witness(known: String) -> String {{ {body} }}"
+                "mod main; host type String role(str); fn witness(known: String) -> String {{ {body} }}"
             );
             let package = resolved_lowered_test_package(&source);
             reset_direct_lambda_work();
@@ -34788,12 +34764,12 @@ mod tests {
             assert_eq!(direct_lambda_work().body_entries, 1, "{body}");
         }
         for source in [
-            r#"module main; host type I32 role(i32); host type String role(str);
+            r#"mod main; host type I32 role(i32); host type String role(str);
                 fn witness(known: I32) -> I32 {
                     .[A](first: A)(middle)(last: A) -> A { first }
                         ("left")(())(known)
                 }"#,
-            r#"module main; fn witness() -> . {
+            r#"mod main; fn witness() -> . {
                 let partial = .[A]()(value) { value }[.](()); ()
             }"#,
         ] {
@@ -34832,8 +34808,7 @@ mod tests {
                     _ => unreachable!(),
                 };
                 let source = format!(
-                    "module main; host type String role(str); {declaration} \
-                     fn witness() -> . {{ {head}{arguments} }}"
+                    "mod main; host type String role(str); {declaration} fn witness() -> . {{ {head}{arguments} }}"
                 );
                 let package = resolved_lowered_test_package(&source);
                 IMMEDIATE_SPINE_EDGES.with(|count| count.set(0));
@@ -34860,7 +34835,7 @@ mod tests {
     fn immediate_lambda_zero_value_layer_substitutes_to_exact_prime_calls() {
         reset_direct_lambda_work();
         let module = parse(
-            "module main;
+            "mod main;
              fn witness() -> . {
                  .[A]()(value) { value }[.]()(())
              }",
@@ -34950,7 +34925,7 @@ mod tests {
     fn immediate_lambda_contextual_returned_forall_retains_open_goal() {
         reset_direct_lambda_work();
         let module = parse(
-            "module main;
+            "mod main;
              host type I32 role(i32);
              host type Other role(i32);
              host fn delayed[T](_token: .) -> [A] A -> T;
@@ -35096,7 +35071,7 @@ mod tests {
     fn immediate_lambda_rejected_contextual_returned_forall_does_not_publish_metadata() {
         reset_direct_lambda_work();
         let module = parse(
-            "module main;
+            "mod main;
              host type I32;
              host type Other;
              host fn delayed[T](_token: .) -> [A] A -> T;
@@ -35211,7 +35186,7 @@ mod tests {
     fn immediate_lambda_returned_forall_freshens_against_ambient_binder() {
         reset_direct_lambda_work();
         let module = parse(
-            "module main;
+            "mod main;
              host type I32;
              host fn delayed[T](_token: .) -> [A] A -> T;
              host fn accept(_value: I32 -> I32) -> I32 -> I32;
@@ -35251,7 +35226,7 @@ mod tests {
     fn immediate_lambda_contextual_returned_forall_unfolds_actual_alias() {
         reset_direct_lambda_work();
         let module = parse(
-            "module main;
+            "mod main;
              host type I32;
              pub type Delayed[T] = [A] A -> T;
              host fn delayed[T](_token: .) -> Delayed[T];
@@ -35293,7 +35268,7 @@ mod tests {
         reset_direct_lambda_work();
         reset_ordinary_planning_work();
         let module = parse(
-            "module main;
+            "mod main;
              host type I32;
              pub type Expected = [T] T -> I32;
              host fn delayed[T](_token: .) -> [A] A -> T;
@@ -35340,7 +35315,7 @@ mod tests {
         reset_direct_lambda_work();
         reset_ordinary_planning_work();
         let module = parse(
-            "module main;
+            "mod main;
              fn identity[A](value: A) -> A { value }
              fn consume[T](_value: T) -> . { () }
              fn run() -> . {
@@ -35414,7 +35389,7 @@ mod tests {
     fn direct_lambda_synthesis_accepts_higher_kinded_scheme_body() {
         reset_direct_lambda_work();
         let module = parse(
-            "module main;
+            "mod main;
              fn identity_hkt[*F](value: F[.]) -> F[.] { value }
              fn direct() -> [*F] F[.] -> F[.] {
                  .(_token) { identity_hkt }(())
@@ -35479,7 +35454,7 @@ mod tests {
     #[test]
     fn immediate_lambda_final_body_applies_new_expected_equation_once() {
         let module = parse(
-            "module main;
+            "mod main;
              import __comptime__;
              pure fn infer_unit_impl(
                  ct: __Comptime__,
@@ -35574,7 +35549,7 @@ mod tests {
     #[test]
     fn ordinary_lambda_synthesis_accepts_scheme_body() {
         let module = parse(
-            "module main;
+            "mod main;
              fn identity[A](value: A) -> A { value }
              fn ordinary() -> . -> [A] A -> A { .(_token: .) { identity } }",
         )
@@ -35626,7 +35601,7 @@ mod tests {
     #[test]
     fn immediate_lambda_concrete_return_preserves_nominal_identity() {
         let module = parse(
-            "module main;
+            "mod main;
              host type N;
              fn keep(value: N) -> N {
                  .(item) -> N { item }(value)
@@ -35691,7 +35666,7 @@ mod tests {
     #[test]
     fn immediate_lambda_concrete_successor_partitions_value_shaped_type_argument() {
         let module = parse(
-            "module main;
+            "mod main;
              host type I32;
              host type String;
              fn flat(pair: I32 & String, value: String) -> I32 {
@@ -35845,7 +35820,7 @@ mod tests {
     #[test]
     fn immediate_lambda_checks_argument_before_body_and_does_not_generalize() {
         let module = parse(
-            "module main;
+            "mod main;
              host type I32;
              fn competing() -> . {
                  .(item) { missing_body }(missing_argument)
@@ -35904,7 +35879,7 @@ mod tests {
         );
 
         let module = parse(
-            "module main;
+            "mod main;
              host type I32;
              fn bad(value: I32) -> [A] A -> A {
                  .(item) { item }(value)
@@ -35936,14 +35911,14 @@ mod tests {
     #[test]
     fn retained_lambda_context_accepts_nominal_projectors() {
         let domain = parse(
-            "module domain;
+            "mod domain;
              pub host type I32;
              pub type { Wrap[A]: A { pub mk; pub get; }; };",
         )
         .expect("parse annotated-lambda nominal provider");
         let main = parse(
-            "module main;
-             import domain(Wrap, I32);
+            "mod main;
+             import domain {type Wrap; type I32}
              type Identity[A] = A;
              type Wrapped[A] = Wrap[A];
              fn apply[A](read: A -> I32, value: A) -> I32 { read(value) }
@@ -36135,15 +36110,15 @@ mod tests {
         }
 
         let domain = parse(
-            "module domain;
+            "mod domain;
              pub host type I32;
              pub host type String;
              pub type { Wrap[A]: A { pub mk; pub get; }; };",
         )
         .expect("parse retained-lambda rollback provider");
         let main = parse(
-            "module main;
-             import domain(Wrap, I32, String);
+            "mod main;
+             import domain {type Wrap; type I32; type String}
              fn identity[A](value: A) -> A { value }
              fn keep(value: I32, _later: I32) -> I32 { value }
              fn consume[P][R](read: P -> R, value: P) -> R { read(value) }
@@ -36330,7 +36305,7 @@ mod tests {
     #[test]
     fn retained_lambda_substitutes_to_standalone_prime() {
         let module = parse(
-            "module main;
+            "mod main;
              host type I32;
              fn consume[T](_f: [A] (A & T) -> T, _value: T) -> . { () }
              fn consume_binder[T](_f: [A] A -> T, _value: T) -> . { () }
@@ -36527,7 +36502,7 @@ mod tests {
     #[test]
     fn partial_and_nested_forall_explicit_binder_lambda_annotations_fall_back_without_panicking() {
         let module = parse(
-            "module main;
+            "mod main;
              host type I32;
              type { Box[A]: A { mk; get; }; };
              fn consume[T](_f: [A] (A & T) -> T, _value: T) -> . { () }
@@ -36680,7 +36655,7 @@ mod tests {
             ),
         ] {
             let source = format!(
-                "module main;
+                "mod main;
                  import aux as p;
                  type {{ Token: . {{ mk; get; }}; }};
                  fn identity[A](value: A) -> A {{ value }}
@@ -36696,7 +36671,7 @@ mod tests {
                     ),
                     (
                         PathBuf::from("aux.kio"),
-                        parse("module aux; pub type { Token: . { pub mk; pub get; }; };")
+                        parse("mod aux; pub type { Token: . { pub mk; pub get; }; };")
                             .expect("nominal provider"),
                     ),
                 ],
@@ -36798,8 +36773,7 @@ mod tests {
     #[cfg(feature = "surface")]
     #[test]
     fn written_nominal_type_arguments_publish_on_legacy_completion_routes() {
-        let package =
-            resolved_lowered_test_package("module main; type { Token: . { mk; get; }; };");
+        let package = resolved_lowered_test_package("mod main; type { Token: . { mk; get; }; };");
         let module = &package.module("main").expect("main module").module;
         let env = super::super::ModuleEnv::build(module, None, None, Some(&package))
             .expect("legacy publication environment");
@@ -36874,7 +36848,7 @@ mod tests {
     #[cfg(feature = "surface")]
     fn check_retained_literal_scope(reconcile_sibling: bool) {
         let package = resolved_lowered_test_package(
-            "module main;
+            "mod main;
              host type Token role(i32);
              fn literal() -> Token { 1[main.Token] }",
         );
@@ -36936,7 +36910,7 @@ mod tests {
     #[test]
     fn empty_application_holes_use_direct_completed_type_equivalence() {
         let package = resolved_lowered_test_package(
-            "module main;
+            "mod main;
              host type I32;
              host type String;
              host type Box[A];
@@ -37057,7 +37031,7 @@ mod tests {
     #[test]
     fn application_holes_keep_completed_type_solver() {
         let package = resolved_lowered_test_package(
-            "module main;
+            "mod main;
              host type I32;",
         );
         let module = &package.module("main").expect("main module").module;
@@ -37248,7 +37222,7 @@ mod tests {
     #[test]
     fn diagnostic_carrier_survives_solver_domain_canonicalization() {
         let module = parse(
-            "module main;
+            "mod main;
              host type I32;
              type Packet = I32 & I32;
              type Call = Packet -> .;",
@@ -37322,7 +37296,7 @@ mod tests {
     #[cfg(feature = "surface")]
     fn semantic_cursor_package() -> Package<Lowered> {
         let module = parse(
-            "module main;
+            "mod main;
              host type I32;
              host type N;
              type Packet = I32 & I32;
@@ -37545,7 +37519,7 @@ mod tests {
     #[test]
     fn semantic_value_domain_expands_only_a_known_product_tail() {
         let module = parse(
-            "module main;
+            "mod main;
              host type I32;
              host type N;
              type Packet = I32 & I32;",
@@ -37832,7 +37806,7 @@ mod tests {
     #[test]
     fn call_stages_ufcs_type_boundaries_use_written_groups() {
         typecheck_surface_source(
-            "module main; host type First; host type Returned;
+            "mod main; host type First; host type Returned;
              host fn leading[A](value: .) -> First -> A;
              host fn returned[A](value: A)[B]() -> B;
              host fn staged(prefix: First)[A](value: A) -> First;
@@ -37879,7 +37853,7 @@ mod tests {
     #[test]
     fn higher_kinded_value_types_require_saturated_structural_leaves() {
         assert_module_alias_does_not_capture_call_binder(
-            "module main;
+            "mod main;
              type { Monad[*F]: . { mk; get; }; };
              fn product[*F][*G][A](value: F[A] & G[A]) -> F[A] & G[A] { value }
              fn sum[*F][*G][A](value: F[A] | G[A]) -> F[A] | G[A] { value }
@@ -37893,7 +37867,7 @@ mod tests {
             ("bare higher-kinded sum members", "F | G"),
         ] {
             let source = format!(
-                "module main;
+                "mod main;
                  fn invalid[*F][*G](value: {ty}) -> {ty} {{ value }}"
             );
             let error = module_alias_call_binder_outcome(&source, case)
@@ -37909,7 +37883,7 @@ mod tests {
     #[test]
     fn higher_kinded_alias_body_remains_admitted() {
         assert_module_alias_does_not_capture_call_binder(
-            "module main;
+            "mod main;
              host type String;
              type { Either[E][A]: E | A { mk; get; }; };
              type { Monad[*F]: . { mk; get; }; };
@@ -37925,7 +37899,7 @@ mod tests {
     #[test]
     fn higher_kinded_alias_is_rejected_as_a_runtime_value_type() {
         let error = module_alias_call_binder_outcome(
-            "module main;
+            "mod main;
              host type String;
              type { Either[E][A]: E | A { mk; get; }; };
              type Unary = Either[String];
@@ -37943,7 +37917,7 @@ mod tests {
     #[test]
     fn anonymous_lambda_accepts_a_complete_higher_kinded_function_scheme() {
         assert_module_alias_does_not_capture_call_binder(
-            "module main;
+            "mod main;
              type { Box[A]: A { mk; get; }; };
              fn valid(value: Box[.]) -> Box[.] {
                .[*F](item: F[.]) -> F[.] { item }[Box]( value)
@@ -37956,7 +37930,7 @@ mod tests {
     #[test]
     fn transparent_alias_preserves_complete_higher_kinded_function_shape() {
         assert_module_alias_does_not_capture_call_binder(
-            "module main;
+            "mod main;
              type { Box[A]: A { mk; get; }; };
              type Apply[*F] = F[.] -> F[.];
              type Scheme = [*F] Apply[F];
@@ -37973,7 +37947,7 @@ mod tests {
     #[test]
     fn recursive_and_existential_newtypes_accept_complete_higher_kinded_schemes() {
         assert_module_alias_does_not_capture_call_binder(
-            "module main;
+            "mod main;
              rec type { Recursive: . | (([*F] F[.] -> F[.]) & Recursive) { mk; get; }; };
              type { Existential<U>: U & ([*F] F[U] -> F[U]) { mk; get; }; };",
             "complete higher-kinded schemes in named payloads",
@@ -37984,7 +37958,7 @@ mod tests {
     #[test]
     fn incomplete_higher_kinded_forall_is_rejected_as_a_value_type() {
         let error = module_alias_call_binder_outcome(
-            "module main;
+            "mod main;
              fn bad() -> [*F] F[.] & . { () }",
             "incomplete higher-kinded forall",
         )
@@ -38015,7 +37989,7 @@ mod tests {
     #[test]
     fn retained_prepared_leaf_waits_for_descendant_result_equation() {
         typecheck_surface_source(
-            "module main;
+            "mod main;
              host type Box[A];
              host fn apply[S][R](function: S -> R, value: S) -> R;
              host fn get[A](value: Box[A]) -> A;
@@ -38046,7 +38020,7 @@ mod tests {
         ] {
             typecheck_surface_source(
                 &format!(
-                    "module main;
+                    "mod main;
                      host type Box[A];
                      host fn apply[S][R](function: S -> R, value: S) -> R;
                      host fn get[A](value: Box[A]) -> A;
@@ -38062,7 +38036,7 @@ mod tests {
     #[test]
     fn empty_inner_polymorphic_call_rejects_before_outer_value_and_publication() {
         let module = parse(
-            "module main;
+            "mod main;
              host type I32;
              host fn arbitrary[A]() -> A;
              fn witness(value: I32) -> I32 { arbitrary()(value) }",
@@ -38182,7 +38156,7 @@ mod tests {
     #[test]
     fn dynamic_successor_reports_structural_errors_without_panicking() {
         let module = parse(
-            "module main;
+            "mod main;
              host type Tag;
              host type I32;
              fn hold[A](value: A) -> Tag -> A { .(_tag: Tag) { value } }
@@ -38361,7 +38335,7 @@ mod tests {
     #[test]
     fn dynamic_unit_value_chain_completes_without_type_slot_ambiguity() {
         typecheck_surface_source(
-            "module main;
+            "mod main;
              host type Tag;
              fn hold[A](value: A) -> Tag -> A { .(_tag: Tag) { value } }
              fn unit_value(value: .) -> . { value }
@@ -38375,7 +38349,7 @@ mod tests {
     #[test]
     fn retained_rank_n_layer_rejects_late_outer_mismatch_without_publication() {
         let module = parse(
-            "module main;
+            "mod main;
              host type I32;
              host type String;
              fn poly_id[A](value: A) -> A { value }
@@ -38490,7 +38464,7 @@ mod tests {
     #[test]
     fn retained_abstraction_rejects_late_outer_mismatch_without_publication() {
         let module = parse(
-            "module main;
+            "mod main;
              host type I32;
              host type String;
              host fn retained[A](seed: A) -> [B] (B & A) -> A;
@@ -38608,7 +38582,7 @@ mod tests {
     #[test]
     fn retained_abstraction_carries_outer_binder_across_deep_connected_chain() {
         let module = parse(
-            "module main;
+            "mod main;
              host type I32;
              host type Tag;
              host fn deep[A](seed: A) -> Tag -> [B] (B & A) -> A;
@@ -38804,7 +38778,7 @@ mod tests {
     #[test]
     fn retained_abstraction_rejects_higher_kinded_outer_solution_without_publication() {
         let module = parse(
-            "module main;
+            "mod main;
              host type I32;
              host type N;
              type { Box[A]: A { mk; get; }; };
@@ -39091,7 +39065,7 @@ mod tests {
     #[test]
     fn ordinary_frontier_witness_rejects_named_scheme_in_monomorphic_slot() {
         let error = direct_rank_n_rejection(
-            "module main;
+            "mod main;
              host type I32;
              fn poly_id[A](value: A) -> A { value }
              host fn mono(function: I32) -> I32;
@@ -39112,7 +39086,7 @@ mod tests {
     #[test]
     fn ordinary_frontier_witness_accepts_named_scheme_in_inferred_goal_slots() {
         typecheck_surface_source(
-            "module main;
+            "mod main;
              host type I32;
              fn poly_id[A](value: A) -> A { value }
              host fn infer[T](function: T) -> I32;
@@ -39127,7 +39101,7 @@ mod tests {
     #[test]
     fn retained_abstraction_infers_outer_binder_beneath_direct_rank_n_parameter() {
         assert_retained_abstraction_witness(
-            "module main;
+            "mod main;
              fn discard[B](_value: B) -> . { () }
              fn consume[A](_function: [B] B -> A, value: A) -> . -> A {
                .(_next: .) { value }
@@ -39141,7 +39115,7 @@ mod tests {
     #[test]
     fn retained_abstraction_infers_outer_binder_beneath_alias_hidden_rank_n_parameter() {
         assert_retained_abstraction_witness(
-            "module main;
+            "mod main;
              type Rank_n[A] = [B] B -> A;
              fn discard[B](_value: B) -> . { () }
              fn consume[A](_function: Rank_n[A], value: A) -> . -> A {
@@ -39156,7 +39130,7 @@ mod tests {
     #[test]
     fn retained_abstraction_infers_outer_binder_beneath_direct_rank_n_parameter_with_empty_call() {
         assert_retained_abstraction_witness(
-            "module main;
+            "mod main;
              fn discard[B](_value: B) -> . { () }
              fn consume[A](_function: [B] B -> A, value: A) -> . -> A {
                .(_next: .) { value }
@@ -39171,7 +39145,7 @@ mod tests {
     fn retained_abstraction_infers_outer_binder_beneath_alias_hidden_rank_n_parameter_with_empty_call()
      {
         assert_retained_abstraction_witness(
-            "module main;
+            "mod main;
              type Rank_n[A] = [B] B -> A;
              fn discard[B](_value: B) -> . { () }
              fn consume[A](_function: Rank_n[A], value: A) -> . -> A {
@@ -39186,7 +39160,7 @@ mod tests {
     #[test]
     fn retained_abstraction_infers_outer_binder_beneath_rank_n_parameter_with_host_slot() {
         assert_retained_abstraction_witness(
-            "module main;
+            "mod main;
              host type N;
              fn discard[B](_value: B) -> . { () }
              fn consume[A](_function: [B] B -> A, value: A) -> N -> A {
@@ -39201,7 +39175,7 @@ mod tests {
     #[test]
     fn retained_abstraction_infers_outer_binder_beneath_rank_n_parameter_at_root() {
         assert_retained_single_layer_witness(
-            "module main;
+            "mod main;
              fn discard[B](_value: B) -> . { () }
              fn consume[A](_function: [B] B -> A, value: A) -> A { value }
              fn witness() -> . { consume(discard, ()) }",
@@ -39212,7 +39186,7 @@ mod tests {
     #[test]
     fn retained_abstraction_keeps_direct_rank_n_binder_distinct_from_ambient_binder() {
         assert_retained_abstraction_witness(
-            "module main;
+            "mod main;
              host type N;
              fn identity[B](value: B) -> B { value }
              fn carry[A](_function: [B] B -> B, value: A) -> N -> A {
@@ -39227,7 +39201,7 @@ mod tests {
     #[test]
     fn retained_abstraction_alpha_freshens_alias_binder_against_ambient_binder() {
         assert_retained_abstraction_witness(
-            "module main;
+            "mod main;
              host type N;
              type Poly = [A] A -> A;
              fn identity[B](value: B) -> B { value }
@@ -39243,7 +39217,7 @@ mod tests {
     #[test]
     fn retained_abstraction_carries_inferred_outer_binder_through_returned_forall() {
         assert_retained_abstraction_witness(
-            "module main;
+            "mod main;
              host type I32;
              host fn retained[A](seed: A) -> [B] (B & A) -> A;
              fn witness(seed: I32, other: I32) -> I32 {
@@ -39257,7 +39231,7 @@ mod tests {
     #[test]
     fn retained_abstraction_accepts_single_layer_higher_kinded_scheme() {
         assert_retained_abstraction_witness(
-            "module main;
+            "mod main;
              fn make[A](seed: A)[*F](_value: F[A]) -> A { seed }
              fn witness() -> [*F] F[.] -> . { make(()) }",
             1,
@@ -39268,7 +39242,7 @@ mod tests {
     #[test]
     fn retained_abstraction_accepts_leading_higher_kinded_scheme() {
         assert_retained_abstraction_witness(
-            "module main;
+            "mod main;
              type { Box[A]: A { mk; get; }; };
              fn make[A](seed: A)[*F](_value: F[A]) -> A { seed }
              fn witness(boxed: Box[.]) -> . { make(())[Box]( boxed) }",
@@ -39280,7 +39254,7 @@ mod tests {
     #[test]
     fn retained_abstraction_solves_outer_binder_from_root_expected_result() {
         assert_retained_abstraction_witness(
-            "module main;
+            "mod main;
              host type I32;
              host type Seed;
              host fn expected[A](seed: Seed) -> [B] B -> A;
@@ -39293,7 +39267,7 @@ mod tests {
     #[test]
     fn retained_abstraction_reports_unresolved_outer_binder_without_publication() {
         assert_unresolved_retained_abstraction(
-            "module main;
+            "mod main;
              host type I32;
              host type Seed;
              host fn expected[A](seed: Seed) -> [B] B -> A;
@@ -39306,7 +39280,7 @@ mod tests {
     #[test]
     fn retained_abstraction_reports_absent_outer_binder_without_publication() {
         assert_unresolved_retained_abstraction(
-            "module main;
+            "mod main;
              host type I32;
              host type Seed;
              host fn absent[A](seed: Seed) -> [B] B -> .;
@@ -39319,7 +39293,7 @@ mod tests {
     #[test]
     fn retained_abstraction_carries_outer_binder_beneath_non_leading_forall() {
         assert_retained_abstraction_witness(
-            "module main;
+            "mod main;
              host type I32;
              fn make[A](_seed: A, fallback: I32) -> (([B] B -> A) & I32) -> I32 {
                .(_bundle: (([B] B -> A) & I32)) { fallback }
@@ -39337,7 +39311,7 @@ mod tests {
     #[test]
     fn retained_abstraction_carries_outer_binder_beneath_alias_hidden_non_leading_forall() {
         assert_retained_abstraction_witness(
-            "module main;
+            "mod main;
              host type I32;
              type Bundle[A] = (([B] B -> A) & I32);
              fn make[A](_seed: A, fallback: I32) -> Bundle[A] -> I32 {
@@ -39354,7 +39328,7 @@ mod tests {
     #[test]
     fn retained_abstraction_alpha_freshens_direct_non_leading_forall() {
         assert_retained_abstraction_witness(
-            "module main;
+            "mod main;
              host type I32;
              fn make[T](_seed: T, fallback: I32) -> (([A] A -> T) & T) -> I32 {
                .(_bundle: (([A] A -> T) & T)) { fallback }
@@ -39372,7 +39346,7 @@ mod tests {
     #[test]
     fn retained_abstraction_alpha_freshens_alias_hidden_non_leading_forall() {
         assert_retained_abstraction_witness(
-            "module main;
+            "mod main;
              host type I32;
              type Bundle[T] = (([A] A -> T) & T);
              fn make[T](_seed: T, fallback: I32) -> Bundle[T] -> I32 {
@@ -39389,7 +39363,7 @@ mod tests {
     #[test]
     fn retained_abstraction_carries_outer_binder_through_leading_and_nested_foralls() {
         assert_retained_abstraction_witness(
-            "module main;
+            "mod main;
              host type I32;
              type Bundle[A][U] = (([B] B -> A) & U);
              fn make[A](_seed: A, fallback: I32) -> [U] Bundle[A][ U] -> I32 {
@@ -39406,7 +39380,7 @@ mod tests {
     #[test]
     fn retained_abstraction_accepts_structurally_nested_higher_kinded_scheme() {
         assert_retained_abstraction_witness(
-            "module main;
+            "mod main;
              host type I32;
              fn make[T](_seed: T, fallback: I32) -> (([*F] F[T] -> T) & T) -> I32 {
                .(_bundle: (([*F] F[T] -> T) & T)) { fallback }
@@ -39424,7 +39398,7 @@ mod tests {
     #[test]
     fn retained_abstraction_checks_path_to_rank_n_product_before_later_solution() {
         assert_retained_single_layer_witness(
-            "module main;
+            "mod main;
              type Handlers[A] = (([B] B -> A) & ([C] C -> A));
              fn consume[A](_handlers: Handlers[A], value: A) -> A { value }
              fn witness(handlers: Handlers[.]) -> . { consume(handlers, ()) }",
@@ -39435,7 +39409,7 @@ mod tests {
     #[test]
     fn retained_abstraction_checks_rank_n_product_literal_before_later_solution() {
         assert_retained_single_layer_witness(
-            "module main;
+            "mod main;
              type Handlers[A] = (([B] B -> A) & ([C] C -> A));
              fn discard[B](_value: B) -> . { () }
              fn consume[A](_handlers: Handlers[A], value: A) -> A { value }
@@ -39447,7 +39421,7 @@ mod tests {
     #[test]
     fn retained_abstraction_checks_inline_rank_n_product_path_before_later_solution() {
         assert_retained_single_layer_witness(
-            "module main;
+            "mod main;
              fn consume[A](
                _handlers: (([B] B -> A) & ([C] C -> A)), value: A
              ) -> A { value }
@@ -39461,7 +39435,7 @@ mod tests {
     #[test]
     fn retained_abstraction_checks_inline_rank_n_product_literal_before_later_solution() {
         assert_retained_single_layer_witness(
-            "module main;
+            "mod main;
              fn discard[B](_value: B) -> . { () }
              fn consume[A](
                _handlers: (([B] B -> A) & ([C] C -> A)), value: A
@@ -39474,7 +39448,7 @@ mod tests {
     #[test]
     fn selected_lambda_derives_unit_abi_arity_from_the_resolved_parameter() {
         let module = parse(
-            "module main;
+            "mod main;
              host type Marker;
              fn consume(_f: . -> ., _marker: Marker) -> . { () }
              fn inferred(marker: Marker) -> . {
@@ -39584,7 +39558,7 @@ mod tests {
             frontier::FrontierMode::ExpectedOnly,
             frontier::FrontierMode::LexicalFallback,
         ] {
-            let module = parse("module main; host type I32;").unwrap();
+            let module = parse("mod main; host type I32;").unwrap();
             let (modules, _) =
                 FullPipeline::lower_package(vec![(PathBuf::from("main.kio"), module)], None)
                     .unwrap();
@@ -39683,13 +39657,7 @@ mod tests {
             ),
         ] {
             let source = format!(
-                "module main; import control(Bool, macro if); \
-                 host type String role(str); host type I32 role(i32); \
-                 host fn loop[S][R](step: S -> (S | R), state: S) -> R; \
-                 host fn concat(left: String, right: String) -> String; \
-                 pub rec(loop) fn run(condition: Bool) -> String {{ \
-                   let children = if (condition) {{ {left} }} else {{ {right} }}; children \
-                 }}"
+                "mod main; import control {{type Bool; macro if}} host type String role(str); host type I32 role(i32); host fn loop[S][R](step: S -> (S | R), state: S) -> R; host fn concat(left: String, right: String) -> String; pub rec(loop) fn run(condition: Bool) -> String {{ let children = if (condition) {{ {left} }} else {{ {right} }}; children }}"
             );
             let control = parse(include_str!(
                 "../../../../test-data/poc/macros/workdir/control.kio"

@@ -1,4 +1,4 @@
-module main;
+mod main;
 
 // `Bad`'s parameter `[A]` appears in a negative position in the
 // payload (LHS of an arrow). Applying `Bad[Loop]` smuggles

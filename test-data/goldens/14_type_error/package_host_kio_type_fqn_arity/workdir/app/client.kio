@@ -1,5 +1,5 @@
-module app/client;
+mod app/client;
 
-import app(Box, String);
+import app { type Box; type String }
 
 host fn accept(b: Box[String]);

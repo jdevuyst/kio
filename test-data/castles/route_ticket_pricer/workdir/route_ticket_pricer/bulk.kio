@@ -1,7 +1,7 @@
-module route_ticket_pricer/bulk;
+mod route_ticket_pricer/bulk;
 
-import testapi(U64);
-import testapi/arith(mul_u64);
+import testapi { type U64 }
+import testapi/arith { fn mul_u64 }
 
 pub fn weekday_bulk_count() -> U64 { mul_u64(12500000000, 48) }
 

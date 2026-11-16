@@ -1,12 +1,12 @@
 [
   {
     "name": "ordinary_default_value_import",
-    "source": "module source; import types(default as ordinary);",
+    "source": "mod source; import types {fn default as ordinary}",
     "targets": [
       {
         "text": "default",
-        "start": 28,
-        "end": 35,
+        "start": 29,
+        "end": 36,
         "kind": "identifier",
         "owners": [
           "import_decl"
@@ -19,12 +19,12 @@
   },
   {
     "name": "default_value_name_is_not_reserved",
-    "source": "module source; fn default(default: .) -> . { default }",
+    "source": "mod source; fn default(default: .) -> . { default }",
     "targets": [
       {
         "text": "default",
-        "start": 18,
-        "end": 25,
+        "start": 15,
+        "end": 22,
         "kind": "entity.name.function",
         "owners": [
           "fn_decl_head"
@@ -35,8 +35,8 @@
       },
       {
         "text": "default",
-        "start": 26,
-        "end": 33,
+        "start": 23,
+        "end": 30,
         "kind": "variable.parameter",
         "owners": [
           "value_param_group"
@@ -44,8 +44,8 @@
       },
       {
         "text": "default",
-        "start": 45,
-        "end": 52,
+        "start": 42,
+        "end": 49,
         "kind": "identifier",
         "owners": [
           "expression_path"
@@ -55,12 +55,12 @@
   },
   {
     "name": "numeric_categories_share_number_highlighting",
-    "source": "module source; fn values() { 42; 42.0e0; 42.0E+3; 42.0; 42.0e-3 }",
+    "source": "mod source; fn values() { 42; 42.0e0; 42.0E+3; 42.0; 42.0e-3 }",
     "targets": [
       {
         "text": "42",
-        "start": 29,
-        "end": 31,
+        "start": 26,
+        "end": 28,
         "kind": "literal.number",
         "owners": [
           "number_literal"
@@ -71,8 +71,8 @@
       },
       {
         "text": "42.0e0",
-        "start": 33,
-        "end": 39,
+        "start": 30,
+        "end": 36,
         "kind": "literal.number",
         "owners": [
           "number_literal"
@@ -83,8 +83,8 @@
       },
       {
         "text": "42.0E+3",
-        "start": 41,
-        "end": 48,
+        "start": 38,
+        "end": 45,
         "kind": "literal.number",
         "owners": [
           "number_literal"
@@ -95,8 +95,8 @@
       },
       {
         "text": "42.0",
-        "start": 50,
-        "end": 54,
+        "start": 47,
+        "end": 51,
         "kind": "literal.number",
         "owners": [
           "number_literal"
@@ -107,8 +107,8 @@
       },
       {
         "text": "42.0e-3",
-        "start": 56,
-        "end": 63,
+        "start": 53,
+        "end": 60,
         "kind": "literal.number",
         "owners": [
           "number_literal"
@@ -121,12 +121,12 @@
   },
   {
     "name": "block_ufcs_closed_operator_receiver",
-    "source": "module source; import ops(op <| _ |>); fn run() { <|value|>.>outer { body } }",
+    "source": "mod source; import ops {op <| _ |>} fn run() { <|value|>.>outer { body } }",
     "targets": [
       {
         "text": ".>",
-        "start": 59,
-        "end": 61,
+        "start": 56,
+        "end": 58,
         "kind": "operator.builtin",
         "owners": [
           "block_ufcs_expr"
@@ -137,8 +137,8 @@
       },
       {
         "text": "outer",
-        "start": 61,
-        "end": 66,
+        "start": 58,
+        "end": 63,
         "kind": "entity.name.function",
         "owners": [
           "block_call"
@@ -151,12 +151,12 @@
   },
   {
     "name": "block_ufcs_forward_uses_completed_result",
-    "source": "module source; fn run() { outer { body }.<receiver.>project }",
+    "source": "mod source; fn run() { outer { body }.<receiver.>project }",
     "targets": [
       {
         "text": ".<",
-        "start": 40,
-        "end": 42,
+        "start": 37,
+        "end": 39,
         "kind": "operator.builtin",
         "owners": [
           "block_ufcs_expr",
@@ -168,8 +168,8 @@
       },
       {
         "text": ".>",
-        "start": 50,
-        "end": 52,
+        "start": 47,
+        "end": 49,
         "kind": "operator.builtin",
         "owners": [
           "ufcs_expr"
@@ -182,12 +182,12 @@
   },
   {
     "name": "block_ufcs_all_directions",
-    "source": "module source; fn run() { r.>outer (a) { b } next { c }; r.>>outer (a) { b } next { c }; outer (a) { b } next { c }.<<r; outer (a) { b } next { c }.<r }",
+    "source": "mod source; fn run() { r.>outer (a) { b } next { c }; r.>>outer (a) { b } next { c }; outer (a) { b } next { c }.<<r; outer (a) { b } next { c }.<r }",
     "targets": [
       {
         "text": ".>",
-        "start": 27,
-        "end": 29,
+        "start": 24,
+        "end": 26,
         "kind": "operator.builtin",
         "owners": [
           "block_ufcs_expr"
@@ -198,8 +198,8 @@
       },
       {
         "text": ".>>",
-        "start": 58,
-        "end": 61,
+        "start": 55,
+        "end": 58,
         "kind": "operator.builtin",
         "owners": [
           "block_ufcs_expr"
@@ -210,8 +210,8 @@
       },
       {
         "text": ".<<",
-        "start": 115,
-        "end": 118,
+        "start": 112,
+        "end": 115,
         "kind": "operator.builtin",
         "owners": [
           "block_ufcs_expr"
@@ -222,8 +222,8 @@
       },
       {
         "text": ".<",
-        "start": 147,
-        "end": 149,
+        "start": 144,
+        "end": 146,
         "kind": "operator.builtin",
         "owners": [
           "block_ufcs_expr"
@@ -236,12 +236,12 @@
   },
   {
     "name": "block_ufcs_explicit_outer_suffix",
-    "source": "module source; fn run() { outer (a) { b } next { inner (c) { d } }.<r }",
+    "source": "mod source; fn run() { outer (a) { b } next { inner (c) { d } }.<r }",
     "targets": [
       {
         "text": "outer",
-        "start": 26,
-        "end": 31,
+        "start": 23,
+        "end": 28,
         "kind": "entity.name.function",
         "owners": [
           "block_call"
@@ -252,8 +252,8 @@
       },
       {
         "text": "inner",
-        "start": 49,
-        "end": 54,
+        "start": 46,
+        "end": 51,
         "kind": "entity.name.function",
         "owners": [
           "labelled_block"
@@ -264,8 +264,8 @@
       },
       {
         "text": ".<",
-        "start": 66,
-        "end": 68,
+        "start": 63,
+        "end": 65,
         "kind": "operator.builtin",
         "owners": [
           "block_ufcs_expr"
@@ -278,12 +278,12 @@
   },
   {
     "name": "block_ufcs_braced_child",
-    "source": "module source; fn run() { outer (a) { b } next { inner (c) { d }.<r } }",
+    "source": "mod source; fn run() { outer (a) { b } next { inner (c) { d }.<r } }",
     "targets": [
       {
         "text": ".<",
-        "start": 64,
-        "end": 66,
+        "start": 61,
+        "end": 63,
         "kind": "operator.builtin",
         "owners": [
           "labelled_block"
@@ -294,8 +294,8 @@
       },
       {
         "text": "inner",
-        "start": 49,
-        "end": 54,
+        "start": 46,
+        "end": 51,
         "kind": "entity.name.function",
         "owners": [
           "block_ufcs_expr"
@@ -308,12 +308,12 @@
   },
   {
     "name": "block_ufcs_grouped_result_chain",
-    "source": "module source; fn run() { ((outer (a) { b })).<r(x).>after }",
+    "source": "mod source; fn run() { ((outer (a) { b })).<r(x).>after }",
     "targets": [
       {
         "text": ".<",
-        "start": 45,
-        "end": 47,
+        "start": 42,
+        "end": 44,
         "kind": "operator.builtin",
         "owners": [
           "block_ufcs_expr"
@@ -324,8 +324,8 @@
       },
       {
         "text": ".>",
-        "start": 51,
-        "end": 53,
+        "start": 48,
+        "end": 50,
         "kind": "operator.builtin",
         "owners": [
           "ufcs_expr"
@@ -336,8 +336,8 @@
       },
       {
         "text": "after",
-        "start": 53,
-        "end": 58,
+        "start": 50,
+        "end": 55,
         "kind": "entity.name.function",
         "owners": [
           "ufcs_expr"
@@ -347,11 +347,11 @@
   },
   {
     "name": "if_value",
-    "source": "module source;\nfn choose(if: .) -> . {\n  if\n}\n",
+    "source": "mod source;\nfn choose(if: .) -> . {\n  if\n}\n",
     "targets": [
       {
-        "start": 41,
-        "end": 43,
+        "start": 38,
+        "end": 40,
         "text": "if",
         "kind": "identifier",
         "owners": [
@@ -364,11 +364,11 @@
   },
   {
     "name": "if_block_macro",
-    "source": "module source;\nfn choose(if: .) -> . {\n  if\n  (.t) { () } else { () }\n}\n",
+    "source": "mod source;\nfn choose(if: .) -> . {\n  if\n  (.t) { () } else { () }\n}\n",
     "targets": [
       {
-        "start": 41,
-        "end": 43,
+        "start": 38,
+        "end": 40,
         "text": "if",
         "kind": "entity.name.function",
         "owners": [
@@ -378,8 +378,8 @@
         ]
       },
       {
-        "start": 58,
-        "end": 62,
+        "start": 55,
+        "end": 59,
         "text": "else",
         "kind": "keyword.control",
         "owners": [
@@ -393,11 +393,11 @@
   },
   {
     "name": "if_value_comment",
-    "source": "module source;\nfn choose(if: .) -> . {\n  if // shared trivia\n}\n",
+    "source": "mod source;\nfn choose(if: .) -> . {\n  if // shared trivia\n}\n",
     "targets": [
       {
-        "start": 41,
-        "end": 43,
+        "start": 38,
+        "end": 40,
         "text": "if",
         "kind": "identifier",
         "owners": [
@@ -410,11 +410,11 @@
   },
   {
     "name": "if_block_macro_comment",
-    "source": "module source;\nfn choose(if: .) -> . {\n  if // shared trivia\n  (.t) { () } else { () }\n}\n",
+    "source": "mod source;\nfn choose(if: .) -> . {\n  if // shared trivia\n  (.t) { () } else { () }\n}\n",
     "targets": [
       {
-        "start": 41,
-        "end": 43,
+        "start": 38,
+        "end": 40,
         "text": "if",
         "kind": "entity.name.function",
         "owners": [
@@ -424,8 +424,8 @@
         ]
       },
       {
-        "start": 75,
-        "end": 79,
+        "start": 72,
+        "end": 76,
         "text": "else",
         "kind": "keyword.control",
         "owners": [
@@ -439,11 +439,11 @@
   },
   {
     "name": "rec_callee_newline",
-    "source": "module source;\nhost fn loop[S][R](step: S -> (S | R), state: S) -> R;\nrec(loop) fn again(value: .) -> . {\n  recur // shared trivia\n  again(value)\n}\n",
+    "source": "mod source;\nhost fn loop[S][R](step: S -> (S | R), state: S) -> R;\nrec(loop) fn again(value: .) -> . {\n  recur // shared trivia\n  again(value)\n}\n",
     "targets": [
       {
-        "start": 108,
-        "end": 113,
+        "start": 105,
+        "end": 110,
         "text": "recur",
         "kind": "keyword.declaration",
         "owners": [
@@ -454,8 +454,8 @@
         ]
       },
       {
-        "start": 70,
-        "end": 73,
+        "start": 67,
+        "end": 70,
         "text": "rec",
         "kind": "keyword.declaration",
         "owners": [
@@ -466,11 +466,11 @@
   },
   {
     "name": "rec_parameter_newline",
-    "source": "module source;\nhost fn loop[S][R](step: S -> (S | R), state: S) -> R;\nrec(loop) fn again(\n  rec // shared trivia\n  : .\n) -> . { () }\n",
+    "source": "mod source;\nhost fn loop[S][R](step: S -> (S | R), state: S) -> R;\nrec(loop) fn again(\n  rec // shared trivia\n  : .\n) -> . { () }\n",
     "targets": [
       {
-        "start": 92,
-        "end": 95,
+        "start": 89,
+        "end": 92,
         "text": "rec",
         "kind": "variable.parameter",
         "owners": [
@@ -480,8 +480,8 @@
         ]
       },
       {
-        "start": 70,
-        "end": 73,
+        "start": 67,
+        "end": 70,
         "text": "rec",
         "kind": "keyword.declaration",
         "owners": [
@@ -492,11 +492,11 @@
   },
   {
     "name": "rec_arguments_newline",
-    "source": "module source;\nhost fn loop[S][R](step: S -> (S | R), state: S) -> R;\nrec(loop) fn again(value: .) -> . {\n  recur again\n  (value)\n}\n",
+    "source": "mod source;\nhost fn loop[S][R](step: S -> (S | R), state: S) -> R;\nrec(loop) fn again(value: .) -> . {\n  recur again\n  (value)\n}\n",
     "targets": [
       {
-        "start": 108,
-        "end": 113,
+        "start": 105,
+        "end": 110,
         "text": "recur",
         "kind": "keyword.declaration",
         "owners": [
@@ -507,8 +507,8 @@
         ]
       },
       {
-        "start": 70,
-        "end": 73,
+        "start": 67,
+        "end": 70,
         "text": "rec",
         "kind": "keyword.declaration",
         "owners": [
@@ -519,11 +519,11 @@
   },
   {
     "name": "signature_with",
-    "source": "signature app v(1);\nv(1) {\n  with {\n    module api {\n      rec {\n        pub type A = B;\n        pub type { B: A { pub mk; pub get; }; };\n      }\n    }\n  };\n  nonbreaking {\n    add {\n      api.A;\n      api.B;\n    }\n  }\n}\n",
+    "source": "sig app v(1);\nv(1) {\n  with {\n    mod api {\n      rec {\n        pub type A = B;\n        pub type { B: A { pub mk; pub get; }; };\n      }\n    }\n  };\n  nonbreaking {\n    add {\n      api.A;\n      api.B;\n    }\n  }\n}\n",
     "targets": [
       {
-        "start": 59,
-        "end": 62,
+        "start": 50,
+        "end": 53,
         "text": "rec",
         "kind": "keyword.declaration",
         "owners": [
@@ -535,8 +535,8 @@
         ]
       },
       {
-        "start": 29,
-        "end": 33,
+        "start": 23,
+        "end": 27,
         "text": "with",
         "kind": "keyword.declaration",
         "owners": [
@@ -551,15 +551,15 @@
   },
   {
     "name": "signature_remove",
-    "source": "signature app v(1);\nv(1) {\n  breaking {\n    remove {\n      module api {\n        type;\n        pub;\n        fn;\n      }\n    }\n  }\n}\n",
+    "source": "sig app v(1);\nv(1) {\n  breaking {\n    remove {\n      \n        api.type;\n        api.pub;\n        api.fn;\n      \n    }\n  }\n}\n",
     "targets": [
       {
-        "start": 80,
-        "end": 84,
+        "start": 66,
+        "end": 70,
         "text": "type",
         "kind": "identifier",
         "owners": [
-          "signature_remove_module",
+          "signature_item_reference",
           "signature_file"
         ],
         "textmate": [
@@ -567,12 +567,12 @@
         ]
       },
       {
-        "start": 94,
-        "end": 97,
+        "start": 84,
+        "end": 87,
         "text": "pub",
         "kind": "identifier",
         "owners": [
-          "signature_remove_module",
+          "signature_item_reference",
           "signature_file"
         ],
         "textmate": [
@@ -580,12 +580,12 @@
         ]
       },
       {
-        "start": 107,
-        "end": 109,
+        "start": 101,
+        "end": 103,
         "text": "fn",
         "kind": "identifier",
         "owners": [
-          "signature_remove_module",
+          "signature_item_reference",
           "signature_file"
         ],
         "textmate": [
@@ -596,11 +596,11 @@
   },
   {
     "name": "signature_add",
-    "source": "signature app v(1);\nv(1) {\n  nonbreaking {\n    add {\n      module api {\n        pub type T = .;\n      }\n    }\n  }\n}\n",
+    "source": "sig app v(1);\nv(1) {\n  nonbreaking {\n    add {\n      mod api {\n        pub type T = .;\n      }\n    }\n  }\n}\n",
     "targets": [
       {
-        "start": 84,
-        "end": 88,
+        "start": 75,
+        "end": 79,
         "text": "type",
         "kind": "keyword.declaration",
         "owners": [
@@ -612,8 +612,8 @@
         ]
       },
       {
-        "start": 47,
-        "end": 50,
+        "start": 41,
+        "end": 44,
         "text": "add",
         "kind": "keyword.declaration",
         "owners": [
@@ -628,11 +628,11 @@
   },
   {
     "name": "type_member_boundary",
-    "source": "module source;\nrec {\n  type Alias = .;\n  type { Box: . { mk; get; }; };\n}\nfn use(type: .) -> . { type }\n",
+    "source": "mod source;\nrec {\n  type Alias = .;\n  type { Box: . { mk; get; }; };\n}\nfn use(type: .) -> . { type }\n",
     "targets": [
       {
-        "start": 15,
-        "end": 18,
+        "start": 12,
+        "end": 15,
         "text": "rec",
         "kind": "keyword.declaration",
         "owners": [
@@ -640,8 +640,8 @@
         ]
       },
       {
-        "start": 23,
-        "end": 27,
+        "start": 20,
+        "end": 24,
         "text": "type",
         "kind": "keyword.declaration",
         "owners": [
@@ -649,8 +649,8 @@
         ]
       },
       {
-        "start": 41,
-        "end": 45,
+        "start": 38,
+        "end": 42,
         "text": "type",
         "kind": "keyword.declaration",
         "owners": [
@@ -658,8 +658,8 @@
         ]
       },
       {
-        "start": 48,
-        "end": 51,
+        "start": 45,
+        "end": 48,
         "text": "Box",
         "kind": "entity.name.type",
         "owners": [
@@ -667,8 +667,8 @@
         ]
       },
       {
-        "start": 57,
-        "end": 59,
+        "start": 54,
+        "end": 56,
         "text": "mk",
         "kind": "entity.name.function",
         "owners": [
@@ -676,8 +676,8 @@
         ]
       },
       {
-        "start": 61,
-        "end": 64,
+        "start": 58,
+        "end": 61,
         "text": "get",
         "kind": "entity.name.function",
         "owners": [
@@ -685,8 +685,8 @@
         ]
       },
       {
-        "start": 81,
-        "end": 85,
+        "start": 78,
+        "end": 82,
         "text": "type",
         "kind": "variable.parameter",
         "owners": [
@@ -694,8 +694,8 @@
         ]
       },
       {
-        "start": 97,
-        "end": 101,
+        "start": 94,
+        "end": 98,
         "text": "type",
         "kind": "identifier",
         "owners": [
@@ -706,11 +706,11 @@
   },
   {
     "name": "signature_reference_boundary",
-    "source": "signature app v(1);\nv(1) {\n  breaking {\n    remove {\n      module/if.type;\n      api.rec;\n      api.remove;\n      module api {\n        with;\n        module;\n        remove;\n      }\n    }\n  };\n  nonbreaking {\n    modify {\n      module api {\n        pub fn remove() -> .;\n      }\n    }\n  }\n}\n",
+    "source": "sig app v(1);\nv(1) {\n  breaking {\n    remove {\n      module/if.type;\n      api.rec;\n      api.remove;\n      \n        api.with;\n        api.module;\n        api.remove;\n      \n    }\n  };\n  nonbreaking {\n    modify {\n      mod api {\n        pub fn remove() -> .;\n      }\n    }\n  }\n}\n",
     "targets": [
       {
-        "start": 59,
-        "end": 65,
+        "start": 53,
+        "end": 59,
         "text": "module",
         "kind": "entity.name.module",
         "owners": [
@@ -722,8 +722,8 @@
         ]
       },
       {
-        "start": 66,
-        "end": 68,
+        "start": 60,
+        "end": 62,
         "text": "if",
         "kind": "entity.name.module",
         "owners": [
@@ -735,8 +735,8 @@
         ]
       },
       {
-        "start": 69,
-        "end": 73,
+        "start": 63,
+        "end": 67,
         "text": "type",
         "kind": "identifier",
         "owners": [
@@ -748,8 +748,8 @@
         ]
       },
       {
-        "start": 85,
-        "end": 88,
+        "start": 79,
+        "end": 82,
         "text": "rec",
         "kind": "identifier",
         "owners": [
@@ -761,8 +761,8 @@
         ]
       },
       {
-        "start": 100,
-        "end": 106,
+        "start": 94,
+        "end": 100,
         "text": "remove",
         "kind": "identifier",
         "owners": [
@@ -774,12 +774,12 @@
         ]
       },
       {
-        "start": 135,
-        "end": 139,
+        "start": 121,
+        "end": 125,
         "text": "with",
         "kind": "identifier",
         "owners": [
-          "signature_remove_module",
+          "signature_item_reference",
           "signature_file"
         ],
         "textmate": [
@@ -787,12 +787,12 @@
         ]
       },
       {
-        "start": 149,
-        "end": 155,
+        "start": 139,
+        "end": 145,
         "text": "module",
         "kind": "identifier",
         "owners": [
-          "signature_remove_module",
+          "signature_item_reference",
           "signature_file"
         ],
         "textmate": [
@@ -800,12 +800,12 @@
         ]
       },
       {
-        "start": 165,
-        "end": 171,
+        "start": 159,
+        "end": 165,
         "text": "remove",
         "kind": "identifier",
         "owners": [
-          "signature_remove_module",
+          "signature_item_reference",
           "signature_file"
         ],
         "textmate": [
@@ -813,8 +813,8 @@
         ]
       },
       {
-        "start": 255,
-        "end": 261,
+        "start": 245,
+        "end": 251,
         "text": "remove",
         "kind": "entity.name.function",
         "owners": [
@@ -826,8 +826,8 @@
         ]
       },
       {
-        "start": 44,
-        "end": 50,
+        "start": 38,
+        "end": 44,
         "text": "remove",
         "kind": "keyword.declaration",
         "owners": [
@@ -839,8 +839,8 @@
         ]
       },
       {
-        "start": 212,
-        "end": 218,
+        "start": 205,
+        "end": 211,
         "text": "modify",
         "kind": "keyword.declaration",
         "owners": [
@@ -852,8 +852,8 @@
         ]
       },
       {
-        "start": 29,
-        "end": 37,
+        "start": 23,
+        "end": 31,
         "text": "breaking",
         "kind": "keyword.declaration",
         "owners": [
@@ -865,8 +865,8 @@
         ]
       },
       {
-        "start": 194,
-        "end": 205,
+        "start": 187,
+        "end": 198,
         "text": "nonbreaking",
         "kind": "keyword.declaration",
         "owners": [
@@ -881,24 +881,12 @@
   },
   {
     "name": "signature_split_module",
-    "source": "// Header trivia\nsignature\napp\nv(1);\nv(1) {\n  breaking {\n    remove {\n      module // shared tail\n      api {\n        type;\n      }\n    }\n  }\n}\n",
+    "source": "// Header trivia\nsig\napp\nv(1);\nv(1) {\n  breaking {\n    add {\n      mod // shared tail\n      api { pub fn type() -> .; }\n    }\n  }\n}\n",
     "targets": [
       {
         "start": 17,
-        "end": 26,
-        "text": "signature",
-        "kind": "keyword.declaration",
-        "owners": [
-          "signature_file"
-        ],
-        "textmate": [
-          "keyword.declaration.kio"
-        ]
-      },
-      {
-        "start": 76,
-        "end": 82,
-        "text": "module",
+        "end": 20,
+        "text": "sig",
         "kind": "keyword.declaration",
         "owners": [
           "signature_file"
@@ -906,39 +894,47 @@
         "textmate": []
       },
       {
-        "start": 118,
-        "end": 122,
+        "start": 67,
+        "end": 70,
+        "text": "mod",
+        "kind": "keyword.declaration",
+        "owners": [
+          "signature_file"
+        ],
+        "textmate": []
+      },
+      {
+        "start": 105,
+        "end": 109,
         "text": "type",
-        "kind": "identifier",
+        "kind": "entity.name.function",
         "owners": [
           "signature_file"
         ],
         "textmate": [
-          "variable.other.kio"
+          "entity.name.function.kio"
         ]
       }
     ]
   },
   {
     "name": "signature_split_reference",
-    "source": "// Header trivia\nsignature\napp\nv(1);\nv(1) {\n  breaking {\n    remove {\n      module // shared tail\n      /api.type;\n    }\n  }\n}\n",
+    "source": "// Header trivia\nsig\napp\nv(1);\nv(1) {\n  breaking {\n    add {\n      mod // shared tail\n      /api.type;\n    }\n  }\n}\n",
     "targets": [
       {
         "start": 17,
-        "end": 26,
-        "text": "signature",
+        "end": 20,
+        "text": "sig",
         "kind": "keyword.declaration",
         "owners": [
           "signature_file"
         ],
-        "textmate": [
-          "keyword.declaration.kio"
-        ]
+        "textmate": []
       },
       {
-        "start": 76,
-        "end": 82,
-        "text": "module",
+        "start": 67,
+        "end": 70,
+        "text": "mod",
         "kind": "entity.name.module",
         "owners": [
           "signature_file"
@@ -946,8 +942,8 @@
         "textmate": []
       },
       {
-        "start": 109,
-        "end": 113,
+        "start": 97,
+        "end": 101,
         "text": "type",
         "kind": "identifier",
         "owners": [
@@ -961,11 +957,11 @@
   },
   {
     "name": "signature_name_inverse",
-    "source": "// Ordinary module, not a signature file\nmodule source;\nfn signature() -> . { () }\nfn keep() -> . { signature() }\n",
+    "source": "// Ordinary module, not a signature file\nmod source;\nfn signature() -> . { () }\nfn keep() -> . { signature() }\n",
     "targets": [
       {
-        "start": 59,
-        "end": 68,
+        "start": 56,
+        "end": 65,
         "text": "signature",
         "kind": "entity.name.function",
         "owners": [],
@@ -974,8 +970,8 @@
         ]
       },
       {
-        "start": 100,
-        "end": 109,
+        "start": 97,
+        "end": 106,
         "text": "signature",
         "kind": "entity.name.function",
         "owners": [],
@@ -987,11 +983,11 @@
   },
   {
     "name": "nominal_compact_declaration_roles",
-    "source": "module source;\npub rec type Tree = { Leaf: .; } | ({ Branch: Tree & Tree { pub mk; pub(source) get; }; } & Existing);\ntype { Box[A] <U>: A & U { mk; get; }; Empty: .; }\n",
+    "source": "mod source;\npub rec type Tree = { Leaf: .; } | ({ Branch: Tree & Tree { pub mk; pub(source) get; }; } & Existing);\ntype { Box[A] <U>: A & U { mk; get; }; Empty: .; }\n",
     "targets": [
       {
-        "start": 23,
-        "end": 27,
+        "start": 20,
+        "end": 24,
         "text": "type",
         "kind": "keyword.declaration",
         "owners": [
@@ -1002,8 +998,8 @@
         ]
       },
       {
-        "start": 28,
-        "end": 32,
+        "start": 25,
+        "end": 29,
         "text": "Tree",
         "kind": "entity.name.type",
         "owners": [
@@ -1014,8 +1010,8 @@
         ]
       },
       {
-        "start": 37,
-        "end": 41,
+        "start": 34,
+        "end": 38,
         "text": "Leaf",
         "kind": "entity.name.type",
         "owners": [
@@ -1026,8 +1022,8 @@
         ]
       },
       {
-        "start": 53,
-        "end": 59,
+        "start": 50,
+        "end": 56,
         "text": "Branch",
         "kind": "entity.name.type",
         "owners": [
@@ -1038,8 +1034,8 @@
         ]
       },
       {
-        "start": 79,
-        "end": 81,
+        "start": 76,
+        "end": 78,
         "text": "mk",
         "kind": "entity.name.function",
         "owners": [
@@ -1050,8 +1046,8 @@
         ]
       },
       {
-        "start": 95,
-        "end": 98,
+        "start": 92,
+        "end": 95,
         "text": "get",
         "kind": "entity.name.function",
         "owners": [
@@ -1062,8 +1058,8 @@
         ]
       },
       {
-        "start": 125,
-        "end": 128,
+        "start": 122,
+        "end": 125,
         "text": "Box",
         "kind": "entity.name.type",
         "owners": [
@@ -1074,8 +1070,8 @@
         ]
       },
       {
-        "start": 157,
-        "end": 162,
+        "start": 154,
+        "end": 159,
         "text": "Empty",
         "kind": "entity.name.type",
         "owners": [
@@ -1089,12 +1085,12 @@
   },
   {
     "name": "signature_nominal_roles",
-    "source": "signature example v(1); v(1) { with { module api { pub rec type { Cell: . | Cell { pub mk; pub get; }; }; rec { type Alias = Wrapped; pub type { Wrapped: Alias { pub mk; pub get; }; }; } } }; breaking { remove { api.old; } } }",
+    "source": "sig example v(1); v(1) { with { mod api { pub rec type { Cell: . | Cell { pub mk; pub get; }; }; rec { type Alias = Wrapped; pub type { Wrapped: Alias { pub mk; pub get; }; }; } } }; breaking { remove { api.old; } } }",
     "targets": [
       {
         "text": "rec",
-        "start": 55,
-        "end": 58,
+        "start": 46,
+        "end": 49,
         "kind": "keyword.declaration",
         "owners": [
           "nominal_decl_head"
@@ -1105,8 +1101,8 @@
       },
       {
         "text": "type",
-        "start": 59,
-        "end": 63,
+        "start": 50,
+        "end": 54,
         "kind": "keyword.declaration",
         "owners": [
           "nominal_decl_head"
@@ -1117,8 +1113,8 @@
       },
       {
         "text": "Cell",
-        "start": 66,
-        "end": 70,
+        "start": 57,
+        "end": 61,
         "kind": "entity.name.type",
         "owners": [
           "nominal_entry"
@@ -1129,8 +1125,8 @@
       },
       {
         "text": "mk",
-        "start": 87,
-        "end": 89,
+        "start": 78,
+        "end": 80,
         "kind": "entity.name.function",
         "owners": [
           "nominal_member"
@@ -1141,8 +1137,8 @@
       },
       {
         "text": "get",
-        "start": 95,
-        "end": 98,
+        "start": 86,
+        "end": 89,
         "kind": "entity.name.function",
         "owners": [
           "nominal_member"
@@ -1153,58 +1149,58 @@
       }
     ]
   },
-{
-  "name": "macro_operator_declaration_and_import",
-  "source": "module m; import ops(op macro _ && .__ as _ %% .__); op macro _ && .__ { impl controls.and; }",
-  "targets": [
-    {
-      "text": "macro",
-      "start": 24,
-      "end": 29,
-      "kind": "keyword.declaration",
-      "owners": [
-        "import_operator_item"
-      ],
-      "textmate": [
-        "keyword.declaration.kio"
-      ]
-    },
-    {
-      "text": "macro",
-      "start": 56,
-      "end": 61,
-      "kind": "keyword.declaration",
-      "owners": [
-        "op_decl"
-      ],
-      "textmate": [
-        "keyword.declaration.kio"
-      ]
-    },
-    {
-      "text": "&&",
-      "start": 64,
-      "end": 66,
-      "kind": "operator.user",
-      "owners": [
-        "op_decl"
-      ],
-      "textmate": [
-        "keyword.operator.user.kio"
-      ]
-    },
-    {
-      "text": "impl",
-      "start": 73,
-      "end": 77,
-      "kind": "keyword.declaration",
-      "owners": [
-        "callable_impl_block"
-      ],
-      "textmate": [
-        "keyword.declaration.kio"
-      ]
-    }
-  ]
-}
+  {
+    "name": "macro_operator_declaration_and_import",
+    "source": "mod m; import ops {op_macro _ && .__ as _ %% .__} op_macro _ && .__ { impl controls.and; }",
+    "targets": [
+      {
+        "text": "op_macro",
+        "start": 19,
+        "end": 27,
+        "kind": "keyword.declaration",
+        "owners": [
+          "import_operator_item"
+        ],
+        "textmate": [
+          "keyword.declaration.kio"
+        ]
+      },
+      {
+        "text": "op_macro",
+        "start": 50,
+        "end": 58,
+        "kind": "keyword.declaration",
+        "owners": [
+          "op_decl"
+        ],
+        "textmate": [
+          "keyword.declaration.kio"
+        ]
+      },
+      {
+        "text": "&&",
+        "start": 61,
+        "end": 63,
+        "kind": "operator.user",
+        "owners": [
+          "op_decl"
+        ],
+        "textmate": [
+          "keyword.operator.user.kio"
+        ]
+      },
+      {
+        "text": "impl",
+        "start": 70,
+        "end": 74,
+        "kind": "keyword.declaration",
+        "owners": [
+          "callable_impl_block"
+        ],
+        "textmate": [
+          "keyword.declaration.kio"
+        ]
+      }
+    ]
+  }
 ]

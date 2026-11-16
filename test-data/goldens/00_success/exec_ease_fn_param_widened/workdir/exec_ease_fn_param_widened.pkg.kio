@@ -1,4 +1,4 @@
-package exec_ease_fn_param_widened;
+pkg exec_ease_fn_param_widened;
 
 build {
   cache "out/.kio-cache/";

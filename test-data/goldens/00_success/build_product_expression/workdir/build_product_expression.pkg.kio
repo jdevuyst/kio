@@ -1,4 +1,4 @@
-package build_product_expression;
+pkg build_product_expression;
 
 build {
   cache "out/.kio-cache/";

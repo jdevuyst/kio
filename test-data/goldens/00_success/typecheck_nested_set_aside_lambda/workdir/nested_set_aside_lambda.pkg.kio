@@ -1,4 +1,4 @@
-package nested_set_aside_lambda;
+pkg nested_set_aside_lambda;
 
 build {
   cache "out/.kio-cache/";

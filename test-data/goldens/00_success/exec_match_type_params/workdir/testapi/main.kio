@@ -1,9 +1,9 @@
-module testapi/main;
+mod testapi/main;
 
-import macros/match(macro match);
-import macros/spine_macros(macro widen_sum);
-import testapi(I32, String);
-import testapi/io(print);
+import macros/match { macro match }
+import macros/spine_macros { macro widen_sum }
+import testapi { type I32; type String }
+import testapi/io { fn print }
 
 // `match` clause type parameters bind from the scrutinee during
 // per-clause dispatch. The clause `.[A](b: Box(A)) { … }` matches

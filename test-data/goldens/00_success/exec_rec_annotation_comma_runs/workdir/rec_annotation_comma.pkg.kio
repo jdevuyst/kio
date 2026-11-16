@@ -1,4 +1,4 @@
-package rec_annotation_comma;
+pkg rec_annotation_comma;
 
 build {
   cache "out/.kio-cache/";

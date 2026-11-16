@@ -1,4 +1,4 @@
-module libdep/lib;
+mod libdep/lib;
 
 pub fn unit() { () }
 

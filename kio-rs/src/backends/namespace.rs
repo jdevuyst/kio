@@ -150,9 +150,7 @@ pub fn default_java_namespace(pkg_name: &str) -> String {
 pub fn validate_java_namespace(value: &str) -> Result<(), String> {
     if value.is_empty() || !value.split('.').all(java_ident_grammar_ok) {
         return Err(format!(
-            "invalid `namespace` value `{value}` for the `java` backend: \
-             a Java package name is a `.`-separated chain of Java \
-             identifiers"
+            "invalid `namespace` value `{value}` for the `java` backend: a Java package name is a `.`-separated chain of Java identifiers"
         ));
     }
     if let Some(kw) = value.split('.').find(|s| JAVA_KEYWORDS.contains(s)) {
@@ -283,8 +281,7 @@ pub fn validate_go_namespace(value: &str) -> Result<(), String> {
     let rest_ok = chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_');
     if !(first_ok && rest_ok) {
         return Err(format!(
-            "invalid `namespace` value `{value}` for the `go` backend: \
-             a Go package name matches `[a-z_][a-z0-9_]*`"
+            "invalid `namespace` value `{value}` for the `go` backend: a Go package name matches `[a-z_][a-z0-9_]*`"
         ));
     }
     if GO_KEYWORDS.contains(&value) {
@@ -295,8 +292,7 @@ pub fn validate_go_namespace(value: &str) -> Result<(), String> {
     }
     if GO_UNIMPORTABLE.contains(&value) {
         return Err(format!(
-            "invalid `namespace` value `{value}` for the `go` backend: \
-             a Go host cannot import a package named `{value}`"
+            "invalid `namespace` value `{value}` for the `go` backend: a Go host cannot import a package named `{value}`"
         ));
     }
     if value == "_" {
@@ -397,8 +393,7 @@ pub fn validate_python_namespace(value: &str) -> Result<(), String> {
     let rest_ok = chars.all(|c| c.is_ascii_alphanumeric() || c == '_');
     if !(first_ok && rest_ok) {
         return Err(format!(
-            "invalid `namespace` value `{value}` for the `python` backend: \
-             a module stem matches `[A-Za-z_][A-Za-z0-9_]*`"
+            "invalid `namespace` value `{value}` for the `python` backend: a module stem matches `[A-Za-z_][A-Za-z0-9_]*`"
         ));
     }
     if PYTHON_KEYWORDS.contains(&value) {
@@ -453,8 +448,7 @@ pub fn validate_js_namespace(value: &str) -> Result<(), String> {
         return Ok(());
     }
     Err(format!(
-        "invalid `namespace` value `{value}` for the `js`/`ts` backend: \
-         a module stem matches `[A-Za-z_][A-Za-z0-9_]*`"
+        "invalid `namespace` value `{value}` for the `js`/`ts` backend: a module stem matches `[A-Za-z_][A-Za-z0-9_]*`"
     ))
 }
 
@@ -591,9 +585,7 @@ pub fn validate_swift_namespace(value: &str) -> Result<(), String> {
     let rest_ok = chars.all(|c| c.is_ascii_alphanumeric() || c == '_');
     if !(first_ok && rest_ok) {
         return Err(format!(
-            "invalid `namespace` value `{value}` for the `swift` backend: \
-             a Swift module name matches `[A-Z][A-Za-z0-9_]*` (a capital \
-             initial, matching the default derivation)"
+            "invalid `namespace` value `{value}` for the `swift` backend: a Swift module name matches `[A-Z][A-Za-z0-9_]*` (a capital initial, matching the default derivation)"
         ));
     }
     if SWIFT_KEYWORDS.contains(&value) {
@@ -604,8 +596,7 @@ pub fn validate_swift_namespace(value: &str) -> Result<(), String> {
     }
     if SWIFT_STDLIB_MODULES.contains(&value) {
         return Err(format!(
-            "invalid `namespace` value `{value}` for the `swift` backend: \
-             `{value}` shadows a Swift stdlib module the artifact or its host imports"
+            "invalid `namespace` value `{value}` for the `swift` backend: `{value}` shadows a Swift stdlib module the artifact or its host imports"
         ));
     }
     if swift_support_brand_collision(value) {
@@ -653,16 +644,12 @@ fn haskell_module_segment_ok(segment: &str) -> bool {
 pub fn validate_haskell_namespace(value: &str) -> Result<(), String> {
     if value.is_empty() || !value.split('.').all(haskell_module_segment_ok) {
         return Err(format!(
-            "invalid `namespace` value `{value}` for the `haskell` backend: \
-             a GHC module name is a `.`-separated chain of segments each \
-             matching `[A-Z][A-Za-z0-9_']*`"
+            "invalid `namespace` value `{value}` for the `haskell` backend: a GHC module name is a `.`-separated chain of segments each matching `[A-Z][A-Za-z0-9_']*`"
         ));
     }
     if HASKELL_RESERVED_MODULES.contains(&value) {
         return Err(format!(
-            "invalid `namespace` value `{value}` for the `haskell` backend: \
-             a module named `{value}` collides with the host's own `{value}` \
-             (the program's `Main`, or the implicit `Prelude`)"
+            "invalid `namespace` value `{value}` for the `haskell` backend: a module named `{value}` collides with the host's own `{value}` (the program's `Main`, or the implicit `Prelude`)"
         ));
     }
     Ok(())

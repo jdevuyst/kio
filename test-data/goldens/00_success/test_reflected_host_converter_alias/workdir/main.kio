@@ -1,7 +1,7 @@
-module main;
+mod main;
 
-import conversion(macro convert_alias);
-import runtime(Text);
+import conversion { macro convert_alias }
+import runtime { type Text }
 
 equiv converted_alias(value: Text) {
   convert_alias(value);

@@ -6,33 +6,33 @@
 /// state — that interning is the whole of the merging determinization does.
 /// The empty set is interned like any other, which is where the dead state
 /// comes from: nothing moves out of it.
-module automata/subset;
+mod automata/subset;
 
 import automata/dfa as dfa;
 import automata/nfa as nfa;
-import automata/seq(
-, Ints
-, List
-, append
-, cons
-, empty
-, fold
-, insert
-, intern
-, len
-, member
-, nth_or
-, one
-, positions
-, reverse
-, singleton
-);
-import automata/symbol(epsilon, width);
-import macros/control(macro if);
-import macros/match(macro match);
-import testapi(Bool, I32);
-import testapi/arith(add_i32, eq_i32, leq_i32);
-import testapi/iter(loop);
+import automata/seq {
+  type Ints;
+  type List;
+  fn append;
+  fn cons;
+  fn empty;
+  fn fold;
+  fn insert;
+  fn intern;
+  fn len;
+  fn member;
+  fn nth_or;
+  fn one;
+  fn positions;
+  fn reverse;
+  fn singleton
+}
+import automata/symbol { fn epsilon; fn width }
+import macros/control { macro if }
+import macros/match { macro match }
+import testapi { type Bool; type I32 }
+import testapi/arith { fn add_i32; fn eq_i32; fn leq_i32 }
+import testapi/iter { fn loop }
 
 /// The interned DFA states, in the order they were first reached. A set's
 /// position is its DFA state number.

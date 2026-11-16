@@ -1,4 +1,4 @@
-package edit_distance_audit;
+pkg edit_distance_audit;
 
 build {
   cache "out/.kio-cache/";

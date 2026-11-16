@@ -1,4 +1,4 @@
-module calls;
+mod calls;
 
 type { List[A]: . { mk; get } }
 

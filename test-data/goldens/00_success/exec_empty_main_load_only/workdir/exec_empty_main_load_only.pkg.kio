@@ -1,4 +1,4 @@
-package exec_empty_main_load_only;
+pkg exec_empty_main_load_only;
 
 build {
   cache "out/.kio-cache/";

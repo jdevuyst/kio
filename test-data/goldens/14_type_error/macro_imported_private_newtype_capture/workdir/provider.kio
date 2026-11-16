@@ -1,3 +1,3 @@
-module provider;
+mod provider;
 
 type { Box: . { pub mk; pub get } }

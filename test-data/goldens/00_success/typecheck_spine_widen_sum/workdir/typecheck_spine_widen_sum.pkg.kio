@@ -1,4 +1,4 @@
-package typecheck_spine_widen_sum;
+pkg typecheck_spine_widen_sum;
 
 build {
   cache "out/.kio-cache/";

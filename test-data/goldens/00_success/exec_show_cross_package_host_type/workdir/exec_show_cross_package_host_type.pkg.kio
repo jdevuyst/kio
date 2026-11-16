@@ -1,4 +1,4 @@
-package exec_show_cross_package_host_type;
+pkg exec_show_cross_package_host_type;
 
 build {
   cache "out/.kio-cache/";

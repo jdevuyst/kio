@@ -1,5 +1,5 @@
-module testapi/main;
+mod testapi/main;
 
-import testapi(I32);
+import testapi { type I32 }
 
 pub fn answer() -> I32 { 42[I32] }

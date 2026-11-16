@@ -1,11 +1,11 @@
-module testapi/main;
+mod testapi/main;
 
 import document/commands as commands;
 import document/session as session;
-import macros/match(macro match);
-import testapi(String);
+import macros/match { macro match }
+import testapi { type String }
 import testapi/io as io;
-import testapi/iter(loop);
+import testapi/iter { fn loop }
 
 rec(loop) fn replay(state: session.Session) {
   match(io.read_ascii_line()) {

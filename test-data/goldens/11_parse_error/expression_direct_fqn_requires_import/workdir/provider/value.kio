@@ -1,3 +1,3 @@
-module provider/value;
+mod provider/value;
 
 pub fn item() { () }

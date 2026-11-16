@@ -1,4 +1,4 @@
-package export_imported_type_projector;
+pkg export_imported_type_projector;
 
 build {
   cache "out/.kio-cache/";

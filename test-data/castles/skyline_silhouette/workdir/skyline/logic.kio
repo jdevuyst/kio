@@ -4,11 +4,11 @@
 /// There is no equality test, no strict order, and no minimum or maximum, so
 /// every one of them is derived here once and used everywhere else through
 /// this module.
-module skyline/logic;
+mod skyline/logic;
 
-import macros/control(macro if);
-import testapi(Bool, I32);
-import testapi/arith(leq_i32);
+import macros/control { macro if }
+import testapi { type Bool; type I32 }
+import testapi/arith { fn leq_i32 }
 
 pub fn not(b: Bool) -> Bool {
   if(b) { .f } else { .t }

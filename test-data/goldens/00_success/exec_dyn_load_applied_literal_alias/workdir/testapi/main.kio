@@ -1,14 +1,21 @@
-module testapi/main;
+mod testapi/main;
 
-import defaults(instantiate_default);
-import loader(Apply, I32_out, Lookup, Unit_in, diag_message, un_load_outcome);
-import loader(Diag, Loaded, Lr_diag, Lr_image, Surface);
-import loader/scan(load_package);
-import macros/match(macro match);
-import macros/row_macros(macro select);
-import testapi(I32, String);
-import testapi/fmt(int_to_string);
-import testapi/io(print);
+import defaults { fn instantiate_default }
+import loader {
+  type Apply;
+  type I32_out;
+  type Lookup;
+  type Unit_in;
+  fn diag_message;
+  fn un_load_outcome
+}
+import loader { type Diag; type Loaded; type Lr_diag; type Lr_image; type Surface }
+import loader/scan { fn load_package }
+import macros/match { macro match }
+import macros/row_macros { macro select }
+import testapi { type I32; type String }
+import testapi/fmt { fn int_to_string }
+import testapi/io { fn print }
 
 fn call_value[P](surface: Surface[P]) -> String {
   match((surface.>select { Lookup.get[P] })("value"[String])) {
@@ -43,9 +50,9 @@ fn rejected(name: String, source: String) {
 }
 
 pub fn main() {
-  match(un_load_outcome(load_package("module hostapi; host type I32 role(i32); module guest; import "
-                                     "hostapi(I32); type Identity[A] = A; type Number = Identity[I32]; pub fn "
-                                     "value() -> I32 { 73[Number] } package guest; bridge { guest; hostapi; }"[String]))) {
+  match(un_load_outcome(load_package("mod hostapi; host type I32 role(i32); mod guest; import hostapi {type "
+                                     "I32} type Identity[A] = A; type Number = Identity[I32]; pub fn value() "
+                                     "-> I32 { 73[Number] } pkg guest; bridge { guest; hostapi; }"[String]))) {
     (
     , .(image: Lr_image) {
         match(instantiate_default(Lr_image.get(image))) {
@@ -63,28 +70,27 @@ pub fn main() {
   print("\n"[String]);
   rejected(
   , "underapplied"[String]
-  , "module hostapi; host type I32 role(i32); module guest; import "
-    "hostapi(I32); type Number[A] = A; pub fn value() -> I32 { 73[Number] } "
-    "package guest; bridge { guest; hostapi; }"[String]
+  , "mod hostapi; host type I32 role(i32); mod guest; import hostapi {type "
+    "I32} type Number[A] = A; pub fn value() -> I32 { 73[Number] } pkg guest; "
+    "bridge { guest; hostapi; }"[String]
   );
   rejected(
   , "nonhost"[String]
-  , "module hostapi; host type I32 role(i32); module guest; import "
-    "hostapi(I32); type Number = I32 & I32; pub fn value() -> I32 { "
-    "73[Number] } package guest; bridge { guest; hostapi; }"[String]
+  , "mod hostapi; host type I32 role(i32); mod guest; import hostapi {type "
+    "I32} type Number = I32 & I32; pub fn value() -> I32 { 73[Number] } pkg "
+    "guest; bridge { guest; hostapi; }"[String]
   );
   rejected(
   , "private"[String]
-  , "module hostapi; host type I32 role(i32); module secret; import "
-    "hostapi(I32); type Identity[A] = A; type Number = Identity[I32]; module "
-    "guest; import hostapi(I32); import secret as hidden; pub fn value() -> "
-    "I32 { 73[hidden.Number] } package guest; bridge { guest; hostapi; "
-    "secret; }"[String]
+  , "mod hostapi; host type I32 role(i32); mod secret; import hostapi {type "
+    "I32} type Identity[A] = A; type Number = Identity[I32]; mod guest; "
+    "import hostapi {type I32} import secret as hidden; pub fn value() -> I32 "
+    "{ 73[hidden.Number] } pkg guest; bridge { guest; hostapi; secret; }"[String]
   );
   rejected(
   , "late"[String]
-  , "module hostapi; host type I32 role(i32); module guest; import "
-    "hostapi(I32); type Identity[A] = A; pub fn value() -> I32 { 73[Number] } "
-    "type Number = Identity[I32]; package guest; bridge { guest; hostapi; }"[String]
+  , "mod hostapi; host type I32 role(i32); mod guest; import hostapi {type "
+    "I32} type Identity[A] = A; pub fn value() -> I32 { 73[Number] } type "
+    "Number = Identity[I32]; pkg guest; bridge { guest; hostapi; }"[String]
   )
 }

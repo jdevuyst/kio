@@ -69,7 +69,7 @@ where
     pub env_type_names: HashSet<&'m str>,
     /// Env fn declarations available at call sites.
     pub env_fn_defs: HashMap<&'m str, &'m crate::ast::HostFn<P>>,
-    /// Cross-module value imports brought in via `import pkg/helper(foo);`.
+    /// Cross-module value imports brought in via `import pkg/helper { fn foo }`.
     /// The map points at the source module's `FnDef`,
     /// which the typer treats the same way as a same-module top-level
     /// fn at a call site.
@@ -84,11 +84,11 @@ where
     /// User macro declarations imported for `name(...)` call sites.
     pub cross_module_user_macros: HashMap<&'m str, &'m crate::ast::UserMacroDef<P>>,
     pub cross_module_user_macro_modules: HashMap<&'m str, &'m crate::ast::Module<P>>,
-    /// Cross-module type-alias imports — `import m(Foo);` where `Foo`
+    /// Cross-module type-alias imports — `import m { type Foo }` where `Foo`
     /// is a `pub type`. Used by `unfold_top` so structural equality
     /// sees through imported aliases just like intra-module ones.
     pub cross_module_type_aliases: HashMap<&'m str, super::AliasDef<'m, P>>,
-    /// Cross-module `newtype` imports — `import m(Foo);` where `Foo`
+    /// Cross-module `newtype` imports — `import m { type Foo }` where `Foo`
     /// is a `pub newtype`. Used
     /// by the typer's 2-segment path resolution so `Foo.mk_foo(...)`
     /// works the same way against an imported newtype as against a
@@ -112,7 +112,7 @@ where
     /// same key as [`Self::cross_module_newtypes`].
     pub cross_module_newtype_modules: HashMap<(String, String), &'m crate::ast::Module<P>>,
     /// The module each selectively-imported cross-module `host fn`
-    /// ([`Self::env_fn_defs`], for the entries from an `import m(foo);`)
+    /// ([`Self::env_fn_defs`], for the entries from an `import m { fn foo }`)
     /// is *declared* in. The typer qualifies an imported host fn's
     /// signature in its declaring module, not the caller's.
     /// Same-module / ambient host fns are absent (their declaring module
@@ -547,7 +547,7 @@ where
     /// `(defining-module-path, bare-name)` — the open-world-safe key a
     /// nominal type is matched by. A bare head is
     /// resolved through this module's imports / local declarations (a
-    /// selective `import M(X);` → `M`; a same-module declaration → this
+    /// selective `import M { type X }` → `M`; a same-module declaration → this
     /// module; an already-qualified `m.b.X` → `m/b`). Returns `None` when
     /// the head is a type parameter, an intrinsic, or otherwise carries
     /// no module identity (a local type-param keeps a single segment and
@@ -716,7 +716,7 @@ where
     /// checking module *is* the declaring one, so the later identity-exact
     /// canonicalizer resolves a bare head correctly), and qualifying it to a
     /// fully-qualified same-module path would surface a spurious cross-module
-    /// reference in the emitted Kio' — e.g. an `import testapi/main(Bar);`
+    /// reference in the emitted Kio' — e.g. an `import testapi/main { type Bar }`
     /// import of a private label newtype. Mirrors the cross-module-only
     /// routing of the other declaring-module surfaces (`cross_module_newtype_module`,
     /// `cross_module_fn_def_modules`, `cross_module_env_fn_modules`).
@@ -792,7 +792,7 @@ fn nominal_provider_item_visits() -> usize {
         + provider.exact_target_lookups
 }
 
-/// Walk same-package selective imports — `import pkg/helper(foo);`
+/// Walk same-package selective imports — `import pkg/helper { fn foo }`
 /// brings the named values and types into scope — and register the
 /// targets in the appropriate maps. The resolver has already verified
 /// that the target module exists and the names are pub; here we just
@@ -1972,7 +1972,7 @@ mod tests {
 
     #[test]
     fn retained_local_common_lookup_reuses_the_selected_slot_without_scope_allocation() {
-        let package = package(&[("main.kio", "module main;")]);
+        let package = package(&[("main.kio", "mod main;")]);
         let module = &package.module("main").expect("main").module;
         let env = ModuleEnv::build(module, None, None, Some(&package)).expect("environment");
         let mut elaborations = crate::pass::typecheck_full::Elaborations::new();
@@ -2009,7 +2009,7 @@ mod tests {
     #[test]
     fn retained_local_capture_survives_shadow_restore_without_reselection() {
         use super::super::goals::GoalOwnerKind;
-        let package = package(&[("main.kio", "module main;")]);
+        let package = package(&[("main.kio", "mod main;")]);
         let module = &package.module("main").expect("main").module;
         let env = ModuleEnv::build(module, None, None, Some(&package)).expect("environment");
         let mut elaborations = crate::pass::typecheck_full::Elaborations::new();
@@ -2076,7 +2076,7 @@ mod tests {
     fn retained_local_rejects_foreign_context_store_peer_and_replaced_raw_type() {
         use super::super::goals::GoalOwnerKind;
         use std::panic::{AssertUnwindSafe, catch_unwind};
-        let package = package(&[("main.kio", "module main;")]);
+        let package = package(&[("main.kio", "mod main;")]);
         let module = &package.module("main").expect("main").module;
         let env = ModuleEnv::build(module, None, None, Some(&package)).expect("environment");
         let mut elaborations = crate::pass::typecheck_full::Elaborations::new();
@@ -2138,7 +2138,7 @@ mod tests {
 
     #[test]
     fn type_param_binding_iterator_preserves_shadowed_exact_stack_entries() {
-        let package = package(&[("main.kio", "module main;")]);
+        let package = package(&[("main.kio", "mod main;")]);
         let module = &package.module("main").expect("main module").module;
         let env = ModuleEnv::build(module, None, None, Some(&package)).expect("environment");
         let mut elaborations = crate::pass::typecheck_full::Elaborations::new();
@@ -2210,7 +2210,7 @@ mod tests {
         const DECLARATIONS: usize = 64;
         const IMPORTS: usize = 48;
 
-        let mut provider = String::from("module provider;");
+        let mut provider = String::from("mod provider;");
         let mut imported = Vec::with_capacity(IMPORTS);
         for index in 0..DECLARATIONS {
             let name = format!("Type{index}");
@@ -2219,7 +2219,14 @@ mod tests {
                 imported.push(name);
             }
         }
-        let consumer = format!("module consumer; import provider({});", imported.join(", "));
+        let consumer = format!(
+            "mod consumer; import provider {{{}}}",
+            imported
+                .iter()
+                .map(|name| format!("type {name}"))
+                .collect::<Vec<_>>()
+                .join("; ")
+        );
         let package = package(&[
             ("provider.kio", provider.as_str()),
             ("consumer.kio", consumer.as_str()),
@@ -2241,14 +2248,11 @@ mod tests {
         let package = package(&[
             (
                 "provider.kio",
-                "module provider; rec { \
-                 pub type { A: B { pub mk; pub get; }; }; \
-                 pub type { B: A { pub mk; pub get; }; }; \
-                 }",
+                "mod provider; rec { pub type { A: B { pub mk; pub get; }; }; pub type { B: A { pub mk; pub get; }; }; }",
             ),
             (
                 "consumer.kio",
-                "module consumer; import provider(B); type Selected = B;",
+                "mod consumer; import provider {type B} type Selected = B;",
             ),
         ]);
         let consumer = &package.module("consumer").expect("consumer module").module;
@@ -2268,15 +2272,11 @@ mod tests {
         let package = package(&[
             (
                 "provider.kio",
-                "module provider; rec { \
-                 pub type { A: B { pub mk; pub get; }; }; \
-                 pub type { B: A { pub mk; pub get; }; }; \
-                 }",
+                "mod provider; rec { pub type { A: B { pub mk; pub get; }; }; pub type { B: A { pub mk; pub get; }; }; }",
             ),
             (
                 "consumer.kio",
-                "module consumer; import provider as p; \
-                 type First = p.A; type Second = p.B;",
+                "mod consumer; import provider as p; type First = p.A; type Second = p.B;",
             ),
         ]);
         let consumer = &package.module("consumer").expect("consumer module").module;
@@ -2321,7 +2321,7 @@ mod tests {
         const DECLARATIONS: usize = 64;
         const IMPORTS: usize = 48;
 
-        let mut provider = String::from("module provider;");
+        let mut provider = String::from("mod provider;");
         let mut imported = Vec::with_capacity(IMPORTS);
         for index in 0..DECLARATIONS {
             let name = format!("Type{index}");
@@ -2330,7 +2330,14 @@ mod tests {
                 imported.push(name);
             }
         }
-        let consumer = format!("module consumer; import provider({});", imported.join(", "));
+        let consumer = format!(
+            "mod consumer; import provider {{{}}}",
+            imported
+                .iter()
+                .map(|name| format!("type {name}"))
+                .collect::<Vec<_>>()
+                .join("; ")
+        );
         let package = package(&[
             ("provider.kio", provider.as_str()),
             ("consumer.kio", consumer.as_str()),
@@ -2359,11 +2366,11 @@ mod tests {
         const DECLARATIONS: usize = 64;
         const ALIASES: usize = 48;
 
-        let mut provider = String::from("module provider;");
+        let mut provider = String::from("mod provider;");
         for index in 0..DECLARATIONS {
             provider.push_str(&format!(" pub host type Type{index} role(bool);"));
         }
-        let mut consumer = String::from("module consumer; import provider as p;");
+        let mut consumer = String::from("mod consumer; import provider as p;");
         for index in 0..ALIASES {
             consumer.push_str(&format!(" type Alias{index} = p.Type{index};"));
         }
@@ -2388,17 +2395,15 @@ mod tests {
         let package = package(&[
             (
                 "pkg/provider.kio",
-                "module pkg/provider; pub host type Bool role(bool);",
+                "mod pkg/provider; pub host type Bool role(bool);",
             ),
             (
                 "pkg/adapter.kio",
-                "module pkg/adapter; import pkg/provider as provider; \
-                 pub type Rehost = provider.Bool;",
+                "mod pkg/adapter; import pkg/provider as provider; pub type Rehost = provider.Bool;",
             ),
             (
                 "pkg/consumer.kio",
-                "module pkg/consumer; import pkg/adapter as adapter; \
-                 type Zeta = adapter.Rehost; type Alpha = adapter.Rehost;",
+                "mod pkg/consumer; import pkg/adapter as adapter; type Zeta = adapter.Rehost; type Alpha = adapter.Rehost;",
             ),
         ]);
         let consumer = &package.module("pkg/consumer").expect("consumer").module;
@@ -2422,10 +2427,7 @@ mod tests {
 
     #[test]
     fn exact_same_source_role_resolves_without_package_membership() {
-        let package = package(&[(
-            "standalone.kio",
-            "module standalone; host type I32 role(i32);",
-        )]);
+        let package = package(&[("standalone.kio", "mod standalone; host type I32 role(i32);")]);
         let module = &package.module("standalone").expect("standalone").module;
         let env = ModuleEnv::build(module, None, None, None).expect("standalone environment");
 
@@ -2460,16 +2462,15 @@ mod tests {
         let package = package(&[
             (
                 "pkg/first.kio",
-                "module pkg/first; pub host type Bool role(bool);",
+                "mod pkg/first; pub host type Bool role(bool);",
             ),
             (
                 "pkg/second.kio",
-                "module pkg/second; pub host type Bool role(bool);",
+                "mod pkg/second; pub host type Bool role(bool);",
             ),
             (
                 "pkg/consumer.kio",
-                "module pkg/consumer; import pkg/first as first; import pkg/second as second; \
-                 type Zeta = second.Bool; type Alpha = first.Bool;",
+                "mod pkg/consumer; import pkg/first as first; import pkg/second as second; type Zeta = second.Bool; type Alpha = first.Bool;",
             ),
         ]);
         let consumer = &package.module("pkg/consumer").expect("consumer").module;
@@ -2493,22 +2494,19 @@ mod tests {
         let package = package(&[
             (
                 "pkg/first.kio",
-                "module pkg/first; pub host type Bool role(bool);",
+                "mod pkg/first; pub host type Bool role(bool);",
             ),
             (
                 "pkg/second.kio",
-                "module pkg/second; pub host type Bool role(bool);",
+                "mod pkg/second; pub host type Bool role(bool);",
             ),
             (
                 "pkg/provider.kio",
-                "module pkg/provider; import pkg/first as first; \
-                 pub type Flag = first.Bool;",
+                "mod pkg/provider; import pkg/first as first; pub type Flag = first.Bool;",
             ),
             (
                 "pkg/consumer.kio",
-                "module pkg/consumer; import pkg/provider(Flag); \
-                 import pkg/second as second; fn earlier() -> . { () } \
-                 type Other = second.Bool;",
+                "mod pkg/consumer; import pkg/provider {type Flag} import pkg/second as second; fn earlier() -> . { () } type Other = second.Bool;",
             ),
         ]);
         let consumer = &package.module("pkg/consumer").expect("consumer").module;
@@ -2533,12 +2531,11 @@ mod tests {
         let package = package(&[
             (
                 "pkg/provider.kio",
-                "module pkg/provider; pub host type Bool role(bool);",
+                "mod pkg/provider; pub host type Bool role(bool);",
             ),
             (
                 "pkg/consumer.kio",
-                "module pkg/consumer; import pkg/provider(Bool); \
-                 import pkg/provider(Bool as Flag);",
+                "mod pkg/consumer; import pkg/provider {type Bool} import pkg/provider {type Bool as Flag}",
             ),
         ]);
         let consumer = &package.module("pkg/consumer").expect("consumer").module;
@@ -2564,15 +2561,15 @@ mod tests {
         let package = package(&[
             (
                 "pkg/first.kio",
-                "module pkg/first; pub type { Tag: . { pub mk; pub get; }; };",
+                "mod pkg/first; pub type { Tag: . { pub mk; pub get; }; };",
             ),
             (
                 "pkg/second.kio",
-                "module pkg/second; pub type { Tag: . { pub mk; pub get; }; };",
+                "mod pkg/second; pub type { Tag: . { pub mk; pub get; }; };",
             ),
             (
                 "pkg/consumer.kio",
-                "module pkg/consumer; import pkg/first as first; import pkg/second as second;",
+                "mod pkg/consumer; import pkg/first as first; import pkg/second as second;",
             ),
         ]);
         let consumer = &package.module("pkg/consumer").expect("consumer").module;
@@ -2630,7 +2627,7 @@ mod tests {
 
     #[test]
     fn repeated_direct_member_heads_keep_the_indexed_newtype_fast_path() {
-        let package = package(&[("main.kio", "module main; type { Tag: . { mk; get; }; };")]);
+        let package = package(&[("main.kio", "mod main; type { Tag: . { mk; get; }; };")]);
         let module = &package.module("main").expect("main module").module;
         let env = ModuleEnv::build(module, None, None, Some(&package)).expect("environment");
         let head = [crate::ast::PathSegment::new(
@@ -2658,7 +2655,7 @@ mod tests {
     #[test]
     fn repeated_identity_alias_member_heads_reuse_the_package_terminal_index() {
         const ALIASES: usize = 128;
-        let mut source = String::from("module main; type { Terminal: . { mk; get; }; };");
+        let mut source = String::from("mod main; type { Terminal: . { mk; get; }; };");
         for index in 0..ALIASES {
             let target = if index == 0 {
                 "Terminal".to_owned()

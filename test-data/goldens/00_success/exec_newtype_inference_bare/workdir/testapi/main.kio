@@ -1,10 +1,10 @@
-module testapi/main;
+mod testapi/main;
 
-import macros/match(macro match);
-import macros/spine_macros(macro widen_sum);
-import testapi(String);
-import testapi/io(print);
-import testapi/text(string_concat);
+import macros/match { macro match }
+import macros/spine_macros { macro widen_sum }
+import testapi { type String }
+import testapi/io { fn print }
+import testapi/text { fn string_concat }
 
 // A recursive non-canonical polymorphic newtype: payload
 // `. | (A & List(A))` does not equal the bare type parameter, so the

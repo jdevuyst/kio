@@ -262,8 +262,7 @@ fn source_root_from_module_path(
     Err(Error::parse(
         module_path.span,
         format!(
-            "module declaration `{declared}` does not match the selected file path `{}`; \
-             the path must end in `{declared}.kio`",
+            "module declaration `{declared}` does not match the selected file path `{}`; the path must end in `{declared}.kio`",
             source_path.display()
         ),
     ))
@@ -772,12 +771,12 @@ fn parse_package_file_list_with_parser(
 /// FS-path-coherence check passes the materialized files exactly as it
 /// passes hand-written ones (no skip, no special case). Re-rooting also
 /// rewrites every *intra-dependency* module-path reference (an `import
-/// <mod>(…);` / `import <mod> as …;` pointing at a sibling dependency module)
+/// <mod> { … }` / `import <mod> as …;` pointing at a sibling dependency module)
 /// the same way, so a dependency whose modules import each other still
-/// resolves; the `module` declaration and these import clauses are the
+/// resolves; the `mod` declaration and these import clauses are the
 /// only module-path sites a regular module carries. The dependency's
 /// `pub` items become importable to the consumer via
-/// `import <local>/<mod>(<item>);`.
+/// `import <local>/<mod> { <kind> <item> }`.
 ///
 /// **Materialization is fetch-to-disk.** The re-rooted module is
 /// pretty-printed ([`crate::pretty::pretty_module`]) — so the written
@@ -1562,7 +1561,7 @@ fn nominal_group_visibilities_mut<P: Phase>(
 /// Prepend the dependency's local name as a new leading segment of a
 /// module path, namespacing it under the dependency. Applied to a
 /// dependency module's own declaration (`module app;` → `<local>/app`)
-/// and to each intra-dependency module-path reference (`import helper(…);`
+/// and to each intra-dependency module-path reference (`import helper { … }`
 /// → `import <local>/helper(…);`) so a re-rooted module's
 /// references still resolve to its sibling modules.
 #[cfg(feature = "cli")]
@@ -1621,8 +1620,7 @@ fn validate_rehost_selectors(declarations: &[crate::ast::RehostDecl]) -> Result<
             )
             .with_secondary(first_span, format!("`{source}` was first selected here"))
             .with_help(
-                "each dependency module may be selected by one `rehost` statement; remove \
-                 the repeated selector or select disjoint modules",
+                "each dependency module may be selected by one `rehost` statement; remove the repeated selector or select disjoint modules",
             ));
         }
     }
@@ -2629,7 +2627,8 @@ fn apply_retype(
                 .newtype_names
                 .difference(&public_names)
                 .map(|name| ImportItem::Name {
-                    macro_span: None,
+                    kind: crate::ast::ImportNameKind::Type,
+                    kind_span: None,
                     leading_trivia: Vec::new(),
                     name: name.clone(),
                     span: module.path.span,
@@ -2993,8 +2992,7 @@ impl RetypeSemanticPackage {
                     error: Error::dep(
                         check.span,
                         format!(
-                            "`retype` target module `{}` was not found; declare it or materialize \
-                             the dependency that provides it",
+                            "`retype` target module `{}` was not found; declare it or materialize the dependency that provides it",
                             module_path_surface(&check.to)
                         ),
                     ),
@@ -3672,12 +3670,7 @@ fn materialize_one_dependency(
             error: Error::dep(
                 source_span,
                 format!(
-                    "dependency `{local_name}` collides with the local module root \
-                     `{local_name}`: a dependency's local name must not match the first \
-                     path segment of any of this package's own modules, so that \
-                     `import {local_name}/…(...)` resolves unambiguously to the dependency. \
-                     Rename the dependency (the `.dep.kio` stem and its `dependency` \
-                     header) or the local module."
+                    "dependency `{local_name}` collides with the local module root `{local_name}`: a dependency's local name must not match the first path segment of any of this package's own modules, so that `import {local_name}/… {{fn name}}` resolves unambiguously to the dependency. Rename the dependency (the `.dep.kio` stem and its `dep` header) or the local module."
                 ),
             ),
         });
@@ -3716,8 +3709,7 @@ fn materialize_one_dependency(
                     error: Error::dep(
                         *path_span,
                         format!(
-                            "dependency `{local_name}`: `{path}` must name the dependency's \
-                             `*.pkg.kio` package file (resolved to `{}`)",
+                            "dependency `{local_name}`: `{path}` must name the dependency's `*.pkg.kio` package file (resolved to `{}`)",
                             DisplayPath(&pkg_file)
                         ),
                     ),
@@ -3759,7 +3751,7 @@ fn materialize_one_dependency(
     // Re-root every dependency module under the local name and write it,
     // fully materialized (lazy bodies forced) and pretty-printed, to
     // `<consumer_root>/<local>/<mod-path>.kio`. The written path matches
-    // the re-rooted `module` declaration, so the consumer's
+    // the re-rooted `mod` declaration, so the consumer's
     // FS-path-coherence check passes it like a hand-written module. Each
     // path written is collected so stale modules from a previous
     // materialization (a module removed upstream) can be pruned after.
@@ -3861,7 +3853,7 @@ fn materialize_one_dependency(
         };
         // Re-root the module's declared path *and* every intra-dependency
         // module-path reference it makes. A reference left un-rerooted —
-        // an `import helper(h);` that still says `helper` after `helper`
+        // an `import helper { fn h }` that still says `helper` after `helper`
         // became `<local>/helper` — would resolve to a non-existent root
         // module and fail the consumer's check. The dependency is
         // self-contained — any dependencies of its own are already
@@ -3869,7 +3861,7 @@ fn materialize_one_dependency(
         // reference points at one of its own (now re-rooted) modules,
         // including those under a nested materialized dependency, and gets
         // the same prefix. A regular module's AST carries `ModulePath`
-        // sites in three places — the `module` declaration, the import
+        // sites in three places — the `mod` declaration, the import
         // clauses, and every `pub(<module-path>)` restriction (item-level
         // *and* on a `newtype`'s constructor/projector members or a
         // `rec`-group's members) — all re-rooted below. Inline
@@ -4027,8 +4019,7 @@ fn publish_materialized_dependency(
             error: Error::dep(
                 source_span,
                 format!(
-                    "dependency `{local_name}`: cannot write materialized module to `{}`: \
-                     {source}",
+                    "dependency `{local_name}`: cannot write materialized module to `{}`: {source}",
                     DisplayPath(out_path)
                 ),
             ),
@@ -4498,9 +4489,9 @@ mod tests {
     fn import_grammar_provider_read_observer_calibration() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("syntax.kio");
-        fs::write(&path, "module syntax;").unwrap();
+        fs::write(&path, "mod syntax;").unwrap();
         let mut overlay = SourceOverlay::empty();
-        overlay.insert(path.clone(), "module syntax;".to_owned());
+        overlay.insert(path.clone(), "mod syntax;".to_owned());
         let (read, attempts) =
             import_grammar_with_denied_reads([path.clone()], || overlay.read(&path));
         assert_eq!(read.unwrap_err().kind(), io::ErrorKind::PermissionDenied);
@@ -4566,8 +4557,7 @@ mod tests {
     fn retype_decl(from: &str, to: &str, type_name: Option<&str>) -> crate::ast::RetypeDecl {
         let suffix = type_name.map_or_else(String::new, |name| format!(".{name}"));
         let source = format!(
-            "dependency fixture; source {{ path \"../fixture/fixture.pkg.kio\"; }} \
-             retype {from}{suffix} to {to}{suffix};"
+            "dep fixture; source {{ path \"../fixture/fixture.pkg.kio\"; }} retype {from}{suffix} to {to}{suffix};"
         );
         crate::pass::parser::parse_dependency_file(&source, None)
             .expect("dependency fixture")
@@ -4579,9 +4569,7 @@ mod tests {
 
     fn retype_dependency(statements: &str) -> crate::ast::DependencyFile<Surface> {
         crate::pass::parser::parse_dependency_file(
-            &format!(
-                "dependency widget; source {{ path \"../widget/widget.pkg.kio\"; }} {statements}"
-            ),
+            &format!("dep widget; source {{ path \"../widget/widget.pkg.kio\"; }} {statements}"),
             None,
         )
         .expect("dependency fixture")
@@ -4592,30 +4580,22 @@ mod tests {
             (
                 PathBuf::from("store.kio"),
                 parsed_module(
-                    "module store; \
-                     pub type { A: . { pub mk; pub get; }; }; \
-                     pub type { B: . { pub mk; pub get; }; };",
+                    "mod store; pub type { A: . { pub mk; pub get; }; }; pub type { B: . { pub mk; pub get; }; };",
                 ),
             ),
             (
                 PathBuf::from("next/one.kio"),
-                parsed_module(
-                    "module next/one; \
-                     pub type { A: . { pub mk; pub get; }; };",
-                ),
+                parsed_module("mod next/one; pub type { A: . { pub mk; pub get; }; };"),
             ),
             (
                 PathBuf::from("next/two.kio"),
-                parsed_module(
-                    "module next/two; \
-                     pub type { A: . { pub mk; pub get; }; };",
-                ),
+                parsed_module("mod next/two; pub type { A: . { pub mk; pub get; }; };"),
             ),
         ]
     }
 
     fn module_path(path: &str) -> crate::ast::ModulePath {
-        parsed_module(&format!("module {path};")).path
+        parsed_module(&format!("mod {path};")).path
     }
 
     fn target_names<'a>(
@@ -4687,14 +4667,14 @@ mod tests {
             fs::create_dir_all(path.parent().unwrap()).unwrap();
             fs::write(path, source).unwrap();
         };
-        write("consumer/app.pkg.kio", "package app;");
+        write("consumer/app.pkg.kio", "pkg app;");
         write(
             "consumer/provider.kio",
-            "module provider; pub fn ping() -> . { () }",
+            "mod provider; pub fn ping() -> . { () }",
         );
-        write("library/widget.pkg.kio", "package widget; bridge { api; }");
-        write("library/api.kio", "module api; host fn ping() -> .;");
-        let source = "dependency widget; source { path \"../library/widget.pkg.kio\"; } ";
+        write("library/widget.pkg.kio", "pkg widget; bridge { api; }");
+        write("library/api.kio", "mod api; host fn ping() -> .;");
+        let source = "dep widget; source { path \"../library/widget.pkg.kio\"; } ";
         write(
             "consumer/widget.dep.kio",
             &format!("{source} rehost widget/api to provider;"),
@@ -4702,7 +4682,7 @@ mod tests {
         let root = dir.path().join("consumer");
         let mut before = BTreeMap::new();
         if existing {
-            write("library/old.kio", "module old;");
+            write("library/old.kio", "mod old;");
             materialize_dependencies_filtered(&root, None, false).expect("valid first fetch");
             for name in ["api.kio", "old.kio"] {
                 before.insert(name, fs::read(root.join("widget").join(name)).unwrap());
@@ -4711,9 +4691,9 @@ mod tests {
         }
         write(
             "library/api.kio",
-            "module api; host fn ping() -> .; pub fn added() -> . { () }",
+            "mod api; host fn ping() -> .; pub fn added() -> . { () }",
         );
-        write("library/added.kio", "module added;");
+        write("library/added.kio", "mod added;");
         write(
             "consumer/widget.dep.kio",
             &format!("{source} rehost widget/api to provider; rehost widget/api to provider;"),
@@ -4759,14 +4739,13 @@ mod tests {
     fn rehost_role_fixture(provider: &str) -> tempfile::TempDir {
         let dir = tempfile::tempdir().unwrap();
         for (path, source) in [
-            ("consumer/app.pkg.kio", "package app;"),
+            ("consumer/app.pkg.kio", "pkg app;"),
             ("consumer/provider.kio", provider),
-            ("library/widget.pkg.kio", "package widget;"),
-            ("library/api.kio", "module api; host type Value role(bool);"),
+            ("library/widget.pkg.kio", "pkg widget;"),
+            ("library/api.kio", "mod api; host type Value role(bool);"),
             (
                 "consumer/widget.dep.kio",
-                "dependency widget; source { path \"../library/widget.pkg.kio\"; } \
-                 rehost widget/api to provider;",
+                "dep widget; source { path \"../library/widget.pkg.kio\"; } rehost widget/api to provider;",
             ),
         ] {
             write_retype_fixture(dir.path(), path, source);
@@ -4777,7 +4756,7 @@ mod tests {
     #[test]
     fn rehost_role_follows_aliases_and_rechecks_unchanged_dependencies() {
         let dir = rehost_role_fixture(
-            "module provider; pub host type Flag role(bool); pub type Value = Flag;",
+            "mod provider; pub host type Flag role(bool); pub type Value = Flag;",
         );
         let root = dir.path().join("consumer");
         for (force, expected) in [
@@ -4790,9 +4769,9 @@ mod tests {
         }
         let before = fs::read(root.join("widget/api.kio")).unwrap();
         for replacement in [
-            "module provider; pub host type Value;",
-            "module provider; pub host type Value role(str);",
-            "module provider; pub type Value = .;",
+            "mod provider; pub host type Value;",
+            "mod provider; pub host type Value role(str);",
+            "mod provider; pub type Value = .;",
         ] {
             write_retype_fixture(dir.path(), "consumer/provider.kio", replacement);
             for force in [false, true] {
@@ -4810,7 +4789,7 @@ mod tests {
     #[test]
     fn rehost_role_rejects_before_creating_or_replacing_the_dependency() {
         for existing in [false, true] {
-            let dir = rehost_role_fixture("module provider; pub host type Value role(bool);");
+            let dir = rehost_role_fixture("mod provider; pub host type Value role(bool);");
             let root = dir.path().join("consumer");
             let before = if existing {
                 materialize_dependencies_filtered(&root, None, false).unwrap();
@@ -4821,9 +4800,9 @@ mod tests {
             write_retype_fixture(
                 dir.path(),
                 "consumer/provider.kio",
-                "module provider; pub host type Value role(i32);",
+                "mod provider; pub host type Value role(i32);",
             );
-            write_retype_fixture(dir.path(), "library/added.kio", "module added;");
+            write_retype_fixture(dir.path(), "library/added.kio", "mod added;");
             for force in [false, true] {
                 let error = materialize_dependencies_filtered(&root, None, force).unwrap_err();
                 assert!(error.error.diag().1.contains("replacement has role(i32)"));
@@ -4840,8 +4819,7 @@ mod tests {
     #[test]
     fn rehost_role_rejects_compiler_carrier_through_an_alias() {
         let dir = rehost_role_fixture(
-            "module provider; import __comptime__; \
-             type Flag = Comptime_bool; pub type Value = Flag;",
+            "mod provider; import __comptime__; type Flag = Comptime_bool; pub type Value = Flag;",
         );
         let root = dir.path().join("consumer");
         let error = materialize_dependencies_filtered(&root, None, false).unwrap_err();
@@ -4859,17 +4837,14 @@ mod tests {
     #[test]
     fn rehost_role_resolves_later_selected_and_unselected_providers() {
         let dir = rehost_role_fixture(
-            "module provider; import zeta/api as flags; pub type Value = flags.Flag;",
+            "mod provider; import zeta/api as flags; pub type Value = flags.Flag;",
         );
         for (path, source) in [
-            ("flags/flags.pkg.kio", "package flags;"),
-            (
-                "flags/api.kio",
-                "module api; pub host type Flag role(bool);",
-            ),
+            ("flags/flags.pkg.kio", "pkg flags;"),
+            ("flags/api.kio", "mod api; pub host type Flag role(bool);"),
             (
                 "consumer/zeta.dep.kio",
-                "dependency zeta; source { path \"../flags/flags.pkg.kio\"; }",
+                "dep zeta; source { path \"../flags/flags.pkg.kio\"; }",
             ),
         ] {
             write_retype_fixture(dir.path(), path, source);
@@ -4884,7 +4859,7 @@ mod tests {
         write_retype_fixture(
             dir.path(),
             "flags/api.kio",
-            "module api; pub host type Flag role(str);",
+            "mod api; pub host type Flag role(str);",
         );
         assert!(materialize_dependencies_filtered(&root, None, true).is_err());
         assert_eq!(
@@ -4971,15 +4946,7 @@ mod tests {
     #[test]
     fn retype_inventory_distinguishes_nominal_entries_from_aliases() {
         let module = parsed_module(
-            "module store; \
-             type { Plain: . { mk; get; }; } \
-             pub type { Box[*F][A]<X>: F[A] & X; } \
-             type Later[*G][B] = Box[G][B] & { Flag: .; }; \
-             type Forwarded[*F][A] = Box[F][A]; \
-             rec { \
-               type { Node: Edge { mk; get; }; }; \
-               type { Edge: Node; }; \
-             }",
+            "mod store; type { Plain: . { mk; get; }; } pub type { Box[*F][A]<X>: F[A] & X; } type Later[*G][B] = Box[G][B] & { Flag: .; }; type Forwarded[*F][A] = Box[F][A]; rec { type { Node: Edge { mk; get; }; }; type { Edge: Node; }; }",
         );
         let nominals = declared_retype_nominals(&module);
         assert_eq!(
@@ -5004,7 +4971,7 @@ mod tests {
     #[cfg(feature = "surface")]
     #[test]
     fn retype_selection_retains_duplicate_source_declaration_occurrences() {
-        let module = parsed_module("module store; type { Foo: .; } type { Foo: .; }");
+        let module = parsed_module("mod store; type { Foo: .; } type { Foo: .; }");
         let modules = vec![(PathBuf::from("store.kio"), module)];
         let dependency = retype_dependency("retype widget/store.Foo to core/one.Foo;");
         let selections = resolve_retype_selections("widget", &dependency.retype, &modules)
@@ -5019,7 +4986,7 @@ mod tests {
     #[cfg(feature = "surface")]
     #[test]
     fn provider_alias_allocation_avoids_existing_ordinary_bindings() {
-        let source = "module source; type { Foo: .; } type Core_store = Foo;";
+        let source = "mod source; type { Foo: .; } type Core_store = Foo;";
         let provider = module_path("core/store");
         assert_eq!(
             fresh_provider_alias(&parsed_module(source), &provider),
@@ -5037,8 +5004,7 @@ mod tests {
     #[cfg(feature = "surface")]
     #[test]
     fn retype_duplicate_nominals_reach_original_source_validation() {
-        let original =
-            parsed_module("module widget/store; pub type { Foo: .; } pub type { Foo: .; }");
+        let original = parsed_module("mod widget/store; pub type { Foo: .; } pub type { Foo: .; }");
         let source_path = PathBuf::from("widget/store.kio");
         let source_modules = BTreeMap::from([(
             module_path_surface(&original.path),
@@ -5058,7 +5024,7 @@ mod tests {
             .expect("duplicate written declarations remain in original-source validation");
         let mut materialized = vec![(
             PathBuf::from("core/store.kio"),
-            parsed_module("module core/store; pub type { Foo: .; }"),
+            parsed_module("mod core/store; pub type { Foo: .; }"),
         )];
         materialized.push((source_path.clone(), source));
         let error = validate_retype_source_semantics(&source_modules, &materialized).expect_err(
@@ -5072,11 +5038,11 @@ mod tests {
     #[cfg(feature = "surface")]
     #[test]
     fn retype_counterparts_follow_aliases_across_compact_and_explicit_nominals() {
-        let source = parsed_module("module source; pub type { Foo: .; }");
-        let origin = parsed_module("module origin; pub type { Foo: .; }");
-        let relay = parsed_module("module relay; import origin as o; pub type Foo = o.Foo;");
-        let forward = parsed_module("module forward; import origin as o; pub type Other = o.Foo;");
-        let ordinary = parsed_module("module ordinary; pub type { Foo: . { pub mk; pub get; }; }");
+        let source = parsed_module("mod source; pub type { Foo: .; }");
+        let origin = parsed_module("mod origin; pub type { Foo: .; }");
+        let relay = parsed_module("mod relay; import origin as o; pub type Foo = o.Foo;");
+        let forward = parsed_module("mod forward; import origin as o; pub type Other = o.Foo;");
+        let ordinary = parsed_module("mod ordinary; pub type { Foo: . { pub mk; pub get; }; }");
         let modules = [origin, relay.clone(), forward.clone(), ordinary.clone()]
             .into_iter()
             .map(|module| {
@@ -5122,19 +5088,14 @@ mod tests {
     #[test]
     fn retype_decomposition_preserves_later_owners_and_exact_alias_edges() {
         let mut source = parsed_module(
-            "module widget/store; \
-             pub type { Foo: .; } \
-             pub type Later[A] = Foo & { Box[A]: A; }; \
-             pub type Still[A] = Box[A]; \
-             type Untouched = Foo; \
-             pub fn keep(value: Foo) -> Foo { value }",
+            "mod widget/store; pub type { Foo: .; } pub type Later[A] = Foo & { Box[A]: A; }; pub type Still[A] = Box[A]; type Untouched = Foo; pub fn keep(value: Foo) -> Foo { value }",
         );
         let still = source.items[2].clone();
         let untouched = source.items[3].clone();
         let body = source.items[4].clone();
-        let origin = parsed_module("module core/origin; pub type { Foo: .; }");
+        let origin = parsed_module("mod core/origin; pub type { Foo: .; }");
         let relay = parsed_module(
-            "module core/relay; import core/origin as origin; pub type Foo = origin.Foo;",
+            "mod core/relay; import core/origin as origin; pub type Foo = origin.Foo;",
         );
         let target = RetypeTarget {
             from: source.path.clone(),
@@ -5171,10 +5132,7 @@ mod tests {
     #[test]
     fn retype_nominal_aliases_survive_recursive_owner_partitioning() {
         let mut source = parsed_module(
-            "module widget/store; \
-             pub rec type Later = { Foo: .; } | { Bar: Later; }; \
-             type Untouched = Foo; \
-             pub fn keep(value: Later) -> Later { value }",
+            "mod widget/store; pub rec type Later = { Foo: .; } | { Bar: Later; }; type Untouched = Foo; pub fn keep(value: Later) -> Later { value }",
         );
         let original_forward = source.items[1].clone();
         let original_body = source.items[2].clone();
@@ -5187,7 +5145,7 @@ mod tests {
         apply_retype(&mut source, &[target]).expect("residual Later/Bar recursion");
         let all = vec![(
             PathBuf::from("core.kio"),
-            parsed_module("module core/store; pub type { Foo: .; }"),
+            parsed_module("mod core/store; pub type { Foo: .; }"),
         )];
         let generated = source
             .items
@@ -5227,14 +5185,7 @@ mod tests {
     #[test]
     fn retype_nominal_aliases_follow_resized_explicit_recursive_groups() {
         let mut source = parsed_module(
-            "module widget/store; \
-             rec { \
-               pub type { Foo: Bar; }; \
-               pub type { Bar: Foo | Link { pub mk; pub get; }; }; \
-               pub type { Link: Bar { pub mk; pub get; }; }; \
-             } \
-             type Untouched = Foo; \
-             pub fn keep(value: Bar) -> Bar { value }",
+            "mod widget/store; rec { pub type { Foo: Bar; }; pub type { Bar: Foo | Link { pub mk; pub get; }; }; pub type { Link: Bar { pub mk; pub get; }; }; } type Untouched = Foo; pub fn keep(value: Bar) -> Bar { value }",
         );
         let original_forward = source.items[1].clone();
         let original_body = source.items[2].clone();
@@ -5261,7 +5212,7 @@ mod tests {
         );
         let all = vec![(
             PathBuf::from("core/store.kio"),
-            parsed_module("module core/store; pub type { Foo: .; }"),
+            parsed_module("mod core/store; pub type { Foo: .; }"),
         )];
         assert!(matches!(&source.items[0], Item::TypeAlias(alias) if alias.name == "Foo"));
         let Item::TypeRecGroup(group) = &source.items[1] else {
@@ -5287,7 +5238,7 @@ mod tests {
     #[test]
     fn retype_private_nominal_uses_only_an_ordinary_import() {
         let mut source = parsed_module(
-            "module widget/store; type { Foo: .; } fn keep(value: Foo) -> Foo { value }",
+            "mod widget/store; type { Foo: .; } fn keep(value: Foo) -> Foo { value }",
         );
         let body = source.items[1].clone();
         let target = RetypeTarget {
@@ -5410,11 +5361,24 @@ mod tests {
             })
             .collect::<Vec<_>>();
         for keep in [false, true] {
-            let retained = if keep { "// selection C\n, C\n" } else { "" };
+            let retained = if keep {
+                "; // selection C\n type C\n"
+            } else {
+                ""
+            };
             let source = format!(
-                "module widget/relay;\n// statement\nimport widget/store(\n\
-                 // selection A\n, A\n// selection B\n, B\n\
-                 {retained}// closing boundary\n);\n"
+                "mod widget/relay;
+// statement
+import widget/store {{
+
+                 // selection A
+; type A
+// selection B
+; type B
+
+                 {retained}// closing boundary
+}}
+"
             );
             let mut module = parsed_module(&source);
             apply_retype(&mut module, &targets).expect("split retype import");
@@ -5436,10 +5400,16 @@ mod tests {
                 assert_eq!(formatted.matches(comment).count(), 1, "{formatted}");
             }
             assert_eq!(formatted.matches("selection C").count(), usize::from(keep));
-            assert!(formatted.contains("// selection A\n, A"), "{formatted}");
-            assert!(formatted.contains("// selection B\n, B"), "{formatted}");
             assert!(
-                formatted.contains("\n// closing boundary\n);"),
+                formatted.contains("// selection A\n  type A"),
+                "{formatted}"
+            );
+            assert!(
+                formatted.contains("// selection B\n  type B"),
+                "{formatted}"
+            );
+            assert!(
+                formatted.contains("\n  // closing boundary\n}"),
                 "{formatted}"
             );
             assert_eq!(
@@ -5462,7 +5432,8 @@ mod tests {
                     span: Span::new(0, 0),
                 })
                 .collect::<Vec<_>>();
-            let mut module = parsed_module("module widget/relay; import widget/store(A, B, C);");
+            let mut module =
+                parsed_module("mod widget/relay; import widget/store {type A; type B; type C}");
             apply_retype(&mut module, &targets).expect("per-type redirects");
 
             assert_eq!(selective_import_names(&module, "core/a"), ["A"]);
@@ -5470,7 +5441,8 @@ mod tests {
             assert_eq!(selective_import_names(&module, "widget/store"), ["C"]);
         }
 
-        let mut module = parsed_module("module widget/relay; import widget/store(A, B, C);");
+        let mut module =
+            parsed_module("mod widget/relay; import widget/store {type A; type B; type C}");
         let module_target = RetypeTarget {
             from: module_path("widget/store"),
             newtype_names: ["A".to_owned(), "B".to_owned()].into_iter().collect(),
@@ -5485,14 +5457,9 @@ mod tests {
     #[test]
     fn module_retype_removes_and_reexports_grouped_newtypes() {
         let mut module = parsed_module(
-            "module dep/store; \
-             rec { \
-               pub type Link = Odd; \
-               pub type { Even: . | Link { pub mk; pub get; }; }; \
-               pub type { Odd: . | Even { pub mk; pub get; }; }; \
-             }",
+            "mod dep/store; rec { pub type Link = Odd; pub type { Even: . | Link { pub mk; pub get; }; }; pub type { Odd: . | Even { pub mk; pub get; }; }; }",
         );
-        let target_module = parsed_module("module core/store;");
+        let target_module = parsed_module("mod core/store;");
         let target = RetypeTarget {
             from: module.path.clone(),
             newtype_names: ["Even".to_owned(), "Odd".to_owned()].into_iter().collect(),
@@ -5532,20 +5499,13 @@ mod tests {
     #[test]
     fn retype_public_alias_keeps_its_slot_and_private_heads_remain_import_only() {
         let mut module = parsed_module(
-            "module dep/store; \
-             fn _rehost_gdgphcgfcphdhegphcgf() -> . { () } \
-             pub type { Box[A] <X>: A & X { pub mk; pub get; }; }; \
-             pub fn keep[A](value: Box[A]) -> Box[A] { value } \
-             type { Hidden: . { mk; get; }; }; \
-             fn keep_hidden(value: Hidden) -> Hidden { value }",
+            "mod dep/store; fn _rehost_gdgphcgfcphdhegphcgf() -> . { () } pub type { Box[A] <X>: A & X { pub mk; pub get; }; }; pub fn keep[A](value: Box[A]) -> Box[A] { value } type { Hidden: . { mk; get; }; }; fn keep_hidden(value: Hidden) -> Hidden { value }",
         );
         let original = declared_newtype(&module, "Box").unwrap();
         let span = original.name_span;
         let parameters = original.type_params.clone();
         let counterpart = parsed_module(
-            "module core/store; \
-             pub type { Box[A] <Y>: A & Y { pub mk; pub get; }; }; \
-             pub type { Hidden: . { pub mk; pub get; }; };",
+            "mod core/store; pub type { Box[A] <Y>: A & Y { pub mk; pub get; }; }; pub type { Hidden: . { pub mk; pub get; }; };",
         );
         let target = RetypeTarget {
             from: module.path.clone(),
@@ -5611,10 +5571,7 @@ mod tests {
     #[test]
     fn retype_reroots_and_preserves_scoped_newtype_visibility() {
         let upstream = parsed_module(
-            "module store; \
-             pub(store) type { Token: . { \
-               pub(store) mk; pub(store) get; \
-             }; };",
+            "mod store; pub(store) type { Token: . { pub(store) mk; pub(store) get; }; };",
         );
         let mut snapshot = declared_newtype(&upstream, "Token")
             .expect("upstream newtype")
@@ -5631,11 +5588,9 @@ mod tests {
             assert_eq!(module_path_surface(path), "widget/store");
         }
 
-        let mut materialized = parsed_module(
-            "module widget/store; \
-             pub(widget/store) type { Token: . { mk; get; }; };",
-        );
-        let target = parsed_module("module core/store;");
+        let mut materialized =
+            parsed_module("mod widget/store; pub(widget/store) type { Token: . { mk; get; }; };");
+        let target = parsed_module("mod core/store;");
         let materialized_path = materialized.path.clone();
         apply_retype(
             &mut materialized,
@@ -5664,11 +5619,7 @@ mod tests {
     #[test]
     fn grouped_newtype_is_a_retype_counterpart() {
         let module = parsed_module(
-            "module core/store; \
-             rec { \
-               type { Even: . | Odd { mk; get; }; }; \
-               type { Odd: . | Even { mk; get; }; }; \
-             }",
+            "mod core/store; rec { type { Even: . | Odd { mk; get; }; }; type { Odd: . | Even { mk; get; }; }; }",
         );
         let all = vec![(PathBuf::from("store.kio"), module.clone())];
         let (counterpart, owner) = resolve_retyped_counterpart(&module, "Even", &all)
@@ -5747,14 +5698,10 @@ mod tests {
     #[test]
     fn retype_source_semantics_preserve_order_and_recursive_scope() {
         let invalid = parsed_module(
-            "module dep/store; \
-             pub type { Node: Later { pub mk; pub get; }; }; \
-             pub type { Later: . { pub mk; pub get; }; };",
+            "mod dep/store; pub type { Node: Later { pub mk; pub get; }; }; pub type { Later: . { pub mk; pub get; }; };",
         );
         let target = parsed_module(
-            "module core/store; \
-             pub type { Later: . { pub mk; pub get; }; }; \
-             pub type { Node: Later { pub mk; pub get; }; };",
+            "mod core/store; pub type { Later: . { pub mk; pub get; }; }; pub type { Node: Later { pub mk; pub get; }; };",
         );
         let (_, result) =
             canonical_retype_fixture_result(invalid, target.clone(), &["Node", "Later"]);
@@ -5773,48 +5720,29 @@ mod tests {
         );
 
         let ordered = parsed_module(
-            "module dep/store; \
-             pub type { Later: . { pub mk; pub get; }; }; \
-             pub type { Node: Later { pub mk; pub get; }; };",
+            "mod dep/store; pub type { Later: . { pub mk; pub get; }; }; pub type { Node: Later { pub mk; pub get; }; };",
         );
         let (_, result) = canonical_retype_fixture_result(ordered, target, &["Node", "Later"]);
         result.expect("an earlier source declaration remains visible to retype validation");
 
         let grouped = parsed_module(
-            "module dep/store; \
-             rec { \
-               pub type Payload = . | Node; \
-               pub type { Node: Payload { pub mk; pub get; }; }; \
-             }",
+            "mod dep/store; rec { pub type Payload = . | Node; pub type { Node: Payload { pub mk; pub get; }; }; }",
         );
         let grouped_target = parsed_module(
-            "module core/store; \
-             rec { \
-               pub type Payload = . | Node; \
-               pub type { Node: Payload { pub mk; pub get; }; }; \
-             }",
+            "mod core/store; rec { pub type Payload = . | Node; pub type { Node: Payload { pub mk; pub get; }; }; }",
         );
         let (_, result) = canonical_retype_fixture_result(grouped, grouped_target, &["Node"]);
         result.expect("an explicit rec group keeps selected and retained peers in scope");
 
         let importing_source = parsed_module(
-            "module dep/consumer; \
-             import dep/provider(Peer); \
-             pub type { Holder: Peer { pub mk; pub get; }; };",
+            "mod dep/consumer; import dep/provider {type Peer} pub type { Holder: Peer { pub mk; pub get; }; };",
         );
-        let provider_source = parsed_module(
-            "module dep/provider; \
-             pub type { Peer: . { pub mk; pub get; }; };",
-        );
-        let second_source = parsed_module(
-            "module dep/second; \
-             pub type { Other: . { pub mk; pub get; }; };",
-        );
-        let unrelated_invalid = parsed_module(
-            "module app/broken; \
-             type Duplicate = .; \
-             type Duplicate = .;",
-        );
+        let provider_source =
+            parsed_module("mod dep/provider; pub type { Peer: . { pub mk; pub get; }; };");
+        let second_source =
+            parsed_module("mod dep/second; pub type { Other: . { pub mk; pub get; }; };");
+        let unrelated_invalid =
+            parsed_module("mod app/broken; type Duplicate = .; type Duplicate = .;");
         let source_modules = BTreeMap::from([
             (
                 module_path_surface(&importing_source.path),
@@ -5845,18 +5773,10 @@ mod tests {
     #[test]
     fn lone_member_retype_does_not_conflate_grouped_peer_identities() {
         let from = parsed_module(
-            "module dep/store; \
-             rec { \
-               type { Even: . | Odd { mk; get; }; }; \
-               type { Odd: . | Even { mk; get; }; }; \
-             }",
+            "mod dep/store; rec { type { Even: . | Odd { mk; get; }; }; type { Odd: . | Even { mk; get; }; }; }",
         );
         let to = parsed_module(
-            "module core/store; \
-             rec { \
-               type { Even: . | Odd { mk; get; }; }; \
-               type { Odd: . | Even { mk; get; }; }; \
-             }",
+            "mod core/store; rec { type { Even: . | Odd { mk; get; }; }; type { Odd: . | Even { mk; get; }; }; }",
         );
         let (_, semantics) = canonical_retype_fixture(from.clone(), to.clone(), &["Even"]);
         let pair = &semantics.pairs[0][0];
@@ -5874,18 +5794,10 @@ mod tests {
     #[test]
     fn retype_congruence_expands_recursive_structural_aliases() {
         let source = parsed_module(
-            "module dep/store; \
-             rec { \
-               pub type Payload = . | Node; \
-               pub type { Node: Payload { pub mk; pub get; }; }; \
-             }",
+            "mod dep/store; rec { pub type Payload = . | Node; pub type { Node: Payload { pub mk; pub get; }; }; }",
         );
         let target = parsed_module(
-            "module core/store; \
-             rec { \
-               pub type Payload = . | Node; \
-               pub type { Node: Payload { pub mk; pub get; }; }; \
-             }",
+            "mod core/store; rec { pub type Payload = . | Node; pub type { Node: Payload { pub mk; pub get; }; }; }",
         );
         let (check, semantics) = canonical_retype_fixture(source, target, &["Node"]);
         validate_retype_congruence(&check, &semantics.pairs[0], &semantics.package)
@@ -5895,13 +5807,11 @@ mod tests {
     #[test]
     fn retype_congruence_rejects_header_binder_kind_mismatch() {
         let source = parsed_module(
-            "module dep/store; \
-             pub type { Token[*F]: [*G] G[.] -> G[.] { pub mk; pub get; }; };",
+            "mod dep/store; pub type { Token[*F]: [*G] G[.] -> G[.] { pub mk; pub get; }; };",
         );
 
         let header_mismatch = parsed_module(
-            "module core/store; \
-             pub type { Token[A]: [*H] H[.] -> H[.] { pub mk; pub get; }; };",
+            "mod core/store; pub type { Token[A]: [*H] H[.] -> H[.] { pub mk; pub get; }; };",
         );
         let (check, semantics) = canonical_retype_fixture(source, header_mismatch, &["Token"]);
         let error = validate_retype_congruence(&check, &semantics.pairs[0], &semantics.package)
@@ -5914,13 +5824,11 @@ mod tests {
     #[test]
     fn retype_congruence_rejects_nested_forall_kind_mismatch_with_identical_bodies() {
         let source = parsed_module(
-            "module dep/store; \
-             pub type { Token[*F]: [*G] . -> . { pub mk; pub get; }; };",
+            "mod dep/store; pub type { Token[*F]: [*G] . -> . { pub mk; pub get; }; };",
         );
 
         let nested_mismatch = parsed_module(
-            "module core/store; \
-             pub type { Token[*A]: [B] . -> . { pub mk; pub get; }; };",
+            "mod core/store; pub type { Token[*A]: [B] . -> . { pub mk; pub get; }; };",
         );
         let (check, semantics) = canonical_retype_fixture(source, nested_mismatch, &["Token"]);
         validate_retype_congruence(&check, &semantics.pairs[0], &semantics.package)
@@ -5930,13 +5838,11 @@ mod tests {
     #[test]
     fn retype_congruence_matches_same_kind_binders_alpha_equivalently() {
         let source = parsed_module(
-            "module dep/store; \
-             pub type { Token[*F]: [*G] G[.] -> G[.] { pub mk; pub get; }; };",
+            "mod dep/store; pub type { Token[*F]: [*G] G[.] -> G[.] { pub mk; pub get; }; };",
         );
 
         let alpha_renamed = parsed_module(
-            "module core/store; \
-             pub type { Token[*A]: [*H] H[.] -> H[.] { pub mk; pub get; }; };",
+            "mod core/store; pub type { Token[*A]: [*H] H[.] -> H[.] { pub mk; pub get; }; };",
         );
         let (check, semantics) = canonical_retype_fixture(source, alpha_renamed, &["Token"]);
         validate_retype_congruence(&check, &semantics.pairs[0], &semantics.package)
@@ -5946,12 +5852,10 @@ mod tests {
     #[test]
     fn retype_congruence_rejects_universal_existential_classification_mismatch() {
         let source = parsed_module(
-            "module dep/store; \
-             pub type { Pack <Hidden>: Hidden { pub mk; pub get; }; };",
+            "mod dep/store; pub type { Pack <Hidden>: Hidden { pub mk; pub get; }; };",
         );
         let target = parsed_module(
-            "module core/store; \
-             pub type { Pack[Visible]: Visible { pub mk; pub get; }; };",
+            "mod core/store; pub type { Pack[Visible]: Visible { pub mk; pub get; }; };",
         );
         let (check, semantics) = canonical_retype_fixture(source, target, &["Pack"]);
         let error = validate_retype_congruence(&check, &semantics.pairs[0], &semantics.package)
@@ -5963,25 +5867,19 @@ mod tests {
 
     #[test]
     fn retype_congruence_accepts_matching_star_and_existential_binders() {
-        let star_source = parsed_module(
-            "module dep/store; \
-             pub type { Box[A]: A { pub mk; pub get; }; };",
-        );
-        let star_target = parsed_module(
-            "module core/store; \
-             pub type { Box[B]: B { pub mk; pub get; }; };",
-        );
+        let star_source =
+            parsed_module("mod dep/store; pub type { Box[A]: A { pub mk; pub get; }; };");
+        let star_target =
+            parsed_module("mod core/store; pub type { Box[B]: B { pub mk; pub get; }; };");
         let (check, semantics) = canonical_retype_fixture(star_source, star_target, &["Box"]);
         validate_retype_congruence(&check, &semantics.pairs[0], &semantics.package)
             .expect("nonzero all-Star universal binders compare alpha-equivalently");
 
         let existential_source = parsed_module(
-            "module dep/store; \
-             pub type { Pack <Hidden>: Hidden { pub mk; pub get; }; };",
+            "mod dep/store; pub type { Pack <Hidden>: Hidden { pub mk; pub get; }; };",
         );
         let existential_target = parsed_module(
-            "module core/store; \
-             pub type { Pack <Secret>: Secret { pub mk; pub get; }; };",
+            "mod core/store; pub type { Pack <Secret>: Secret { pub mk; pub get; }; };",
         );
         let (check, semantics) =
             canonical_retype_fixture(existential_source, existential_target, &["Pack"]);
@@ -5991,47 +5889,33 @@ mod tests {
 
     #[test]
     fn retype_counterpart_visibility_covers_the_rebound_surface() {
-        let public_source = parsed_module(
-            "module dep/store; \
-             pub type { Token: . { pub mk; pub get; }; };",
-        );
-        let private_target = parsed_module(
-            "module core/store; \
-             type { Token: . { pub mk; pub get; }; };",
-        );
+        let public_source =
+            parsed_module("mod dep/store; pub type { Token: . { pub mk; pub get; }; };");
+        let private_target =
+            parsed_module("mod core/store; type { Token: . { pub mk; pub get; }; };");
         let (check, semantics) =
             canonical_retype_fixture(public_source.clone(), private_target, &["Token"]);
         validate_retype_congruence(&check, &semantics.pairs[0], &semantics.package)
             .expect_err("a private counterpart cannot preserve a public source type");
 
-        let scoped_source = parsed_module(
-            "module core/client; \
-             type { Token: . { mk; get; }; };",
-        );
+        let scoped_source = parsed_module("mod core/client; type { Token: . { mk; get; }; };");
         let scoped_target = parsed_module(
-            "module core/store; \
-             pub(core) type { Token: . { \
-               pub(core) mk; pub(core) get; \
-             }; };",
+            "mod core/store; pub(core) type { Token: . { pub(core) mk; pub(core) get; }; };",
         );
         let (check, semantics) =
             canonical_retype_fixture(scoped_source, scoped_target.clone(), &["Token"]);
         validate_retype_congruence(&check, &semantics.pairs[0], &semantics.package)
             .expect("a private source may bind to a counterpart visible in its module");
 
-        let public_scoped_source = parsed_module(
-            "module core/client; \
-             pub type { Token: . { mk; get; }; };",
-        );
+        let public_scoped_source =
+            parsed_module("mod core/client; pub type { Token: . { mk; get; }; };");
         let (check, semantics) =
             canonical_retype_fixture(public_scoped_source, scoped_target, &["Token"]);
         validate_retype_congruence(&check, &semantics.pairs[0], &semantics.package)
             .expect_err("a scoped counterpart cannot preserve a globally public source type");
 
-        let public_target = parsed_module(
-            "module core/store; \
-             pub type { Token: . { pub mk; pub get; }; };",
-        );
+        let public_target =
+            parsed_module("mod core/store; pub type { Token: . { pub mk; pub get; }; };");
         let (check, semantics) = canonical_retype_fixture(public_source, public_target, &["Token"]);
         validate_retype_congruence(&check, &semantics.pairs[0], &semantics.package)
             .expect("a public counterpart preserves a public source type");
@@ -6066,8 +5950,7 @@ mod tests {
         {
             for visibility in ["pub", "pub(widget/feature)"] {
                 let source = format!(
-                    "module widget/feature/store; pub type {{ Token: . {{ \
-                     {visibility} {member}; {other_member}; }}; }};",
+                    "mod widget/feature/store; pub type {{ Token: . {{ {visibility} {member}; {other_member}; }}; }};",
                 );
                 for exposed_member in [member, other_member] {
                     let other = if exposed_member == member {
@@ -6078,7 +5961,7 @@ mod tests {
                     let result = retype_interface_fixture(
                         &source,
                         &format!(
-                            "module widget/feature/target; pub type {{ Token: . {{ pub {exposed_member}; {other}; }}; }};"
+                            "mod widget/feature/target; pub type {{ Token: . {{ pub {exposed_member}; {other}; }}; }};"
                         ),
                     );
                     if exposed_member != member {
@@ -6094,8 +5977,7 @@ mod tests {
                 let error = retype_interface_fixture(
                     &source,
                     &format!(
-                        "module widget/feature/target; pub type {{ Token: . {{ \
-                         pub(widget/feature/target) {member}; {other_member}; }}; }};",
+                        "mod widget/feature/target; pub type {{ Token: . {{ pub(widget/feature/target) {member}; {other_member}; }}; }};",
                     ),
                 )
                 .expect_err("a narrower target role loses source access");
@@ -6121,12 +6003,10 @@ mod tests {
         ] {
             retype_interface_fixture(
                 &format!(
-                    "module widget/feature/store; {source_outer} type {{ Token: . {{ \
-                     {source_member} mk; get; }}; }};"
+                    "mod widget/feature/store; {source_outer} type {{ Token: . {{ {source_member} mk; get; }}; }};"
                 ),
                 &format!(
-                    "module widget/feature/target; {target_outer} type {{ Token: . {{ \
-                     {target_member} mk; get; }}; }};"
+                    "mod widget/feature/target; {target_outer} type {{ Token: . {{ {target_member} mk; get; }}; }};"
                 ),
             )
             .expect("only the effective exposed source interface is required");
@@ -6135,14 +6015,13 @@ mod tests {
 
     #[test]
     fn retype_member_interface_uses_the_exact_terminal_counterpart() {
-        let source = parsed_module("module widget/store; pub type { Token: . { pub mk; get; }; };");
+        let source = parsed_module("mod widget/store; pub type { Token: . { pub mk; get; }; };");
         let target = parsed_module(
-            "module core/route; import core/store(Token); import core/store as origin; \
-             pub type Token = origin.Token;",
+            "mod core/route; import core/store {type Token} import core/store as origin; pub type Token = origin.Token;",
         );
-        let terminal = parsed_module("module core/store; pub type { Token: . { mk; get; }; };");
+        let terminal = parsed_module("mod core/store; pub type { Token: . { mk; get; }; };");
         let unrelated =
-            parsed_module("module unrelated; pub type { Token: . { pub mk; pub get; }; };");
+            parsed_module("mod unrelated; pub type { Token: . { pub mk; pub get; }; };");
         let check = DeferredRetypeCheck {
             dep_file_path: PathBuf::from("widget.dep.kio"),
             span: Span::new(0, 1),
@@ -6181,20 +6060,19 @@ mod tests {
     fn retype_materialization_fixture() -> tempfile::TempDir {
         let dir = tempfile::tempdir().expect("retype fixture");
         for (path, source) in [
-            ("consumer/app.pkg.kio", "package app;"),
-            ("library/widget.pkg.kio", "package widget;"),
+            ("consumer/app.pkg.kio", "pkg app;"),
+            ("library/widget.pkg.kio", "pkg widget;"),
             (
                 "library/store.kio",
-                "module store; pub type { Token: . { pub mk; pub get; }; };",
+                "mod store; pub type { Token: . { pub mk; pub get; }; };",
             ),
             (
                 "consumer/core/store.kio",
-                "module core/store; pub type { Token: . { pub mk; pub get; }; };",
+                "mod core/store; pub type { Token: . { pub mk; pub get; }; };",
             ),
             (
                 "consumer/widget.dep.kio",
-                "dependency widget; source { path \"../library/widget.pkg.kio\"; } \
-                 retype widget/store.Token to core/store.Token;",
+                "dep widget; source { path \"../library/widget.pkg.kio\"; } retype widget/store.Token to core/store.Token;",
             ),
         ] {
             write_retype_fixture(dir.path(), path, source);
@@ -6239,19 +6117,19 @@ mod tests {
         for (path, source) in [
             (
                 "library/store.kio",
-                "module store; pub type { Token: .; }; pub type Later = Token;",
+                "mod store; pub type { Token: .; }; pub type Later = Token;",
             ),
             (
                 "consumer/core/store.kio",
-                "module core/store; pub type { Token: .; };",
+                "mod core/store; pub type { Token: .; };",
             ),
             (
                 "consumer/core/relay.kio",
-                "module core/relay; import core/store as origin; pub type Token = origin.Token;",
+                "mod core/relay; import core/store as origin; pub type Token = origin.Token;",
             ),
             (
                 "consumer/widget.dep.kio",
-                "dependency widget; source { path \"../library/widget.pkg.kio\"; } retype widget/store.Token to core/relay.Token;",
+                "dep widget; source { path \"../library/widget.pkg.kio\"; } retype widget/store.Token to core/relay.Token;",
             ),
         ] {
             write_retype_fixture(dir.path(), path, source);
@@ -6290,27 +6168,27 @@ mod tests {
         for provider in ["acore", "zcore"] {
             let dir = compact_nominal_retype_materialization_fixture();
             let root = dir.path().join("consumer");
-            write_retype_fixture(dir.path(), "target/target.pkg.kio", "package target;");
+            write_retype_fixture(dir.path(), "target/target.pkg.kio", "pkg target;");
             write_retype_fixture(
                 dir.path(),
                 "target/store.kio",
-                "module store; pub type { Token: .; };",
+                "mod store; pub type { Token: .; };",
             );
             write_retype_fixture(
                 dir.path(),
                 "target/relay.kio",
-                "module relay; import store as origin; pub type Token = origin.Token;",
+                "mod relay; import store as origin; pub type Token = origin.Token;",
             );
             write_retype_fixture(
                 dir.path(),
                 &format!("consumer/{provider}.dep.kio"),
-                &format!("dependency {provider}; source {{ path \"../target/target.pkg.kio\"; }}"),
+                &format!("dep {provider}; source {{ path \"../target/target.pkg.kio\"; }}"),
             );
             write_retype_fixture(
                 dir.path(),
                 "consumer/widget.dep.kio",
                 &format!(
-                    "dependency widget; source {{ path \"../library/widget.pkg.kio\"; }} retype widget/store.Token to {provider}/relay.Token;"
+                    "dep widget; source {{ path \"../library/widget.pkg.kio\"; }} retype widget/store.Token to {provider}/relay.Token;"
                 ),
             );
             let outcomes = materialize_dependencies_filtered(&root, None, false)
@@ -6329,8 +6207,8 @@ mod tests {
     #[test]
     fn retype_compact_nominals_preserve_missing_and_cyclic_counterpart_publication_timing() {
         for target in [
-            "module core/relay;",
-            "module core/relay; import core/cycle as other; pub type Token = other.Token;",
+            "mod core/relay;",
+            "mod core/relay; import core/cycle as other; pub type Token = other.Token;",
         ] {
             let dir = compact_nominal_retype_materialization_fixture();
             let root = dir.path().join("consumer");
@@ -6338,7 +6216,7 @@ mod tests {
             write_retype_fixture(
                 dir.path(),
                 "consumer/core/cycle.kio",
-                "module core/cycle; import core/relay as other; pub type Token = other.Token;",
+                "mod core/cycle; import core/relay as other; pub type Token = other.Token;",
             );
             assert!(materialize_dependencies_filtered(&root, None, false).is_err());
             let source = fs::read_to_string(root.join("widget/store.kio"))
@@ -6357,12 +6235,12 @@ mod tests {
         write_retype_fixture(
             dir.path(),
             "library/store.kio",
-            "module store; pub type { Token: .; }; pub fn added() -> . { () }",
+            "mod store; pub type { Token: .; }; pub fn added() -> . { () }",
         );
         write_retype_fixture(
             dir.path(),
             "consumer/core/relay.kio",
-            "module core/relay; import core/store as origin; pub(core) type Token = origin.Token;",
+            "mod core/relay; import core/store as origin; pub(core) type Token = origin.Token;",
         );
         for force in [false, true] {
             let error = materialize_dependencies_filtered(&root, None, force).unwrap_err();
@@ -6376,7 +6254,7 @@ mod tests {
         let root = dir.path().join("consumer");
         let mut before = BTreeMap::new();
         if existing {
-            write_retype_fixture(dir.path(), "library/old.kio", "module old;");
+            write_retype_fixture(dir.path(), "library/old.kio", "mod old;");
             materialize_dependencies_filtered(&root, None, false).expect("compatible first fetch");
             for name in ["store.kio", "old.kio"] {
                 before.insert(name, fs::read(root.join("widget").join(name)).unwrap());
@@ -6386,14 +6264,13 @@ mod tests {
         write_retype_fixture(
             dir.path(),
             "library/store.kio",
-            "module store; pub type { Token: . { pub mk; pub get; }; }; \
-             pub fn added() -> . { () }",
+            "mod store; pub type { Token: . { pub mk; pub get; }; }; pub fn added() -> . { () }",
         );
-        write_retype_fixture(dir.path(), "library/added.kio", "module added;");
+        write_retype_fixture(dir.path(), "library/added.kio", "mod added;");
         write_retype_fixture(
             dir.path(),
             "consumer/core/store.kio",
-            "module core/store; pub type { Token: . { mk; pub get; }; };",
+            "mod core/store; pub type { Token: . { mk; pub get; }; };",
         );
         let result = materialize_dependencies_filtered(&root, None, force);
         let observed = ["store.kio", "old.kio", "added.kio"]
@@ -6449,7 +6326,7 @@ mod tests {
         write_retype_fixture(
             dir.path(),
             "consumer/core/store.kio",
-            "module core/store; pub type { Token: . { pub mk; get; }; };",
+            "mod core/store; pub type { Token: . { pub mk; get; }; };",
         );
         for force in [false, true] {
             let error = materialize_dependencies_filtered(&root, None, force).unwrap_err();
@@ -6463,7 +6340,7 @@ mod tests {
         let root = dir.path().join("consumer");
         let mut before = BTreeMap::new();
         if existing {
-            write_retype_fixture(dir.path(), "library/old.kio", "module old;");
+            write_retype_fixture(dir.path(), "library/old.kio", "mod old;");
             materialize_dependencies_filtered(&root, None, false).expect("valid first fetch");
             for name in ["store.kio", "old.kio"] {
                 before.insert(name, fs::read(root.join("widget").join(name)).unwrap());
@@ -6473,14 +6350,13 @@ mod tests {
         write_retype_fixture(
             dir.path(),
             "library/store.kio",
-            "module store; pub type { Token: . { pub mk; pub get; }; }; \
-                     pub fn added() -> . { () }",
+            "mod store; pub type { Token: . { pub mk; pub get; }; }; pub fn added() -> . { () }",
         );
-        write_retype_fixture(dir.path(), "library/added.kio", "module added;");
+        write_retype_fixture(dir.path(), "library/added.kio", "mod added;");
         write_retype_fixture(
             dir.path(),
             "consumer/core/store.kio",
-            "module core/store; type { Token: . { pub mk; pub get; }; };",
+            "mod core/store; type { Token: . { pub mk; pub get; }; };",
         );
         let error =
             materialize_dependencies_filtered(&root, None, force).expect_err("invisible target");
@@ -6539,7 +6415,7 @@ mod tests {
         write_retype_fixture(
             dir.path(),
             "consumer/core/store.kio",
-            "module core/store; type { Token: . { pub mk; pub get; }; };",
+            "mod core/store; type { Token: . { pub mk; pub get; }; };",
         );
         for force in [false, true] {
             let error = materialize_dependencies_filtered(&root, None, force).unwrap_err();
@@ -6561,14 +6437,13 @@ mod tests {
                 dir.path(),
                 "consumer/core/route.kio",
                 &format!(
-                    "module core/route; import core/store(Token); import core/store as origin; {head}"
+                    "mod core/route; import core/store {{type Token}} import core/store as origin; {head}"
                 ),
             );
             write_retype_fixture(
                 dir.path(),
                 "consumer/widget.dep.kio",
-                "dependency widget; source { path \"../library/widget.pkg.kio\"; } \
-                 retype widget/store.Token to core/route.Token;",
+                "dep widget; source { path \"../library/widget.pkg.kio\"; } retype widget/store.Token to core/route.Token;",
             );
             let result = materialize_dependencies_filtered(&root, None, false);
             if importable {
@@ -6592,33 +6467,32 @@ mod tests {
         for with_rehost in [false, true] {
             let dir = retype_materialization_fixture();
             let root = dir.path().join("consumer");
-            write_retype_fixture(dir.path(), "target/target.pkg.kio", "package target;");
+            write_retype_fixture(dir.path(), "target/target.pkg.kio", "pkg target;");
             write_retype_fixture(
                 dir.path(),
                 "target/store.kio",
-                "module store; pub type { Token: . { pub mk; pub get; }; };",
+                "mod store; pub type { Token: . { pub mk; pub get; }; };",
             );
             write_retype_fixture(
                 dir.path(),
                 "consumer/zcore.dep.kio",
-                "dependency zcore; source { path \"../target/target.pkg.kio\"; }",
+                "dep zcore; source { path \"../target/target.pkg.kio\"; }",
             );
             write_retype_fixture(
                 dir.path(),
                 "consumer/widget.dep.kio",
-                "dependency widget; source { path \"../library/widget.pkg.kio\"; } \
-                 retype widget/store.Token to zcore/store.Token;",
+                "dep widget; source { path \"../library/widget.pkg.kio\"; } retype widget/store.Token to zcore/store.Token;",
             );
             if with_rehost {
                 write_retype_fixture(
                     dir.path(),
                     "library/strings.kio",
-                    "module strings; host type Str role(str);",
+                    "mod strings; host type Str role(str);",
                 );
                 write_retype_fixture(
                     dir.path(),
                     "consumer/provider.kio",
-                    "module provider; host type Str role(str);",
+                    "mod provider; host type Str role(str);",
                 );
                 let path = root.join("widget.dep.kio");
                 let mut source = fs::read_to_string(&path).unwrap();
@@ -6635,12 +6509,12 @@ mod tests {
             write_retype_fixture(
                 dir.path(),
                 "library/store.kio",
-                "module store; pub type { Token: . { pub mk; pub get; }; }; pub fn added() { () }",
+                "mod store; pub type { Token: . { pub mk; pub get; }; }; pub fn added() { () }",
             );
             write_retype_fixture(
                 dir.path(),
                 "target/store.kio",
-                "module store; type { Token: . { pub mk; pub get; }; };",
+                "mod store; type { Token: . { pub mk; pub get; }; };",
             );
             let error = materialize_dependencies_filtered(&root, None, false).unwrap_err();
             assert!(error.error.diag().1.contains("is not visible everywhere"));
@@ -6666,7 +6540,7 @@ mod tests {
         write_retype_fixture(
             dir.path(),
             "consumer/core/store.kio",
-            "module core/store; pub type { Token: . -> . { pub mk; pub get; }; };",
+            "mod core/store; pub type { Token: . -> . { pub mk; pub get; }; };",
         );
         let error = materialize_dependencies_filtered(&root, None, false).unwrap_err();
         assert!(error.error.diag().1.contains("not structurally congruent"));
@@ -6677,22 +6551,21 @@ mod tests {
     fn retype_visibility_drops_stale_selected_provider_modules() {
         let dir = retype_materialization_fixture();
         let root = dir.path().join("consumer");
-        write_retype_fixture(dir.path(), "target/target.pkg.kio", "package target;");
+        write_retype_fixture(dir.path(), "target/target.pkg.kio", "pkg target;");
         write_retype_fixture(
             dir.path(),
             "consumer/zcore.dep.kio",
-            "dependency zcore; source { path \"../target/target.pkg.kio\"; }",
+            "dep zcore; source { path \"../target/target.pkg.kio\"; }",
         );
         write_retype_fixture(
             dir.path(),
             "consumer/zcore/store.kio",
-            "module zcore/store; type { Token: . { pub mk; pub get; }; };",
+            "mod zcore/store; type { Token: . { pub mk; pub get; }; };",
         );
         write_retype_fixture(
             dir.path(),
             "consumer/widget.dep.kio",
-            "dependency widget; source { path \"../library/widget.pkg.kio\"; } \
-             retype widget/store.Token to zcore/store.Token;",
+            "dep widget; source { path \"../library/widget.pkg.kio\"; } retype widget/store.Token to zcore/store.Token;",
         );
         let error = materialize_dependencies_filtered(&root, None, false).unwrap_err();
         assert!(matches!(error.error, Error::Dep(_)));
@@ -6708,18 +6581,10 @@ mod tests {
     #[test]
     fn retype_congruence_preserves_unselected_compact_nominal_identities() {
         let source = parsed_module(
-            "module dep/store; \
-             rec { \
-               type { Odd: Even; }; \
-               type { Even: . | Odd { mk; get; }; }; \
-             }",
+            "mod dep/store; rec { type { Odd: Even; }; type { Even: . | Odd { mk; get; }; }; }",
         );
         let target = parsed_module(
-            "module core/store; \
-             rec { \
-               type { Odd: Even; }; \
-               type { Even: . | Odd { mk; get; }; }; \
-             }",
+            "mod core/store; rec { type { Odd: Even; }; type { Even: . | Odd { mk; get; }; }; }",
         );
         let (_, semantics) = canonical_retype_fixture(source, target, &["Even"]);
         let pair = &semantics.pairs[0][0];
@@ -6733,16 +6598,10 @@ mod tests {
     #[test]
     fn retype_congruence_expands_named_compact_nominal_aliases() {
         let source = parsed_module(
-            "module dep/store; \
-             pub type Packet = { First: .; Second: .; }; \
-             pub type { Holder: Packet { pub mk; pub get; }; };",
+            "mod dep/store; pub type Packet = { First: .; Second: .; }; pub type { Holder: Packet { pub mk; pub get; }; };",
         );
         let target = parsed_module(
-            "module core/store; \
-             import dep/store as original; \
-             pub type { Holder: original.First & original.Second { \
-               pub mk; pub get; \
-             }; };",
+            "mod core/store; import dep/store as original; pub type { Holder: original.First & original.Second { pub mk; pub get; }; };",
         );
         let (check, semantics) = canonical_retype_fixture(source, target, &["Holder"]);
         validate_retype_congruence(&check, &semantics.pairs[0], &semantics.package)
@@ -6753,16 +6612,10 @@ mod tests {
     #[test]
     fn retype_congruence_preserves_referenced_nominal_identity() {
         let source = parsed_module(
-            "module dep/store; \
-             pub type Reply = { Item: .; } | Item; \
-             pub type { Holder: Reply { pub mk; pub get; }; };",
+            "mod dep/store; pub type Reply = { Item: .; } | Item; pub type { Holder: Reply { pub mk; pub get; }; };",
         );
         let same_identity = parsed_module(
-            "module core/store; \
-             import dep/store as original; \
-             pub type { Holder: original.Item | original.Item { \
-               pub mk; pub get; \
-             }; };",
+            "mod core/store; import dep/store as original; pub type { Holder: original.Item | original.Item { pub mk; pub get; }; };",
         );
         let (check, semantics) =
             canonical_retype_fixture(source.clone(), same_identity, &["Holder"]);
@@ -6770,9 +6623,7 @@ mod tests {
             .expect("an ordinary RHS reference denotes the same nominal in both sum arms");
 
         let distinct_identity = parsed_module(
-            "module core/store; \
-             pub type Reply = { Item: .; } | Item; \
-             pub type { Holder: Reply { pub mk; pub get; }; };",
+            "mod core/store; pub type Reply = { Item: .; } | Item; pub type { Holder: Reply { pub mk; pub get; }; };",
         );
         let (check, semantics) = canonical_retype_fixture(source, distinct_identity, &["Holder"]);
         let error = validate_retype_congruence(&check, &semantics.pairs[0], &semantics.package)
@@ -6789,15 +6640,10 @@ mod tests {
     #[test]
     fn retype_congruence_expands_applied_aliases_without_capturing_binders() {
         let source = parsed_module(
-            "module dep/store; \
-             pub type Payload[A] = [B] A -> B -> A; \
-             pub type { Holder[B]: Payload[B] { pub mk; pub get; }; };",
+            "mod dep/store; pub type Payload[A] = [B] A -> B -> A; pub type { Holder[B]: Payload[B] { pub mk; pub get; }; };",
         );
         let alpha_renamed = parsed_module(
-            "module core/store; \
-             pub type { Holder[C]: [D] C -> D -> C { \
-               pub mk; pub get; \
-             }; };",
+            "mod core/store; pub type { Holder[C]: [D] C -> D -> C { pub mk; pub get; }; };",
         );
         let (check, semantics) =
             canonical_retype_fixture(source.clone(), alpha_renamed, &["Holder"]);
@@ -6805,10 +6651,7 @@ mod tests {
             .expect("the alias's inner B binder cannot capture the applied outer B argument");
 
         let captured_shape = parsed_module(
-            "module core/store; \
-             pub type { Holder[C]: [D] D -> D -> C { \
-               pub mk; pub get; \
-             }; };",
+            "mod core/store; pub type { Holder[C]: [D] D -> D -> C { pub mk; pub get; }; };",
         );
         let (check, semantics) = canonical_retype_fixture(source, captured_shape, &["Holder"]);
         let error = validate_retype_congruence(&check, &semantics.pairs[0], &semantics.package)
@@ -6826,14 +6669,9 @@ mod tests {
     #[test]
     fn retype_rejects_an_indivisible_compact_owner_crossing_residual_components() {
         let mut module = parsed_module(
-            "module dep/store; \
-             rec { \
-               type { A: B & X; C: D & X; }; \
-               type { B: A; D: C; }; \
-               type { X: A & C { mk; get; }; }; \
-             }",
+            "mod dep/store; rec { type { A: B & X; C: D & X; }; type { B: A; D: C; }; type { X: A & C { mk; get; }; }; }",
         );
-        let target_module = parsed_module("module core/store;");
+        let target_module = parsed_module("mod core/store;");
         let target = RetypeTarget {
             from: module.path.clone(),
             newtype_names: ["X".to_owned()].into_iter().collect(),
@@ -6852,14 +6690,9 @@ mod tests {
     #[test]
     fn retype_rejects_a_residual_alias_only_cycle() {
         let mut module = parsed_module(
-            "module dep/store; \
-             rec { \
-               type A = B; \
-               type B = A | X; \
-               type { X: A { mk; get; }; }; \
-             }",
+            "mod dep/store; rec { type A = B; type B = A | X; type { X: A { mk; get; }; }; }",
         );
-        let target_module = parsed_module("module core/store;");
+        let target_module = parsed_module("mod core/store;");
         let target = RetypeTarget {
             from: module.path.clone(),
             newtype_names: ["X".to_owned()].into_iter().collect(),
@@ -6882,13 +6715,9 @@ mod tests {
     #[test]
     fn member_retype_preserves_a_residual_compact_declaration() {
         let mut module = parsed_module(
-            "module dep/store; \
-             rec { \
-               pub type { A: X; }; \
-               pub type { X: A { pub mk; pub get; }; }; \
-             }",
+            "mod dep/store; rec { pub type { A: X; }; pub type { X: A { pub mk; pub get; }; }; }",
         );
-        let target_module = parsed_module("module core/store;");
+        let target_module = parsed_module("mod core/store;");
         let target = RetypeTarget {
             from: module.path.clone(),
             newtype_names: ["X".to_owned()].into_iter().collect(),
@@ -6921,8 +6750,10 @@ mod tests {
     fn file_header_forcing_preserves_operator_source_order() {
         let dir = tempfile::tempdir().expect("tempdir");
         let source_path = dir.path().join("consumer.kio");
-        let prefix = "module consumer;\nimport syntax(op _ * _);\n\
-            fn combine(a: ., b: .) -> . { a }\n";
+        let prefix = "mod consumer;
+import syntax {op _ * _}
+fn combine(a: ., b: .) -> . { a }
+";
         let operator = "op _ + _ { impl combine; };\n";
         let body = "fn subject() -> . { (() * ()) + () }\n";
         let valid = format!("{prefix}{operator}{body}");
@@ -6947,20 +6778,20 @@ mod tests {
     fn file_parser_context_derives_root_from_the_complete_module_suffix() {
         let dir = tempfile::tempdir().expect("tempdir");
         let source_root = dir.path().join("src");
-        let module = lazy_module("module a/b/c;");
+        let module = lazy_module("mod a/b/c;");
         let source_path = source_root.join("a/b/c.kio");
         let context = ModuleFileParserContext::from_module(&source_path, &module)
             .expect("matching file/module suffix");
         assert_eq!(context.source_path, source_path);
         assert_eq!(context.source_root, source_root);
 
-        let single = lazy_module("module main;");
+        let single = lazy_module("mod main;");
         let context =
             ModuleFileParserContext::from_module(&dir.path().join("src/main.kio"), &single)
                 .expect("single-segment suffix");
         assert_eq!(context.source_root, dir.path().join("src"));
 
-        let lexical = lazy_module("module a/b/c;");
+        let lexical = lazy_module("mod a/b/c;");
         let lexical_root = dir.path().join("other/../src");
         let context =
             ModuleFileParserContext::from_module(&lexical_root.join("a/b/c.kio"), &lexical)
@@ -6971,9 +6802,9 @@ mod tests {
     #[test]
     fn file_parser_context_rejects_partial_or_wrong_suffixes() {
         let dir = tempfile::tempdir().expect("tempdir");
-        std::fs::write(dir.path().join("root.pkg.kio"), "package root;")
+        std::fs::write(dir.path().join("root.pkg.kio"), "pkg root;")
             .expect("package marker must not become a fallback root");
-        let module = lazy_module("module a/b/c;");
+        let module = lazy_module("mod a/b/c;");
         for path in [
             dir.path().join("src/x/a/b/copy.kio"),
             dir.path().join("src/x/b/c.kio"),
@@ -6999,7 +6830,7 @@ mod tests {
     #[cfg(windows)]
     #[test]
     fn file_parser_context_preserves_drive_and_unc_roots() {
-        let module = lazy_module("module a/b/c;");
+        let module = lazy_module("mod a/b/c;");
         for (source, expected_root) in [
             (r"C:\workspace\src\a\b\c.kio", r"C:\workspace\src"),
             (r"\\server\share\src\a\b\c.kio", r"\\server\share\src"),
@@ -7019,13 +6850,12 @@ mod tests {
             .expect("consumer dirs");
         std::fs::create_dir_all(provider.parent().expect("provider parent"))
             .expect("provider dirs");
-        std::fs::write(dir.path().join("root.pkg.kio"), "package root;")
+        std::fs::write(dir.path().join("root.pkg.kio"), "pkg root;")
             .expect("matching package marker");
-        std::fs::write(dir.path().join("a/near.pkg.kio"), "package near;")
+        std::fs::write(dir.path().join("a/near.pkg.kio"), "pkg near;")
             .expect("misleading package marker");
-        std::fs::write(&provider, "module a/d/e; pub op _ + _ { impl combine; };")
-            .expect("provider");
-        let source = "module a/b/c; import a/d/e(op _ + _); fn combine(x: A, y: A) -> A { x } fn f(x: A, y: A) -> A { x + y }";
+        std::fs::write(&provider, "mod a/d/e; pub op _ + _ { impl combine; };").expect("provider");
+        let source = "mod a/b/c; import a/d/e {op _ + _} fn combine(x: A, y: A) -> A { x } fn f(x: A, y: A) -> A { x + y }";
         let parsed = parse_module_file_with_file_context(source, &consumer)
             .expect("file identity follows the complete module suffix");
         assert_eq!(parsed.module.path.segments.len(), 3);
@@ -7046,10 +6876,10 @@ mod tests {
         symlink(&real_root, &lexical_root).expect("root symlink");
 
         let target = dir.path().join("unrelated.kio");
-        std::fs::write(&target, "module unrelated;").expect("different disk text");
+        std::fs::write(&target, "mod unrelated;").expect("different disk text");
         symlink(&target, real_root.join("a/b/c.kio")).expect("selected file symlink");
         let consumer = lexical_root.join("a/b/c.kio");
-        let source = "module a/b/c; import a/d/e(op _ + _); fn f(x: A, y: A) -> A { x + y }";
+        let source = "mod a/b/c; import a/d/e {op _ + _} fn f(x: A, y: A) -> A { x + y }";
         let parsed = parse_module_file_with_file_context(source, &consumer)
             .expect("selected text and lexical file identity determine syntax");
         let context = ModuleFileParserContext::from_module(&consumer, &parsed.module).unwrap();
@@ -7061,9 +6891,9 @@ mod tests {
     #[test]
     fn walk_rejects_multiple_root_package_files() {
         let dir = tempfile::tempdir().expect("tempdir");
-        std::fs::write(dir.path().join("app.pkg.kio"), "package app;\n").expect("write app");
-        std::fs::write(dir.path().join("other.pkg.kio"), "package other;\n").expect("write other");
-        std::fs::write(dir.path().join("app.kio"), "module app;\n").expect("write module");
+        std::fs::write(dir.path().join("app.pkg.kio"), "pkg app;\n").expect("write app");
+        std::fs::write(dir.path().join("other.pkg.kio"), "pkg other;\n").expect("write other");
+        std::fs::write(dir.path().join("app.kio"), "mod app;\n").expect("write module");
 
         let (error, _) = walk(dir.path()).expect_err("multiple package files should fail");
         match &error {
@@ -7088,15 +6918,15 @@ mod tests {
     #[test]
     fn walk_keeps_consumer_grammar_for_deferred_bodies() {
         let dir = tempfile::tempdir().expect("tempdir");
-        std::fs::write(dir.path().join("app.pkg.kio"), "package app;\n").expect("write package");
+        std::fs::write(dir.path().join("app.pkg.kio"), "pkg app;\n").expect("write package");
         std::fs::write(
             dir.path().join("syntax.kio"),
-            "module syntax;\npub op ? _ : _ { impl choose; };\n",
+            "mod syntax;\npub op ? _ : _ { impl choose; };\n",
         )
         .expect("write provider");
         std::fs::write(
             dir.path().join("main.kio"),
-            "module main;\nimport syntax(op ? _ : _);\nfn choose(a: A, b: A) -> A { ? a : b }\n",
+            "mod main;\nimport syntax {op ? _ : _}\nfn choose(a: A, b: A) -> A { ? a : b }\n",
         )
         .expect("write consumer");
 
@@ -7125,11 +6955,12 @@ mod tests {
     #[test]
     fn walk_keeps_variadic_declaration_complete_in_lazy_summary() {
         let dir = tempfile::tempdir().expect("tempdir");
-        std::fs::write(dir.path().join("app.pkg.kio"), "package app;\n").expect("write package");
-        let source = "module syntax;\n\
-            pub varop [% %] {\n\
-              foldl push empty;\n\
-            };\n";
+        std::fs::write(dir.path().join("app.pkg.kio"), "pkg app;\n").expect("write package");
+        let source = "mod syntax;
+pub op_var [% %] {
+foldl push empty;
+};
+";
         std::fs::write(dir.path().join("syntax.kio"), source).expect("write provider");
 
         let parsed = walk(dir.path()).expect("walk package");
@@ -7157,15 +6988,14 @@ mod tests {
         let root = dir.path();
         // A root package, plus two sibling packages in subdirectories,
         // plus a docs-only subdir with no package file.
-        std::fs::write(root.join("app.pkg.kio"), "package app;\n").expect("write app");
-        std::fs::write(root.join("main.kio"), "module main;\n").expect("write main");
+        std::fs::write(root.join("app.pkg.kio"), "pkg app;\n").expect("write app");
+        std::fs::write(root.join("main.kio"), "mod main;\n").expect("write main");
 
         std::fs::create_dir_all(root.join("libs/alpha")).expect("mk alpha");
-        std::fs::write(root.join("libs/alpha/alpha.pkg.kio"), "package alpha;\n")
-            .expect("write alpha");
+        std::fs::write(root.join("libs/alpha/alpha.pkg.kio"), "pkg alpha;\n").expect("write alpha");
 
         std::fs::create_dir_all(root.join("libs/beta")).expect("mk beta");
-        std::fs::write(root.join("libs/beta/beta.pkg.kio"), "package beta;\n").expect("write beta");
+        std::fs::write(root.join("libs/beta/beta.pkg.kio"), "pkg beta;\n").expect("write beta");
 
         std::fs::create_dir_all(root.join("docs.md")).expect("mk docs");
         std::fs::write(root.join("docs.md/index.md"), "# hi\n").expect("write doc");
@@ -7180,8 +7010,8 @@ mod tests {
     #[test]
     fn discover_rejects_two_package_files_in_one_dir() {
         let dir = tempfile::tempdir().expect("tempdir");
-        std::fs::write(dir.path().join("a.pkg.kio"), "package a;\n").expect("write a");
-        std::fs::write(dir.path().join("b.pkg.kio"), "package b;\n").expect("write b");
+        std::fs::write(dir.path().join("a.pkg.kio"), "pkg a;\n").expect("write a");
+        std::fs::write(dir.path().join("b.pkg.kio"), "pkg b;\n").expect("write b");
         let err = discover_package_roots(dir.path())
             .expect_err("two package files in one dir is ambiguous");
         match err {
@@ -7193,7 +7023,7 @@ mod tests {
     #[test]
     fn discover_empty_tree_is_no_packages() {
         let dir = tempfile::tempdir().expect("tempdir");
-        std::fs::write(dir.path().join("loose.kio"), "module loose;\n").expect("write loose");
+        std::fs::write(dir.path().join("loose.kio"), "mod loose;\n").expect("write loose");
         let roots = discover_package_roots(dir.path()).expect("discover");
         assert!(roots.is_empty());
     }
@@ -7206,18 +7036,18 @@ mod tests {
         // Kio'-roundtrip build recurses into ever-deeper `out/` trees.
         let dir = tempfile::tempdir().expect("tempdir");
         let root = dir.path();
-        std::fs::write(root.join("app.pkg.kio"), "package app;\n").expect("write app");
+        std::fs::write(root.join("app.pkg.kio"), "pkg app;\n").expect("write app");
 
         // Emitted Kio' output under out/kio-prime/ — its own pkg file.
         std::fs::create_dir_all(root.join("out/kio-prime")).expect("mk out");
-        std::fs::write(root.join("out/kio-prime/app.pkg.kio"), "package app;\n")
+        std::fs::write(root.join("out/kio-prime/app.pkg.kio"), "pkg app;\n")
             .expect("write emitted");
         // A Cargo target tree, and a hidden cache tree.
         std::fs::create_dir_all(root.join("out/rust/target")).expect("mk target");
-        std::fs::write(root.join("out/rust/target/app.pkg.kio"), "package app;\n")
+        std::fs::write(root.join("out/rust/target/app.pkg.kio"), "pkg app;\n")
             .expect("write target pkg");
         std::fs::create_dir_all(root.join(".kio-cache/x")).expect("mk hidden");
-        std::fs::write(root.join(".kio-cache/x/app.pkg.kio"), "package app;\n")
+        std::fs::write(root.join(".kio-cache/x/app.pkg.kio"), "pkg app;\n")
             .expect("write hidden pkg");
 
         let roots = discover_package_roots(root).expect("discover");
@@ -7265,7 +7095,7 @@ mod tests {
         // alone would miss.
         let dir = tempfile::tempdir().expect("tempdir");
         let root = dir.path();
-        std::fs::write(root.join("app.pkg.kio"), "package app;\n").expect("write app");
+        std::fs::write(root.join("app.pkg.kio"), "pkg app;\n").expect("write app");
 
         // A custom cache dir name that the name heuristic does not skip.
         let cache_dir = root.join("build-cache");
@@ -7273,8 +7103,7 @@ mod tests {
         // The build would drop the marker into the cache root.
         mark_generated_dir(&cache_dir);
         // A re-emitted package copy lives under the cache tree.
-        std::fs::write(cache_dir.join("tree/app.pkg.kio"), "package app;\n")
-            .expect("write cache copy");
+        std::fs::write(cache_dir.join("tree/app.pkg.kio"), "pkg app;\n").expect("write cache copy");
 
         let roots = discover_package_roots(root).expect("discover");
         assert_eq!(

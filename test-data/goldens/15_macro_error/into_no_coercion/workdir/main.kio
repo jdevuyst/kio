@@ -1,6 +1,6 @@
-module main;
+mod main;
 
-import macros/algebraic_macros(macro into);
+import macros/algebraic_macros { macro into }
 
 // `into` is total: it must find a coercion from the source type
 // to the target type using only structural rules (commutativity

@@ -1,4 +1,4 @@
-module main;
+mod main;
 
 host type Selected role(i32);
 

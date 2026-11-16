@@ -1,6 +1,6 @@
-module testapi/lists;
+mod testapi/lists;
 
-import testapi(String);
+import testapi { type String }
 
 pub fn nil_str() -> String { "[]" }
 
@@ -8,4 +8,4 @@ pub fn cons_str(head: String, tail: String) -> String { head }
 
 // The comma-separated right-fold `[* a, b, c *]` desugars to
 // `cons_str(a, cons_str(b, cons_str(c, nil_str())))`.
-pub varop [* *] { foldr cons_str nil_str }
+pub op_var [* *] { foldr cons_str nil_str }

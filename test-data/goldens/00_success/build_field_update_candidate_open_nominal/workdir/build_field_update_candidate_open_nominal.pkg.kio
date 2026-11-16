@@ -1,4 +1,4 @@
-package build_field_update_candidate_open_nominal;
+pkg build_field_update_candidate_open_nominal;
 
 build {
   cache "out/.kio-cache/";

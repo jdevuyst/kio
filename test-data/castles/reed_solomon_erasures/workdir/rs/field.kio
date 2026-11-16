@@ -1,11 +1,11 @@
-module rs/field;
+mod rs/field;
 
 import list_host as integers;
-import macros/control(macro if);
-import macros/spine_macros(macro widen_sum);
-import testapi(Bool, I32);
+import macros/control { macro if }
+import macros/spine_macros { macro widen_sum }
+import testapi { type Bool; type I32 }
 import testapi/arith as a;
-import testapi/iter(loop);
+import testapi/iter { fn loop }
 
 pub fn valid(value: I32) -> Bool {
   if(a.lt_i32(value, 0)) { .f } else { a.lt_i32(value, 17) }

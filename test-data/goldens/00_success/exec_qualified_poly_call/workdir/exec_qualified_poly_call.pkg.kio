@@ -1,4 +1,4 @@
-package exec_qualified_poly_call;
+pkg exec_qualified_poly_call;
 
 build {
   cache "out/.kio-cache/";

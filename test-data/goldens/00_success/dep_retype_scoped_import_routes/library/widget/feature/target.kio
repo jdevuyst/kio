@@ -1,3 +1,3 @@
-module feature/target;
+mod feature/target;
 
 pub(feature) type { Token: . { pub mk; pub get } }

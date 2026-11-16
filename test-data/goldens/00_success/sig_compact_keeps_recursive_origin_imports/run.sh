@@ -27,7 +27,7 @@ expect_exit 0 "$KIO_BIN" sig compact 3
 expect_exit 0 "$KIO_BIN" sig status
 
 log=$("$KIO_BIN" sig log) || exit 1
-api_sections=$(printf '%s\n' "$log" | grep -c '^    module api {$')
+api_sections=$(printf '%s\n' "$log" | grep -c '^    mod api {$')
 [ "$api_sections" -eq 2 ] || {
   printf 'compacted boundary must keep two recursive api origin sections\n' >&2
   printf '%s\n' "$log" >&2

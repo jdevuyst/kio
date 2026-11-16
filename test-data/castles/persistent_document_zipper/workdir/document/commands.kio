@@ -1,11 +1,11 @@
-module document/commands;
+mod document/commands;
 
 import document/session as session;
 import document/zipper as zipper;
-import macros/control(macro if);
-import macros/match(macro match);
-import macros/spine_macros(macro widen_sum);
-import testapi(Bool, String);
+import macros/control { macro if }
+import macros/match { macro match }
+import macros/spine_macros { macro widen_sum }
+import testapi { type Bool; type String }
 import testapi/io as io;
 import testapi/text as text;
 

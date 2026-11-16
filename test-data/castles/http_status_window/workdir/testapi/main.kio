@@ -1,4 +1,4 @@
-module testapi/main;
+mod testapi/main;
 
 import http_status_window/report as report;
 import testapi/io as io;

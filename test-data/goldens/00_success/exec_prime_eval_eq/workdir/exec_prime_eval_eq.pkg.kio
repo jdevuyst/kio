@@ -1,4 +1,4 @@
-package exec_prime_eval_eq;
+pkg exec_prime_eval_eq;
 
 build {
   cache "out/.kio-cache/";

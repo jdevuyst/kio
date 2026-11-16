@@ -1,9 +1,9 @@
-module testapi/main;
+mod testapi/main;
 
-import testapi(I32, String);
-import testapi/fmt(i32_to_string);
-import testapi/helper(op _ & _);
-import testapi/io(print);
+import testapi { type I32; type String }
+import testapi/fmt { fn i32_to_string }
+import testapi/helper { op _ & _ }
+import testapi/io { fn print }
 
 // Imported operator lookup is independent of the local placeholder family.
 fn apply[A][B](f: A -> B, x: A) -> B { f(x) }

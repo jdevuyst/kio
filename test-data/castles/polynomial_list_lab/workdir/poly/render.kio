@@ -1,16 +1,16 @@
 /// Rendering: `[5, -2, 3]` becomes `3x^2 - 2x + 5`.
-module poly/render;
+mod poly/render;
 
 import list/core as lc;
 import list/list as ll;
-import macros/control(macro if);
+import macros/control { macro if }
 import poly/core as core;
 import poly/integers as integers;
-import testapi(Bool, I32, String);
-import testapi/arith(eq_i32, lt_i32, sub_i32);
-import testapi/fmt(int_to_string);
-import testapi/iter(loop);
-import testapi/text(string_concat);
+import testapi { type Bool; type I32; type String }
+import testapi/arith { fn eq_i32; fn lt_i32; fn sub_i32 }
+import testapi/fmt { fn int_to_string }
+import testapi/iter { fn loop }
+import testapi/text { fn string_concat }
 
 /// Concatenates a list of fragments. Report lines are built as lists of pieces and
 /// joined here instead of nesting concatenation at every call site.

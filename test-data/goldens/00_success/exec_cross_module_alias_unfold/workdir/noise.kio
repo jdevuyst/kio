@@ -1,4 +1,4 @@
-module noise;
+mod noise;
 
 pub type { Present: . { mk; get } }
 

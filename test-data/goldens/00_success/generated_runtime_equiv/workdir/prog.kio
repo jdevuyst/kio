@@ -1,4 +1,4 @@
-module prog;
+mod prog;
 
 import __intrinsics__;
 

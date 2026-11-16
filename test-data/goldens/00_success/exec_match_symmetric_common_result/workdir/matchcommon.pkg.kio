@@ -1,4 +1,4 @@
-package matchcommon;
+pkg matchcommon;
 
 build {
   cache "out/.kio-cache/";

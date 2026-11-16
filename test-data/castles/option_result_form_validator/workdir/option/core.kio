@@ -1,16 +1,16 @@
 /// Root module Option core with labeled present values, sum bridges, and fold-step helpers.
 /// A ready-to-use library module for your own Kio package.
-module option/core;
+mod option/core;
 
 import __comptime__;
-import option/macros/control(checked_sum_dispatch);
-import option/macros/match(macro match);
-import option/macros/spine_macros(
-, macro flatten_sum
-, macro narrow_sum
-, macro one_sum
-, macro widen_sum
-);
+import option/macros/control { fn checked_sum_dispatch }
+import option/macros/match { macro match }
+import option/macros/spine_macros {
+  macro flatten_sum;
+  macro narrow_sum;
+  macro one_sum;
+  macro widen_sum
+}
 
 // `Option[A]` is the native sum `Present[A] | .`, not a nominal wrapper, so
 // `match` / `widen_sum` / `narrow_sum` / `flatten_sum` work on it

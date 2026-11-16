@@ -1,3 +1,3 @@
-module feature/store;
+mod feature/store;
 
-pub(feature) type { Token: . { mk; pub get; }; };
+pub(feature) type { Token: . { mk; pub get } }

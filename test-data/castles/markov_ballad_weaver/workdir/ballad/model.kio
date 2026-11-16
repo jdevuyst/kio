@@ -10,16 +10,16 @@
 /// Every list here is kept in first-seen order. That is what makes the model
 /// listing in the report stable, and what lets a reader re-derive the
 /// cumulative weight bands of a draw by reading the corpus top to bottom.
-module ballad/model;
+mod ballad/model;
 
-import ballad/list(List, cons, nil, of1, rev_onto, reverse);
-import macros/control(macro if);
-import macros/match(macro match);
-import macros/row_macros(macro select);
-import testapi(Bool, I32, String);
-import testapi/arith(add_i32);
-import testapi/iter(loop);
-import testapi/text(string_eq);
+import ballad/list { type List; fn cons; fn nil; fn of1; fn rev_onto; fn reverse }
+import macros/control { macro if }
+import macros/match { macro match }
+import macros/row_macros { macro select }
+import testapi { type Bool; type I32; type String }
+import testapi/arith { fn add_i32 }
+import testapi/iter { fn loop }
+import testapi/text { fn string_eq }
 
 /// One weighted word: how many times it was observed in some position.
 pub type Tally = { Word: String; Count: I32 };

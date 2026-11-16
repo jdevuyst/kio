@@ -8,7 +8,7 @@ bridge {
   fmtcase;
 }
 
-module fmtcase;
+mod fmtcase;
 
 host type S role(str);
 host fn print(p0: S) -> .;
@@ -21,6 +21,6 @@ pub fn greet()-> .{print("hi\n")}
 ```
 
 ```kio {variant=package}
-package fmtcase;
+pkg fmtcase;
 build{cache();}
 ```

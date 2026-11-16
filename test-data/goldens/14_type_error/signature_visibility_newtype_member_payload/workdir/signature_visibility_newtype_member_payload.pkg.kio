@@ -1,4 +1,4 @@
-package signature_visibility_newtype_member_payload;
+pkg signature_visibility_newtype_member_payload;
 
 build {
   cache "out/.kio-cache/";

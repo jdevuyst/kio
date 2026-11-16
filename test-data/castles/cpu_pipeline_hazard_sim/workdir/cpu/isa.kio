@@ -14,15 +14,15 @@
 /// zero. `kind_of` is the one place that says, per opcode, which fields
 /// are live -- the hazard unit, the datapath and the disassembler all
 /// read their answers off it rather than re-deriving them from the sum.
-module cpu/isa;
+mod cpu/isa;
 
-import cpu/num(and, cat, cat3, int_eq, or);
-import macros/control(macro if);
-import macros/match(macro match);
-import macros/row_macros(macro select);
-import macros/spine_macros(macro widen_sum);
-import testapi(Bool, I32, String);
-import testapi/fmt(int_to_string);
+import cpu/num { fn and; fn cat; fn cat3; fn int_eq; fn or }
+import macros/control { macro if }
+import macros/match { macro match }
+import macros/row_macros { macro select }
+import macros/spine_macros { macro widen_sum }
+import testapi { type Bool; type I32; type String }
+import testapi/fmt { fn int_to_string }
 
 pub type Opcode =
   | { Add: . }

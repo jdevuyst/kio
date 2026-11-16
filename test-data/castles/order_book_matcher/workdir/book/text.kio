@@ -1,11 +1,11 @@
 /// Transcript strings. The host env supplies one binary
 /// `string_concat`, so the fixed-arity joins live here instead of
 /// nesting concat calls at every report site.
-module book/text;
+mod book/text;
 
-import testapi(I32, String);
-import testapi/fmt(int_to_string);
-import testapi/text(string_concat);
+import testapi { type I32; type String }
+import testapi/fmt { fn int_to_string }
+import testapi/text { fn string_concat }
 
 pub fn cat2(a: String, b: String) -> String { string_concat(a, b) }
 

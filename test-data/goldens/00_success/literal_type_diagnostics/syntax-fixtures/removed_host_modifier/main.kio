@@ -1,3 +1,0 @@
-module main;
-
-default host type Int role(i64);

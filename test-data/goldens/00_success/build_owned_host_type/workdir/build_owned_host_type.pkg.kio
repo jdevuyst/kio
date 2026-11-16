@@ -1,4 +1,4 @@
-package build_owned_host_type;
+pkg build_owned_host_type;
 
 build {
   cache "out/.kio-cache/";

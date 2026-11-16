@@ -9,13 +9,12 @@ fn newtype type signature
   (ERROR
     (identifier)
     (identifier)
-    (keyword_signature)))
-
+    (identifier)))
 
 ================================================================================
 structural semicolon_owner_package_fields
 ================================================================================
-package palette; build { docs { md "guide.md"; support "support"; md_out "guide"; html "html"; }; target js { md "data"; path "data"; } }; bridge { palette/api; }
+pkg palette; build { docs { md "guide.md"; support "support"; md_out "guide"; html "html"; }; target js { md "data"; path "data"; } }; bridge { palette/api; }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -77,7 +76,7 @@ package palette; build { docs { md "guide.md"; support "support"; md_out "guide"
 ================================================================================
 structural semicolon_owner_source_fields
 ================================================================================
-dependency helper; source { git "https://example.com/helper"; ref "main"; };
+dep helper; source { git "https://example.com/helper"; ref "main"; };
 --------------------------------------------------------------------------------
 
 (source_file
@@ -102,7 +101,7 @@ dependency helper; source { git "https://example.com/helper"; ref "main"; };
 ================================================================================
 structural semicolon_owner_source_path
 ================================================================================
-dependency helper; source { path "../helper"; };
+dep helper; source { path "../helper"; };
 --------------------------------------------------------------------------------
 
 (source_file
@@ -156,7 +155,7 @@ lock helper; resolved { git "https://example.com/helper"; ref "main"; commit "ab
 ================================================================================
 structural semicolon_owner_same_line_heads
 ================================================================================
-module source; import helper as h; host type Text { owned }; op _ + _ { impl add; }; fn keep(owned: .) -> . { (owned) }
+mod source; import helper as h; host type Text ; op _ + _ { impl add; }; fn keep(owned: .) -> . { (owned) }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -177,10 +176,6 @@ module source; import helper as h; host type Text { owned }; op _ + _ { impl add
     (host_type_head
       (keyword_type)
       (entity_name_type)
-      (owned_block
-        (bracket_lbrace)
-        (keyword_declaration)
-        (bracket_rbrace))
       (separator_semicolon)))
   (op_decl
     (keyword_op)

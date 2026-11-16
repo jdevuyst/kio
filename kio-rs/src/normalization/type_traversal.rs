@@ -436,7 +436,8 @@ mod tests {
                     kind: ImportKind::Selective {
                         from: module_path("selected"),
                         items: vec![ImportItem::Name {
-                            macro_span: None,
+                            kind: crate::ast::ImportNameKind::Type,
+                            kind_span: None,
                             name: "S".to_owned(),
                             span,
                             alias: None,
@@ -452,7 +453,6 @@ mod tests {
                 name: "Local".to_owned(),
                 type_params: vec![binder("P")],
                 role: None,
-                owned: false,
                 meta: Meta::new(span),
                 doc: None,
             })],

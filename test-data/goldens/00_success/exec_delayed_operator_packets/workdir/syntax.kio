@@ -1,8 +1,8 @@
-module syntax;
+mod syntax;
 
 import __comptime__;
-import testapi(Int);
-import testapi/arith(add);
+import testapi { type Int }
+import testapi/arith { fn add }
 
 pure fn first_checked(ct: __Comptime__, _left: __Type__, _right: __Type__, packet: __Checked_term__) -> __Checked_term__ {
   __intrinsic_fst__(ct, __term_type__(ct, packet), packet)
@@ -32,8 +32,8 @@ pub op !! ._ { impl twice }
 
 pub op @@ ._ { impl nested }
 
-pub op macro _ %% ._ { impl first }
+pub op_macro _ %% ._ { impl first }
 
-pub op macro # _ { impl identity }
+pub op_macro # _ { impl identity }
 
-pub op macro $$ ._ { impl identity }
+pub op_macro $$ ._ { impl identity }

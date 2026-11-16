@@ -1,6 +1,6 @@
-module m;
+mod m;
 
-import macros/row_macros(macro select, macro with_);
+import macros/row_macros {macro select; macro with_}
 
 host type String role(str);
 type { Red: . { mk; get }; Blue: . { mk; get }; Tone: String { mk; get }; }

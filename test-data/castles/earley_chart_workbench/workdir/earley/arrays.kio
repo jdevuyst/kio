@@ -1,10 +1,10 @@
-module earley/arrays;
+mod earley/arrays;
 
-import macros/control(macro if);
-import testapi(Array, Bool, I32);
+import macros/control { macro if }
+import testapi { type Array; type Bool; type I32 }
 import testapi/arith as arith;
 import testapi/array as arrays;
-import testapi/iter(loop);
+import testapi/iter { fn loop }
 
 pub fn equal(a: I32, b: I32) -> Bool {
   if(arith.leq_i32(a, b)) { arith.leq_i32(b, a) } else { .f }
@@ -14,7 +14,7 @@ pub fn empty[A]() -> Array[A] { arrays.array_make_empty() }
 
 pub fn append[A](items: Array[A], item: A) -> Array[A] { arrays.array_push(items, item); items }
 
-pub varop [* *] { foldl append empty }
+pub op_var [* *] { foldl append empty }
 
 rec(loop) fn reverse_range[A](items: Array[A], left: I32, right: I32) -> Array[A] {
   if(arith.leq_i32(right, left)) {

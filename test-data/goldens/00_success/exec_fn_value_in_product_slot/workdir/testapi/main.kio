@@ -1,10 +1,10 @@
-module testapi/main;
+mod testapi/main;
 
-import macros/spine_macros(macro one_prod);
-import testapi(I32, String);
-import testapi/arith(add);
-import testapi/fmt(int_to_string);
-import testapi/io(print);
+import macros/spine_macros { macro one_prod }
+import testapi { type I32; type String }
+import testapi/arith { fn add }
+import testapi/fmt { fn int_to_string }
+import testapi/io { fn print }
 
 // A generic capability bundle pairing a binary integer op with a
 // state-threading step typed by the bundle's type parameter. The op's slot

@@ -1,4 +1,4 @@
-package fills_computed_input_requires_determined_type;
+pkg fills_computed_input_requires_determined_type;
 
 build {
   target js {

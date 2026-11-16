@@ -4,27 +4,38 @@
 /// This is the only module that names a symbol by its bare code, so it is
 /// the only one importing the symbol vocabulary unqualified - the point
 /// of the module is that its bodies read like the Datalog they stand for.
-module datalog/program;
+mod datalog/program;
 
-import datalog/atom(Atom, Atoms, atom1, atom2, atom3, fact1, fact2, fact3, tconst, tvar);
+import datalog/atom {
+  type Atom;
+  type Atoms;
+  fn atom1;
+  fn atom2;
+  fn atom3;
+  fn fact1;
+  fn fact2;
+  fn fact3;
+  fn tconst;
+  fn tvar
+}
 import datalog/list as list;
-import datalog/symbols(
-, c_alder
-, c_birch
-, c_cedar
-, c_cost
-, c_dover
-, c_elm
-, c_fen
-, c_mid
-, c_north
-, c_south
-);
-import datalog/symbols(p_depot, p_depotzone, p_evenhop, p_hub, p_hubserved);
-import datalog/symbols(p_link, p_oddhop, p_reach, p_samezone, p_station);
-import datalog/symbols(v_c, v_x, v_y, v_z);
-import macros/row_macros(macro select);
-import testapi(I32);
+import datalog/symbols {
+  lit c_alder;
+  lit c_birch;
+  lit c_cedar;
+  fn c_cost;
+  lit c_dover;
+  lit c_elm;
+  lit c_fen;
+  lit c_mid;
+  lit c_north;
+  lit c_south
+}
+import datalog/symbols { lit p_depot; lit p_depotzone; lit p_evenhop; lit p_hub; lit p_hubserved }
+import datalog/symbols { lit p_link; lit p_oddhop; lit p_reach; lit p_samezone; lit p_station }
+import datalog/symbols { lit v_c; lit v_x; lit v_y; lit v_z }
+import macros/row_macros { macro select }
+import testapi { type I32 }
 
 /// A Horn clause. A clause with an empty body would be a fact, and facts
 /// live in the extensional database instead, so every rule has a body.

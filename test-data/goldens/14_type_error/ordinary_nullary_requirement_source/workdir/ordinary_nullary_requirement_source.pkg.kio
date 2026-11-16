@@ -1,4 +1,4 @@
-package ordinary_nullary_requirement_source;
+pkg ordinary_nullary_requirement_source;
 
 build {
   target js {

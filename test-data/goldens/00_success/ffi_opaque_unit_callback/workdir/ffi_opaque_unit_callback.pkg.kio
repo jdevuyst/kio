@@ -1,4 +1,4 @@
-package ffi_opaque_unit_callback;
+pkg ffi_opaque_unit_callback;
 
 build {
   cache "out/.kio-cache/";

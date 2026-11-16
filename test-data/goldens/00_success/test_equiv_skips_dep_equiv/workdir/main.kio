@@ -1,4 +1,4 @@
-module main;
+mod main;
 
 import libdep/lib as lib;
 

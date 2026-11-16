@@ -1,5 +1,5 @@
-module testapi/labs1;
+mod testapi/labs1;
 
-import testapi(String);
+import testapi { type String }
 
 pub type { A: String { pub mk; pub get } }

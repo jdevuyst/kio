@@ -1,4 +1,4 @@
-package typed_let_polymorphic_path_not_call;
+pkg typed_let_polymorphic_path_not_call;
 
 build {
   cache "out/.kio-cache/";

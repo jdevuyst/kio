@@ -5,16 +5,16 @@
 /// each phrase and the sentinel `END` closing the corpus. The host tier can
 /// compare and concatenate whole strings but offers no string slicing, so the
 /// fixture supplies already-tokenized words.
-module ballad/fixture;
+mod ballad/fixture;
 
-import ballad/list(List, cons, nil, reverse);
-import macros/control(macro if);
-import macros/match(macro match);
-import testapi(Bool, I32, String);
-import testapi/fmt(string_to_int);
-import testapi/io(read_ascii_line);
-import testapi/iter(loop);
-import testapi/text(string_eq);
+import ballad/list { type List; fn cons; fn nil; fn reverse }
+import macros/control { macro if }
+import macros/match { macro match }
+import testapi { type Bool; type I32; type String }
+import testapi/fmt { fn string_to_int }
+import testapi/io { fn read_ascii_line }
+import testapi/iter { fn loop }
+import testapi/text { fn string_eq }
 
 /// The line that closes the training corpus.
 fn sentinel() -> String { "END" }

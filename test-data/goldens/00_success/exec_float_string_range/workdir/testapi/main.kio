@@ -1,8 +1,8 @@
-module testapi/main;
+mod testapi/main;
 
-import testapi(F32, F64, String);
-import testapi/fmt(f32_to_string, f64_to_string);
-import testapi/io(print);
+import testapi { type F32; type F64; type String }
+import testapi/fmt { fn f32_to_string; fn f64_to_string }
+import testapi/io { fn print }
 
 pub fn main() {
   print(f64_to_string(18446744073709551616.0[F64]));

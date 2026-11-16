@@ -1,4 +1,4 @@
-package label_forward_scoped_import;
+pkg label_forward_scoped_import;
 
 build {
   cache "out/.kio-cache/";

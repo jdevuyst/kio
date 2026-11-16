@@ -5,6 +5,6 @@
 /// ```kio {@main}
 /// ()
 /// ```
-module doctest/named;
+mod doctest/named;
 
 pub fn greet() { () }

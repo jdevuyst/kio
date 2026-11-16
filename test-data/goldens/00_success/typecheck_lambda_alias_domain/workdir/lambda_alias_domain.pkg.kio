@@ -1,4 +1,4 @@
-package lambda_alias_domain;
+pkg lambda_alias_domain;
 
 build {
   cache "out/.kio-cache/";

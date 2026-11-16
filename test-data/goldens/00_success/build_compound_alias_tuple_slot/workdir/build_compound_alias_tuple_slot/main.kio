@@ -1,4 +1,4 @@
-module build_compound_alias_tuple_slot/main;
+mod build_compound_alias_tuple_slot/main;
 
 import __intrinsics__;
 

@@ -1,33 +1,33 @@
-module priority_dispatch/scoring;
+mod priority_dispatch/scoring;
 
-import macros/control(macro if);
-import macros/row_macros(macro select);
-import priority_dispatch/model(
-, Choice
-, Choice_cpu
-, Choice_deadline
-, Choice_duration
-, Choice_eligible
-, Choice_id
-, Choice_io
-, Choice_name
-, Choice_priority
-, Choice_rank
-, Job
-, Job_cpu
-, Job_deadline
-, Job_duration
-, Job_id
-, Job_io
-, Job_name
-, Job_priority
-, Slot
-, Slot_cpu
-, Slot_io
-, choice
-);
-import testapi(Bool, I32);
-import testapi/arith(add_i32, leq_i32, lt_i32, mul_i32, sub_i32);
+import macros/control { macro if }
+import macros/row_macros { macro select }
+import priority_dispatch/model {
+  type Choice;
+  type Choice_cpu;
+  type Choice_deadline;
+  type Choice_duration;
+  type Choice_eligible;
+  type Choice_id;
+  type Choice_io;
+  type Choice_name;
+  type Choice_priority;
+  type Choice_rank;
+  type Job;
+  type Job_cpu;
+  type Job_deadline;
+  type Job_duration;
+  type Job_id;
+  type Job_io;
+  type Job_name;
+  type Job_priority;
+  type Slot;
+  type Slot_cpu;
+  type Slot_io;
+  fn choice
+}
+import testapi { type Bool; type I32 }
+import testapi/arith { fn add_i32; fn leq_i32; fn lt_i32; fn mul_i32; fn sub_i32 }
 
 pub fn and_bool(left: Bool, right: Bool) -> Bool {
   if(left) { right } else { .f }

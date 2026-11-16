@@ -1,4 +1,4 @@
-module core/store;
+mod core/store;
 
 import testapi as testapi;
 

@@ -1,4 +1,4 @@
-package literal_product_type_mismatch;
+pkg literal_product_type_mismatch;
 
 build {
   cache "out/.kio-cache/";

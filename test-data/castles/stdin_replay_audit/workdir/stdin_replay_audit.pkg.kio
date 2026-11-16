@@ -1,4 +1,4 @@
-package stdin_replay_audit;
+pkg stdin_replay_audit;
 
 build {
   cache "out/.kio-cache/";

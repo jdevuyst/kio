@@ -1,6 +1,6 @@
-module packet_frame_decoder/data;
+mod packet_frame_decoder/data;
 
-import testapi(String);
+import testapi { type String }
 
 pub fn alpha() -> String { "PF|A1|D|07|PING|326" }
 

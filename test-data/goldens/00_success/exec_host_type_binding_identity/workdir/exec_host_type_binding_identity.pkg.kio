@@ -1,4 +1,4 @@
-package exec_host_type_binding_identity;
+pkg exec_host_type_binding_identity;
 
 build {
   cache "out/.kio-cache/";

@@ -1,4 +1,4 @@
-package exec_rec_match_product_result_stack;
+pkg exec_rec_match_product_result_stack;
 
 build {
   cache "out/.kio-cache/";

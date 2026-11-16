@@ -1,4 +1,4 @@
-package exec_prime_eval_string_len;
+pkg exec_prime_eval_string_len;
 
 build {
   cache "out/.kio-cache/";

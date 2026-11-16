@@ -1,6 +1,6 @@
-module packet_frame_decoder/text;
+mod packet_frame_decoder/text;
 
-import testapi(String);
+import testapi { type String }
 import testapi/text as text;
 
 pub fn cat(a: String, b: String) -> String { text.string_concat(a, b) }

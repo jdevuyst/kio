@@ -1,43 +1,61 @@
 /// The Kio' term parser: a token list → the erased de Bruijn `Term`, name-resolved against a binder scope.
-module docs_loader/parse;
+mod docs_loader/parse;
 
-import docs_loader/chars(
-, c_lbrack
-, c_lparen
-, c_minus
-, c_rbrace
-, c_rbrack
-, c_rparen
-, c_semi
-, c_slash
-, c_star
-, c_under
-);
-import docs_loader/chars(c_amp, c_bang, c_bar, c_colon, c_comma, c_dot, c_eq, c_gt, c_lbrace);
-import docs_loader/host_descriptor(
-, Host_type
-, Role_host_type
-, Roleless_host_type
-, host_type_shape
-, role_name
-);
-import docs_loader/lex(Lex_err, lex, lex_err_message, lex_err_pos);
-import docs_loader/list/core(List, cons, nil, uncons);
-import docs_loader/list/list(elem, length, null, reverse);
-import docs_loader/macros/control(macro if);
-import docs_loader/macros/match(macro match);
-import docs_loader/macros/spine_macros(macro widen_sum);
-import docs_loader/prime(Nat, Term, Terms);
-import docs_loader/prime(absurd, app, either, fst);
-import docs_loader/prime(ite, lam, left, let_, lit, ns, nz, pair);
-import docs_loader/prime(right, snd, tcons, tnil, un_terms, unit, var);
-import docs_loader/testapi(Bool, I32, String);
-import docs_loader/testapi/arith(add_i32, eq_i32, leq_i32, sub_i32);
-import docs_loader/testapi/fmt(int_to_string);
-import docs_loader/testapi/iter(loop);
-import docs_loader/testapi/text(string_code_at, string_concat, string_eq);
-import docs_loader/token(Tk_num, Tk_punct, Tk_str, Tk_word, Token, Token_shape, Toks);
-import docs_loader/token(tk_punct, toks_cons, toks_nil, un_token, un_toks);
+import docs_loader/chars {
+  fn c_amp;
+  fn c_bang;
+  fn c_bar;
+  fn c_colon;
+  fn c_comma;
+  fn c_dot;
+  fn c_eq;
+  fn c_gt;
+  fn c_lbrace
+}
+import docs_loader/chars {
+  fn c_lbrack;
+  fn c_lparen;
+  fn c_minus;
+  fn c_rbrace;
+  fn c_rbrack;
+  fn c_rparen;
+  fn c_semi;
+  fn c_slash;
+  fn c_star;
+  fn c_under
+}
+import docs_loader/host_descriptor {
+  type Host_type;
+  type Role_host_type;
+  type Roleless_host_type;
+  fn host_type_shape;
+  fn role_name
+}
+import docs_loader/lex { type Lex_err; fn lex; fn lex_err_message; fn lex_err_pos }
+import docs_loader/list/core { type List; fn cons; fn nil; fn uncons }
+import docs_loader/list/list { fn elem; fn length; fn null; fn reverse }
+import docs_loader/macros/control { macro if }
+import docs_loader/macros/match { macro match }
+import docs_loader/macros/spine_macros { macro widen_sum }
+import docs_loader/prime { fn absurd; fn app; fn either; fn fst }
+import docs_loader/prime { fn ite; fn lam; fn left; fn let_; fn lit; fn ns; fn nz; fn pair }
+import docs_loader/prime { fn right; fn snd; fn tcons; fn tnil; fn un_terms; fn unit; fn var }
+import docs_loader/prime { type Nat; type Term; type Terms }
+import docs_loader/testapi { type Bool; type I32; type String }
+import docs_loader/testapi/arith { fn add_i32; fn eq_i32; fn leq_i32; fn sub_i32 }
+import docs_loader/testapi/fmt { fn int_to_string }
+import docs_loader/testapi/iter { fn loop }
+import docs_loader/testapi/text { fn string_code_at; fn string_concat; fn string_eq }
+import docs_loader/token {
+  type Tk_num;
+  type Tk_punct;
+  type Tk_str;
+  type Tk_word;
+  type Token;
+  type Token_shape;
+  type Toks
+}
+import docs_loader/token { fn tk_punct; fn toks_cons; fn toks_nil; fn un_token; fn un_toks }
 
 // `parse.kio` — read the Kio' term grammar (as the existing Prime emit
 // writes it) into the erased de Bruijn `Term` that `prime_eval` consumes.
@@ -146,7 +164,7 @@ fn pnl_has(p: Pnl, name: String) -> Bool {
 // **A frame carries a spelling list, not one name.** An ordinary binder
 // (a lambda / let / value param) has exactly one spelling. A top-level fn
 // the loader seeds can be referenced under several: its bare name where a
-// module imports it selectively (`import m(f);`), and an alias-qualified
+// module imports it selectively (`import m { fn f }`), and an alias-qualified
 // spelling (`a.f`) where a module imports its module qualified
 // (`import m as a;`) — both may coexist for one chain position, so the frame
 // lists every spelling that resolves to it. A decl not visible to the

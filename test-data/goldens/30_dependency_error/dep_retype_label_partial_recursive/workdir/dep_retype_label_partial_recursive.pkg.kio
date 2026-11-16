@@ -1,4 +1,4 @@
-package dep_retype_label_partial_recursive;
+pkg dep_retype_label_partial_recursive;
 
 build {
   target js {

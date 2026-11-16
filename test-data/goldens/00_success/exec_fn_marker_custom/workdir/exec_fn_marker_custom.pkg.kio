@@ -1,4 +1,4 @@
-package exec_fn_marker_custom;
+pkg exec_fn_marker_custom;
 
 build {
   cache "out/.kio-cache/";

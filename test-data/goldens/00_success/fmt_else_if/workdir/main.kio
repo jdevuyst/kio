@@ -1,6 +1,6 @@
-module main;
+mod main;
 
-import macros/control(macro if);
+import macros/control {macro if}
 
 fn pick(b: .) -> . {
   if (.t) {

@@ -744,23 +744,23 @@ A package `greet` with a host `print` and an exported `main`:
 
 ```kio
 // greet.pkg.kio
-package greet;
+pkg greet;
 build { cache "out/.kio-cache/"; target go { out "out/go/"; } }
 bridge { app; app/**; }
 ```
 
 ```kio
 // app.kio
-module app;
+mod app;
 host type Str role(str);
 host fn print(s: Str);
 ```
 
 ```kio
 // app/main.kio
-module app/main;
-import app(Str);
-import app(print);
+mod app/main;
+import app {type Str}
+import app {fn print}
 pub fn main() { print("hello\n"[Str]) }
 ```
 

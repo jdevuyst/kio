@@ -1,4 +1,4 @@
-module pkg;
+mod pkg;
 
 /// Brackets `[` and `]` are literal code.
 /// Quoted `` [`missing`] `` and `` [`@signature missing`] `` are examples.

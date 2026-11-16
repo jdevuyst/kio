@@ -1,4 +1,4 @@
-module main;
+mod main;
 
 type Mixed1 = (A & B) | C;
 
@@ -11,7 +11,7 @@ type Fn_param = (A & B) -> C;
 type Bare_fn = A -> B;
 
 type Left_leaning = (A & B) & C;
-module main;
+mod main;
 
 type Mixed1 = (A & B) | C;
 

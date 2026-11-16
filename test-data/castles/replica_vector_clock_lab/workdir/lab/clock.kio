@@ -1,13 +1,13 @@
-module lab/clock;
+mod lab/clock;
 
-import macros/control(macro if);
-import macros/match(macro match);
-import macros/row_macros(macro select);
-import macros/spine_macros(macro widen_sum);
-import testapi(Bool, I32, String);
+import macros/control { macro if }
+import macros/match { macro match }
+import macros/row_macros { macro select }
+import macros/spine_macros { macro widen_sum }
+import testapi { type Bool; type I32; type String }
 import testapi/arith as arith;
 import testapi/fmt as fmt;
-import testapi/text(string_concat);
+import testapi/text { fn string_concat }
 
 pub type Clock = { A: I32; B: I32; C: I32 };
 

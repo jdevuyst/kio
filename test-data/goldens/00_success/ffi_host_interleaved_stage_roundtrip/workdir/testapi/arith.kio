@@ -1,5 +1,5 @@
-module testapi/arith;
+mod testapi/arith;
 
-import testapi(String);
+import testapi { type String }
 
 host fn staged[A](first: String)[B](second: String) -> String;

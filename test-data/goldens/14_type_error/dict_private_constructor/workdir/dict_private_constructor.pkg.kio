@@ -1,4 +1,4 @@
-package dict_private_constructor;
+pkg dict_private_constructor;
 
 build {
   cache "out/.kio-cache/";

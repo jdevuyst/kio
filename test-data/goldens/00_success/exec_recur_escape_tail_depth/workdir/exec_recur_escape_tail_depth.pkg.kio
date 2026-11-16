@@ -1,4 +1,4 @@
-package exec_recur_escape_tail_depth;
+pkg exec_recur_escape_tail_depth;
 
 build {
   cache "out/.kio-cache/";

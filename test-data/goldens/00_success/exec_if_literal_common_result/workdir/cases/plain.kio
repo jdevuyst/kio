@@ -1,7 +1,7 @@
-module cases/plain;
+mod cases/plain;
 
-import macros/control(macro if);
-import testapi(Bool, String);
+import macros/control { macro if }
+import testapi { type Bool; type String }
 
 pub fn literal_first(flag: Bool, separator: String) -> String {
   let lead = if(flag) { "empty" } else { separator };

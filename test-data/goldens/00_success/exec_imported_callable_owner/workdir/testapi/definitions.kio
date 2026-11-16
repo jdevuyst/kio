@@ -1,9 +1,9 @@
-module testapi/definitions;
+mod testapi/definitions;
 
 import __intrinsics__;
 
-import testapi(I32);
-import testapi/arith(add_i32);
+import testapi { type I32 }
+import testapi/arith { fn add_i32 }
 
 pub type { Box[A]: A { pub mk; pub get } }
 

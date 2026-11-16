@@ -1,4 +1,4 @@
-package litdemo;
+pkg litdemo;
 
 build {
   cache "out/.kio-cache/";

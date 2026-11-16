@@ -10,9 +10,9 @@
 /// constructor's PAYLOAD slot — exit 14. Before the fix the typer
 /// requalified `Box`'s payload in the *caller*, conflating the two
 /// same-named `String`s by leaf name and wrongly accepting this.
-module main;
+mod main;
 
-import bdep/boxed(Box);
+import bdep/boxed { type Box }
 
 host type String role(str);
 

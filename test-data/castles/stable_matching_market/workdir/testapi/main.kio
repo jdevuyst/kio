@@ -1,9 +1,9 @@
-module testapi/main;
+mod testapi/main;
 
 import deferred as deferred;
 import market as market;
 import report as report;
-import testapi(Bool, I32, String);
+import testapi { type Bool; type I32; type String }
 import testapi/array as array;
 import testapi/io as io;
 

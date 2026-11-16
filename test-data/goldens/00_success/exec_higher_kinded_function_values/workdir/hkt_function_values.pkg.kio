@@ -1,4 +1,4 @@
-package hkt_function_values;
+pkg hkt_function_values;
 
 build {
   cache "out/.kio-cache/";

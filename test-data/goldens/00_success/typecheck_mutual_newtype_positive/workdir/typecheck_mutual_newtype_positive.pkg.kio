@@ -1,4 +1,4 @@
-package typecheck_mutual_newtype_positive;
+pkg typecheck_mutual_newtype_positive;
 
 build {
   cache "out/.kio-cache/";

@@ -3,14 +3,14 @@
 /// The host tier this package runs against offers no string-length or
 /// slice primitive, so every column that has to line up is padded from
 /// the *number*, never from the rendered string.
-module forge/text;
+mod forge/text;
 
-import macros/control(macro if);
-import testapi(Bool, I32, String);
-import testapi/arith(lt_i32);
-import testapi/fmt(int_to_string);
-import testapi/io(print);
-import testapi/text(string_concat);
+import macros/control { macro if }
+import testapi { type Bool; type I32; type String }
+import testapi/arith { fn lt_i32 }
+import testapi/fmt { fn int_to_string }
+import testapi/io { fn print }
+import testapi/text { fn string_concat }
 
 pub fn cat(a: String, b: String) -> String { string_concat(a, b) }
 

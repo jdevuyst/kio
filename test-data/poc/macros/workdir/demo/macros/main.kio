@@ -10,69 +10,69 @@
 /// end-to-end: it builds sample data, runs the spine / row / tuple /
 /// algebraic macros, `derive`, `match`, and `show` over it, and
 /// prints the results as `main`.
-module macros/main;
+mod macros/main;
 
 import __intrinsics__;
 
-import library/algebraic_macros(
-, macro align
-, macro atom
-, macro ease
-, macro into
-, macro iso
-, macro onto
-);
-import library/control(macro and, macro or, not, op macro _ && .__, op macro _ || .__);
-import library/derive(macro derive);
-import library/lookup(Lookup_bool, macro contains, macro lookup);
-import library/match(macro match);
-import library/row_macros(macro record, macro record_, macro select, macro with, macro with_);
-import library/show(macro show);
-import library/spine_macros(
-, macro fit
-, macro flatten_prod
-, macro flatten_sum
-, macro narrow_prod
-, macro narrow_sum
-, macro narrow_sum_
-, macro one_prod
-, macro one_prod_
-, macro one_sum
-, macro one_sum_
-, macro reorder_prod
-, macro reorder_sum
-, macro spine_identity
-, macro widen_prod
-, macro widen_sum
-);
-import library/tuple_macros(
-, macro concat
-, macro distinct
-, macro flatten
-, macro group
-, macro head
-, macro last
-, macro map
-, macro split
-, macro tail
-, macro zip
-);
-import library/type_of(
-, Rep_unit
-, Type_rep
-, Type_rep_tail1
-, macro type_of
-, rep_bottom
-, rep_function
-, rep_opaque
-, rep_product
-, rep_sum
-, rep_unit
-);
-import testapi(Bool, I32, String);
-import testapi/fmt(bool_to_string, i32_to_string);
-import testapi/io(print);
-import testapi/text(string_concat);
+import library/algebraic_macros {
+  macro align;
+  macro atom;
+  macro ease;
+  macro into;
+  macro iso;
+  macro onto
+}
+import library/control { fn not; macro and; macro or; op_macro _ && .__; op_macro _ || .__ }
+import library/derive { macro derive }
+import library/lookup { type Lookup_bool; macro contains; macro lookup }
+import library/match { macro match }
+import library/row_macros { macro record; macro record_; macro select; macro with; macro with_ }
+import library/show { macro show }
+import library/spine_macros {
+  macro fit;
+  macro flatten_prod;
+  macro flatten_sum;
+  macro narrow_prod;
+  macro narrow_sum;
+  macro narrow_sum_;
+  macro one_prod;
+  macro one_prod_;
+  macro one_sum;
+  macro one_sum_;
+  macro reorder_prod;
+  macro reorder_sum;
+  macro spine_identity;
+  macro widen_prod;
+  macro widen_sum
+}
+import library/tuple_macros {
+  macro concat;
+  macro distinct;
+  macro flatten;
+  macro group;
+  macro head;
+  macro last;
+  macro map;
+  macro split;
+  macro tail;
+  macro zip
+}
+import library/type_of {
+  type Rep_unit;
+  type Type_rep;
+  type Type_rep_tail1;
+  fn rep_bottom;
+  fn rep_function;
+  fn rep_opaque;
+  fn rep_product;
+  fn rep_sum;
+  fn rep_unit;
+  macro type_of
+}
+import testapi { type Bool; type I32; type String }
+import testapi/fmt { fn bool_to_string; fn i32_to_string }
+import testapi/io { fn print }
+import testapi/text { fn string_concat }
 
 type { Witness[A]: . { mk; get } }
 

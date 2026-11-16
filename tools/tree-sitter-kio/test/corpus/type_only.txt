@@ -1,7 +1,7 @@
 ================================================================================
 type-only named declarations
 ================================================================================
-module m;
+mod m;
 pure fn nil[A] -> List[A] { empty[A] }
 fn unit[A] { () }
 fn repeated[A][B] -> A -> B -> A { .(a: A)(b: B) { a } }
@@ -140,7 +140,7 @@ fn explicit[A]() -> . { () }
 ================================================================================
 type-only anonymous values and mixed stages
 ================================================================================
-module m;
+mod m;
 fn run() {
   let direct = .[A] { () };
   let repeated = .[A][B] -> . { () };
@@ -277,7 +277,7 @@ fn run() {
 ================================================================================
 type-only groups and dot trivia
 ================================================================================
-module m;
+mod m;
 fn named // header
 [A] // stages
 [B] -> . { () }
@@ -359,7 +359,7 @@ fn run() {
 ================================================================================
 type-only higher-kinded function value
 ================================================================================
-module m;
+mod m;
 fn value[*F] -> F[.] -> F[.] { .(x: F[.]) { x } }
 fn run() { .[*F] -> F[.] -> F[.] { .(x: F[.]) { x } } }
 --------------------------------------------------------------------------------
@@ -483,8 +483,8 @@ fn run() { .[*F] -> F[.] -> F[.] { .(x: F[.]) { x } } }
 ================================================================================
 type-only export signature
 ================================================================================
-signature app v(1);
-v(1) { breaking { add { module api { fn nil[A] -> List[A]; fn thunk[A]() -> List[A]; } } } }
+sig app v(1);
+v(1) { breaking { add { mod api { fn nil[A] -> List[A]; fn thunk[A]() -> List[A]; } } } }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -563,8 +563,8 @@ v(1) { breaking { add { module api { fn nil[A] -> List[A]; fn thunk[A]() -> List
 ================================================================================
 type-only adjacent whole variadic runs
 ================================================================================
-module m;
-import ops(varop [@ @], varop [+$ $+]);
+mod m;
+import ops {op_var [@ @]; op_var [+$ $+]}
 fn run() { [@ .[A] { () }, [+$ .[B] { () } $+] @] }
 --------------------------------------------------------------------------------
 
@@ -578,7 +578,7 @@ fn run() { [@ .[A] { () }, [+$ .[B] { () } $+] @] }
     (keyword_import)
     (module_path
       (entity_name_module))
-    (bracket_lparen)
+    (bracket_lbrace)
     (import_operator_item
       (keyword_varop)
       (variadic_head
@@ -586,7 +586,7 @@ fn run() { [@ .[A] { () }, [+$ .[B] { () } $+] @] }
         (operator_run)
         (operator_run)
         (bracket_rbracket)))
-    (separator_comma)
+    (separator_semicolon)
     (import_operator_item
       (keyword_varop)
       (variadic_head
@@ -594,8 +594,7 @@ fn run() { [@ .[A] { () }, [+$ .[B] { () } $+] @] }
         (operator_run)
         (operator_run)
         (bracket_rbracket)))
-    (bracket_rparen)
-    (separator_semicolon))
+    (bracket_rbrace))
   (function_definition
     (fn_decl_head
       (keyword_fn)

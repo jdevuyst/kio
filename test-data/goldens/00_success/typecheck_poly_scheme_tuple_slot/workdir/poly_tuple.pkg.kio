@@ -1,4 +1,4 @@
-package poly_tuple;
+pkg poly_tuple;
 
 build {
   cache "out/.kio-cache/";

@@ -1,4 +1,4 @@
-package build_conditional_expression;
+pkg build_conditional_expression;
 
 build {
   cache "out/.kio-cache/";

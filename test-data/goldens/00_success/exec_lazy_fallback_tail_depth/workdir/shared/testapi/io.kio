@@ -1,6 +1,6 @@
-module shared/testapi/io;
+mod shared/testapi/io;
 
-import shared/testapi(String);
+import shared/testapi { type String }
 import testapi/io as _rehost_hegfhdhegbhagjcpgjgp;
 
 pub fn print(p0: String) { _rehost_hegfhdhegbhagjcpgjgp.print(p0) }

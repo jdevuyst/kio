@@ -3,14 +3,14 @@
 /// sweeping is one walk of the object list that turns the mark bits
 /// into a census: what the mark phase kept, and how many cells the
 /// compaction is about to hand back.
-module gc/sweep;
+mod gc/sweep;
 
-import gc/heap(fold_objects, object_size);
-import macros/control(macro if);
-import macros/row_macros(macro select);
-import testapi(Array, Bool, I32);
-import testapi/arith(add_i32);
-import testapi/array(array_get);
+import gc/heap { fn fold_objects; fn object_size }
+import macros/control { macro if }
+import macros/row_macros { macro select }
+import testapi { type Array; type Bool; type I32 }
+import testapi/arith { fn add_i32 }
+import testapi/array { fn array_get }
 
 pub type Census = { Live_objects: I32; Dead_objects: I32; Live_cells: I32; Dead_cells: I32 };
 

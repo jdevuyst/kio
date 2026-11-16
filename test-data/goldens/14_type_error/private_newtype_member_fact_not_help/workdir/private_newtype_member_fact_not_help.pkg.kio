@@ -1,4 +1,4 @@
-package private_newtype_member_fact_not_help;
+pkg private_newtype_member_fact_not_help;
 
 build {
   cache "out/.kio-cache/";

@@ -1,38 +1,38 @@
-module queue_backlog_sim/sim;
+mod queue_backlog_sim/sim;
 
-import macros/control(macro if);
-import macros/match(macro match);
-import macros/row_macros(macro record, macro record_, macro select);
-import queue/core(Queue, empty);
+import macros/control { macro if }
+import macros/match { macro match }
+import macros/row_macros { macro record; macro record_; macro select }
+import queue/core { type Queue; fn empty }
 import queue_backlog_sim/fifo as fifo;
-import queue_backlog_sim/model(
-, Arrived
-, Arrived_count
-, Backlog_count
-, Completed_effort
-, Current_tick
-, Effort
-, Enqueue_result
-, Enqueued_next
-, Enqueued_queue
-, Job
-, Job_queue
-, Max_backlog
-, Next_ticket
-, Serve_result
-, Served_count
-, Served_effort
-, Served_jobs
-, Served_queue
-, Served_wait
-, State
-, Ticket
-, Total_wait
-);
+import queue_backlog_sim/model {
+  type Arrived;
+  type Arrived_count;
+  type Backlog_count;
+  type Completed_effort;
+  type Current_tick;
+  type Effort;
+  type Enqueue_result;
+  type Enqueued_next;
+  type Enqueued_queue;
+  type Job;
+  type Job_queue;
+  type Max_backlog;
+  type Next_ticket;
+  type Serve_result;
+  type Served_count;
+  type Served_effort;
+  type Served_jobs;
+  type Served_queue;
+  type Served_wait;
+  type State;
+  type Ticket;
+  type Total_wait
+}
 import queue_backlog_sim/schedule as schedule;
-import testapi(Bool, I32);
-import testapi/arith(add_i32, eq_i32, leq_i32, lt_i32, sub_i32);
-import testapi/iter(loop);
+import testapi { type Bool; type I32 }
+import testapi/arith { fn add_i32; fn eq_i32; fn leq_i32; fn lt_i32; fn sub_i32 }
+import testapi/iter { fn loop }
 
 fn fold_result[A][B](default: B, present_value: A -> B, result: A | .) -> B {
   match(result) {

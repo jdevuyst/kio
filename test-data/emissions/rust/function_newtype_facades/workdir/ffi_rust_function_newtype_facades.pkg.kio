@@ -1,4 +1,4 @@
-package ffi_rust_function_newtype_facades;
+pkg ffi_rust_function_newtype_facades;
 
 build {
   cache "out/.kio-cache/";

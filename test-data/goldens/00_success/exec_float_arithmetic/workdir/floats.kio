@@ -1,4 +1,4 @@
-module floats;
+mod floats;
 
 host type String role(str);
 

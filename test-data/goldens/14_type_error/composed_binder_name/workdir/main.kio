@@ -1,4 +1,4 @@
-module main;
+mod main;
 
 fn make[Element](value: Element) -> [Element] Element -> Element {
   .[Item](inner: Item) -> Item { inner }

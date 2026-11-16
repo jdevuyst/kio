@@ -1,6 +1,6 @@
-module source;
+mod source;
 
-import library/custom(macro do, macro action);
+import library/custom {macro do; macro action}
 
 fn ordinary[A](value: A, pair: A & A) {
     let _ = value;

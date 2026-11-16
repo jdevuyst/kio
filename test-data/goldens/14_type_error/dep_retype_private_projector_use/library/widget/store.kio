@@ -1,5 +1,5 @@
-module store;
+mod store;
 
-pub type { Token: . { pub mk; get; }; };
+pub type { Token: . { pub mk; get } }
 
 fn inspect_token(value: Token) { Token.get(value) }

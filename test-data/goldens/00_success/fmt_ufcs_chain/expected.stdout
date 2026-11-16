@@ -1,4 +1,4 @@
-module main;
+mod main;
 
 fn flat_short() { let r = receiver.>f(x).>g(y).>h(z); r }
 
@@ -44,7 +44,7 @@ fn wide_args_in_segment() {
       .>three(y);
   r
 }
-module main;
+mod main;
 
 fn flat_short() { let r = receiver.>f(x).>g(y).>h(z); r }
 

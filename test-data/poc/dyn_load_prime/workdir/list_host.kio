@@ -1,5 +1,5 @@
 /// Adapter serving the list dependency's host requirements from this package's own capability modules.
-module list_host;
+mod list_host;
 
 import testapi as api;
 import testapi/arith as arith;

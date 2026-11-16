@@ -1,6 +1,6 @@
-module geo/area;
+mod geo/area;
 
-import geo/units/scalar(Scaled, scale, unscale);
+import geo/units/scalar { type Scaled; fn scale; fn unscale }
 
 pub type Boxed[A] = Scaled[A];
 

@@ -1,4 +1,4 @@
-package exec_fit_sum_inside_product;
+pkg exec_fit_sum_inside_product;
 
 build {
   cache "out/.kio-cache/";

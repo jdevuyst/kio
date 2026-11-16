@@ -6,18 +6,18 @@
 /// They catch a sweep that buries the wrong building or forgets that two roofs
 /// of the same height are two roofs. A same-position down/up pair at a shared
 /// edge has zero width and is invisible to area; `advances` checks it below.
-module skyline/area;
+mod skyline/area;
 
-import macros/control(macro if);
-import macros/match(macro match);
+import macros/control { macro if }
+import macros/match { macro match }
 import skyline/city as city;
 import skyline/list as lst;
 import skyline/logic as logic;
 import skyline/sweep as sweep;
-import testapi(Array, Bool, I32);
-import testapi/arith(add_i32, leq_i32, mul_i32, sub_i32);
-import testapi/array(array_get, array_len, array_make_filled, array_set);
-import testapi/iter(loop);
+import testapi { type Array; type Bool; type I32 }
+import testapi/arith { fn add_i32; fn leq_i32; fn mul_i32; fn sub_i32 }
+import testapi/array { fn array_get; fn array_len; fn array_make_filled; fn array_set }
+import testapi/iter { fn loop }
 
 rec(loop) {
   /// The area under the key points.

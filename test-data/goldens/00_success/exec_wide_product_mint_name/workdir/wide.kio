@@ -1,8 +1,8 @@
-module wide;
+mod wide;
 
-import macros/row_macros(macro select);
-import testapi(I32);
-import testapi/arith(add_i32);
+import macros/row_macros { macro select }
+import testapi { type I32 }
+import testapi/arith { fn add_i32 }
 
 pub type {
   Alpha: I32 { pub mk; pub get };

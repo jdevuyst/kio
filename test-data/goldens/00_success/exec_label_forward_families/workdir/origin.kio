@@ -1,5 +1,5 @@
-module origin;
+mod origin;
 
-import testapi(String);
+import testapi { type String }
 
 pub type { Item[A]: A { pub mk; pub get }; Pack[A] <U>: A & U & (U -> String) { pub mk; pub get } }

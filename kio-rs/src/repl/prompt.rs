@@ -232,10 +232,7 @@ mod tests {
         // escape and closed with the reset, so it matches the
         // classifier's `entity.name.module` colour elsewhere.
         let out = rendered(Some("exec_factorial/main"), Palette::truecolor());
-        assert!(
-            out.contains("\x1b["),
-            "module name should be styled: {out:?}"
-        );
+        assert!(out.contains("\x1b["), "mod name should be styled: {out:?}");
         assert!(
             out.contains(highlight::RESET),
             "the styled run should be reset before the input line: {out:?}"

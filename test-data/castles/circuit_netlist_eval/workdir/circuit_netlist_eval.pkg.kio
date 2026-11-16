@@ -1,4 +1,4 @@
-package circuit_netlist_eval;
+pkg circuit_netlist_eval;
 
 build {
   cache "out/.kio-cache/";

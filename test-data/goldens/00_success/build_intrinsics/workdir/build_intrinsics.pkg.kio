@@ -1,4 +1,4 @@
-package build_intrinsics;
+pkg build_intrinsics;
 
 build {
   cache "out/.kio-cache/";

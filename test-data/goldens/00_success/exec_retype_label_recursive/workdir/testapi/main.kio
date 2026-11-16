@@ -1,9 +1,9 @@
-module testapi/main;
+mod testapi/main;
 
 import core/mutual as target_mutual;
 import core/self as target_self;
-import testapi(String);
-import testapi/io(print);
+import testapi { type String }
+import testapi/io { fn print }
 import widget/mutual as source_mutual;
 import widget/self as source_self;
 

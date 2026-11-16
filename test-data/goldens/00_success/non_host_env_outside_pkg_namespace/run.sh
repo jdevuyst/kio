@@ -1,5 +1,5 @@
 #!/bin/sh
-# A module at `workdir/main.kio` declaring `module main;` is admissible
+# A module at `workdir/main.kio` declaring `mod main;` is admissible
 # even though its single-segment name differs from the package name
 # `pkg`. The only constraint on the declaration is rule 1 of
 # `specs/package.md` § Module-Name Rules: the declared path must equal

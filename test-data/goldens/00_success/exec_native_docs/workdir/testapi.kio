@@ -1,5 +1,5 @@
 /// MODULE-DOC is not part of the boundary documentation.
-module testapi;
+mod testapi;
 
 /// HOST-TYPE-DOC String.
 host type String role(str);

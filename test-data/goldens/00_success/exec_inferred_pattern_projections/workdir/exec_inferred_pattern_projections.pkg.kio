@@ -1,4 +1,4 @@
-package exec_inferred_pattern_projections;
+pkg exec_inferred_pattern_projections;
 
 build {
   cache "out/.kio-cache/";

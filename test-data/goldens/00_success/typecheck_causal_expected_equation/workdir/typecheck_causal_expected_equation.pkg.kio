@@ -1,4 +1,4 @@
-package typecheck_causal_expected_equation;
+pkg typecheck_causal_expected_equation;
 
 build {
   cache "out/.kio-cache/";

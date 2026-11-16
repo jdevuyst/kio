@@ -160,13 +160,13 @@ export function exerciseSelectors(repl) {
   try {
     check(clean(repl.eval(':load demo/main').output).includes('loaded demo/main'), 'load');
     const listing = repl.eval(':ls demo/ops').output;
-    for (const keyword of ['op', 'varop']) {
+    for (const keyword of ['op', 'op_var']) {
       check(listing.includes(`\x1b[38;2;229;192;123mpub\x1b[0m \x1b[38;2;229;192;123m${keyword}\x1b[0m`), `${keyword} listing colors`);
     }
     for (const [input, expected] of [
       [':sig arithmetic.(op _ +', 'pub op _ + _ { impl choose }'],
-      [':sig arithmetic.(varop [*', 'pub varop [* *] { foldr choose empty }'],
-      [':sig arithmetic.(varop []', 'pub varop [] { foldr choose empty }'],
+      [':sig arithmetic.(op_var [*', 'pub op_var [* *] { foldr choose empty }'],
+      [':sig arithmetic.(op_var []', 'pub op_var [] { foldr choose empty }'],
       [':sig arithmetic.(op _ ?', 'pub op _ ? __ : ___ { impl choose_three }'],
     ]) {
       const result = repl.complete(input, input.length);
@@ -177,17 +177,17 @@ export function exerciseSelectors(repl) {
       check(clean(repl.eval(inserted).output) === expected, 'accepted insertion');
     }
     check(clean(repl.eval(':sig arithmetic.(op _ (=) _)').output) === 'pub op _ (=) _ { impl choose }', 'inner parentheses');
-    check(clean(repl.eval(':sig arithmetic.(varop [**])').output) === 'pub varop [* *] { foldr choose empty }', 'compact marked selector');
+    check(clean(repl.eval(':sig arithmetic.(op_var [**])').output) === 'pub op_var [* *] { foldr choose empty }', 'compact marked selector');
     const refs = clean(repl.eval(':refs arithmetic.(op _ + _)').output);
     check(refs.includes('in fn use') && !refs.includes('demo/other'), 'operator reference identity');
-    for (const selector of ['arithmetic.(varop [* *])', 'varop [% %]']) {
+    for (const selector of ['arithmetic.(op_var [* *])', 'op_var [% %]']) {
       const refs = clean(repl.eval(':refs ' + selector).output);
       check(refs.includes('in fn use'), `${selector}: imported marked frame use: ${refs}`);
       check(refs.includes('in fn browser_alias_use'), `${selector}: aliased marked frame use: ${refs}`);
-      check(refs.includes('in varop [* *]'), `${selector}: provider declaration: ${refs}`);
+      check(refs.includes('in op_var [* *]'), `${selector}: provider declaration: ${refs}`);
       check(!refs.includes('demo/other'), `${selector}: foreign operator identity: ${refs}`);
     }
-    const foreignRefs = clean(repl.eval(':refs other.(varop [* *])').output);
+    const foreignRefs = clean(repl.eval(':refs other.(op_var [* *])').output);
     check(foreignRefs.includes('in fn foreign_marked_use'), `competing provider use: ${foreignRefs}`);
     check(!foreignRefs.includes('in fn use') && !foreignRefs.includes('in fn browser_alias_use'), `competing provider identity: ${foreignRefs}`);
     repl.eval(':reset');

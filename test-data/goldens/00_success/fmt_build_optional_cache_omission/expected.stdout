@@ -1,4 +1,4 @@
-package app;
+pkg app;
 
 build {
   target js {
@@ -13,7 +13,7 @@ build {
 }
 
 bridge {}
-package app;
+pkg app;
 
 build {
   target js {

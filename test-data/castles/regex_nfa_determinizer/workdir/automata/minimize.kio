@@ -10,29 +10,29 @@
 ///
 /// Block ids are handed out as the states are scanned in order, so the start
 /// state always lands in block 0 and the numbering is canonical.
-module automata/minimize;
+mod automata/minimize;
 
 import automata/dfa as dfa;
-import automata/seq(
-, Ints
-, List
-, append
-, cons
-, empty
-, fold
-, intern
-, len
-, nil
-, nth_or
-, positions
-, reverse
-);
-import automata/symbol(width);
-import macros/control(macro if);
-import macros/match(macro match);
-import testapi(Bool, I32);
-import testapi/arith(add_i32, eq_i32, leq_i32);
-import testapi/iter(loop);
+import automata/seq {
+  type Ints;
+  type List;
+  fn append;
+  fn cons;
+  fn empty;
+  fn fold;
+  fn intern;
+  fn len;
+  fn nil;
+  fn nth_or;
+  fn positions;
+  fn reverse
+}
+import automata/symbol { fn width }
+import macros/control { macro if }
+import macros/match { macro match }
+import testapi { type Bool; type I32 }
+import testapi/arith { fn add_i32; fn eq_i32; fn leq_i32 }
+import testapi/iter { fn loop }
 
 /// `blocks[s]` is the block id of DFA state `s`.
 type Blocks = Ints;

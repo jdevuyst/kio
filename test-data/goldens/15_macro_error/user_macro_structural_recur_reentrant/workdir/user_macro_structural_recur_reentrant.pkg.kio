@@ -1,4 +1,4 @@
-package user_macro_structural_recur_reentrant;
+pkg user_macro_structural_recur_reentrant;
 
 build {
   cache "out/.kio-cache/";

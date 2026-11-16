@@ -54,13 +54,13 @@ make_case() {
   case_dir="$1"
   mkdir -p "$case_dir/workdir/foo"
   cat > "$case_dir/workdir/foo.dep.kio" <<'EOF'
-dependency foo;
+dep foo;
 
 source {
   path "../library/foo/foo.pkg.kio";
 }
 EOF
-  printf 'module foo/greet;\n\npub fn hi() -> . { () }\n' > "$case_dir/workdir/foo/greet.kio"
+  printf 'mod foo/greet;\n\npub fn hi() -> . { () }\n' > "$case_dir/workdir/foo/greet.kio"
 }
 
 # A stub `kio` binary. dep-canonical.sh calls it as `kio dep fetch --force`
@@ -74,7 +74,7 @@ write_stub() {
 #!/bin/sh
 case "${STUB_MODE:-noop}" in
   fail)  exit 1 ;;
-  drift) printf 'module foo/greet;\n\npub fn hi() -> . { hi() }\n' > foo/greet.kio; exit 0 ;;
+  drift) printf 'mod foo/greet;\n\npub fn hi() -> . { hi() }\n' > foo/greet.kio; exit 0 ;;
   *)     exit 0 ;;
 esac
 EOF

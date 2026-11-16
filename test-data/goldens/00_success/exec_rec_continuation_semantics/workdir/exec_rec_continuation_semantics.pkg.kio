@@ -1,4 +1,4 @@
-package exec_rec_continuation_semantics;
+pkg exec_rec_continuation_semantics;
 
 build {
   cache "out/.kio-cache/";

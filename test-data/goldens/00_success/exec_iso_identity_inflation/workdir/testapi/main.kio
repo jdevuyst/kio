@@ -1,8 +1,8 @@
-module testapi/main;
+mod testapi/main;
 
-import macros/algebraic_macros(macro iso);
-import testapi(String);
-import testapi/io(print);
+import macros/algebraic_macros { macro iso }
+import testapi { type String }
+import testapi/io { fn print }
 
 // `iso` identity absorption — inflate direction:
 //   add_unit  : String → (String & .)

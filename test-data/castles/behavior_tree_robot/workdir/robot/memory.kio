@@ -1,12 +1,12 @@
-module robot/memory;
+mod robot/memory;
 
 import list/core as lists;
 import list/list as traversal;
 import list_host as numbers;
-import macros/control(macro if);
-import macros/match(macro match);
-import macros/row_macros(macro select, macro with);
-import testapi(Bool, I32, String);
+import macros/control { macro if }
+import macros/match { macro match }
+import macros/row_macros { macro select; macro with }
+import testapi { type Bool; type I32; type String }
 import testapi/arith as arith;
 import testapi/fmt as fmt;
 import testapi/text as text;

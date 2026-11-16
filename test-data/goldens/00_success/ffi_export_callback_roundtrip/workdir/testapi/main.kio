@@ -1,7 +1,7 @@
-module testapi/main;
+mod testapi/main;
 
-import testapi(I32);
-import testapi/arith(add_i32);
+import testapi { type I32 }
+import testapi/arith { fn add_i32 }
 
 pub fn apply_twice(step: I32 -> I32, seed: I32) -> I32 { step(step(seed)) }
 

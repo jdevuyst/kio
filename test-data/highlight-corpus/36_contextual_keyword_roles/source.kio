@@ -1,4 +1,4 @@
-module contextual/keywords;
+mod contextual/keywords;
 
 import app/as as // separator
   as;

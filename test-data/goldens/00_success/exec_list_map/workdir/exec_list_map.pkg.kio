@@ -1,4 +1,4 @@
-package exec_list_map;
+pkg exec_list_map;
 
 build {
   cache "out/.kio-cache/";

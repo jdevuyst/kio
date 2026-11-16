@@ -1,4 +1,4 @@
-package exec_main_returns;
+pkg exec_main_returns;
 
 build {
   cache "out/.kio-cache/";

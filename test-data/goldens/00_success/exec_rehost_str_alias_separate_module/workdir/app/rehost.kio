@@ -1,7 +1,7 @@
-module app/rehost;
+mod app/rehost;
 
 import testapi as testapi;
-import testapi/text(string_concat);
+import testapi/text { fn string_concat }
 
 // A rehost alias: this module re-names the host `testapi.String` through
 // its own leaf `String`, the shape a dependency-materialization rehost

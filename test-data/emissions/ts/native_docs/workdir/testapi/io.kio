@@ -1,6 +1,6 @@
-module testapi/io;
+mod testapi/io;
 
-import testapi(String);
+import testapi { type String }
 
 /// HOST-FN-DOC print.
 /// Delimiter */; quotes """; backslash \; Unicode α.

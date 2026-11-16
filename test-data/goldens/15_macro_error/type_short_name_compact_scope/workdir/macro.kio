@@ -1,9 +1,9 @@
-module macro;
+mod macro;
 
 import __comptime__;
 import model as m;
 import model as verbose;
-import model(Box);
+import model { type Box }
 
 pure fn reject_impl(ct: __Comptime__, source: __Type__, _value: __Checked_term__, _target: __Type__) -> __Checked_term__ {
   __macro_error__(ct, __type_short_name__(ct, source))

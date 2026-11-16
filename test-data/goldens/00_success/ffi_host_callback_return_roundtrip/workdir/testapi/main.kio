@@ -1,9 +1,9 @@
-module testapi/main;
+mod testapi/main;
 
-import testapi(I32, String);
-import testapi/arith(make_step);
-import testapi/fmt(i32_to_string);
-import testapi/io(print);
+import testapi { type I32; type String }
+import testapi/arith { fn make_step }
+import testapi/fmt { fn i32_to_string }
+import testapi/io { fn print }
 
 pub fn main() {
   let step = make_step(7[I32]);

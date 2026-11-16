@@ -168,7 +168,7 @@ mod tests {
 
     #[test]
     fn highlight_returns_none_outside_any_binder() {
-        let source = "module pkg/main;\n";
+        let source = "mod pkg/main;\n";
         let analysis = make_analysis(vec![(
             "pkg/main",
             Span::new(20, 30),
@@ -189,7 +189,7 @@ mod tests {
 
     #[test]
     fn highlight_finds_two_uses_in_current_file() {
-        let source = "module pkg/main;\n  run  run  ";
+        let source = "mod pkg/main;\n  run  run  ";
         let binder1 = ResolvedBinder::Fn {
             module_path: "pkg/main".to_owned(),
             name: "run".to_owned(),
@@ -199,11 +199,10 @@ mod tests {
             name: "run".to_owned(),
         };
         let analysis = make_analysis(vec![
-            ("pkg/main", Span::new(19, 22), binder1, source),
-            ("pkg/main", Span::new(24, 27), binder2, source),
+            ("pkg/main", Span::new(16, 19), binder1, source),
+            ("pkg/main", Span::new(21, 24), binder2, source),
         ]);
         let uri = test_file_uri("/tmp/pkg/main.kio");
-        // Click on first `run` (byte offset 19 = line 1, character 2).
         let pos = Position {
             line: 1,
             character: 2,
@@ -216,12 +215,12 @@ mod tests {
     #[test]
     fn highlight_excludes_same_named_binder_in_other_module() {
         // `pkg/main.run` at the cursor must not pull in `pkg/other.run`.
-        let source_main = "module pkg/main;\n  run  ";
-        let source_other = "module pkg/other;\n  run  ";
+        let source_main = "mod pkg/main;\n  run  ";
+        let source_other = "mod pkg/other;\n  run  ";
         let analysis = make_analysis(vec![
             (
                 "pkg/main",
-                Span::new(19, 22),
+                Span::new(16, 19),
                 ResolvedBinder::Fn {
                     module_path: "pkg/main".to_owned(),
                     name: "run".to_owned(),
@@ -230,7 +229,7 @@ mod tests {
             ),
             (
                 "pkg/other",
-                Span::new(20, 23),
+                Span::new(17, 20),
                 ResolvedBinder::Fn {
                     module_path: "pkg/other".to_owned(),
                     name: "run".to_owned(),

@@ -154,13 +154,13 @@ mod tests {
     #[test]
     fn macro_operator_queries_keep_kind_and_delay_identity() {
         let source =
-            "module app; import ops(op macro _ && .__ as _ %% .__); fn run(a: ., b: .) { a %% b }";
+            "mod app; import ops {op_macro _ && .__ as _ %% .__} fn run(a: ., b: .) { a %% b }";
         let module = crate::pass::parser::parse(source).unwrap();
         for (selector, count) in [
-            ("op macro _ %% .__", 1),
+            ("op_macro _ %% .__", 1),
             ("op _ %% .__", 0),
-            ("op macro _ %% __", 0),
-            ("op macro _ && .__", 0),
+            ("op_macro _ %% __", 0),
+            ("op_macro _ && .__", 0),
         ] {
             let grammar = crate::pass::parser::parse_operator_grammar(selector).unwrap();
             assert_eq!(
@@ -176,15 +176,15 @@ mod tests {
     #[test]
     fn variadic_alias_uses_follow_structural_openings() {
         for (grammar, expression) in [
-            ("varop []", "[(), ([])]"),
-            ("varop [% %]", "[% (), ([% () %]) %]"),
-            ("varop [! !]", "[! ([!()!]) !]"),
-            ("varop [** **]", "[ ** ([ // edge\n ** () ** ]) ** ]"),
-            ("varop [$? ?$]", "[$? ([$? () ?$]) ?$]"),
+            ("op_var []", "[(), ([])]"),
+            ("op_var [% %]", "[% (), ([% () %]) %]"),
+            ("op_var [! !]", "[! ([!()!]) !]"),
+            ("op_var [** **]", "[ ** ([ // edge\n ** () ** ]) ** ]"),
+            ("op_var [$? ?$]", "[$? ([$? () ?$]) ?$]"),
         ] {
             let source = format!(
-                "module app; import ops(varop [* *] as {}); fn run() {{ {expression} }}",
-                grammar.strip_prefix("varop ").unwrap()
+                "mod app; import ops {{op_var [* *] as {}}} fn run() {{ {expression} }}",
+                grammar.strip_prefix("op_var ").unwrap()
             );
             let module = parse(&source).unwrap();
             let local = parse_operator_grammar(grammar).unwrap();
@@ -204,7 +204,7 @@ mod tests {
                 uses(
                     &module,
                     &source,
-                    &parse_operator_grammar("varop [* *]").unwrap()
+                    &parse_operator_grammar("op_var [* *]").unwrap()
                 )
                 .is_empty(),
                 "the source grammar is not the local alias: {source}"
@@ -214,14 +214,14 @@ mod tests {
 
     #[test]
     fn variadic_uses_ignore_brackets_in_strings_and_comments() {
-        let source = "module app; import ops(varop [% %]);
+        let source = "mod app; import ops {op_var [% %]}
             fn run() { [% \"[\", // [
                 \"[]\" %] }";
         let module = parse(source).unwrap();
         let hits = uses(
             &module,
             source,
-            &parse_operator_grammar("varop [% %]").unwrap(),
+            &parse_operator_grammar("op_var [% %]").unwrap(),
         );
         assert_eq!(hits.len(), 1);
         assert_eq!(hits[0].start as usize, source.find("[% \"[").unwrap());
@@ -230,11 +230,11 @@ mod tests {
 
     #[test]
     fn operator_uses_keep_exact_local_grammar_identity() {
-        let source = "module app;
-            import ops(op _ + _ as _ ++ _, varop [* *] as [% %], varop [!! !!] as [! !]);
+        let source = "mod app;
+            import ops {op _ + _ as _ ++ _; op_var [* *] as [% %]; op_var [!! !!] as [! !]}
             fn run() { [% ([! (() ++ ()) ++ () !]) %] }";
         let module = parse(source).unwrap();
-        for (grammar, spelling) in [("varop [% %]", "[%"), ("varop [! !]", "[!")] {
+        for (grammar, spelling) in [("op_var [% %]", "[%"), ("op_var [! !]", "[!")] {
             let hits = uses(&module, source, &parse_operator_grammar(grammar).unwrap());
             assert_eq!(hits.len(), 1);
             assert_eq!(hits[0].start as usize, source.rfind(spelling).unwrap());

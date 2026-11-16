@@ -1,9 +1,9 @@
-module testapi/main;
+mod testapi/main;
 
 import __intrinsics__;
 
-import testapi(String);
-import testapi/io(print);
+import testapi { type String }
+import testapi/io { fn print }
 
 // `Tree[E][A] : . | (E & A & Tree(E, A))` — a recursive arity-2
 // type constructor: the leaf arm `()`, the branch arm

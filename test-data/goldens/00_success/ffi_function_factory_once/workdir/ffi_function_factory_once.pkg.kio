@@ -1,4 +1,4 @@
-package ffi_function_factory_once;
+pkg ffi_function_factory_once;
 
 build {
   cache "out/.kio-cache/";

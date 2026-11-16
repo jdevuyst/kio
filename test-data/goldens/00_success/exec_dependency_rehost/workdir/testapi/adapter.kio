@@ -1,4 +1,4 @@
-module testapi/adapter;
+mod testapi/adapter;
 
 import testapi as api;
 

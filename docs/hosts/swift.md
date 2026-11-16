@@ -30,7 +30,7 @@ the newest baseline until `kio fmt` pins them to its concrete name. See
 A package emits to Swift by declaring a `swift` target in `<pkg>.pkg.kio`:
 
 ```kio {variant=package}
-package greeter;
+pkg greeter;
 
 build {
   cache "out/.kio-cache/";
@@ -127,7 +127,7 @@ requirement `greeter__print`:
 
 ```kio {variant=module}
 // greeter.kio
-module greeter;
+mod greeter;
 
 host type String role(str);
 
@@ -394,7 +394,7 @@ first-class callback expects a Unit value.
 `greeter.pkg.kio`:
 
 ```kio {variant=package}
-package greeter;
+pkg greeter;
 
 build {
   cache "out/.kio-cache/";
@@ -414,7 +414,7 @@ bridge {
 `greeter.kio`:
 
 ```kio {file}
-module greeter;
+mod greeter;
 
 host type String role(str);
 host fn print(p0: String);
@@ -423,7 +423,7 @@ host fn print(p0: String);
 `greeter/main.kio`:
 
 <!--kio {file}
-package greeter;
+pkg greeter;
 
 build {
   cache "out/.kio-cache/";
@@ -440,17 +440,17 @@ bridge {
 -->
 
 <!--kio {harness=greeter_swift_main file placeholder="__SNIPPET__"}
-module greeter/main;
+mod greeter/main;
 
-import greeter(String, print);
+import greeter {type String; fn print}
 
 __SNIPPET__
 -->
 
-```kio {@greeter_swift_main placeholder={"module greeter/main;":"","import greeter(String, print);":""}}
-module greeter/main;
+```kio {@greeter_swift_main placeholder={"mod greeter/main;":"","import greeter {type String; fn print}":""}}
+mod greeter/main;
 
-import greeter(String, print);
+import greeter {type String; fn print}
 
 pub fn main() { print("Hello from Kio!\n"[String]) }
 ```

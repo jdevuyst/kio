@@ -1,4 +1,4 @@
-package ctakrc;
+pkg ctakrc;
 
 build {
   cache "out/.kio-cache/";

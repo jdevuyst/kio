@@ -1,4 +1,4 @@
-module variadic/context;
+mod variadic/context;
 
 fn fold(value: .) -> . { value }
 fn variadic(value: .) -> . { value }
@@ -11,6 +11,6 @@ fn uses() -> . {
   helper.variadic(())
 }
 
-varop [* *] { foldr helper.fold variadic; };
-// varop [! !] { foldr fold variadic; };
-varop [! !] { foldr helper.fold variadic; };
+op_var [* *] { foldr helper.fold variadic; };
+// op_var [! !] { foldr fold variadic; };
+op_var [! !] { foldr helper.fold variadic; };

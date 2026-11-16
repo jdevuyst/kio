@@ -1,4 +1,4 @@
-module fmt_label_forms;
+mod fmt_label_forms;
 
 type { Ready: . { mk; get } }
 

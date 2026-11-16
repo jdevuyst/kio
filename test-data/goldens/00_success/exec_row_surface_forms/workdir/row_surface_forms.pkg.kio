@@ -1,4 +1,4 @@
-package row_surface_forms;
+pkg row_surface_forms;
 
 build {
   cache "out/.kio-cache/";

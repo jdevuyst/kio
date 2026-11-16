@@ -915,8 +915,8 @@ impl ServerState {
 #[cfg(test)]
 mod tests {
 
-    const IMPORT_GRAMMAR_LSP_CONSUMER: &str = "module app/main;
-        import syntax(op _ + _, op _ => _, varop [% %]);
+    const IMPORT_GRAMMAR_LSP_CONSUMER: &str = "mod app/main;
+        import syntax {op _ + _; op _ => _; op_var [% %]}
         type { Field: .; };
         pub fn run(a: ., b: .) -> . { [% a => (a + b), b => a %] }";
 
@@ -992,7 +992,7 @@ mod tests {
 
     fn import_grammar_provider(clause: &str, marker: &str, extra: &str) -> String {
         format!(
-            "module syntax;
+            "mod syntax;
             pub fn plus(a: ., b: .) -> . {{ a }}
             pub fn base() -> . {{ () }}
             pub fn entry(a: ., b: .) -> . & . {{ (a, b) }}
@@ -1002,7 +1002,7 @@ mod tests {
             pub fn finish(a: .) -> . {{ a }}
             pub op _ + _ {{ impl plus; }};
             pub op _ => _ {{ impl entry; }};
-            pub varop [{marker} {marker}] {{ {clause} }};
+            pub op_var [{marker} {marker}] {{ {clause} }};
             {extra}"
         )
     }
@@ -1015,7 +1015,7 @@ mod tests {
         let mut files = BTreeMap::new();
         files.insert(
             root.join("proof.pkg.kio"),
-            "package proof; bridge { app/main; }".into(),
+            "pkg proof; bridge { app/main; }".into(),
         );
         for uri in state.open_documents() {
             if let Some(path) = uri_to_canonical(uri) {
@@ -1060,7 +1060,7 @@ mod tests {
                     ),
                     None,
                 ),
-                ("module syntax; broken {".into(), Some("provider parse")),
+                ("mod syntax; broken {".into(), Some("provider parse")),
             ];
             for (event, (source, error_kind)) in sources.iter().enumerate() {
                 state.open(provider.clone(), source.clone(), event as i32 + 1);
@@ -1219,7 +1219,7 @@ mod tests {
             .collect();
         let sources = files
             .iter()
-            .map(|path| (path.clone(), "module pkg/main;\n".to_owned()))
+            .map(|path| (path.clone(), "mod pkg/main;\n".to_owned()))
             .collect();
         LspAnalysis {
             position_index: crate::pass::typecheck_full::PositionIndex::new(),
@@ -1238,7 +1238,7 @@ mod tests {
         let consumer = uri_to_canonical(&consumer_uri).unwrap();
         let captured_provider = absolute_test_path("/completion/original.kio");
         let root = consumer.parent().unwrap();
-        let source = "module pkg/main;\n";
+        let source = "mod pkg/main;\n";
         let mut state = ServerState::new();
         state.open(consumer_uri.clone(), source.into(), 1);
         state.open(provider_uri.clone(), source.into(), 1);
@@ -1282,7 +1282,7 @@ mod tests {
         let consumer = uri_to_canonical(&consumer_uri).unwrap();
         let provider = uri_to_canonical(&provider_uri).unwrap();
         let root = consumer.parent().unwrap();
-        let source = "module pkg/main;\n";
+        let source = "mod pkg/main;\n";
         let analysis = || analysis_for_files(&[consumer.clone(), provider.clone()]);
         let snapshot = |id, versions: BTreeMap<Uri, i32>| {
             let paths = versions
@@ -1386,7 +1386,7 @@ mod tests {
         let ids = crate::lsp::snapshot::SnapshotIdGen::new();
         let u = uri("file:///tmp/kio-lsp-stale-authority.kio");
         let file_path = uri_to_canonical(&u).expect("canonical file URI");
-        state.open(u.clone(), "module pkg/main;\n".to_owned(), 1);
+        state.open(u.clone(), "mod pkg/main;\n".to_owned(), 1);
         state.store_analysis(
             Path::new("/tmp/kio-lsp-stale-authority"),
             Snapshot::new(ids.next(), BTreeMap::from([(u.clone(), 1)])),
@@ -1402,10 +1402,7 @@ mod tests {
         state
             .document_mut(&u)
             .expect("open document")
-            .apply_change(
-                &full_change("module pkg/main;\nnewtype Broken : Broken;"),
-                2,
-            )
+            .apply_change(&full_change("mod pkg/main;\nnewtype Broken : Broken;"), 2)
             .expect("apply invalid edit");
 
         assert!(state.best_analysis_for_file(&file_path, &u).is_none());
@@ -1447,9 +1444,9 @@ mod tests {
     fn open_seeds_overlay_text_and_version() {
         let mut state = ServerState::new();
         let u = uri("file:///tmp/a.kio");
-        state.open(u.clone(), "module pkg/a;\n".to_owned(), 1);
+        state.open(u.clone(), "mod pkg/a;\n".to_owned(), 1);
         let doc = state.document(&u).expect("doc present");
-        assert_eq!(doc.text(), "module pkg/a;\n");
+        assert_eq!(doc.text(), "mod pkg/a;\n");
         assert_eq!(doc.version(), 1);
     }
 
@@ -1471,7 +1468,7 @@ mod tests {
         for index in 0..4 {
             let u = uri(&format!("file:///tmp/kio-lsp-retention-{index}.kio"));
             let file_path = uri_to_canonical(&u).expect("canonical file URI");
-            state.open(u.clone(), "module pkg/main;\n".to_owned(), 1);
+            state.open(u.clone(), "mod pkg/main;\n".to_owned(), 1);
             let snapshot_id = ids.next();
             state.mark_focused_scheduled(&u, &file_path, snapshot_id);
             state.store_focused_analysis(
@@ -1492,7 +1489,7 @@ mod tests {
         let ids = crate::lsp::snapshot::SnapshotIdGen::new();
         let u = uri("file:///tmp/kio-lsp-late-focus.kio");
         let file_path = uri_to_canonical(&u).expect("canonical file URI");
-        state.open(u.clone(), "module pkg/main;\n".to_owned(), 1);
+        state.open(u.clone(), "mod pkg/main;\n".to_owned(), 1);
         let snapshot_id = ids.next();
         state.mark_focused_scheduled(&u, &file_path, snapshot_id);
         let snapshot = Snapshot::new(snapshot_id, BTreeMap::from([(u.clone(), 1)]));
@@ -1508,13 +1505,13 @@ mod tests {
         let ids = crate::lsp::snapshot::SnapshotIdGen::new();
         let u = uri("file:///tmp/kio-lsp-reopened-focus.kio");
         let file_path = uri_to_canonical(&u).expect("canonical file URI");
-        state.open(u.clone(), "module pkg/old;\n".to_owned(), 1);
+        state.open(u.clone(), "mod pkg/old;\n".to_owned(), 1);
         let snapshot_id = ids.next();
         state.mark_focused_scheduled(&u, &file_path, snapshot_id);
         let old_snapshot = Snapshot::new(snapshot_id, BTreeMap::from([(u.clone(), 1)]));
 
         state.close(&u);
-        state.open(u.clone(), "module pkg/new;\n".to_owned(), 1);
+        state.open(u.clone(), "mod pkg/new;\n".to_owned(), 1);
 
         assert!(state.focused_worker_result_is_obsolete(&file_path, &u, &old_snapshot));
     }
@@ -1525,7 +1522,7 @@ mod tests {
         let ids = crate::lsp::snapshot::SnapshotIdGen::new();
         let u = uri("file:///tmp/kio-lsp-repeated-open.kio");
         let file_path = uri_to_canonical(&u).expect("canonical file URI");
-        state.open(u.clone(), "module pkg/old;\n".to_owned(), 1);
+        state.open(u.clone(), "mod pkg/old;\n".to_owned(), 1);
         let snapshot_id = ids.next();
         state.mark_focused_scheduled(&u, &file_path, snapshot_id);
         let old_snapshot = Snapshot::new(snapshot_id, BTreeMap::from([(u.clone(), 1)]));
@@ -1536,7 +1533,7 @@ mod tests {
             analysis_for_files(std::slice::from_ref(&file_path)),
         );
 
-        state.open(u.clone(), "module pkg/new;\n".to_owned(), 1);
+        state.open(u.clone(), "mod pkg/new;\n".to_owned(), 1);
 
         assert!(state.focused_by_uri.is_empty());
         assert!(state.focused_worker_result_is_obsolete(&file_path, &u, &old_snapshot));
@@ -1549,7 +1546,7 @@ mod tests {
         let u = uri("file:///tmp/kio-lsp-retargeted-focus.kio");
         let old_path = absolute_test_path("/tmp/kio-lsp-old-target.kio");
         let new_path = absolute_test_path("/tmp/kio-lsp-new-target.kio");
-        state.open(u.clone(), "module pkg/main;\n".to_owned(), 1);
+        state.open(u.clone(), "mod pkg/main;\n".to_owned(), 1);
         let old_id = ids.next();
         let old_snapshot = Snapshot::new(old_id, BTreeMap::from([(u.clone(), 1)]));
         state.mark_focused_scheduled(&u, &old_path, old_id);
@@ -1578,7 +1575,7 @@ mod tests {
         let ids = crate::lsp::snapshot::SnapshotIdGen::new();
         let u = uri("file:///tmp/kio-lsp-rescheduled-focus.kio");
         let file_path = absolute_test_path("/tmp/kio-lsp-rescheduled-focus.kio");
-        state.open(u.clone(), "module pkg/main;\n".to_owned(), 1);
+        state.open(u.clone(), "mod pkg/main;\n".to_owned(), 1);
         let old_id = ids.next();
         let old_snapshot = Snapshot::new(old_id, BTreeMap::from([(u.clone(), 1)]));
         state.mark_focused_scheduled(&u, &file_path, old_id);
@@ -1618,8 +1615,8 @@ mod tests {
         let second = dir.path().join("second");
         std::fs::create_dir_all(&first).expect("first target");
         std::fs::create_dir_all(&second).expect("second target");
-        std::fs::write(first.join("main.kio"), "module pkg/first;\n").expect("first source");
-        std::fs::write(second.join("main.kio"), "module pkg/second;\n").expect("second source");
+        std::fs::write(first.join("main.kio"), "mod pkg/first;\n").expect("first source");
+        std::fs::write(second.join("main.kio"), "mod pkg/second;\n").expect("second source");
         let alias = dir.path().join("alias");
         symlink(&first, &alias).expect("first symlink");
         let alias_file = alias.join("main.kio");
@@ -1628,7 +1625,7 @@ mod tests {
         let ids = crate::lsp::snapshot::SnapshotIdGen::new();
         let snapshot_id = ids.next();
         let mut state = ServerState::new();
-        state.open(u.clone(), "module pkg/first;\n".to_owned(), 1);
+        state.open(u.clone(), "mod pkg/first;\n".to_owned(), 1);
         state.mark_focused_scheduled(&u, &focused_path, snapshot_id);
         state.store_focused_analysis(
             &u,
@@ -1672,7 +1669,7 @@ mod tests {
             (&uncovered_uri, &uncovered, uncovered_id),
             (&unrelated_uri, &unrelated, unrelated_id),
         ] {
-            state.open((*uri).clone(), "module pkg/main;\n".to_owned(), 1);
+            state.open((*uri).clone(), "mod pkg/main;\n".to_owned(), 1);
             state.mark_focused_scheduled(uri, path, id);
             state.store_focused_analysis(
                 uri,
@@ -1721,7 +1718,7 @@ mod tests {
         let file_path = absolute_test_path("/tmp/kio-lsp-covered-inflight.kio");
         let u = crate::lsp::diagnostics::path_to_uri(&file_path, Path::new("/tmp"))
             .expect("focused URI");
-        state.open(u.clone(), "module pkg/main;\n".to_owned(), 1);
+        state.open(u.clone(), "mod pkg/main;\n".to_owned(), 1);
         state.mark_focused_scheduled(&u, &file_path, focused_id);
         let focused_snapshot = Snapshot::new(focused_id, BTreeMap::from([(u.clone(), 1)]));
 
@@ -1762,16 +1759,16 @@ mod tests {
 
     #[test]
     fn set_text_invalidates_parsed_module_cache() {
-        let mut doc = OpenDocument::new("module pkg/main;\n".to_owned(), 1);
+        let mut doc = OpenDocument::new("mod pkg/main;\n".to_owned(), 1);
         assert!(
             doc.with_parsed_module(|module, _| module.items.len())
                 .is_some()
         );
 
-        doc.set_text("module pkg/main;\n\nfn broken() -> . { (\n".to_owned(), 2);
+        doc.set_text("mod pkg/main;\n\nfn broken() -> . { (\n".to_owned(), 2);
         assert!(doc.with_parsed_module(|_, _| ()).is_none());
 
-        doc.set_text("module pkg/main;\n\nfn ok() -> . { () }\n".to_owned(), 3);
+        doc.set_text("mod pkg/main;\n\nfn ok() -> . { () }\n".to_owned(), 3);
         assert!(
             doc.with_parsed_module(|module, _| module.items.len())
                 .is_some()
@@ -1780,13 +1777,13 @@ mod tests {
 
     #[test]
     fn full_parse_is_reused_once_per_document_version() {
-        let source = "module pkg/main; fn run() -> . { () }";
+        let source = "mod pkg/main; fn run() -> . { () }";
         let mut doc = OpenDocument::new(source.to_owned(), 1);
         doc.with_parsed_module(|_, _| ()).expect("first parse");
         doc.with_parsed_module(|_, _| ()).expect("cached parse");
         assert_eq!(doc.parse_count, 1);
         doc.set_text(
-            "module pkg/main; type { Other: .; }; type Row = Other;".to_owned(),
+            "mod pkg/main; type { Other: .; }; type Row = Other;".to_owned(),
             2,
         );
         doc.with_parsed_module(|_, _| ()).expect("parse after edit");
@@ -1870,7 +1867,7 @@ mod tests {
     fn file_context_is_part_of_the_cached_parse_identity_without_operator_imports() {
         let mut state = ServerState::new();
         let consumer = uri("file:///workspace/a/b/c.kio");
-        let source = "module a/b/c; fn run(value: .) -> . { value }";
+        let source = "mod a/b/c; fn run(value: .) -> . { value }";
         state.open(consumer.clone(), source.to_owned(), 1);
         let first = absolute_test_path("/workspace/a/b/c.kio");
         let second = absolute_test_path("/other/a/b/c.kio");
@@ -1923,13 +1920,13 @@ mod tests {
             for provider in ["binary", "other"] {
                 state.open(
                     uri(&format!("file:///workspace/{provider}.kio")),
-                    format!("module {provider}; pub fn choose(a: ., b: .) -> . {{ a }} pub op _ ? _ {{ impl choose; }};"),
+                    format!("mod {provider}; pub fn choose(a: ., b: .) -> . {{ a }} pub op _ ? _ {{ impl choose; }};"),
                     1,
                 );
             }
             state.open(
                 consumer.clone(),
-                format!("module app/main; import binary(op _ ? _); import {second_provider}(op _ ? _); pub fn run(a: ., b: .) -> . {{ a ? b }}"),
+                format!("mod app/main; import binary {{op _ ? _}} import {second_provider} {{op _ ? _}} pub fn run(a: ., b: .) -> . {{ a ? b }}"),
                 1,
             );
             assert!(
@@ -1962,7 +1959,7 @@ mod tests {
         let consumer = uri("file:///workspace/app/main.kio");
         state.open(
             consumer.clone(),
-            "module app/main; fn run(value: .) -> . { value }".to_owned(),
+            "mod app/main; fn run(value: .) -> . { value }".to_owned(),
             1,
         );
         assert!(
@@ -1973,7 +1970,7 @@ mod tests {
 
         state.open(
             uri("file:///workspace/app/unrelated.kio"),
-            "module app/unrelated;".to_owned(),
+            "mod app/unrelated;".to_owned(),
             1,
         );
         assert!(

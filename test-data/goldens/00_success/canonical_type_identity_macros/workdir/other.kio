@@ -1,4 +1,4 @@
-module other;
+mod other;
 
 host type Actual role(i32);
 

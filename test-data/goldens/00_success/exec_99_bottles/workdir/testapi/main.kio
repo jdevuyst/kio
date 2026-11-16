@@ -1,13 +1,13 @@
-module testapi/main;
+mod testapi/main;
 
-import macros/control(macro if);
-import macros/spine_macros(macro widen_sum);
-import testapi(Bool, I32, String);
-import testapi/arith(leq_i32, sub_i32);
-import testapi/fmt(int_to_string);
-import testapi/io(print);
-import testapi/iter(loop);
-import testapi/text(string_concat);
+import macros/control { macro if }
+import macros/spine_macros { macro widen_sum }
+import testapi { type Bool; type I32; type String }
+import testapi/arith { fn leq_i32; fn sub_i32 }
+import testapi/fmt { fn int_to_string }
+import testapi/io { fn print }
+import testapi/iter { fn loop }
+import testapi/text { fn string_concat }
 
 // Abbreviated 5-line variant: counts down from `start` to 1
 // printing the canonical "N bottles of beer on the wall" line

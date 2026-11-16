@@ -1,4 +1,4 @@
-package ffi_host_generic_type_roundtrip;
+pkg ffi_host_generic_type_roundtrip;
 
 build {
   cache "out/.kio-cache/";

@@ -1,4 +1,4 @@
-module core/relay;
+mod core/relay;
 
 import core/store as origin;
 

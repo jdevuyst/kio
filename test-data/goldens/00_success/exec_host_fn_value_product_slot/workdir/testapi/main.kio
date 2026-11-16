@@ -1,9 +1,9 @@
-module testapi/main;
+mod testapi/main;
 
-import testapi(Int);
-import testapi/arith(add);
-import testapi/fmt(int_to_string);
-import testapi/io(print);
+import testapi { type Int }
+import testapi/arith { fn add }
+import testapi/fmt { fn int_to_string }
+import testapi/io { fn print }
 
 // Higher-order function whose function parameter takes a single
 // product argument `(A & B)`. A caller that passes a multi-arity

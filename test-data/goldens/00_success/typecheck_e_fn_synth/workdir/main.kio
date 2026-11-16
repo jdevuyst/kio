@@ -1,4 +1,4 @@
-module main;
+mod main;
 
 // Monomorphic synthesis: no `[ᾱ]` binders, every value-param
 // annotated, return type concrete. E-FnSynth lifts the header

@@ -1,4 +1,4 @@
-package dls;
+pkg dls;
 
 build {
   cache "out/.kio-cache/";

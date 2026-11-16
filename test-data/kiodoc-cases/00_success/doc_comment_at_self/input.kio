@@ -5,7 +5,7 @@
 /// ```kio {@}
 /// ()
 /// ```
-module doctest/utils;
+mod doctest/utils;
 
 /// Returns its argument unchanged.
 ///

@@ -1,11 +1,11 @@
 /// Exact arithmetic on canonical rationals. Every result goes back through
 /// `core.reduce`, so the lowest-terms invariant is restored at each step rather
 /// than allowed to drift and be repaired at the end.
-module rational/arith;
+mod rational/arith;
 
 import rational/core as core;
-import rational/core(Eval, Rational);
-import testapi(I32);
+import rational/core { type Eval; type Rational }
+import testapi { type I32 }
 import testapi/arith as arith;
 
 /// Each operation returns an `Eval` rather than a bare `Rational`. Only division

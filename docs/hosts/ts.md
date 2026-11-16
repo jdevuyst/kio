@@ -27,7 +27,7 @@ the newest baseline until `kio fmt` pins them to its concrete name. See
 A package emits to TypeScript by declaring a `ts` target in `<pkg>.pkg.kio`:
 
 ```kio {variant=package}
-package greeter;
+pkg greeter;
 
 build {
   cache "out/.kio-cache/";
@@ -103,7 +103,7 @@ property `greeter.print`:
 
 ```kio {variant=module}
 // greeter.kio
-module greeter;
+mod greeter;
 
 host type String role(str);
 
@@ -303,7 +303,7 @@ See [`specs/backends/ts.md` § FFI surface](../../specs/backends/ts.md#ffi-surfa
 `greeter.pkg.kio`:
 
 ```kio {variant=package}
-package greeter;
+pkg greeter;
 
 build {
   cache "out/.kio-cache/";
@@ -323,7 +323,7 @@ bridge {
 `greeter.kio` declares the host capability:
 
 ```kio {file}
-module greeter;
+mod greeter;
 
 host type String role(str);
 host fn print(s: String);
@@ -332,7 +332,7 @@ host fn print(s: String);
 `greeter/main.kio` imports it and exports `main`:
 
 <!--kio {file}
-package greeter;
+pkg greeter;
 
 build {
   cache "out/.kio-cache/";
@@ -349,17 +349,17 @@ bridge {
 -->
 
 <!--kio {harness=greeter_ts_main file placeholder="__SNIPPET__"}
-module greeter/main;
+mod greeter/main;
 
-import greeter(String, print);
+import greeter {type String; fn print}
 
 __SNIPPET__
 -->
 
-```kio {@greeter_ts_main placeholder={"module greeter/main;":"","import greeter(String, print);":""}}
-module greeter/main;
+```kio {@greeter_ts_main placeholder={"mod greeter/main;":"","import greeter {type String; fn print}":""}}
+mod greeter/main;
 
-import greeter(String, print);
+import greeter {type String; fn print}
 
 pub fn main() { print("hello from kio\n"[String]) }
 ```

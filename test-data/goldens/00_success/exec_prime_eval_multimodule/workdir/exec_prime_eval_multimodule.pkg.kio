@@ -1,4 +1,4 @@
-package exec_prime_eval_multimodule;
+pkg exec_prime_eval_multimodule;
 
 build {
   cache "out/.kio-cache/";

@@ -1,4 +1,4 @@
-module macros/testapi;
+mod macros/testapi;
 
 host type String role(str);
 

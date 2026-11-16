@@ -1,4 +1,4 @@
-package integration;
+pkg integration;
 
 build {
   cache "out/.kio-cache/";

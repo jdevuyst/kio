@@ -1,4 +1,4 @@
-dependency pkg;
+dep pkg;
 
 source {
   git "https://example.invalid/pkg.git";

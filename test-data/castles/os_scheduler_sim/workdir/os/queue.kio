@@ -1,14 +1,21 @@
 /// The scheduler's three lists: the round-robin ready queue, the blocked list
 /// of processes waiting on the pager, and the order processes finished in.
-module os/queue;
+mod os/queue;
 
-import macros/control(macro if);
-import macros/row_macros(macro select);
-import macros/spine_macros(macro widen_sum);
-import testapi(Array, Bool, I32);
-import testapi/arith(add_i32, leq_i32, sub_i32);
-import testapi/array(array_get, array_len, array_make_empty, array_pop_back, array_push, array_set);
-import testapi/iter(loop);
+import macros/control { macro if }
+import macros/row_macros { macro select }
+import macros/spine_macros { macro widen_sum }
+import testapi { type Array; type Bool; type I32 }
+import testapi/arith { fn add_i32; fn leq_i32; fn sub_i32 }
+import testapi/array {
+  fn array_get;
+  fn array_len;
+  fn array_make_empty;
+  fn array_pop_back;
+  fn array_push;
+  fn array_set
+}
+import testapi/iter { fn loop }
 
 pub type Queues = { Ready: Array[I32]; Blocked: Array[I32]; Wake: Array[I32]; Retired: Array[I32] };
 

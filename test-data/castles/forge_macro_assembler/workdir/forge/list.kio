@@ -6,14 +6,14 @@
 /// Each pass builds its result by consing onto an accumulator and reversing
 /// once at the end, so `rev_append` is the primitive and `reverse` is
 /// written against it.
-module forge/list;
+mod forge/list;
 
-import macros/control(macro if);
-import macros/match(macro match);
-import macros/spine_macros(macro widen_sum);
-import testapi(Bool, I32);
-import testapi/arith(add_i32, leq_i32, sub_i32);
-import testapi/iter(loop);
+import macros/control { macro if }
+import macros/match { macro match }
+import macros/spine_macros { macro widen_sum }
+import testapi { type Bool; type I32 }
+import testapi/arith { fn add_i32; fn leq_i32; fn sub_i32 }
+import testapi/iter { fn loop }
 
 pub rec type { List[A]: . | (A & List[A]) { mk; get } }
 

@@ -1,4 +1,4 @@
-package exec_type_only_nonfunction_residual;
+pkg exec_type_only_nonfunction_residual;
 
 build {
   cache "out/.kio-cache/";

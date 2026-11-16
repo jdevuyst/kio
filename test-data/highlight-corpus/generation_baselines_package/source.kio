@@ -1,4 +1,4 @@
-package app;
+pkg app;
 build {
   target js { out "out/js"; baseline es2020 };
   target ts { out "out/ts"; baseline ((v5_0)) };

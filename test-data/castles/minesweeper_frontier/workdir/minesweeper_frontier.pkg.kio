@@ -1,4 +1,4 @@
-package minesweeper_frontier;
+pkg minesweeper_frontier;
 
 build {
   cache "out/.kio-cache/";

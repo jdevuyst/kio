@@ -1,4 +1,4 @@
-module docs_loader/list/macros/testapi;
+mod docs_loader/list/macros/testapi;
 
 import docs_loader/list_host as _rehost_gmgjhdhefpgigphdhe;
 

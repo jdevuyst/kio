@@ -1,4 +1,4 @@
-module source;
+mod source;
 
 fn first() {
     let .(<Hidden> (left: Hidden, right: Hidden)) = hidden;

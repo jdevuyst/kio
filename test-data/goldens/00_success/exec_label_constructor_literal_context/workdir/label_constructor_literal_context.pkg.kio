@@ -1,4 +1,4 @@
-package label_constructor_literal_context;
+pkg label_constructor_literal_context;
 
 build {
   cache "out/.kio-cache/";

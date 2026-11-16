@@ -1,13 +1,13 @@
-module edit_distance_audit/dp;
+mod edit_distance_audit/dp;
 
 import edit_distance_audit/math as math;
 import edit_distance_audit/render as render;
-import macros/control(macro if);
-import testapi(Array, Bool, I32, String);
+import macros/control { macro if }
+import testapi { type Array; type Bool; type I32; type String }
 import testapi/arith as arith;
 import testapi/array as array;
 import testapi/io as io;
-import testapi/iter(loop);
+import testapi/iter { fn loop }
 
 pub rec(loop) fn seed_row_at(index: I32, last: I32, row: Array[I32]) -> Array[I32] {
   if(arith.leq_i32(index, last)) {

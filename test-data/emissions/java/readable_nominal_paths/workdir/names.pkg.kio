@@ -1,4 +1,4 @@
-package names;
+pkg names;
 
 build {
   target java {

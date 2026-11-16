@@ -1,9 +1,9 @@
-signature app v(3);
+sig app v(3);
 
 v(1) {
   nonbreaking {
     add {
-      module api {
+      mod api {
         host type Str role(str);
         host fn archived(head: Str, value: Str | Str) -> (Str | Str) | Str;
         pub fn echo(s: Str) -> Str;

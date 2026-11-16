@@ -127,7 +127,7 @@ e ::=
   | h                          (host item — opaque)
 ```
 
-The grammar elides the `module` / `import` boilerplate and the public-private contour. From the typer's perspective, a Kio' module is a sequence of top-level `fn` / `type` / `rec type` / `rec { ... }` / `host type` / `host fn` declarations processed top-to-bottom under [order-sensitive visibility](../prime.md#order-sensitive-visibility). A `host type` / `host fn` is an opaque, signature-only declaration: it adds a name to scope (a `host type` as an opaque nominal type, a `host fn` as a value of its declared type — the `h` term above) but has no body to type-check. The typer checks that its signature types are well-formed, that every `host type` parameter has kind `*`, and that a role-bearing `host type` has arity zero; type parameters are admitted only on a roleless host type.
+The grammar elides the `mod` / `import` boilerplate and the public-private contour. From the typer's perspective, a Kio' module is a sequence of top-level `fn` / `type` / `rec type` / `rec { ... }` / `host type` / `host fn` declarations processed top-to-bottom under [order-sensitive visibility](../prime.md#order-sensitive-visibility). A `host type` / `host fn` is an opaque, signature-only declaration: it adds a name to scope (a `host type` as an opaque nominal type, a `host fn` as a value of its declared type — the `h` term above) but has no body to type-check. The typer checks that its signature types are well-formed, that every `host type` parameter has kind `*`, and that a role-bearing `host type` has arity zero; type parameters are admitted only on a roleless host type.
 
 ### 1.3. Top-level declarations
 
@@ -530,7 +530,7 @@ see ../language.md § Module system.)
 
 Order-sensitive visibility falls out of the `Γᵢ₋₁` premise: each declaration is checked under a context that contains *only* prior declarations.
 
-A named import `import P(s as d)` contributes the binding under local name `d`
+A named import `import P {fn s as d}` contributes the binding under local name `d`
 while selecting declaration `s` in explicit provider `P`. Omitting `as d` uses
 `s` as the local name. The binding retains the selected declaration's nominal
 identity, kind, public type, declaration class, and direct host-role status;

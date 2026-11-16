@@ -1,3 +1,3 @@
-module build_recursive_newtype_boundary;
+mod build_recursive_newtype_boundary;
 
 host type I32 role(i32);

@@ -1,4 +1,4 @@
-package ffi_host_staged_unit_call;
+pkg ffi_host_staged_unit_call;
 
 build {
   cache "out/.kio-cache/";

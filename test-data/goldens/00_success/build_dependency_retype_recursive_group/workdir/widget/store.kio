@@ -1,4 +1,4 @@
-module widget/store;
+mod widget/store;
 
 import __intrinsics__;
 

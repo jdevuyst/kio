@@ -1,4 +1,4 @@
-package exec_fills_pending_terminal_type_layer;
+pkg exec_fills_pending_terminal_type_layer;
 
 build {
   cache "out/.kio-cache/";

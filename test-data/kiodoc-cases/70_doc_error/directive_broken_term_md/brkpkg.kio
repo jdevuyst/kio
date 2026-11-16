@@ -1,4 +1,4 @@
-module brkpkg;
+mod brkpkg;
 
 host type S role(str);
 

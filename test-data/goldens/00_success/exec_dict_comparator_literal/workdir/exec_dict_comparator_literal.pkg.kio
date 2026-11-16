@@ -1,4 +1,4 @@
-package exec_dict_comparator_literal;
+pkg exec_dict_comparator_literal;
 
 build {
   cache "out/.kio-cache/";

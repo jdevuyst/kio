@@ -1,7 +1,7 @@
-module testapi/main;
+mod testapi/main;
 
-import testapi(String);
-import testapi/io(print);
+import testapi {type String}
+import testapi/io {fn print}
 
 fn base() -> String { "empty" }
 
@@ -16,13 +16,13 @@ fn finish(value: String) -> String {
   "done"
 }
 
-varop [* *] { finalize finish; foldl right base; };
+op_var [* *] { finalize finish; foldl right base; };
 
-varop [+ +] { finalize finish; foldr left base; };
+op_var [+ +] { finalize finish; foldr left base; };
 
-varop [! !] { finalize finish; foldl1 right seed; };
+op_var [! !] { finalize finish; foldl1 right seed; };
 
-varop [% %] { finalize finish; foldr1 left seed; };
+op_var [% %] { finalize finish; foldr1 left seed; };
 
 pub fn main() {
   print([* "a", "b", "c" *]);

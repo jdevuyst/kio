@@ -1,6 +1,6 @@
-module main;
+mod main;
 
-import macros/row_macros(macro select);
+import macros/row_macros { macro select }
 
 type { A: . { mk; get } }
 

@@ -4,20 +4,20 @@
 /// A conflict prints all three texts between marker lines. Each marker
 /// introduces the block below it, so a reader walks the region top to
 /// bottom — ours, then the base it was written against, then theirs.
-module diff3/render;
+mod diff3/render;
 
 import diff3/lcs as lcs;
 import diff3/list as list;
 import diff3/merge as merge;
 import diff3/prim as prim;
 import diff3/scan as scan;
-import macros/control(macro if);
-import macros/match(macro match);
-import testapi(Bool, I32, String);
-import testapi/arith(add_i32, mul_i32);
-import testapi/fmt(int_to_string);
-import testapi/io(print);
-import testapi/iter(loop);
+import macros/control { macro if }
+import macros/match { macro match }
+import testapi { type Bool; type I32; type String }
+import testapi/arith { fn add_i32; fn mul_i32 }
+import testapi/fmt { fn int_to_string }
+import testapi/io { fn print }
+import testapi/iter { fn loop }
 
 /// Every conflict emits exactly these three lines on top of its text, which
 /// is what makes the audit's line count reproducible by hand.

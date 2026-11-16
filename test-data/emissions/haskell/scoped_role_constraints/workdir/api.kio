@@ -1,8 +1,8 @@
-module api;
+mod api;
 
 import producer as p;
-import producer(Count);
-import producer(literal);
+import producer { fn literal }
+import producer { type Count }
 
 fn apply(thunk: . -> Count) -> Count { thunk(()) }
 

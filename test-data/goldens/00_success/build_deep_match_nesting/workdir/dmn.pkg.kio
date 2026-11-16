@@ -1,4 +1,4 @@
-package dmn;
+pkg dmn;
 
 build {
   cache "out/.kio-cache/";

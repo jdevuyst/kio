@@ -2,7 +2,7 @@ use super::*;
 use crate::ast::{Expr, ImportItem, ImportKind, Item, OpChainKind, OperatorGrammar};
 
 fn body(source: &str) -> Expr {
-    let module = parse(&format!("module source; fn run() {{ {source} }}")).unwrap();
+    let module = parse(&format!("mod source; fn run() {{ {source} }}")).unwrap();
     let Item::FnDef(def) = module.items.into_iter().next().unwrap() else {
         panic!()
     };
@@ -20,13 +20,13 @@ fn delimiter_shape_is_independent_of_operator_scope() {
         ("[!?", "?!]"),
         ("[**", "**]"),
     ] {
-        let declaration = format!("module source; varop {open} {close} {{ foldr step seed; }};");
+        let declaration = format!("mod source; op_var {open} {close} {{ foldr step seed; }};");
         let parsed = parse(&declaration).unwrap_or_else(|error| panic!("{declaration}: {error:?}"));
         let Item::VariadicOperator(operator, _) = &parsed.items[0] else {
             panic!()
         };
         let imported = parse(&format!(
-            "module consumer; import source(varop {open} {close});"
+            "mod consumer; import source {{op_var {open} {close}}}"
         ))
         .unwrap();
         let ImportKind::Selective { items, .. } = &imported.imports[0].kind else {
@@ -60,11 +60,11 @@ fn commas_separate_ordinary_expressions_without_phantom_elements() {
     }
     for source in ["[* x y *]", "[* x; y *]", "[* x => y *]", "[* x ]", "[* x"] {
         assert!(
-            parse(&format!("module source; fn run() {{ {source} }}")).is_err(),
+            parse(&format!("mod source; fn run() {{ {source} }}")).is_err(),
             "{source}"
         );
     }
-    let source = "module source; import ops(op _ => _); fn run() { [* x => y, [% z %] *] }";
+    let source = "mod source; import ops {op _ => _} fn run() { [* x => y, [% z %] *] }";
     let module = parse(source).unwrap();
     let Item::FnDef(def) = &module.items[0] else {
         panic!()
@@ -101,7 +101,7 @@ fn contextual_control_names_remain_values_before_varop_close() {
 
 #[test]
 fn recursive_type_group_retains_headers_after_invalid_payload() {
-    let source = "module source; rec { type Alias[A] = ; type { Later[B]: . { mk; get; }; }; }";
+    let source = "mod source; rec { type Alias[A] = ; type { Later[B]: . { mk; get; }; }; }";
     let offset = source.find("= ;").unwrap() as u32 + 2;
     let probe = probe_tooling(
         source,
@@ -139,9 +139,9 @@ fn recursive_type_group_retains_headers_after_invalid_payload() {
 fn tooling_source_selects_ordinary_roots_without_wrapping() {
     for source in [
         "fn run() { () }",
-        "varop [* *] { foldl step seed; };",
-        "varop [! !] { foldl step seed; };",
-        "import source(foo);",
+        "op_var [* *] { foldl step seed; };",
+        "op_var [! !] { foldl step seed; };",
+        "import source {fn foo}",
     ] {
         assert!(
             matches!(
@@ -165,30 +165,30 @@ fn tooling_source_selects_ordinary_roots_without_wrapping() {
 #[test]
 fn declaration_and_import_share_strict_mirrored_heads() {
     for head in [
-        "varop [* *>",
-        "varop [* _ *]",
-        "varop [* , *]",
-        "varop [* ; *]",
-        "varop [* ... *]",
-        "varop .[ ].",
-        "varop [. .]",
-        "varop [] []",
-        "varop [[ ]]",
-        "varop *[ ]*",
+        "op_var [* *>",
+        "op_var [* _ *]",
+        "op_var [* , *]",
+        "op_var [* ; *]",
+        "op_var [* ... *]",
+        "op_var .[ ].",
+        "op_var [. .]",
+        "op_var [] []",
+        "op_var [[ ]]",
+        "op_var *[ ]*",
         "op variadic [ (_ ,) ... ]",
     ] {
         assert!(
-            parse(&format!("module source; {head} {{ foldr step seed; }};")).is_err(),
+            parse(&format!("mod source; {head} {{ foldr step seed; }};")).is_err(),
             "{head}"
         );
         assert!(
-            parse(&format!("module source; import provider({head});")).is_err(),
+            parse(&format!("mod source; import provider {{{head}}}")).is_err(),
             "{head}"
         );
     }
-    parse("module source; varop [* // head\n *] { foldl step seed; finalize done; }; fn varop(x: .) { x }").unwrap();
-    parse("module source; varop [*// head\n*] { foldl seed seed; };").unwrap();
-    parse("module source; import ops(varop [*/// head\n*]);").unwrap();
+    parse("mod source; op_var [* // head\n *] { foldl step seed; finalize done; }; fn varop(x: .) { x }").unwrap();
+    parse("mod source; op_var [*// head\n*] { foldl seed seed; };").unwrap();
+    parse("mod source; import ops {op_var [*/// head\n*]}").unwrap();
 }
 
 #[test]
@@ -249,7 +249,7 @@ fn compact_frames_fix_marker_identity_before_binding_lookup() {
         "[(A)]",
     ] {
         assert!(
-            parse(&format!("module source; fn run() {{ {source} }}")).is_err(),
+            parse(&format!("mod source; fn run() {{ {source} }}")).is_err(),
             "{source}"
         );
     }
@@ -257,21 +257,21 @@ fn compact_frames_fix_marker_identity_before_binding_lookup() {
 
 #[test]
 fn frame_elements_stay_values_while_call_type_stages_accept_types() {
-    for imports in ["", "import ops(varop [], varop [* *], op | _ |);"] {
+    for imports in ["", "import ops {op_var []; op_var [* *]; op | _ |}"] {
         for value in ["A", "(A)", "F[A]", "A.>f", "owner.A"] {
             for frame in [format!("[({value})]"), format!("[* ({value}) *]")] {
                 for expression in [frame.clone(), format!("keep({frame})")] {
-                    let source = format!("module source; {imports} fn run() {{ {expression} }}");
+                    let source = format!("mod source; {imports} fn run() {{ {expression} }}");
                     assert!(parse(&source).is_err(), "{source}");
                 }
             }
         }
         for expression in ["keep(A)", "keep(F[A])", "keep([A] A)"] {
-            let source = format!("module source; {imports} fn run() {{ {expression} }}");
+            let source = format!("mod source; {imports} fn run() {{ {expression} }}");
             assert!(parse(&source).is_err(), "{source}");
         }
         for expression in ["keep[A]", "keep[F[A]]"] {
-            let source = format!("module source; {imports} fn run() {{ {expression} }}");
+            let source = format!("mod source; {imports} fn run() {{ {expression} }}");
             let module = parse(&source).unwrap();
             let Item::FnDef(function) = &module.items[0] else {
                 panic!("function");
@@ -284,16 +284,13 @@ fn frame_elements_stay_values_while_call_type_stages_accept_types() {
                 "{source}"
             );
         }
-        parse(&format!(
-            "module source; {imports} fn run() {{ keep[[A] A] }}"
-        ))
-        .unwrap();
+        parse(&format!("mod source; {imports} fn run() {{ keep[[A] A] }}")).unwrap();
     }
 }
 
 #[test]
 fn frame_formatting_converges_with_structural_edge_grouping() {
-    let imports = "module source; import ops(op | _ |, op <| _ |>, op _ ?);";
+    let imports = "mod source; import ops {op | _ |; op <| _ |>; op _ ?}";
     for (source, canonical) in [
         ("[**]", "[* *]"),
         ("[****]", "[** **]"),
@@ -315,7 +312,7 @@ fn frame_formatting_converges_with_structural_edge_grouping() {
         assert_eq!(formatted, crate::pretty::pretty_module(&reparsed));
     }
     for head in ["[]", "[**]", "[* *]", "[****]", "[!? ?!]", "[/ /]"] {
-        let source = format!("module source; import ops(varop {head});");
+        let source = format!("mod source; import ops {{op_var {head}}}");
         let module = parse(&source).unwrap();
         let formatted = crate::pretty::pretty_module(&module);
         assert_eq!(
@@ -324,7 +321,7 @@ fn frame_formatting_converges_with_structural_edge_grouping() {
         );
     }
     let source =
-        "module source; fn before() { () } varop [! !] { foldl step seed; }; fn after() { () }";
+        "mod source; fn before() { () } op_var [! !] { foldl step seed; }; fn after() { () }";
     let eager = parse(source).unwrap();
     let lazy = super::parse_lazy(source).unwrap().force_all().unwrap();
     assert_eq!(
@@ -342,16 +339,16 @@ fn brackets_are_excluded_from_fixed_operators_and_placeholder_stems() {
             format!("{token} _"),
         ] {
             assert!(
-                parse(&format!("module source; op {pattern} {{ impl step; }};")).is_err(),
+                parse(&format!("mod source; op {pattern} {{ impl step; }};")).is_err(),
                 "{pattern}"
             );
             assert!(
-                parse(&format!("module source; import provider(op {pattern});")).is_err(),
+                parse(&format!("mod source; import provider {{op {pattern}}}")).is_err(),
                 "{pattern}"
             );
         }
         assert!(
-            parse(&format!("module source; fn run() {{ .{token}. {{ x1 }} }}")).is_err(),
+            parse(&format!("mod source; fn run() {{ .{token}. {{ x1 }} }}")).is_err(),
             "{token}"
         );
     }
@@ -365,7 +362,7 @@ fn ordinary_type_lambda_placeholder_and_value_elements_roundtrip() {
         "[* *]",
         "[* .x. { x1 } *]",
     ] {
-        let source = format!("module source; fn run() {{ {expr} }}");
+        let source = format!("mod source; fn run() {{ {expr} }}");
         let module = parse(&source).unwrap_or_else(|error| panic!("{source}: {error:?}"));
         let formatted = crate::pretty::pretty_module(&module);
         let reparsed = parse(&formatted).unwrap_or_else(|error| panic!("{formatted}: {error:?}"));
@@ -375,7 +372,7 @@ fn ordinary_type_lambda_placeholder_and_value_elements_roundtrip() {
 
 #[test]
 fn formatter_uses_tuple_layout_and_retains_comments() {
-    let source = "module source; varop [* *] { foldr step seed; }; fn run() { [* // first\n , first, // last\n second, // tail\n *] }";
+    let source = "mod source; op_var [* *] { foldr step seed; }; fn run() { [* // first\n , first, // last\n second, // tail\n *] }";
     let formatted = crate::pretty::pretty_module(&parse(source).unwrap());
     for comment in ["// first", "// last", "// tail"] {
         assert_eq!(formatted.matches(comment).count(), 1, "{formatted}");
@@ -385,18 +382,18 @@ fn formatter_uses_tuple_layout_and_retains_comments() {
         crate::pretty::pretty_module(&parse(&formatted).unwrap())
     );
     assert!(
-        crate::pretty::pretty_module(&parse("module source; fn run() { [* ,,, *] }").unwrap())
+        crate::pretty::pretty_module(&parse("mod source; fn run() { [* ,,, *] }").unwrap())
             .contains("[* *]")
     );
     assert!(
-        crate::pretty::pretty_module(&parse("module source; fn run() { [* , x,, *] }").unwrap())
+        crate::pretty::pretty_module(&parse("mod source; fn run() { [* , x,, *] }").unwrap())
             .contains("[* x *]")
     );
 }
 
 #[test]
 fn formatter_retains_comments_in_empty_varop_region() {
-    let source = "module source; fn run() { [* // empty\n ,,, *] }";
+    let source = "mod source; fn run() { [* // empty\n ,,, *] }";
     let formatted = crate::pretty::pretty_module(&parse(source).unwrap());
     assert_eq!(formatted.matches("// empty").count(), 1, "{formatted}");
     assert_eq!(
@@ -421,19 +418,19 @@ fn incomplete_cursor_facts_follow_argument_tuple_import_and_target_owners() {
     }
     for (source, kind) in [
         (
-            "module app/main; import provider/path(",
+            "mod app/main; import provider/path {",
             super::ImportSelectionKind::Any,
         ),
         (
-            "module app/main; import provider/path(first, sec",
-            super::ImportSelectionKind::Name,
+            "mod app/main; import provider/path {fn first; fn sec",
+            super::ImportSelectionKind::Function,
         ),
         (
-            "module app/main; import provider/path(first, op _ +",
+            "mod app/main; import provider/path {fn first; op _ +",
             super::ImportSelectionKind::FixedOperator,
         ),
         (
-            "module app/main; import provider/path(first, varop [*",
+            "mod app/main; import provider/path {fn first; op_var [*",
             super::ImportSelectionKind::VariadicOperator,
         ),
     ] {
@@ -462,7 +459,7 @@ fn incomplete_cursor_facts_follow_argument_tuple_import_and_target_owners() {
             "app/main"
         );
     }
-    let source = "package app; build { target kio-pr";
+    let source = "pkg app; build { target kio-pr";
     let probe = probe_tooling(
         source,
         Some(crate::ast::KioFileKind::Package),
@@ -475,7 +472,7 @@ fn incomplete_cursor_facts_follow_argument_tuple_import_and_target_owners() {
         &source[cursor.atom.replacement.start as usize..cursor.atom.replacement.end as usize],
         "kio-pr"
     );
-    let source = "package app; build { target rust { out \"out\"; name";
+    let source = "pkg app; build { target rust { out \"out\"; name";
     let probe = probe_tooling(
         source,
         Some(crate::ast::KioFileKind::Package),
@@ -491,7 +488,7 @@ fn incomplete_cursor_facts_follow_argument_tuple_import_and_target_owners() {
 
 #[test]
 fn operator_cursor_owns_whole_written_leading_run() {
-    let source = "module source; import ops(op _ &&++ _); fn run() { x &&+ }";
+    let source = "mod source; import ops {op _ &&++ _} fn run() { x &&+ }";
     let cursor = source.find("+ }").unwrap() as u32 + 1;
     let probe = probe_tooling(
         source,
@@ -511,9 +508,9 @@ fn operator_cursor_owns_whole_written_leading_run() {
 #[test]
 fn import_comma_gaps_and_tag_atoms_keep_selection_context() {
     for source in [
-        "module app; import ",
-        "module app; import pro",
-        "module app; import dir/pro",
+        "mod app; import ",
+        "mod app; import pro",
+        "mod app; import dir/pro",
     ] {
         let probe = probe_tooling(
             source,
@@ -529,11 +526,11 @@ fn import_comma_gaps_and_tag_atoms_keep_selection_context() {
         );
     }
     for source in [
-        "module app/main; import syntax(\n  , ",
-        "module app/main; import syntax(\n , // Leading trivia\n , ",
-        "module app/main; import syntax(op",
-        "module app/main; import syntax(varop",
-        "module app/main; import syntax(op (_ ? ___), op",
+        "mod app/main; import syntax {\n  ; ",
+        "mod app/main; import syntax {\n ; // Leading trivia\n ; ",
+        "mod app/main; import syntax {op",
+        "mod app/main; import syntax {op_var",
+        "mod app/main; import syntax {op _ ? ___; op",
     ] {
         let probe = probe_tooling(
             source,
@@ -552,7 +549,26 @@ fn import_comma_gaps_and_tag_atoms_keep_selection_context() {
             super::ImportSelectionKind::Any
         );
     }
-    let source = "module app/main; import syntax(op _ + _);";
+    for tag in ["fn", "type", "lit", "macro", "op", "op_macro", "op_var"] {
+        let source = format!("mod app/main; import syntax {{{tag}");
+        let probe = probe_tooling(
+            &source,
+            Some(crate::ast::KioFileKind::Module),
+            Some(source.len() as u32),
+            None,
+        );
+        let context = probe.facts.cursor.expect("incomplete selection tag");
+        assert_eq!(
+            context.import.unwrap().kind,
+            super::ImportSelectionKind::Any
+        );
+        assert_eq!(
+            &source[context.atom.replacement.start as usize..context.atom.replacement.end as usize],
+            tag,
+            "{source}"
+        );
+    }
+    let source = "mod app/main; import syntax {op _ + _}";
     let cursor = source.find("op _").unwrap() as u32 + 2;
     let probe = probe_tooling(
         source,
@@ -570,8 +586,8 @@ fn import_comma_gaps_and_tag_atoms_keep_selection_context() {
         "op _ + _"
     );
     for name in ["op", "varop"] {
-        for suffix in [");", ", other);"] {
-            let prefix = "module app/main; import syntax(";
+        for suffix in ["}", "; fn other}"] {
+            let prefix = "mod app/main; import syntax {fn ";
             let source = format!("{prefix}{name}{suffix}");
             let module = parse(&source).expect("ordinary contextual-name selection");
             let ImportKind::Selective { items, .. } = &module.imports[0].kind else {
@@ -587,7 +603,7 @@ fn import_comma_gaps_and_tag_atoms_keep_selection_context() {
             let context = probe.facts.cursor.expect("selection atom");
             assert_eq!(
                 context.import.unwrap().kind,
-                super::ImportSelectionKind::Any
+                super::ImportSelectionKind::Function
             );
             assert_eq!(
                 &source[context.atom.replacement.start as usize
@@ -603,8 +619,8 @@ fn import_alias_contextual_names_keep_source_and_destination_roles() {
     for original in ["op", "varop", "as"] {
         for local in ["op", "varop", "as"] {
             for separator in [" as ", " // Source\n as // Destination\n "] {
-                let prefix = "module app/main; import syntax(";
-                let source = format!("{prefix}{original}{separator}{local});");
+                let prefix = "mod app/main; import syntax {fn ";
+                let source = format!("{prefix}{original}{separator}{local}}}");
                 parse(&source).expect("ordinary contextual-name alias");
                 let source_end = prefix.len() + original.len();
                 let probe = probe_tooling(
@@ -617,7 +633,7 @@ fn import_alias_contextual_names_keep_source_and_destination_roles() {
                 assert_eq!(context.slot, super::CursorSlot::ImportSelection);
                 assert_eq!(
                     context.import.unwrap().kind,
-                    super::ImportSelectionKind::Name,
+                    super::ImportSelectionKind::Function,
                     "{source}"
                 );
                 assert_eq!(
@@ -646,18 +662,18 @@ fn import_alias_contextual_names_keep_source_and_destination_roles() {
 #[test]
 fn incomplete_import_aliases_keep_the_source_replacement_boundary() {
     for (selection, kind, invalid_destination) in [
-        ("foo", super::ImportSelectionKind::Name, "Upper"),
-        ("op", super::ImportSelectionKind::Name, "Upper"),
-        ("varop", super::ImportSelectionKind::Name, "Upper"),
-        ("as", super::ImportSelectionKind::Name, "Upper"),
-        ("Thing", super::ImportSelectionKind::Name, "lower"),
+        ("fn foo", super::ImportSelectionKind::Function, "Upper"),
+        ("fn op", super::ImportSelectionKind::Function, "Upper"),
+        ("fn varop", super::ImportSelectionKind::Function, "Upper"),
+        ("fn as", super::ImportSelectionKind::Function, "Upper"),
+        ("type Thing", super::ImportSelectionKind::Type, "lower"),
         (
             "op _ + _",
             super::ImportSelectionKind::FixedOperator,
             "_ ++ __",
         ),
         (
-            "varop [* *]",
+            "op_var [* *]",
             super::ImportSelectionKind::VariadicOperator,
             "[% *]",
         ),
@@ -665,9 +681,9 @@ fn incomplete_import_aliases_keep_the_source_replacement_boundary() {
         for suffix in [
             " as".to_owned(),
             " as ".to_owned(),
-            format!(" // Source\n as // Destination\n {invalid_destination});"),
+            format!(" // Source\n as // Destination\n {invalid_destination}}}"),
         ] {
-            let prefix = "module app/main; import syntax(";
+            let prefix = "mod app/main; import syntax {";
             let source = format!("{prefix}{selection}{suffix}");
             assert!(parse(&source).is_err(), "{source}");
             let source_end = prefix.len() + selection.len();
@@ -682,7 +698,9 @@ fn incomplete_import_aliases_keep_the_source_replacement_boundary() {
             assert_eq!(
                 &source[context.atom.replacement.start as usize
                     ..context.atom.replacement.end as usize],
-                selection,
+                selection
+                    .split_once(' ')
+                    .map_or(selection, |(_, value)| value),
                 "{source}"
             );
             if suffix == " as " {
@@ -706,24 +724,16 @@ fn incomplete_import_aliases_keep_the_source_replacement_boundary() {
 #[test]
 fn recursive_completion_retains_group_polymorphism_and_lambda_boundaries() {
     for (source, expected, lambda) in [
-        ("module app; fn run() { recur(", None, false),
+        ("mod app; fn run() { recur(", None, false),
+        ("mod app; rec(loop) fn run() { recur(", Some(false), false),
+        ("mod app; rec(loop) fn run[A]() { recur(", Some(true), false),
         (
-            "module app; rec(loop) fn run() { recur(",
-            Some(false),
-            false,
-        ),
-        (
-            "module app; rec(loop) fn run[A]() { recur(",
-            Some(true),
-            false,
-        ),
-        (
-            "module app; rec(loop) fn run[A]() { .() { recur(",
+            "mod app; rec(loop) fn run[A]() { .() { recur(",
             Some(true),
             true,
         ),
         (
-            "module app; rec(loop) fn run[A]() { .x. { recur(",
+            "mod app; rec(loop) fn run[A]() { .x. { recur(",
             Some(true),
             true,
         ),
@@ -759,8 +769,8 @@ fn recursive_completion_retains_group_polymorphism_and_lambda_boundaries() {
 #[test]
 fn prime_rejects_varop_declarations_and_regions() {
     for source in [
-        "module source; varop [* *] { foldr step seed; };",
-        "module source; fn run() { [* *] }",
+        "mod source; op_var [* *] { foldr step seed; };",
+        "mod source; fn run() { [* *] }",
     ] {
         assert!(crate::prime::lower::lower_module(parse(source).unwrap()).is_err());
     }

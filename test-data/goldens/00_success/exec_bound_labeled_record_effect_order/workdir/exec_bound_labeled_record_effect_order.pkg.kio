@@ -1,4 +1,4 @@
-package exec_bound_labeled_record_effect_order;
+pkg exec_bound_labeled_record_effect_order;
 
 build {
   cache "out/.kio-cache/";

@@ -78,7 +78,7 @@ expected_sha=$(git --git-dir="$bare" rev-parse HEAD) || fail "cannot read HEAD"
 # --- Write the consumer's git `.dep.kio` (its URL is dynamic, hence
 # generated here rather than committed). ---
 cat > "$scratch/consumer/greetlib.dep.kio" <<EOF
-dependency greetlib;
+dep greetlib;
 
 source {
   git "$bare";

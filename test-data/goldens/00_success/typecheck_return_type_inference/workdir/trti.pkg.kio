@@ -1,4 +1,4 @@
-package trti;
+pkg trti;
 
 build {
   cache "out/.kio-cache/";

@@ -1,4 +1,4 @@
-package qas;
+pkg qas;
 
 build {
   cache "out/.kio-cache/";

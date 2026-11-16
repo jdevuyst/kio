@@ -1,4 +1,4 @@
-package ffi_public_word_names;
+pkg ffi_public_word_names;
 
 build {
   cache "out/.kio-cache/";

@@ -1,4 +1,4 @@
-package stable_matching_market;
+pkg stable_matching_market;
 
 build {
   cache "out/.kio-cache/";

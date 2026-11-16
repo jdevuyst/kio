@@ -1,37 +1,37 @@
-module testapi/main;
+mod testapi/main;
 
-import library/macros/control(macro if);
-import library/macros/match(macro match);
-import library/macros/spine_macros(macro widen_sum);
-import library/vec(
-, Vec
-, at
-, concat
-, empty
-, fold
-, fold_range
-, from_list
-, is_empty
-, length
-, map
-, op _ <@> _
-, op _ <| _ |>
-, op _ ~~ _
-, op __ +> _
-, pop_back
-, push_back
-, slice
-, to_list
-, update
-);
-import list/core(List);
+import library/macros/control { macro if }
+import library/macros/match { macro match }
+import library/macros/spine_macros { macro widen_sum }
+import library/vec {
+  type Vec;
+  fn at;
+  fn concat;
+  fn empty;
+  fn fold;
+  fn fold_range;
+  fn from_list;
+  fn is_empty;
+  fn length;
+  fn map;
+  fn pop_back;
+  fn push_back;
+  fn slice;
+  fn to_list;
+  fn update;
+  op _ <@> _;
+  op _ <| _ |>;
+  op _ ~~ _;
+  op __ +> _
+}
+import list/core { type List }
 import list/list as lists;
-import list/list(varop [] as [* *]);
-import testapi(Bool, I32, String);
-import testapi/arith(add, mul);
-import testapi/fmt(bool_to_string, int_to_string);
-import testapi/io(print);
-import testapi/text(string_concat, string_eq);
+import list/list { op_var [] as [* *] }
+import testapi { type Bool; type I32; type String }
+import testapi/arith { fn add; fn mul }
+import testapi/fmt { fn bool_to_string; fn int_to_string }
+import testapi/io { fn print }
+import testapi/text { fn string_concat; fn string_eq }
 
 fn show(label: String, value: String) {
   print(value.>string_concat("\n").>>string_concat(" = ").>>string_concat(label))

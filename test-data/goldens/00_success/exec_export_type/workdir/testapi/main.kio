@@ -1,8 +1,8 @@
-module testapi/main;
+mod testapi/main;
 
-import testapi(String);
-import testapi/boxlib(Box);
-import testapi/io(print);
+import testapi { type String }
+import testapi/boxlib { type Box }
+import testapi/io { fn print }
 
 // Build a `Box` value, then unbox and print. The companion
 // `type Box = …;` in the package file makes `Box` reachable

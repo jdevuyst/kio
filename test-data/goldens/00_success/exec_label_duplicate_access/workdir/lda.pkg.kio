@@ -1,4 +1,4 @@
-package lda;
+pkg lda;
 
 build {
   cache "out/.kio-cache/";

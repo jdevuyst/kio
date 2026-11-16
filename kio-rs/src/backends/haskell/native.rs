@@ -1060,9 +1060,10 @@ impl<'a> NativeCtx<'a> {
         let kind = &self.shapes.standard_names().data_kind;
         let mut out = String::new();
         out.push_str(
-            "-- The host record binds each declared Kio host type through the\n\
-             -- package marker `h`; generic host functions quantify their Kio\n\
-             -- type parameters directly.\n",
+            "-- The host record binds each declared Kio host type through the
+-- package marker `h`; generic host functions quantify their Kio
+-- type parameters directly.
+",
         );
         out.push_str(&format!(
             "data {host_ty} (h :: {kind}.Type) (m :: {kind}.Type -> {kind}.Type) = {host_ty}\n"

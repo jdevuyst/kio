@@ -9,13 +9,13 @@
 /// alphabet and is refused at that position.
 ///
 /// `main` prints one block per packet and a closing tally.
-module testapi/main;
+mod testapi/main;
 
 import base32/packets as packets;
 import base32/report as report;
-import testapi(String);
-import testapi/io(print);
-import testapi/text(string_concat);
+import testapi { type String }
+import testapi/io { fn print }
+import testapi/text { fn string_concat }
 
 fn banner() -> String {
   string_concat("base32 byte codec\n", "alphabet: A-Z 2-7, pad =, quantum 8 glyphs\n\n")

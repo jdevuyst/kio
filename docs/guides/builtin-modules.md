@@ -501,7 +501,7 @@ Unfolds aliases, walks a right-associated product from left to right, and calls 
 ##### Checked example: `__type_product_spine_fold__`
 
 ```kio {}
-module builtin_type_fold_example;
+mod builtin_type_fold_example;
 
 import __comptime__;
 
@@ -641,7 +641,7 @@ Apply the compile-time proof first, then the condition and two Unit thunks as on
 ##### Checked example: `__comptime_if_then_else__`
 
 ```kio {}
-module builtin_comptime_conditional_example;
+mod builtin_comptime_conditional_example;
 
 import __comptime__;
 
@@ -693,7 +693,7 @@ Runs `step(recur, fuel, input)` after measuring the initial `fuel`. Unit, litera
 ##### Checked example: `__structural_recur__`
 
 ```kio {}
-module builtin_structural_recur_example;
+mod builtin_structural_recur_example;
 
 import __intrinsics__;
 
@@ -755,7 +755,7 @@ Creates a hygienic value lambda with the displayed `fn_type`; the callback recei
 ##### Checked example: `__term_fn__`
 
 ```kio {}
-module builtin_checked_fn_example;
+mod builtin_checked_fn_example;
 
 import __comptime__;
 
@@ -830,7 +830,7 @@ Uses only its explicit checked term, pattern type, and target type. Success retu
 ##### Checked example: `__term_specialize__`
 
 ```kio {}
-module builtin_term_specialize_example;
+mod builtin_term_specialize_example;
 
 import __comptime__;
 
@@ -961,7 +961,7 @@ Requires the marked call's `__Comptime__` proof first and matching `__Fill_ctx__
 ##### Checked example: `__fill__`
 
 ```kio {}
-module builtin_fill_example;
+mod builtin_fill_example;
 
 import __comptime__;
 
@@ -983,7 +983,7 @@ Appends equality with the invocation’s terminal result without returning or ob
 ##### Checked example: `__fill_result__`
 
 ```kio {}
-module builtin_fill_result_example;
+mod builtin_fill_result_example;
 
 import __comptime__;
 

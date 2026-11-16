@@ -1,7 +1,7 @@
 ================================================================================
 numbered local and sequence bindings preserve qualified names
 ================================================================================
-module m;
+mod m;
 fn f() { let.x <- (); let .x. = (); print(x2); let .x. = x1; print(x3); () }
 fn g() { action { let .x. <- (); let .y. = x1; pair(x2, y1) } }
 fn h() { let.x.>f }
@@ -149,7 +149,7 @@ fn h() { let.x.>f }
 ================================================================================
 numbered introductions do not consume continuing qualified let paths
 ================================================================================
-module m;
+mod m;
 fn f() { let.x.y() }
 fn g() { action { let.x.y } }
 fn h() { let.x. // path

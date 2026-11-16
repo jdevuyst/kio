@@ -657,10 +657,7 @@ fn ensure_mirror(
             && matches!(fetch_policy, FetchPolicy::RequireFetch)
         {
             return Err(dep_err(format!(
-                "cannot fetch the latest commits of the git dependency from `{url}`: {stderr}. \
-                 `kio dep update` re-resolves `ref` against the remote, so a fetch failure \
-                 cannot silently re-pin to a stale cached commit; re-run when the remote is \
-                 reachable, or use `kio dep fetch` to build against the locked commit."
+                "cannot fetch the latest commits of the git dependency from `{url}`: {stderr}. `kio dep update` re-resolves `ref` against the remote, so a fetch failure cannot silently re-pin to a stale cached commit; re-run when the remote is reachable, or use `kio dep fetch` to build against the locked commit."
             )));
         }
         return Ok(());
@@ -837,8 +834,7 @@ fn locate_selected_package(
     })?;
     let candidate = std::fs::canonicalize(checkout_dir.join(selector)).map_err(|e| {
         dep_err(format!(
-            "dependency `{local_name}`: manifest path `{selector}` does not resolve to an \
-             existing package file inside the git checkout: {e}",
+            "dependency `{local_name}`: manifest path `{selector}` does not resolve to an existing package file inside the git checkout: {e}",
         ))
     })?;
     if !candidate.starts_with(&checkout) {
@@ -897,8 +893,7 @@ fn locate_package_file(
         _ => {
             candidates.sort();
             Err(dep_err(format!(
-                "dependency `{local_name}`: the git checkout `{}` contains multiple `*.pkg.kio` \
-                 package files ({}); a git dependency must resolve to exactly one package",
+                "dependency `{local_name}`: the git checkout `{}` contains multiple `*.pkg.kio` package files ({}); a git dependency must resolve to exactly one package",
                 DisplayPath(checkout_dir),
                 candidates
                     .iter()
@@ -1083,15 +1078,13 @@ fn live_contract_snapshot(
 ) -> Result<crate::sig::ContractSnapshot, LocatedError> {
     let parsed = crate::package_collection::walk(pkg_dir).map_err(|(walk_err, _)| {
         dep_err(format!(
-            "dependency `{local_name}`: cannot read its package to compute its contract \
-             surface: {}",
+            "dependency `{local_name}`: cannot read its package to compute its contract surface: {}",
             walk_err.into_located().error.diag().1
         ))
     })?;
     let root = parsed.packages.get(&parsed.root).ok_or_else(|| {
         dep_err(format!(
-            "dependency `{local_name}`: its package produced no root to compute a contract \
-             surface from"
+            "dependency `{local_name}`: its package produced no root to compute a contract surface from"
         ))
     })?;
     let wrap = |located: LocatedError| {
@@ -1283,9 +1276,9 @@ mod tests {
         let consumer = temp.path().join("consumer");
         let package = checkout.join("packages/nested/lib/lib.pkg.kio");
         std::fs::create_dir_all(package.parent().unwrap()).unwrap();
-        std::fs::write(&package, "package lib;").unwrap();
+        std::fs::write(&package, "pkg lib;").unwrap();
         let decoy = checkout.join("decoy.pkg.kio");
-        std::fs::write(&decoy, "package decoy;").unwrap();
+        std::fs::write(&decoy, "pkg decoy;").unwrap();
         let dep_file = consumer.join("lib.dep.kio");
         let source = source_with_path(Some("packages/nested/lib/lib.pkg.kio"));
         assert_eq!(
@@ -1308,11 +1301,7 @@ mod tests {
             "packages/nested/lib",
             "packages/nested/lib/main.kio",
         ] {
-            std::fs::write(
-                checkout.join("packages/nested/lib/main.kio"),
-                "module main;",
-            )
-            .unwrap();
+            std::fs::write(checkout.join("packages/nested/lib/main.kio"), "mod main;").unwrap();
             let source = source_with_path(Some(selector));
             let error =
                 locate_source_package(&checkout, &source, "lib", &consumer, &dep_file).unwrap_err();
@@ -1334,7 +1323,7 @@ mod tests {
         let sibling = temp.path().join("checkout-other");
         std::fs::create_dir_all(&checkout).unwrap();
         std::fs::create_dir_all(&sibling).unwrap();
-        std::fs::write(sibling.join("lib.pkg.kio"), "package lib;").unwrap();
+        std::fs::write(sibling.join("lib.pkg.kio"), "pkg lib;").unwrap();
         let sink = std::cell::RefCell::new(Vec::new());
         let error = locate_selected_package(
             &checkout,
@@ -1354,8 +1343,8 @@ mod tests {
         let outside = temp.path().join("outside");
         std::fs::create_dir_all(checkout.join("inside")).unwrap();
         std::fs::create_dir_all(outside.join("child")).unwrap();
-        std::fs::write(checkout.join("inside/lib.pkg.kio"), "package lib;").unwrap();
-        std::fs::write(outside.join("lib.pkg.kio"), "package lib;").unwrap();
+        std::fs::write(checkout.join("inside/lib.pkg.kio"), "pkg lib;").unwrap();
+        std::fs::write(outside.join("lib.pkg.kio"), "pkg lib;").unwrap();
         std::os::unix::fs::symlink("inside", checkout.join("alias")).unwrap();
         std::os::unix::fs::symlink(&outside, checkout.join("escape")).unwrap();
         std::os::unix::fs::symlink(outside.join("child"), checkout.join("jump")).unwrap();
@@ -1475,7 +1464,7 @@ mod tests {
     fn init_source_repo(dir: &Path) {
         std::fs::create_dir_all(dir).unwrap();
         run_setup_git(dir, &["init", "-q"]);
-        std::fs::write(dir.join("lib.pkg.kio"), "package lib;\n").unwrap();
+        std::fs::write(dir.join("lib.pkg.kio"), "pkg lib;\n").unwrap();
         run_setup_git(dir, &["add", "-A"]);
         run_setup_git(
             dir,
@@ -1512,13 +1501,12 @@ mod tests {
     fn sealed_dependency_rejects_an_invalid_fresh_signature_artifact() {
         let tmp = tempfile::tempdir().expect("create dependency fixture");
         let package_file = tmp.path().join("lib.pkg.kio");
-        std::fs::write(&package_file, "package lib;\nbridge { api; }\n")
-            .expect("write package file");
+        std::fs::write(&package_file, "pkg lib;\nbridge { api; }\n").expect("write package file");
         std::fs::write(
             tmp.path().join("lib.sig.kio"),
-            r#"signature lib v(2);
+            r#"sig lib v(2);
 v(1) {
-  with { module api {
+  with { mod api {
     pub rec type { Bad: (Bad -> .) { pub mk; pub get; }; };
   } };
   nonbreaking { add { api.Bad; } }
@@ -1612,7 +1600,7 @@ v(1) {
         let tmp = tempfile::tempdir().unwrap();
         let dir = tmp.path().join("checkout");
         std::fs::create_dir_all(&dir).unwrap();
-        std::fs::write(dir.join("some.kio"), b"module x;").unwrap();
+        std::fs::write(dir.join("some.kio"), b"mod x;").unwrap();
         assert!(
             !is_complete_checkout(&dir),
             "files but no sentinel = partial"

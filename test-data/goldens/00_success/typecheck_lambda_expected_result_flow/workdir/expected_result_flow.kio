@@ -1,4 +1,4 @@
-module expected_result_flow;
+mod expected_result_flow;
 
 type { Tag[E]: . { mk; get } }
 

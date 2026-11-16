@@ -1,9 +1,17 @@
-module roster/scenario;
+mod roster/scenario;
 
-import macros/control(macro if);
-import roster/types(Day, Demand, Preference, Shift, Skill, Slot, Worker);
-import testapi(Bool, I32, String);
-import testapi/arith(eq_i32);
+import macros/control { macro if }
+import roster/types {
+  type Day;
+  type Demand;
+  type Preference;
+  type Shift;
+  type Skill;
+  type Slot;
+  type Worker
+}
+import testapi { type Bool; type I32; type String }
+import testapi/arith { fn eq_i32 }
 
 pub fn shift_count() -> I32 { 10 }
 

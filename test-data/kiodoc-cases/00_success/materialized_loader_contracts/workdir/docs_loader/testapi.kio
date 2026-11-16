@@ -1,4 +1,4 @@
-module docs_loader/testapi;
+mod docs_loader/testapi;
 
 host type I32 role(i32);
 

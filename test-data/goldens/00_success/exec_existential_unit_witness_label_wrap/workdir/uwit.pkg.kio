@@ -1,4 +1,4 @@
-package uwit;
+pkg uwit;
 
 build {
   cache "out/.kio-cache/";

@@ -1,8 +1,8 @@
-module testapi/main;
+mod testapi/main;
 
-import macros/row_macros(macro record, macro select, macro with_);
-import testapi(String);
-import testapi/io(print);
+import macros/row_macros { macro record; macro select; macro with_ }
+import testapi { type String }
+import testapi/io { fn print }
 
 type { Box[A]: String { pub mk; pub get } }
 

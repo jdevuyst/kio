@@ -1,4 +1,4 @@
-package exec_rec_quoted_stack;
+pkg exec_rec_quoted_stack;
 
 build {
   cache "out/.kio-cache/";

@@ -1,4 +1,4 @@
-package alib;
+pkg alib;
 
 bridge {
   util

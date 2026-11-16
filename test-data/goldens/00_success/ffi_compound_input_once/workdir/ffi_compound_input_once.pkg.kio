@@ -1,4 +1,4 @@
-package ffi_compound_input_once;
+pkg ffi_compound_input_once;
 
 build {
   cache "out/.kio-cache/";

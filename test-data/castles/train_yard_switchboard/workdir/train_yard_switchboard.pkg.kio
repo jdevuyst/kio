@@ -1,4 +1,4 @@
-package train_yard_switchboard;
+pkg train_yard_switchboard;
 
 build {
   cache "out/.kio-cache/";

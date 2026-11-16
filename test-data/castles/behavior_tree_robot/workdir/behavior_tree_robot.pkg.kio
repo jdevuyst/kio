@@ -1,4 +1,4 @@
-package behavior_tree_robot;
+pkg behavior_tree_robot;
 
 build {
   cache "out/.kio-cache/";

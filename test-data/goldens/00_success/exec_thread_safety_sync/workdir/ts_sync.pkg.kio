@@ -1,4 +1,4 @@
-package ts_sync;
+pkg ts_sync;
 
 build {
   cache "out/.kio-cache/";

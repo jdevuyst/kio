@@ -1,7 +1,7 @@
-module testapi/main;
+mod testapi/main;
 
-import testapi(String);
-import testapi/io(print);
+import testapi { type String }
+import testapi/io { fn print }
 
 // A polymorphic helper whose type-arg gets pinned at the call site.
 fn id[A](x: A) -> A { x }

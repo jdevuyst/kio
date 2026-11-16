@@ -1,4 +1,4 @@
-package macro_source_call_stages;
+pkg macro_source_call_stages;
 
 build {
   cache "out/.kio-cache/";

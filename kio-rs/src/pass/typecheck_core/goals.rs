@@ -12122,7 +12122,7 @@ mod tests {
     #[test]
     fn projected_single_type_close_preserves_a_real_transparent_alias_application() {
         let module = parse(
-            "module main;
+            "mod main;
              host type Actual;
              host type Box[A];
              type Alias[A] = Box[A];",
@@ -13097,7 +13097,7 @@ mod tests {
 
     #[test]
     fn prepared_rec_order_commit_rejects_another_type_context_before_closing_goals() {
-        let module = parse("module main;").expect("parse");
+        let module = parse("mod main;").expect("parse");
         let (modules, _) =
             FullPipeline::lower_package(vec![(PathBuf::from("main.kio"), module)], None)
                 .expect("lower Kio");
@@ -13174,7 +13174,7 @@ mod tests {
 
     #[test]
     fn stale_prepared_rec_order_commit_rejects_before_closing_goals() {
-        let module = parse("module main;").expect("parse");
+        let module = parse("mod main;").expect("parse");
         let (modules, _) =
             FullPipeline::lower_package(vec![(PathBuf::from("main.kio"), module)], None)
                 .expect("lower Kio");
@@ -13740,7 +13740,7 @@ mod tests {
     #[test]
     fn publication_retains_mixed_goal_free_and_hkt_slots_from_child_to_root() {
         reset_publication_validation_work();
-        let module = parse("module main;").expect("parse");
+        let module = parse("mod main;").expect("parse");
         let (modules, _) =
             FullPipeline::lower_package(vec![(PathBuf::from("main.kio"), module)], None)
                 .expect("lower Kio");
@@ -13908,7 +13908,7 @@ mod tests {
     #[test]
     fn publication_reuses_a_canonicalized_function_scheme_alias_at_root() {
         reset_publication_validation_work();
-        let module = parse("module main; type Scheme = [A] A -> A;").expect("parse");
+        let module = parse("mod main; type Scheme = [A] A -> A;").expect("parse");
         let (modules, _) =
             FullPipeline::lower_package(vec![(PathBuf::from("main.kio"), module)], None)
                 .expect("lower Kio");
@@ -13990,7 +13990,7 @@ mod tests {
 
     #[test]
     fn publication_retains_hkt_binder_after_value_layer_through_parent_to_root() {
-        let module = parse("module main;").expect("parse");
+        let module = parse("mod main;").expect("parse");
         let (modules, _) =
             FullPipeline::lower_package(vec![(PathBuf::from("main.kio"), module)], None)
                 .expect("lower Kio");
@@ -15120,7 +15120,7 @@ mod tests {
 
     fn normalized_shadow_names() -> (String, String) {
         let module = parse(
-            "module main;
+            "mod main;
              fn outer[A](seed: A) -> . {
                  let inner = .[A](value: A) { value };
                  ()
@@ -16051,7 +16051,7 @@ mod tests {
         let parsed = vec![(
             PathBuf::from("main.kio"),
             parse(
-                "module main;
+                "mod main;
                  host type Actual;
                  host type Either[E][A];
                  type Alias = Actual;
@@ -16184,13 +16184,13 @@ mod tests {
         let parsed = [
             (
                 "owner.kio",
-                "module owner;
+                "mod owner;
                  pub type Pair[A][ B] = A & B;
                  pub type Swap[A][ B] = Pair[B][ A];",
             ),
             (
                 "consumer.kio",
-                "module consumer; import owner as owner; type Rigid = .;",
+                "mod consumer; import owner as owner; type Rigid = .;",
             ),
         ]
         .into_iter()
@@ -16266,25 +16266,25 @@ mod tests {
         let parsed = [
             (
                 "base.kio",
-                "module base;
+                "mod base;
                  pub host type Value;
                  pub type { Box[A]: A { pub mk; pub get; }; };",
             ),
             (
                 "wrong.kio",
-                "module wrong;
+                "mod wrong;
                  pub host type Value;
                  pub type { Box[A][ B]: A { pub mk; pub get; }; };",
             ),
             (
                 "owner.kio",
-                "module owner;
+                "mod owner;
                  import base as base;
                  pub type Pair = base.Box[base.Value] & base.Value;",
             ),
             (
                 "consumer.kio",
-                "module consumer; import owner as owner; import wrong as base; import wrong as wrong;",
+                "mod consumer; import owner as owner; import wrong as base; import wrong as wrong;",
             ),
         ]
         .into_iter()
@@ -16769,7 +16769,7 @@ mod tests {
 
     #[test]
     fn close_accepts_a_saturated_alias_with_the_production_kind_context() {
-        let module = parse("module main; type Alias[A] = A;").expect("parse");
+        let module = parse("mod main; type Alias[A] = A;").expect("parse");
         let (modules, _) =
             FullPipeline::lower_package(vec![(PathBuf::from("main.kio"), module)], None)
                 .expect("lower Kio'");
@@ -16796,7 +16796,7 @@ mod tests {
 
     #[test]
     fn canonical_goal_frontier_keeps_same_spelled_rigid_binder_opaque() {
-        let module = parse("module main; type A = .; type Id[T] = T;").expect("parse");
+        let module = parse("mod main; type A = .; type Id[T] = T;").expect("parse");
         let (modules, _) =
             FullPipeline::lower_package(vec![(PathBuf::from("main.kio"), module)], None)
                 .expect("lower Kio'");
@@ -16838,7 +16838,7 @@ mod tests {
     fn malformed_recursive_alias_cutoff_is_not_reopened_by_goal_store_frontier() {
         let parsed = vec![(
             PathBuf::from("main.kio"),
-            parse("module main; type A = A & .;").expect("parse"),
+            parse("mod main; type A = A & .;").expect("parse"),
         )];
         let (modules, _) = FullPipeline::lower_package(parsed, None).expect("lower Kio");
         let package =
@@ -16905,7 +16905,7 @@ mod tests {
         let parsed = vec![(
             PathBuf::from("main.kio"),
             parse(
-                "module main;
+                "mod main;
                  host type Actual;
                  type A = Actual;
                  type Id[T] = T;",
@@ -17080,14 +17080,14 @@ mod tests {
     #[test]
     fn canonical_same_source_kind_is_terminal_over_a_package_path_collision() {
         let source =
-            parse("module aux; host type Scalar; host type Box[T];").expect("parse source module");
+            parse("mod aux; host type Scalar; host type Box[T];").expect("parse source module");
         let (mut source_modules, _) =
             FullPipeline::lower_package(vec![(PathBuf::from("aux.kio"), source)], None)
                 .expect("lower source module");
         let (_, source_module) = source_modules.pop().expect("one lowered source module");
 
-        let indexed = parse("module aux; host type Scalar; host type Box[A][B];")
-            .expect("parse indexed module");
+        let indexed =
+            parse("mod aux; host type Scalar; host type Box[A][B];").expect("parse indexed module");
         let (indexed_modules, _) =
             FullPipeline::lower_package(vec![(PathBuf::from("aux.kio"), indexed)], None)
                 .expect("lower indexed module");
@@ -17124,7 +17124,7 @@ mod tests {
 
     #[test]
     fn retained_binder_proofs_restore_exact_identity_and_abstract_at_source_positions() {
-        let module = parse("module main;").expect("parse");
+        let module = parse("mod main;").expect("parse");
         let (modules, _) =
             FullPipeline::lower_package(vec![(PathBuf::from("main.kio"), module)], None)
                 .expect("lower Kio");
@@ -17226,7 +17226,7 @@ mod tests {
 
     #[test]
     fn lexical_forall_may_retain_an_ancestor_goal_until_the_parent_closes() {
-        let module = parse("module main;").expect("parse");
+        let module = parse("mod main;").expect("parse");
         let (modules, _) =
             FullPipeline::lower_package(vec![(PathBuf::from("main.kio"), module)], None)
                 .expect("lower Kio");

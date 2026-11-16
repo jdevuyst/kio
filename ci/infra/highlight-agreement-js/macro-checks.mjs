@@ -4,8 +4,8 @@ import { docBodies, projectDocNode } from "../../../tools/vscode-kio/src/doc-emb
 import { macroHeads, macroScope } from "../../../tools/vscode-kio/src/macro-scope.mts";
 
 export function checkMacroHighlighting(parser, grammar, querySource) {
-  const source = `module source;
-import library(macro source as choose, macro x1, macro pack);
+  const source = `mod source;
+import library {macro source as choose; macro x1; macro pack}
 fn before() { later(()) }
 macro later: . -> . { impl helper }
 fn run(ordinary: .) {
@@ -41,7 +41,7 @@ fn after() { choose(()) }
     startPosition: { row: 1, column: start - source.indexOf("import library") },
     oldEndPosition: { row: 1, column: start - source.indexOf("import library") + 6 },
     newEndPosition: { row: 1, column: start - source.indexOf("import library") + 6 } }));
-  const editedSource = source.slice(0, start) + "      " + source.slice(start + 6);
+  const editedSource = source.slice(0, start) + "fn    " + source.slice(start + 6);
   const edited = parser.parse(editedSource, tree);
   try {
     assert.ok(!edited.rootNode.hasError, edited.rootNode.toString());
@@ -58,7 +58,7 @@ fn after() { choose(()) }
     "receiver.>choose[A](value)(other)",
     "choose(value)(other) { value } otherwise { other }",
   ]) {
-    const stagedSource = `module staged; import library(macro choose); fn run() { ${body} }`;
+    const stagedSource = `mod staged; import library {macro choose} fn run() { ${body} }`;
     const staged = parser.parse(stagedSource);
     try {
       assert.ok(!staged.rootNode.hasError, `staged macro: ${body}: ${staged.rootNode}`);
@@ -66,7 +66,7 @@ fn after() { choose(()) }
     } finally { staged.delete(); }
   }
 
-  for (const fragment of ["fn run() { choose(()) }", "module other; fn run() { choose(()) }"]) {
+  for (const fragment of ["fn run() { choose(()) }", "mod other; fn run() { choose(()) }"]) {
     const isolated = parser.parse(fragment);
     try { assert.equal(macroHeads(isolated.rootNode).size, 0, "isolated contexts have no ambient macros"); }
     finally { isolated.delete(); }
@@ -76,7 +76,7 @@ fn after() { choose(()) }
     ["let .x. = x1(()); x1(())", ["= x1"], ["; x1"]],
     ["let .(field, choose) = choose(()); field(()); choose(())", ["= choose"], ["; choose"]],
   ]) {
-    const localSource = `module source; import library(macro x1, macro choose); fn run() { ${body} }`;
+    const localSource = `mod source; import library {macro x1; macro choose} fn run() { ${body} }`;
     const localTree = parser.parse(localSource);
     try {
       assert.ok(!localTree.rootNode.hasError, localTree.rootNode.toString());
@@ -106,7 +106,7 @@ fn after() { choose(()) }
     "a.f(()) + m (left + (right)) { () }",
     "a.f(()) + m (left + ()) { () }",
   ]) {
-    const qualifiedSource = `module source; import helpers as a; import helpers(macro m, macro q, op _ + _); fn run() { ${body} }`;
+    const qualifiedSource = `mod source; import helpers as a; import helpers {macro m; macro q; op _ + _} fn run() { ${body} }`;
     const qualifiedTree = parser.parse(qualifiedSource);
     try {
       assert.ok(!qualifiedTree.rootNode.hasError, `qualified Bool member: ${body}`);
@@ -117,7 +117,7 @@ fn after() { choose(()) }
     } finally { qualifiedTree.delete(); }
   }
   for (const [body, selected] of [["let value = scoped { () }; value", false], ["let value { () }", false], ["let(value) { () }", true], ["(let)(value) { () }", true], ["let { () }", true], ["recur value { () }", false], ["recur(value) { () }", true]]) {
-    const nativeSource = `module source; import library(macro let, macro recur); fn run() { ${body} }`;
+    const nativeSource = `mod source; import library {macro let; macro recur} fn run() { ${body} }`;
     const nativeTree = parser.parse(nativeSource);
     try {
       const at = nativeSource.lastIndexOf(body) + (body.startsWith("(") ? 1 : 0);
@@ -125,7 +125,7 @@ fn after() { choose(()) }
     } finally { nativeTree.delete(); }
   }
   for (const expression of ["(,m,)(())", "(m,)(())", "(,,(m),,,)(())", "m // call\n (())", "((m // group\n))(())", "value.>((m // UFCS\n))(())"]) {
-    const commented = `module source; import helpers(macro m); fn run() { ${expression} }`;
+    const commented = `mod source; import helpers {macro m} fn run() { ${expression} }`;
     const tree = parser.parse(commented);
     try {
       assert.ok(!tree.rootNode.hasError, expression);
@@ -135,7 +135,7 @@ fn after() { choose(()) }
   }
   for (const receiver of ["value", "(value)", "(left, right)", "((left, right))", "(Foo.mk(left), Bar.mk(right))"]) {
     for (const expression of [`${receiver}.>call(())`, `${receiver}.>>call(())`, `call(()).<${receiver}`, `call(()).<<${receiver}`, `${receiver}.>((call))(())`]) {
-      const source = `module source; import helpers(macro call); fn run() { ${expression}; .(call: . -> .) { ${expression} } }`;
+      const source = `mod source; import helpers {macro call} fn run() { ${expression}; .(call: . -> .) { ${expression} } }`;
       const tree = parser.parse(source);
       try {
         assert.ok(!tree.rootNode.hasError, expression);
@@ -146,7 +146,7 @@ fn after() { choose(()) }
       } finally { tree.delete(); }
     }
   }
-  const identifierSource = "module source; import names(macro macro_name, macro as_received); fn assignment(as_fraction: . -> .) { as_received(()); as_fraction(()) }";
+  const identifierSource = "mod source; import names {macro macro_name; macro as_received} fn assignment(as_fraction: . -> .) { as_received(()); as_fraction(()) }";
   const identifiers = parser.parse(identifierSource);
   try {
     assert.ok(!identifiers.rootNode.hasError, "contextual keyword prefixes stay whole identifiers");
@@ -154,32 +154,32 @@ fn after() { choose(()) }
   } finally { identifiers.delete(); }
   for (const name of ["macro_value", "macro1", "macros"]) {
     for (const source of [
-      `module source; import names(macro source as ${name}); fn run() { ${name}(()) }`,
-      `module source; fn ${name}() { () } fn run() { ${name}(()) }`,
-      `module source; macro ${name}: . -> . { impl helper } fn run() { ${name}(()) }`,
+      `mod source; import names {macro source as ${name}} fn run() { ${name}(()) }`,
+      `mod source; fn ${name}() { () } fn run() { ${name}(()) }`,
+      `mod source; macro ${name}: . -> . { impl helper } fn run() { ${name}(()) }`,
     ]) {
       const tree = parser.parse(source);
       try { assert.ok(!tree.rootNode.hasError, `contextual macro keyword keeps whole name: ${name}`); }
       finally { tree.delete(); }
     }
   }
-  const incompleteSelector = parser.parse("module source; import names(macro as ");
+  const incompleteSelector = parser.parse("mod source; import names {macro as ");
   try { assert.equal(macroHeads(incompleteSelector.rootNode).size, 0, "synthetic close cannot settle macro-as selector"); }
   finally { incompleteSelector.delete(); }
   for (const name of ["x0", "x01", "x999999999999999999999999999999999999999"]) {
-    const invalid = `module source; import helper(macro ${name}); fn run() { .x. { x1; ${name}(()) } }`;
+    const invalid = `mod source; import helper {macro ${name}} fn run() { .x. { x1; ${name}(()) } }`;
     const tree = parser.parse(invalid);
     try { assert.ok(!macroHeads(tree.rootNode).has(invalid.lastIndexOf(name)), `invalid numbered index retains local ownership: ${name}`); }
     finally { tree.delete(); }
   }
-  for (const [selector, expected] of [["macro", false], ["macro as local", false], ["macro as", true], ["macro as as local", true], ["macro build,", true], ["macro as,", true]]) {
-    const selected = parser.parse(`module source; import provider(${selector});`);
+  for (const [selector, expected] of [["fn macro", false], ["fn macro as local", false], ["macro as", true], ["macro as as local", true], ["macro build;", true], ["macro as;", true]]) {
+    const selected = parser.parse(`mod source; import provider {${selector}}`);
     try {
       assert.ok(!selected.rootNode.hasError, selector);
       assert.equal(selected.rootNode.descendantsOfType("import_macro_item").length > 0, expected, `complete contextual selector: ${selector}`);
     } finally { selected.delete(); }
   }
-  const documented = parser.parse(`module source;
+  const documented = parser.parse(`mod source;
 /// \`\`\`kio {@}
 /// later(())
 /// \`\`\`

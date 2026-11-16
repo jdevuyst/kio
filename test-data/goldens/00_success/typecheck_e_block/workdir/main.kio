@@ -1,4 +1,4 @@
-module main;
+mod main;
 
 // Block reduced to a single final expression. The chain is
 // empty; the block's type is the final expr's synthesis.

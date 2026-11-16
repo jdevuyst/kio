@@ -56,8 +56,7 @@ usage error (missing / unknown subcommand).
 
 See {base}/specs/cli.md#kio-cache-subcommand for full command behavior.";
 
-const HELP_CLEAR_TEMPLATE: &str = "\
-Usage: kio cache clear
+const HELP_CLEAR_TEMPLATE: &str = "Usage: kio cache clear
 
 Clear the Kio-semantic on-disk caches for the current package.
 
@@ -82,8 +81,7 @@ filesystem failure).
 
 See {base}/specs/cli.md#kio-cache-clear for full command behavior.";
 
-const HELP_PATH_TEMPLATE: &str = "\
-Usage: kio cache path
+const HELP_PATH_TEMPLATE: &str = "Usage: kio cache path
 
 Print the absolute path of the package's cache directory to stdout.
 
@@ -110,8 +108,7 @@ package file has no `build { ... }` block, or the block declares
 
 See {base}/specs/cli.md#kio-cache-path for full command behavior.";
 
-const HELP_GC_TEMPLATE: &str = "\
-Usage: kio cache gc
+const HELP_GC_TEMPLATE: &str = "Usage: kio cache gc
 
 Garbage-collect stale Kio-semantic cache entries for the current
 package.
@@ -534,7 +531,7 @@ mod tests {
     /// Write a `<name>.pkg.kio` at `root` carrying a `build { ... }`
     /// block with the given body (the `cache` / `target` lines).
     fn write_pkg(root: &Path, build_body: &str) {
-        let src = format!("package pkg;\n\nbuild {{\n{build_body}}}\n");
+        let src = format!("pkg pkg;\n\nbuild {{\n{build_body}}}\n");
         fs::write(root.join("pkg.pkg.kio"), src).unwrap();
     }
 
@@ -552,7 +549,7 @@ mod tests {
     #[test]
     fn no_build_block_succeeds_with_no_cache_configured_message() {
         let root = TempTree(temp_dir());
-        fs::write(root.0.join("pkg.pkg.kio"), "package pkg;\n").unwrap();
+        fs::write(root.0.join("pkg.pkg.kio"), "pkg pkg;\n").unwrap();
         assert_eq!(clear_at(&root.0), ExitCode::Success);
     }
 
@@ -707,7 +704,7 @@ mod tests {
     #[test]
     fn path_exits_build_for_no_build_block() {
         let root = TempTree(temp_dir());
-        fs::write(root.0.join("pkg.pkg.kio"), "package pkg;\n").unwrap();
+        fs::write(root.0.join("pkg.pkg.kio"), "pkg pkg;\n").unwrap();
         assert_eq!(path_at(&root.0), ExitCode::Build);
     }
 

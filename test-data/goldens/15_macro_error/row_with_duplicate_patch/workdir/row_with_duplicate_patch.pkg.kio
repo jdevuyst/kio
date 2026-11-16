@@ -1,4 +1,4 @@
-package row_with_duplicate_patch;
+pkg row_with_duplicate_patch;
 
 build {
   cache "out/.kio-cache/";

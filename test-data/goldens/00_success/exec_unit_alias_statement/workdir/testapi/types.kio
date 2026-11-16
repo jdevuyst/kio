@@ -1,3 +1,3 @@
-module testapi/types;
+mod testapi/types;
 
 pub type Unit_alias = .;

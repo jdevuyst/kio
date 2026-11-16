@@ -1,4 +1,4 @@
-package dict_inventory_reconcile;
+pkg dict_inventory_reconcile;
 
 build {
   cache "out/.kio-cache/";
@@ -49,6 +49,7 @@ bridge {
   testapi/**;
   macros/testapi;
   dict/dict;
+  dict/macros/control;
   dict/macros/testapi;
   dict_host;
   list/core;

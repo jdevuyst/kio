@@ -1,4 +1,4 @@
-package exec_knapsack_dp;
+pkg exec_knapsack_dp;
 
 build {
   cache "out/.kio-cache/";

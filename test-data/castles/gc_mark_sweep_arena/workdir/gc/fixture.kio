@@ -17,12 +17,21 @@
 ///   - `shared` and `orphan` carry immediates only;
 ///   - the dead objects sit at the bottom, the middle and near the top,
 ///     so compaction has to move every survivor except the first.
-module gc/fixture;
+mod gc/fixture;
 
-import gc/heap(Heap_cells, Heap_roots, Image, field_addr, tag_box, tag_frame, tag_pair, tag_vec);
-import gc/slot(imm_cell, ptr_cell);
-import testapi(Array, I32);
-import testapi/array(array_len, array_make_empty, array_push, array_set);
+import gc/heap {
+  type Heap_cells;
+  type Heap_roots;
+  type Image;
+  fn field_addr;
+  lit tag_box;
+  lit tag_frame;
+  lit tag_pair;
+  lit tag_vec
+}
+import gc/slot { fn imm_cell; fn ptr_cell }
+import testapi { type Array; type I32 }
+import testapi/array { fn array_len; fn array_make_empty; fn array_push; fn array_set }
 
 /// A pointer field that is not linked yet. Every hole is overwritten by
 /// `link` before the image is handed out.

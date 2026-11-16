@@ -1,4 +1,4 @@
-package exec_imported_operator_full_shapes;
+pkg exec_imported_operator_full_shapes;
 
 build {
   cache "out/.kio-cache/";

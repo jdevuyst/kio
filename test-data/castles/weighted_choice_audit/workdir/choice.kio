@@ -1,8 +1,8 @@
-module choice;
+mod choice;
 
 import list/core as lists;
 import list/list as traversal;
-import testapi(Bool, I32);
+import testapi { type Bool; type I32 }
 import testapi/arith as arith;
 
 pub type Choice[A] = lists.List[A & I32];

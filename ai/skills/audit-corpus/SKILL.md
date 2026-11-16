@@ -169,7 +169,7 @@ resource rule.
 
 ### 5. macro modules included instead of depended on
 
-The shared POC macro library — `macro_util.kio`, `algebraic_macros.kio`, `spine_macros.kio`, `match.kio`, `derive.kio` (and the rest of the `macros` package) — has a single canonical home under `test-data/poc/macros/workdir/` (package `macros`). A test case that needs the macros **depends on `macros`**: a `<local>.dep.kio` (`dependency macros; source { path "<rel>/macros.pkg.kio"; }`) at the package root, importing the re-rooted modules (`import macros/derive(macro derive as d);`, `import macros/match(macro match);`). Depending on macros materializes its modules under a `macros/` tree at the case root, and that re-rooted tree is **committed** (the case ships its dependency's materialized closure). The committed modules are re-rooted derivatives (`module derive;` → `module macros/derive;`), not byte copies of the canonical source — so this section's byte-identical-copy check (b) never flags a committed materialized tree.
+The shared POC macro library — `macro_util.kio`, `algebraic_macros.kio`, `spine_macros.kio`, `match.kio`, `derive.kio` (and the rest of the `macros` package) — has a single canonical home under `test-data/poc/macros/workdir/` (package `macros`). A test case that needs the macros **depends on `macros`**: a `<local>.dep.kio` (`dep macros; source { path "<rel>/macros.pkg.kio"; }`) at the package root, importing the re-rooted modules (`import macros/derive { macro derive as d }`, `import macros/match { macro match }`). Depending on macros materializes its modules under a `macros/` tree at the case root, and that re-rooted tree is **committed** (the case ships its dependency's materialized closure). The committed modules are re-rooted derivatives (`mod derive;` → `mod macros/derive;`), not byte copies of the canonical source — so this section's byte-identical-copy check (b) never flags a committed materialized tree.
 
 The two pre-dependency workarounds are forbidden: a tracked filesystem link into `test-data/poc/macros/workdir/`, and a byte-identical real copy of a canonical module. The gate-enforced counterpart is [`ci/checks/repo-lint/golden-reference-deps.sh`](../../../ci/checks/repo-lint/golden-reference-deps.sh), which fails CI on either. This section is the manual backstop and explainer; run it the same way to confirm:
 
@@ -184,7 +184,7 @@ for name in macro_util.kio algebraic_macros.kio spine_macros.kio match.kio deriv
 done
 ```
 
-Each `TRACKED LINK` / `BYTE-IDENTICAL COPY` hit is a finding: replace it by depending on `macros` and importing the re-rooted module (remove the included file, add `<local>.dep.kio`, an `import macros/<name-stem> ...;` declaration, and a `macros/testapi;` glob to the consumer's `bridge` for the role types the macros import). A reference-module-named file that is not byte-identical and not a tracked filesystem link (a genuine purpose-built variant a single case ships) is admissible and not flagged. If you suspect a "variant" is actually stale drift of the canonical module, that is a separate spec/POC-sync concern; record it but do not auto-convert it.
+Each `TRACKED LINK` / `BYTE-IDENTICAL COPY` hit is a finding: replace it by depending on `macros` and importing the re-rooted module (remove the included file, add `<local>.dep.kio`, an explicit `import macros/<name-stem> { ... }` declaration, and a `macros/testapi;` glob to the consumer's `bridge` for the role types the macros import). A reference-module-named file that is not byte-identical and not a tracked filesystem link (a genuine purpose-built variant a single case ships) is admissible and not flagged. If you suspect a "variant" is actually stale drift of the canonical module, that is a separate spec/POC-sync concern; record it but do not auto-convert it.
 
 ### 6. No absolute or checkout-local paths, no stray symlinks
 
@@ -464,7 +464,7 @@ A library POC missing the ready-to-drop-in claim, or a worked-example POC missin
 
 ### POC 2. Module `///` documentation
 
-Every real root library `*.kio` file under `test-data/poc/*/workdir/` must have module-level `///` docs immediately above the `module` directive, and every exported top-level declaration must have attached `///` docs: functions (including `pure` and recursive declarations), `type`, `literal`, `op`, `varop`, and `macro`. Demo modules, host adapters, `testapi` host-API modules, and materialized dependency roots are exempt from this root-library doc scan (see [`test-data/poc/README.md`](../../../test-data/poc/README.md) § Module documentation).
+Every real root library `*.kio` file under `test-data/poc/*/workdir/` must have module-level `///` docs immediately above the `mod` directive, and every exported top-level declaration must have attached `///` docs: functions (including `pure` and recursive declarations), `type`, `lit`, `op`, `op_macro`, `op_var`, and `macro`. Demo modules, host adapters, `testapi` host-API modules, and materialized dependency roots are exempt from this root-library doc scan (see [`test-data/poc/README.md`](../../../test-data/poc/README.md) § Module documentation).
 
 Private helpers do not need `///`. If an item is not worth documenting for copyable library users, it should not be `pub` unless another module genuinely needs it across the module boundary. Public constructors and projectors inside a documented nominal type are covered by the type docs unless they need extra semantic explanation.
 
@@ -498,13 +498,13 @@ for path in sorted(Path("test-data/poc").glob("*/workdir/**/*.kio")):
     seen.add(real)
     paths.append(path)
 
-public_decl = re.compile(r"^pub\s+(?:pure\s+)?(?:fn|type|literal|op|varop|macro|rec)\b")
+public_decl = re.compile(r"^pub\s+(?:pure\s+)?(?:fn|type|lit|op|op_macro|op_var|macro|rec)\b")
 failures = []
 
 for path in paths:
     lines = path.read_text().splitlines()
     for index, line in enumerate(lines):
-        if re.match(r"^module\b", line):
+        if re.match(r"^mod\b", line):
             if index == 0 or not lines[index - 1].lstrip().startswith("///"):
                 failures.append((path, index + 1, "missing module-level /// docs"))
             break
@@ -667,7 +667,7 @@ Path portability is a shared check (§ 6); its `git grep` covers `test-data/poc`
 
 ### POC 10. Self-containment
 
-A POC has one reusable root package under `workdir/` and may have a nested runnable package under `workdir/demo/`. A root package may import another POC only through a committed materialized `*.dep.kio` dependency. Inspect current `import path(names);` and `import path as alias;` declarations, tracing each selected module to the package's own sources or declared materialized dependency closure. A same-spelled sibling directory is not that dependency evidence. The drop-in promise rests on copying the package's own library files plus its declared dependency closure, not on ambient sibling directories.
+A POC has one reusable root package under `workdir/` and may have a nested runnable package under `workdir/demo/`. A root package may import another POC only through a committed materialized `*.dep.kio` dependency. Inspect current `import path { fn name }` and `import path as alias;` declarations, tracing each selected module to the package's own sources or declared materialized dependency closure. A same-spelled sibling directory is not that dependency evidence. The drop-in promise rests on copying the package's own library files plus its declared dependency closure, not on ambient sibling directories.
 
 An import relying directly on ambient cross-POC sources is a finding. Imports through the local name created by a `*.dep.kio` file (`macros/...`, `library/...`) are expected, as are imports of the package's own host-declaration modules. Derive dependency roots from actual declarations rather than a hard-coded name list or an obsolete import-spelling regex.
 

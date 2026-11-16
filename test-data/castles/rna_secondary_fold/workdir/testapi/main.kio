@@ -1,10 +1,10 @@
-module testapi/main;
+mod testapi/main;
 
 import fold/fixtures as fixtures;
 import fold/reconstruct as reconstruct;
 import fold/report as report;
 import fold/solver as solver;
-import testapi(Array, I32, String);
+import testapi { type Array; type I32; type String }
 import testapi/array as array;
 import testapi/io as io;
 

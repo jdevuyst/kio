@@ -1,5 +1,5 @@
-module pure_modifier_on_newtype/main;
+mod pure_modifier_on_newtype/main;
 
-import pure_modifier_on_newtype(String);
+import pure_modifier_on_newtype {type String}
 
 pure type { Bad: String { mk; get; }; };

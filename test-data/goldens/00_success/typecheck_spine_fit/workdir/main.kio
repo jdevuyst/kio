@@ -1,6 +1,6 @@
-module main;
+mod main;
 
-import macros/spine_macros(macro fit);
+import macros/spine_macros { macro fit }
 
 type { A: . { pub mk; pub get } }
 

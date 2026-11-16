@@ -1,4 +1,4 @@
-package build_match_arm_condition;
+pkg build_match_arm_condition;
 
 build {
   cache "out/.kio-cache/";

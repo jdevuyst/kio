@@ -1,4 +1,4 @@
-dependency list;
+dep list;
 
 source {
   path "../../../poc/list/workdir/list.pkg.kio"

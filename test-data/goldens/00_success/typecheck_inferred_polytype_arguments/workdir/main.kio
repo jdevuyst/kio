@@ -1,4 +1,4 @@
-module main;
+mod main;
 
 fn make_poly[A](value: A) -> [B] B -> A {
   .[B](_ignored: B) -> A { value }

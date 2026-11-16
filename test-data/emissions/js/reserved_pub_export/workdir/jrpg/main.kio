@@ -1,5 +1,5 @@
-module jrpg/main;
+mod jrpg/main;
 
-import jrpg(String);
+import jrpg { type String }
 
 pub fn return() -> String { "ok"[String] }

@@ -1,4 +1,4 @@
-module main;
+mod main;
 
 // Single `let`: RHS is the bare variable `x`, synthesized as
 // `.` via E-Var. The bound `y` carries type `.` (no

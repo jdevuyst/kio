@@ -1,4 +1,4 @@
-package exec_church_numerals;
+pkg exec_church_numerals;
 
 build {
   cache "out/.kio-cache/";

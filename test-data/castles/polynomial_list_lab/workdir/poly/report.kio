@@ -1,25 +1,33 @@
 /// The printed workbench report.
-module poly/report;
+mod poly/report;
 
 import list/core as lc;
 import list/list as ll;
-import list/list(varop [] as [* *]);
-import macros/control(macro if);
-import macros/match(macro match);
-import macros/row_macros(macro select);
+import list/list { op_var [] as [* *] }
+import macros/control { macro if }
+import macros/match { macro match }
+import macros/row_macros { macro select }
 import poly/arith as arith;
 import poly/calculus as calculus;
 import poly/core as core;
 import poly/division as division;
-import poly/division(Divided, Not_divisible);
+import poly/division { type Divided; type Not_divisible }
 import poly/fixtures as fx;
-import poly/laws(Check, Claim, Holds, Law, Witness, all_checks, passes);
+import poly/laws {
+  type Check;
+  type Claim;
+  type Holds;
+  type Law;
+  type Witness;
+  fn all_checks;
+  fn passes
+}
 import poly/render as render;
-import testapi(Bool, I32, String);
-import testapi/arith(sub_i32);
-import testapi/fmt(int_to_string);
-import testapi/io(print);
-import testapi/iter(loop);
+import testapi { type Bool; type I32; type String }
+import testapi/arith { fn sub_i32 }
+import testapi/fmt { fn int_to_string }
+import testapi/io { fn print }
+import testapi/iter { fn loop }
 
 fn say(text: String) { print(render.join([* text, "\n" *])) }
 

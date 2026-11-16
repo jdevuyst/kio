@@ -12,7 +12,7 @@
 /// The program prints the machine and the fixture, a trace of the opening
 /// ticks, what each process cost, the system totals, and the frame table the
 /// policy left behind.
-module testapi/main;
+mod testapi/main;
 
 import os/report as report;
 

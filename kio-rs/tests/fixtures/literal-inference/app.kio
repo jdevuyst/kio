@@ -1,8 +1,8 @@
-module app;
+mod app;
 
 import __intrinsics__;
 
-import provider(Bool, Float, Int, Narrow);
+import provider { type Bool; type Float; type Int; type Narrow }
 
 pub fn default() -> Int { 42 }
 

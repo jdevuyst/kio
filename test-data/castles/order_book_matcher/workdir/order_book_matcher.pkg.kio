@@ -1,4 +1,4 @@
-package order_book_matcher;
+pkg order_book_matcher;
 
 build {
   cache "out/.kio-cache/";

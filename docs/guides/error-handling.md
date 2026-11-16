@@ -9,11 +9,11 @@ bridge {
   kiodoc;
 }
 
-module kiodoc;
+mod kiodoc;
 
-import match(macro match);
-import control(Bool, macro if);
-import spine_macros(macro widen_sum, macro narrow_sum, macro fit);
+import match {macro match}
+import control {type Bool; macro if}
+import spine_macros {macro widen_sum; macro narrow_sum; macro fit}
 
 host type Int role(i32);
 host type String role(str);

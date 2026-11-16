@@ -1,4 +1,4 @@
-package artcache;
+pkg artcache;
 
 build {
   cache "out/.kio-cache/";

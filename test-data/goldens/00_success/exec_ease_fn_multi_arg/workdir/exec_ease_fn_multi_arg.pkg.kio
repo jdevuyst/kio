@@ -1,4 +1,4 @@
-package exec_ease_fn_multi_arg;
+pkg exec_ease_fn_multi_arg;
 
 build {
   cache "out/.kio-cache/";

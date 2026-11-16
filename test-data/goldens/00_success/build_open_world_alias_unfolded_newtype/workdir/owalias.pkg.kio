@@ -1,4 +1,4 @@
-package owalias;
+pkg owalias;
 
 build {
   cache "out/.kio-cache/";

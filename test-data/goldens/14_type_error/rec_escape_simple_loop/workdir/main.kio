@@ -1,4 +1,4 @@
-module main;
+mod main;
 
 host fn drive[S][R](step: S -> (S | R), state: S) -> R;
 

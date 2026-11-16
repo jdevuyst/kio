@@ -1,9 +1,17 @@
-module http_status_window/render;
+mod http_status_window/render;
 
 import http_status_window/strings as s;
-import http_status_window/window(Bytes, Entry, Family, Method, Ordinal, Path, Status);
-import macros/row_macros(macro select);
-import testapi(String);
+import http_status_window/window {
+  type Bytes;
+  type Entry;
+  type Family;
+  type Method;
+  type Ordinal;
+  type Path;
+  type Status
+}
+import macros/row_macros { macro select }
+import testapi { type String }
 
 pub fn entry(entry: Entry) -> String {
   let .(id, verb, resource, code, size, class) =

@@ -1,9 +1,9 @@
-module testapi/main;
+mod testapi/main;
 
-import macros/algebraic_macros(macro into);
-import macros/match(macro match);
-import testapi(I32, String);
-import testapi/io(print);
+import macros/algebraic_macros { macro into }
+import macros/match { macro match }
+import testapi { type I32; type String }
+import testapi/io { fn print }
 
 // Multi-branch source: `into` distributes inner sums through
 // products. Source `(String & (I32 | String))` has an inner sum

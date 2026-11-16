@@ -1,4 +1,4 @@
-package datalog_fixpoint_engine;
+pkg datalog_fixpoint_engine;
 
 build {
   cache "out/.kio-cache/";

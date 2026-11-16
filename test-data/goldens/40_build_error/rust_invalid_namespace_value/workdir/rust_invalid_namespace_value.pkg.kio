@@ -1,4 +1,4 @@
-package rust_invalid_namespace_value;
+pkg rust_invalid_namespace_value;
 
 build {
   cache "out/.kio-cache/";

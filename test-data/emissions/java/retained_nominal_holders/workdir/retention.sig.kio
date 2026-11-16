@@ -1,13 +1,13 @@
-signature retention v(3);
+sig retention v(3);
 
 v(1) {
   nonbreaking {
     add {
-      module retired/deep {
+      mod retired/deep {
         host type Gone;
         host fn archived(value: Gone) -> Gone
       };
-      module shared/removed {
+      mod shared/removed {
         host type Forgotten;
         host fn forgotten(value: Forgotten) -> Forgotten
       }

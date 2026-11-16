@@ -1,7 +1,7 @@
-module main;
+mod main;
 
-import other(noise);
-import provider(Wrapped);
+import other { fn noise }
+import provider { type Wrapped }
 
 fn consume(wrapper: Wrapped[.] -> .) { () }
 

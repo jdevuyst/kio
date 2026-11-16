@@ -33,7 +33,7 @@
 //! |             |                   | shape (not a value, not a concrete     |
 //! |             |                   | type). `TYPE_PARAMETER` is too narrow; |
 //! |             |                   | `CLASS` is too concrete.               |
-//! | `literal`   | `CONSTANT`        | A named compile-time literal value.    |
+//! | `lit`       | `CONSTANT`        | A named compile-time literal value.    |
 //! | `type {T: U;}` | `STRUCT`      | Each entry declares a nominal wrapper. |
 //! | `equiv`     | `OPERATOR`        | An equivalence claim is a proof        |
 //! |             |                   | obligation / property, which has no    |
@@ -187,7 +187,7 @@ fn item_to_symbol(
         }
         Item::VariadicOperator(operator, _) => {
             let name = variadic_display_name(operator);
-            let sel = find_name_in_source(source, "varop", operator.meta.span);
+            let sel = find_name_in_source(source, "op_var", operator.meta.span);
             (name, SymbolKind::OPERATOR, operator.meta.span, sel)
         }
         Item::HostType(h) => {
@@ -376,16 +376,16 @@ mod tests {
 
     #[test]
     fn empty_module_yields_no_symbols() {
-        let syms = symbols_for("module pkg/main;\n");
+        let syms = symbols_for("mod pkg/main;\n");
         assert!(syms.is_empty());
     }
 
     #[test]
     fn variadic_symbol_uses_current_syntax_and_exact_keyword_span() {
-        let source = "module pkg;\nvarop [* *] { foldr step empty }\n";
+        let source = "mod pkg;\nop_var [* *] { foldr step empty }\n";
         for symbols in [symbols_for(source), lazy_symbols_for(source)] {
             assert_eq!(symbols.len(), 1);
-            assert_eq!(symbols[0].name, "varop [* *]");
+            assert_eq!(symbols[0].name, "op_var [* *]");
             assert_eq!(symbols[0].kind, SymbolKind::OPERATOR);
             assert_eq!(
                 symbols[0].selection_range.start,
@@ -393,14 +393,14 @@ mod tests {
             );
             assert_eq!(
                 symbols[0].selection_range.end,
-                lsp_types::Position::new(1, 5)
+                lsp_types::Position::new(1, 6)
             );
         }
     }
 
     #[test]
     fn operator_symbol_names_preserve_complete_slot_grammar() {
-        let source = "module pkg; op _ ? __ : ___ @ __ { impl choose }";
+        let source = "mod pkg; op _ ? __ : ___ @ __ { impl choose }";
         for symbols in [symbols_for(source), lazy_symbols_for(source)] {
             assert_eq!(symbols.len(), 1);
             assert_eq!(symbols[0].name, "op _ ? __ : ___ @ __");
@@ -410,8 +410,8 @@ mod tests {
 
     #[test]
     fn variadic_symbol_names_canonicalize_bare_and_compact_frames() {
-        for (head, expected) in [("[]", "varop []"), ("[**]", "varop [* *]")] {
-            let source = format!("module pkg; varop {head} {{ foldr step empty }}");
+        for (head, expected) in [("[]", "op_var []"), ("[**]", "op_var [* *]")] {
+            let source = format!("mod pkg; op_var {head} {{ foldr step empty }}");
             for symbols in [symbols_for(&source), lazy_symbols_for(&source)] {
                 assert_eq!(symbols.len(), 1);
                 assert_eq!(symbols[0].name, expected);
@@ -422,7 +422,7 @@ mod tests {
 
     #[test]
     fn alias_symbol_keeps_its_ordinary_identity_and_exact_name_span() {
-        let source = "module pkg;\nfn field() -> . { () }\ntype Field = Original;\n";
+        let source = "mod pkg;\nfn field() -> . { () }\ntype Field = Original;\n";
         for symbols in [symbols_for(source), lazy_symbols_for(source)] {
             assert_eq!(symbols.len(), 2);
             assert_eq!(symbols[0].name, "field");
@@ -442,7 +442,7 @@ mod tests {
 
     #[test]
     fn fn_item_maps_to_function_kind() {
-        let source = "module pkg/main;\npub fn run() -> . { () }\n";
+        let source = "mod pkg/main;\npub fn run() -> . { () }\n";
         let syms = symbols_for(source);
         assert_eq!(syms.len(), 1);
         assert_eq!(syms[0].name, "run");
@@ -455,7 +455,7 @@ mod tests {
     #[test]
     fn rec_group_contributes_one_function_symbol_per_member() {
         let source = concat!(
-            "module pkg/main;\n",
+            "mod pkg/main;\n",
             "rec(loop) {\n",
             "  fn first(value: .) -> . { recur second(value) };\n",
             "  pub fn second(value: .) -> . { recur first(value) }\n",
@@ -477,11 +477,11 @@ mod tests {
     #[test]
     fn singleton_rec_shorthand_and_braced_form_have_the_same_symbol_shape() {
         let shorthand = symbols_for(concat!(
-            "module pkg/main;\n",
+            "mod pkg/main;\n",
             "rec(loop) fn visit(value: .) -> . { recur visit(value) }\n",
         ));
         let braced = symbols_for(concat!(
-            "module pkg/main;\n",
+            "mod pkg/main;\n",
             "rec(loop) {\n",
             "  fn visit(value: .) -> . { recur visit(value) }\n",
             "}\n",
@@ -496,7 +496,7 @@ mod tests {
     #[test]
     fn lazy_rec_member_selection_ignores_matching_scoped_visibility_path() {
         let source = concat!(
-            "module pkg/main;\n",
+            "mod pkg/main;\n",
             "rec(loop) {\n",
             "  pub(pkg) fn pkg(value: .) -> . { let broken = ; recur pkg(value) }\n",
             "}\n",
@@ -514,10 +514,10 @@ mod tests {
     #[test]
     fn multiple_items_in_source_order() {
         let source = concat!(
-            "module pkg/main;\n",
+            "mod pkg/main;\n",
             "pub fn foo() -> . { () }\n",
             "type Bar[A] = A;\n",
-            "literal answer = 42;\n",
+            "lit answer = 42;\n",
             "type { Baz[A]: A { mk; get; }; }\n",
         );
         let syms = symbols_for(source);
@@ -535,7 +535,7 @@ mod tests {
     #[test]
     fn compact_nominals_have_individual_outline_symbols() {
         let source = concat!(
-            "module pkg/main;\n",
+            "mod pkg/main;\n",
             "type { Name: .; Age: .; }\n",
             "type Person = { Address: .; } & Name;\n",
         );
@@ -582,7 +582,7 @@ mod tests {
     #[test]
     fn selection_range_is_contained_by_range() {
         let source = concat!(
-            "module pkg/main;\n",
+            "mod pkg/main;\n",
             "pub fn run() -> . { () }\n",
             "type Same[A] = A;\n",
         );

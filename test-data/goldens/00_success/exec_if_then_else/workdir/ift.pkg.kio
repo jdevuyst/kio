@@ -1,4 +1,4 @@
-package ift;
+pkg ift;
 
 build {
   cache "out/.kio-cache/";

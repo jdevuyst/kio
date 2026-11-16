@@ -1,4 +1,4 @@
-package build_routed_alias_collision;
+pkg build_routed_alias_collision;
 
 build {
   cache "out/.kio-cache/";

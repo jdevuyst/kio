@@ -1,4 +1,4 @@
-package sfp;
+pkg sfp;
 
 build {
   cache "out/.kio-cache/";

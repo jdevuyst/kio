@@ -1,4 +1,4 @@
-package fpi;
+pkg fpi;
 
 build {
   cache "out/.kio-cache/";

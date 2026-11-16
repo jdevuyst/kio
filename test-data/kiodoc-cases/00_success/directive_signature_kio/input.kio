@@ -3,7 +3,7 @@
 /// Use [`@signature helper`] to see the helper's declaration header.
 /// Or embed the full source with [`@source helper`].
 /// Qualified paths also resolve: [`@signature sig.main.helper`].
-module sig/main;
+mod sig/main;
 
 /// Returns its argument unchanged.
 ///

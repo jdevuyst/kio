@@ -1,4 +1,4 @@
-package exec_list_length;
+pkg exec_list_length;
 
 build {
   cache "out/.kio-cache/";

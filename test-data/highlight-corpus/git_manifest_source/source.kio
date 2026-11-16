@@ -1,4 +1,4 @@
-dependency helper;
+dep helper;
 
 source {
   path "packages/helper/helper.pkg.kio";

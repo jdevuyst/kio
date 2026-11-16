@@ -1,4 +1,4 @@
-package typecheck_macro_atom_single_arm;
+pkg typecheck_macro_atom_single_arm;
 
 build {
   cache "out/.kio-cache/";

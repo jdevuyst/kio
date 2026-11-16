@@ -1,22 +1,22 @@
-module robot_vacuum_replay/parse;
+mod robot_vacuum_replay/parse;
 
-import macros/control(macro if);
-import macros/match(macro match);
-import robot_vacuum_replay/command(
-, Command
-, charge_command
-, clean_command
-, dock_command
-, left_command
-, pause_command
-, right_command
-, start_command
-, step_command
-, unknown_command
-);
-import testapi(Bool, I32, String);
-import testapi/fmt(string_to_int);
-import testapi/text(string_eq);
+import macros/control { macro if }
+import macros/match { macro match }
+import robot_vacuum_replay/command {
+  type Command;
+  fn charge_command;
+  fn clean_command;
+  fn dock_command;
+  fn left_command;
+  fn pause_command;
+  fn right_command;
+  fn start_command;
+  fn step_command;
+  fn unknown_command
+}
+import testapi { type Bool; type I32; type String }
+import testapi/fmt { fn string_to_int }
+import testapi/text { fn string_eq }
 
 pub fn parse_command(line: String) -> Command {
   if(string_eq(line, "START")) {

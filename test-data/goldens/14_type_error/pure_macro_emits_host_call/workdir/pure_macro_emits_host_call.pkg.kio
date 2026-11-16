@@ -1,4 +1,4 @@
-package pure_macro_emits_host_call;
+pkg pure_macro_emits_host_call;
 
 build {
   cache "out/.kio-cache/";

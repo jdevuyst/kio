@@ -1,7 +1,7 @@
-module testapi/main;
+mod testapi/main;
 
-import testapi(String);
-import testapi/io(print);
+import testapi { type String }
+import testapi/io { fn print }
 
 // A nominal with an existential binder has a CPS-shaped projector.
 // To consume the value, call `Box.get` with the boxed value and a

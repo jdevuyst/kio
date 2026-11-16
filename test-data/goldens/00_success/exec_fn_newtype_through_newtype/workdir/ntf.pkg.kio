@@ -1,4 +1,4 @@
-package ntf;
+pkg ntf;
 
 build {
   cache "out/.kio-cache/";

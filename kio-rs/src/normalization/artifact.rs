@@ -152,7 +152,7 @@ impl UserMacroEvalArtifactPair {
     #[cfg(test)]
     pub(crate) fn unit_for_test(implementation_name: &str) -> Self {
         use crate::pipeline::Pipeline;
-        let source = format!("module memo; pure fn {implementation_name}() -> . {{ () }}");
+        let source = format!("mod memo; pure fn {implementation_name}() -> . {{ () }}");
         let parsed = crate::pass::parser::parse(&source).expect("parse memo fixture");
         let (modules, _) = crate::pass::full::FullPipeline::lower_package(
             vec![(std::path::PathBuf::from("memo.kio"), parsed)],
@@ -336,20 +336,19 @@ pub(super) mod tests {
         let sources = [
             (
                 "provider.kio",
-                "module provider; import __comptime__; \
-                 pub fn shadow(proof: .)(left: ., middle: ., right: .) -> . { left }",
+                "mod provider; import __comptime__; pub fn shadow(proof: .)(left: ., middle: ., right: .) -> . { left }",
             ),
             (
                 "selective.kio",
-                "module selective; import __comptime__; import provider(shadow); fn keep() -> . { () }",
+                "mod selective; import __comptime__; import provider {fn shadow} fn keep() -> . { () }",
             ),
             (
                 "qualified.kio",
-                "module qualified; import __comptime__; import provider as p; fn keep() -> . { () }",
+                "mod qualified; import __comptime__; import provider as p; fn keep() -> . { () }",
             ),
             (
                 "builtin.kio",
-                "module builtin; import __comptime__; fn keep() -> . { () }",
+                "mod builtin; import __comptime__; fn keep() -> . { () }",
             ),
         ];
         let parsed = sources
@@ -407,8 +406,7 @@ pub(super) mod tests {
 
     #[test]
     fn artifact_clones_share_package_and_generation() {
-        let source =
-            "module x; import __comptime__; fn held(value: .) -> . { __structural_recur__ }";
+        let source = "mod x; import __comptime__; fn held(value: .) -> . { __structural_recur__ }";
         let artifact = lowered_package(&[("x.kio", source)]);
         let cloned = artifact.clone();
         let rebuilt = lowered_package(&[("x.kio", source)]);

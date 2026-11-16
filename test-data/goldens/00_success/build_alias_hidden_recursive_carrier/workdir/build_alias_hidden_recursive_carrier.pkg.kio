@@ -1,4 +1,4 @@
-package build_alias_hidden_recursive_carrier;
+pkg build_alias_hidden_recursive_carrier;
 
 build {
   cache "out/.kio-cache/";

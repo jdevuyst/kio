@@ -1,6 +1,6 @@
-module list_host;
+mod list_host;
 
-import macros/control(macro if);
+import macros/control { macro if }
 import testapi as host;
 import testapi/arith as arith;
 import testapi/iter as iter;

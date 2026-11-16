@@ -11,18 +11,31 @@
 /// mark phase guarantees no live object points at a dead one.
 /// `gc/verify` re-establishes that from scratch rather than taking this
 /// module's word for it.
-module gc/compact;
+mod gc/compact;
 
-import gc/heap(field_addr, field_slot, fold_fields, fold_objects, object_size, top);
-import gc/num(int_lt);
-import gc/slot(Imm, Ptr, ptr_cell);
-import macros/control(macro if);
-import macros/match(macro match);
-import macros/row_macros(macro select);
-import testapi(Array, Bool, I32);
-import testapi/arith(add_i32, leq_i32);
-import testapi/array(array_get, array_len, array_make_filled, array_pop_back, array_set);
-import testapi/iter(loop);
+import gc/heap {
+  fn field_addr;
+  fn field_slot;
+  fn fold_fields;
+  fn fold_objects;
+  fn object_size;
+  fn top
+}
+import gc/num { fn int_lt }
+import gc/slot { type Imm; type Ptr; fn ptr_cell }
+import macros/control { macro if }
+import macros/match { macro match }
+import macros/row_macros { macro select }
+import testapi { type Array; type Bool; type I32 }
+import testapi/arith { fn add_i32; fn leq_i32 }
+import testapi/array {
+  fn array_get;
+  fn array_len;
+  fn array_make_filled;
+  fn array_pop_back;
+  fn array_set
+}
+import testapi/iter { fn loop }
 
 pub type Plan = { Forward_table: Array[I32]; Plan_top: I32 };
 

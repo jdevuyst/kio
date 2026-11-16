@@ -1,4 +1,4 @@
-package typecheck_polymorphic_fold_call_elements;
+pkg typecheck_polymorphic_fold_call_elements;
 
 build {
   cache "out/.kio-cache/";

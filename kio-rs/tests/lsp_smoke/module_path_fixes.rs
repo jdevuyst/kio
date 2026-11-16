@@ -6,11 +6,11 @@ fn open_module_path_case(
     providers: &[(&str, &str)],
 ) -> (TempDir, LspProcess, String, Value) {
     let dir = TempDir::new("module-path-typo-fix");
-    dir.write("probe.pkg.kio", "package probe;\n");
+    dir.write("probe.pkg.kio", "pkg probe;\n");
     for (name, contents) in providers {
         dir.write(&format!("{name}.kio"), contents);
     }
-    let path = dir.write(&format!("{importer}.kio"), &format!("module {importer};\n"));
+    let path = dir.write(&format!("{importer}.kio"), &format!("mod {importer};\n"));
     let uri = path_to_file_uri(&path);
     let mut lsp = LspProcess::spawn();
     lsp.initialize(&path_to_file_uri(dir.path()));
@@ -36,41 +36,41 @@ fn module_path_typo_repairs_written_tokens_and_rechecks() {
     for (importer, source, expected, provider, edit_count) in [
         (
             "main",
-            "module main;\r\nimport utilx/ // 😀 keep this\r\n\thelpe as chosen;\r\npub fn main() { chosen.helper() }\r\n",
-            "module main;\r\nimport utils/ // 😀 keep this\r\n\thelper as chosen;\r\npub fn main() { chosen.helper() }\r\n",
+            "mod main;\r\nimport utilx/ // 😀 keep this\r\n\thelpe as chosen;\r\npub fn main() { chosen.helper() }\r\n",
+            "mod main;\r\nimport utils/ // 😀 keep this\r\n\thelper as chosen;\r\npub fn main() { chosen.helper() }\r\n",
             "utils/helper",
             2,
         ),
         (
             "nested/main",
-            "module nested/main; import vendor/util(helper); pub fn main() { helper() }",
-            "module nested/main; import vendor/utils(helper); pub fn main() { helper() }",
+            "mod nested/main; import vendor/util {fn helper} pub fn main() { helper() }",
+            "mod nested/main; import vendor/utils {fn helper} pub fn main() { helper() }",
             "vendor/utils",
             1,
         ),
         (
             "main",
-            "module main; import a/bc as chosen; pub fn main() { chosen.helper() }",
-            "module main; import a/b/c as chosen; pub fn main() { chosen.helper() }",
+            "mod main; import a/bc as chosen; pub fn main() { chosen.helper() }",
+            "mod main; import a/b/c as chosen; pub fn main() { chosen.helper() }",
             "a/b/c",
             1,
         ),
         (
             "main",
-            "module main; import a/b/c(helper); pub fn main() { helper() }",
-            "module main; import a/bc(helper); pub fn main() { helper() }",
+            "mod main; import a/b/c {fn helper} pub fn main() { helper() }",
+            "mod main; import a/bc {fn helper} pub fn main() { helper() }",
             "a/bc",
             1,
         ),
         (
             "main",
-            "module main; import _heper(helper); pub fn main() { helper() }",
-            "module main; import _helper(helper); pub fn main() { helper() }",
+            "mod main; import _heper {fn helper} pub fn main() { helper() }",
+            "mod main; import _helper {fn helper} pub fn main() { helper() }",
             "_helper",
             1,
         ),
     ] {
-        let provider_source = format!("module {provider}; pub fn helper() {{ () }}");
+        let provider_source = format!("mod {provider}; pub fn helper() {{ () }}");
         let (_dir, mut lsp, uri, diagnostic) =
             open_module_path_case(importer, source, &[(provider, &provider_source)]);
         assert_eq!(
@@ -110,8 +110,8 @@ fn module_path_typo_keeps_unsafe_trivia_and_distant_names_prose_only() {
         ("missing", "unrelated"),
     ] {
         let source =
-            format!("module main; import {written} as chosen; pub fn main() {{ chosen.helper() }}");
-        let provider_source = format!("module {provider}; pub fn helper() {{ () }}");
+            format!("mod main; import {written} as chosen; pub fn main() {{ chosen.helper() }}");
+        let provider_source = format!("mod {provider}; pub fn helper() {{ () }}");
         let (_dir, mut lsp, uri, diagnostic) =
             open_module_path_case("main", &source, &[(provider, &provider_source)]);
         assert!(diagnostic["data"]["fixes"].is_null(), "{diagnostic}");
@@ -125,13 +125,13 @@ fn module_path_typo_keeps_unsafe_trivia_and_distant_names_prose_only() {
 
 #[test]
 fn module_path_typo_does_not_choose_between_equally_near_paths() {
-    let source = "module main; import heper as chosen; pub fn main() { chosen.helper() }";
+    let source = "mod main; import heper as chosen; pub fn main() { chosen.helper() }";
     let (_dir, mut lsp, uri, diagnostic) = open_module_path_case(
         "main",
         source,
         &[
-            ("helper", "module helper; pub fn helper() { () }"),
-            ("heaper", "module heaper; pub fn helper() { () }"),
+            ("helper", "mod helper; pub fn helper() { () }"),
+            ("heaper", "mod heaper; pub fn helper() { () }"),
         ],
     );
     assert_eq!(diagnostic["data"]["help"], "did you mean `heaper`?");
@@ -152,15 +152,15 @@ fn module_path_typo_authenticates_candidates_after_module_growth() {
         ("heper", "unrelated", true),
     ] {
         let source =
-            format!("module main; import {typo} as chosen; pub fn main() {{ chosen.helper() }}");
+            format!("mod main; import {typo} as chosen; pub fn main() {{ chosen.helper() }}");
         let (dir, mut lsp, uri, diagnostic) = open_module_path_case(
             "main",
             &source,
-            &[("helper", "module helper; pub fn helper() { () }")],
+            &[("helper", "mod helper; pub fn helper() { () }")],
         );
         let initial = send_code_action(&mut lsp, &uri, &diagnostic);
         assert_eq!(initial["result"].as_array().unwrap().len(), 1, "{initial}");
-        let provider_source = format!("module {added}; pub fn helper() {{ () }}");
+        let provider_source = format!("mod {added}; pub fn helper() {{ () }}");
         let added_path = dir.write(&format!("{added}.kio"), &provider_source);
         lsp.send_notification(
             "textDocument/didOpen",
@@ -181,12 +181,12 @@ fn module_path_typo_authenticates_candidates_after_module_growth() {
 fn module_path_typo_withholds_repairs_that_expose_another_error() {
     for (source, provider_source) in [
         (
-            "module main; import supprt(missing); pub fn main() { missing() }",
-            "module support; pub fn helper() { () }",
+            "mod main; import supprt {fn missing} pub fn main() { missing() }",
+            "mod support; pub fn helper() { () }",
         ),
         (
-            "module main; import supprt as chosen; pub fn main() { chosen.helper() }",
-            "module support; import main as consumer; pub fn helper() { consumer.main() }",
+            "mod main; import supprt as chosen; pub fn main() { chosen.helper() }",
+            "mod support; import main as consumer; pub fn helper() { consumer.main() }",
         ),
     ] {
         let (_dir, mut lsp, uri, diagnostic) =

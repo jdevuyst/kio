@@ -1,4 +1,4 @@
-package ecr;
+pkg ecr;
 
 build {
   cache "out/.kio-cache/";

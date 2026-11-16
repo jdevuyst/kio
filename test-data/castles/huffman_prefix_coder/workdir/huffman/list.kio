@@ -1,14 +1,14 @@
 /// The one collection the coder is built on. The host tier supplies no array
 /// type, so the message, the node queue, the build log, the code table, and
 /// every bit string in this package are instantiations of this cons list.
-module huffman/list;
+mod huffman/list;
 
-import macros/control(macro if);
-import macros/match(macro match);
-import macros/spine_macros(macro widen_sum);
-import testapi(Bool, I32);
-import testapi/arith(add_i32);
-import testapi/iter(loop);
+import macros/control { macro if }
+import macros/match { macro match }
+import macros/spine_macros { macro widen_sum }
+import testapi { type Bool; type I32 }
+import testapi/arith { fn add_i32 }
+import testapi/iter { fn loop }
 
 /// An anonymous sum cannot mention itself, so the newtype ties the knot.
 pub rec type { List[A]: . | (A & List[A]) { mk; pub get } }

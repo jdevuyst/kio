@@ -1,7 +1,7 @@
-module testapi/domain;
+mod testapi/domain;
 
-import macros/row_macros(macro select);
-import testapi(I32, String);
+import macros/row_macros { macro select }
+import testapi { type I32; type String }
 
 pub type Item = { Item_sku: I32; Item_name: String };
 

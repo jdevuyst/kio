@@ -1,4 +1,4 @@
-dependency broken;
+dep broken;
 
 source {
   path "../library/broken/broken.pkg.kio"

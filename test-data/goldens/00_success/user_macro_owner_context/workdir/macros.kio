@@ -1,9 +1,9 @@
-module macros;
+mod macros;
 
 import __intrinsics__;
 
 import __comptime__;
-import macro_owner_b(choose);
+import macro_owner_b { fn choose }
 
 pure fn branch(ct: __Comptime__, _source: __Type__, _value: __Checked_term__, _target: __Type__) -> __Checked_term__ {
   __macro_error__(ct, __"caller helper was used"__(ct))

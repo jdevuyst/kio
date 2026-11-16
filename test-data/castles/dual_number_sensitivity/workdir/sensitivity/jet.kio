@@ -1,7 +1,7 @@
-module sensitivity/jet;
+mod sensitivity/jet;
 
-import macros/row_macros(macro record, macro select, macro with);
-import testapi(F64);
+import macros/row_macros { macro record; macro select; macro with }
+import testapi { type F64 }
 import testapi/arith as arith;
 
 pub type Jet = { Value: F64; Dx: F64; Dy: F64; Dxx: F64; Dxy: F64; Dyy: F64 };

@@ -1,8 +1,8 @@
-module testapi/main;
+mod testapi/main;
 
-import actions(macro finish, macro identity_target);
-import macros/control(macro if);
-import testapi(Bool);
+import actions { macro finish; macro identity_target }
+import macros/control { macro if }
+import testapi { type Bool }
 import testapi/io as io;
 
 fn exercise(condition: Bool) {

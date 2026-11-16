@@ -1,9 +1,9 @@
-module testapi/main;
+mod testapi/main;
 
 import __intrinsics__;
 
-import testapi(String);
-import testapi/io(print);
+import testapi { type String }
+import testapi/io { fn print }
 
 // A case-of-case (sum-elimination of a sum-elimination result). The
 // outer left arm `.(p) { x }` references the fn parameter `x`, whose

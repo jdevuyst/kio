@@ -5,18 +5,18 @@
 /// withdraws one occurrence of it. Getting the *order* of those events right is
 /// most of the algorithm — `event_leq` is where the degenerate cases are won or
 /// lost.
-module skyline/events;
+mod skyline/events;
 
-import macros/control(macro if);
-import macros/match(macro match);
-import macros/row_macros(macro select);
-import macros/spine_macros(macro widen_sum);
+import macros/control { macro if }
+import macros/match { macro match }
+import macros/row_macros { macro select }
+import macros/spine_macros { macro widen_sum }
 import skyline/city as city;
 import skyline/list as lst;
 import skyline/logic as logic;
-import testapi(Bool, I32, String);
-import testapi/arith(leq_i32);
-import testapi/iter(loop);
+import testapi { type Bool; type I32; type String }
+import testapi/arith { fn leq_i32 }
+import testapi/iter { fn loop }
 
 /// Which edge of a building an event stands on.
 pub type Kind = { Enter: . } | { Leave: . };

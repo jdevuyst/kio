@@ -1,8 +1,8 @@
-module host/m;
+mod host/m;
 
 import __intrinsics__;
 
-import host(A, B);
+import host { type A; type B }
 
 type { Box[T]: T }
 

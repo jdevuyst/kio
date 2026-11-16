@@ -7,7 +7,7 @@ use kio_lang::pass::{op_fold, parser};
 use kio_lang::pretty::pretty_item_source;
 
 const DECLARATIONS: &str = r#"
-module operators;
+mod operators;
 fn add(a: A, b: A) -> A { a }
 fn index(a: A, b: A) -> A { a }
 fn wrap(a: A) -> A { a }
@@ -19,9 +19,9 @@ op ___ < _ > { impl index }
 op | _ | { impl wrap }
 op ! _ { impl wrap }
 op _ ? { impl wrap }
-varop [] { foldr step empty }
-varop [* *] { foldr step empty }
-varop [** **] { foldr step empty }
+op_var [] { foldr step empty }
+op_var [* *] { foldr step empty }
+op_var [** **] { foldr step empty }
 "#;
 
 fn source(expression: &str) -> String {

@@ -1,4 +1,4 @@
-package bigint;
+pkg bigint;
 
 build {
   cache "out/.kio-cache/";

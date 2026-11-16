@@ -1,10 +1,10 @@
-module testapi/main;
+mod testapi/main;
 
-import macros/match(macro match);
-import macros/sequence(macro do);
-import macros/spine_macros(macro widen_sum);
-import testapi(String);
-import testapi/io(print);
+import macros/match { macro match }
+import macros/sequence { macro do }
+import macros/spine_macros { macro widen_sum }
+import testapi { type String }
+import testapi/io { fn print }
 
 // A non-canonical brand: payload `. | A` is not the bare type-
 // parameter `a`, so the brand-crossing is not a runtime identity.

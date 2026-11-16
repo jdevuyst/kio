@@ -1,11 +1,11 @@
-module main;
+mod main;
 
-import testapi(I32);
+import testapi { type I32 }
 
 type { Boxed: I32 { mk; get } }
 
-literal mk = 1;
+lit mk = 1;
 
-literal get = 2;
+lit get = 2;
 
 fn exercise() -> I32 & I32 { (Boxed.get(Boxed.mk(mk)), get) }

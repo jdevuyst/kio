@@ -1,6 +1,6 @@
-module b;
+mod b;
 
-import a(Ping);
+import a { type Ping }
 
 host type Str role(str);
 

@@ -1,7 +1,7 @@
-module main;
+mod main;
 
 import helper as h;
-import helper(unit_a);
+import helper { fn unit_a }
 
 equiv selective_unfold() {
   unit_a();

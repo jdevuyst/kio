@@ -1,6 +1,6 @@
-module main;
+mod main;
 
-import origin(varop [* *]);
-import origin(varop [* *]);
+import origin { op_var [* *] }
+import origin { op_var [* *] }
 
 fn values() { [* (), () *] }

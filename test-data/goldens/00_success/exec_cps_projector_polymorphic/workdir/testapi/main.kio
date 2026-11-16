@@ -1,9 +1,9 @@
-module testapi/main;
+mod testapi/main;
 
 import __intrinsics__;
 
-import testapi(String);
-import testapi/io(print);
+import testapi { type String }
+import testapi/io { fn print }
 
 // Polymorphic CPS-projector apply: a newtype whose header declares
 // both a universal `a` and an existential `u`. The projector

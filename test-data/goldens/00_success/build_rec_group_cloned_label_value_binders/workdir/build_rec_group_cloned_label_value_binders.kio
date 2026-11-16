@@ -1,4 +1,4 @@
-module build_rec_group_cloned_label_value_binders;
+mod build_rec_group_cloned_label_value_binders;
 
 host type Bool role(bool);
 

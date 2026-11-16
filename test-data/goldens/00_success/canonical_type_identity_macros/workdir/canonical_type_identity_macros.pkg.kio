@@ -1,4 +1,4 @@
-package canonical_type_identity_macros;
+pkg canonical_type_identity_macros;
 
 build {
   target js {

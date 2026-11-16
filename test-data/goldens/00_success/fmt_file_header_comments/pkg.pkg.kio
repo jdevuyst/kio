@@ -1,4 +1,4 @@
-package // package name
+pkg // package name
 pkg // package terminator
 ;
 

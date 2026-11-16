@@ -51,7 +51,7 @@
 //!   erasure *is* β-TLam here.
 //! - `Path` references against the local env, falling back to a
 //!   pure-fn unfold for any `fn` reachable in the current module:
-//!   same-module declarations, selective `import other/module(a, b);`
+//!   same-module declarations, selective `import other/module { fn a; fn b }`
 //!   imports (single-segment), and `import other as alias;` qualified
 //!   imports (`alias.foo`, two-segment).
 //! - The ordinary Kio' forms produced by lowering surface `match`, `if`/`else`,
@@ -3943,7 +3943,7 @@ pub type QualifiedFnMap<'m> = HashMap<(&'m str, &'m str), &'m FnDef<EvalPhase>>;
 /// The [`FnMap`] / [`QualifiedFnMap`] pair a [`ModuleEnv`] induces:
 ///
 /// - [`FnMap`]: same-module declarations plus selective
-///   `import other/module(a, b);` imports.
+///   `import other/module { fn a; fn b }` imports.
 /// - [`QualifiedFnMap`]: keyed by `(alias, name)`, visible fns of qualified
 ///   imports.
 ///
@@ -10399,9 +10399,9 @@ mod tests {
             hasher.0
         }
 
-        let first = parse_module("module same; fn f(x: .) -> . { x }");
-        let rebuilt = parse_module("module same; fn f(x: .) -> . { x }");
-        let changed = parse_module("module same; fn f(x: .) -> . { () }");
+        let first = parse_module("mod same; fn f(x: .) -> . { x }");
+        let rebuilt = parse_module("mod same; fn f(x: .) -> . { x }");
+        let changed = parse_module("mod same; fn f(x: .) -> . { () }");
         let first_defs = fn_def_map(&first);
         let rebuilt_defs = fn_def_map(&rebuilt);
         let changed_defs = fn_def_map(&changed);
@@ -10469,7 +10469,7 @@ mod tests {
 
     #[test]
     fn distinct_raw_lambda_nodes_with_identical_spans_keep_distinct_cache_keys() {
-        let module = parse_module("module x; equiv sample { .(value: .) { value }; () }");
+        let module = parse_module("mod x; equiv sample { .(value: .) { value }; () }");
         let lambda = equiv_terms(&module)[0].clone();
         let expr = Expr::Seq {
             occurrence: Default::default(),
@@ -10498,8 +10498,7 @@ mod tests {
 
     #[test]
     fn helper_tokens_compose_across_artifact_generations_and_higher_order_use() {
-        let source =
-            "module x; import __comptime__; fn held(value: .) -> . { __structural_recur__ }";
+        let source = "mod x; import __comptime__; fn held(value: .) -> . { __structural_recur__ }";
         let artifact = lowered_package(&[("x.kio", source)]);
         let cloned = artifact.clone();
         let rebuilt = lowered_package(&[("x.kio", source)]);
@@ -10580,8 +10579,7 @@ mod tests {
 
     #[test]
     fn authenticated_generation_partitions_shared_caches_while_public_roots_stay_local() {
-        let source =
-            "module x; import __comptime__; fn held(value: .) -> . { __structural_recur__ }";
+        let source = "mod x; import __comptime__; fn held(value: .) -> . { __structural_recur__ }";
         let artifact = lowered_package(&[("x.kio", source)]);
         let cloned = artifact.clone();
         let rebuilt = lowered_package(&[("x.kio", source)]);
@@ -10679,7 +10677,7 @@ mod tests {
 
     #[test]
     fn authenticated_compile_and_closure_caches_preserve_cold_warm_and_shared_results() {
-        let artifact = lowered_package(&[("x.kio", "module x; fn held(value: .) -> . { value }")]);
+        let artifact = lowered_package(&[("x.kio", "mod x; fn held(value: .) -> . { value }")]);
         let same_generation = artifact.clone();
         let eval_functions = SharedEvalFunctionCache::default();
         let closures = SharedFnClosureCache::default();
@@ -10749,9 +10747,9 @@ mod tests {
     #[test]
     fn artifact_generation_prevents_primitive_grant_cache_transport_in_both_warm_orders() {
         let authorized_source =
-            "module x; import __comptime__; fn held(value: .) -> . { __structural_recur__ }";
+            "mod x; import __comptime__; fn held(value: .) -> . { __structural_recur__ }";
         let unauthorized_source =
-            "module x;                      fn held(value: .) -> . { __structural_recur__ }";
+            "mod x;                      fn held(value: .) -> . { __structural_recur__ }";
         assert_eq!(
             authorized_source.find("fn held"),
             unauthorized_source.find("fn held"),
@@ -10807,15 +10805,7 @@ mod tests {
         }
 
         let lambda_module = parse_module(
-            "module x; import __comptime__; equiv cache { \
-             .(fuel: .) { \
-               __structural_recur__(proof)( fuel, (), .(recur: ., current: ., input: .) { input }) \
-             }; \
-             .(fuel: .) { \
-               let ignored = __structural_recur__(proof)( fuel, (), .(recur: ., current: ., input: .) { input }); \
-               () \
-             } \
-             }",
+            "mod x; import __comptime__; equiv cache { .(fuel: .) { __structural_recur__(proof)( fuel, (), .(recur: ., current: ., input: .) { input }) }; .(fuel: .) { let ignored = __structural_recur__(proof)( fuel, (), .(recur: ., current: ., input: .) { input }); () } }",
         );
         let lambda_terms = equiv_terms(&lambda_module);
         let successful_lambda = lambda_terms[0].clone();
@@ -10889,21 +10879,21 @@ mod tests {
         let first = lowered_package(&[
             (
                 "provider.kio",
-                "module provider; pub fn leaf(value: .) -> . { () }",
+                "mod provider; pub fn leaf(value: .) -> . { () }",
             ),
             (
                 "consumer.kio",
-                "module consumer; import provider(leaf); fn top(value: .) -> . { leaf(value) }",
+                "mod consumer; import provider {fn leaf} fn top(value: .) -> . { leaf(value) }",
             ),
         ]);
         let changed = lowered_package(&[
             (
                 "provider.kio",
-                "module provider; pub fn leaf(value: .) -> . { .t }",
+                "mod provider; pub fn leaf(value: .) -> . { .t }",
             ),
             (
                 "consumer.kio",
-                "module consumer; import provider(leaf); fn top(value: .) -> . { leaf(value) }",
+                "mod consumer; import provider {fn leaf} fn top(value: .) -> . { leaf(value) }",
             ),
         ]);
         let eval_functions = SharedEvalFunctionCache::default();
@@ -12456,11 +12446,7 @@ mod tests {
     fn comptime_builtin_generic_only_inventory_is_exact() {
         let package = lowered_package(&[(
             "generic.kio",
-            "module generic; \
-             host type Text role(str); \
-             host type Host; \
-             host type Box[A]; \
-             type Folded[A][**F] = A;",
+            "mod generic; host type Text role(str); host type Host; host type Box[A]; type Folded[A][**F] = A;",
         )]);
         package
             .resolve_imports()
@@ -13230,14 +13216,7 @@ mod tests {
     #[test]
     fn lazy_direct_specializations_decline_computed_handlers() {
         let module = parse_module(
-            "module x; import __comptime__; \
-             fn reject(proof: .) -> . { \
-               __structural_recur__(proof)( __type_unit__(), (), \
-                 .(recur, fuel, input) { recur(fuel, input) }) \
-             } \
-             fn handler(value: .) -> . { value } \
-             fn thunk() -> . { () } \
-             equiv keep { (); () }",
+            "mod x; import __comptime__; fn reject(proof: .) -> . { __structural_recur__(proof)( __type_unit__(), (), .(recur, fuel, input) { recur(fuel, input) }) } fn handler(value: .) -> . { value } fn thunk() -> . { () } equiv keep { (); () }",
         );
         let ctx = test_primitive_ctx_for(
             "x",
@@ -13746,10 +13725,7 @@ mod tests {
 
     #[test]
     fn eval_metrics_inline_identity_top_level_calls_skip_function_apply() {
-        let m = parse_module(
-            "module x; fn id(x: .) -> . { x } \
-             equiv cache { id(()); id(()) }",
-        );
+        let m = parse_module("mod x; fn id(x: .) -> . { x } equiv cache { id(()); id(()) }");
         let metrics = std::sync::Arc::new(EvalMetrics::default());
         let ctx = EvalCtx::new()
             .with_fn_defs(fn_def_map(&m))
@@ -13770,9 +13746,7 @@ mod tests {
     #[test]
     fn eval_metrics_inline_small_projection_wrapper_skips_function_apply() {
         let m = parse_module(
-            "module x; import __intrinsics__; \
-             fn first(pair: . & .) -> . { __fst__[.][.](pair) } \
-             equiv cache(pair: . & .) { first(pair); __fst__[.][.](pair) }",
+            "mod x; import __intrinsics__; fn first(pair: . & .) -> . { __fst__[.][.](pair) } equiv cache(pair: . & .) { first(pair); __fst__[.][.](pair) }",
         );
         let metrics = std::sync::Arc::new(EvalMetrics::default());
         let ctx = EvalCtx::new()
@@ -13848,8 +13822,7 @@ mod tests {
     #[test]
     fn eval_metrics_exact_local_closure_calls_skip_generic_apply() {
         let (mut m, [body]) = parse_module_with_bodies(
-            "module x; fn id(x: .) -> . { x } \
-             equiv cache { (); () }",
+            "mod x; fn id(x: .) -> . { x } equiv cache { (); () }",
             ["let f = id; f(())"],
         );
         m.equivs[0].terms[0] = body;
@@ -13872,7 +13845,7 @@ mod tests {
 
     #[test]
     fn eval_metrics_public_roots_build_top_level_closures_independently() {
-        let m = parse_module("module x; fn id(x: .) -> . { x } equiv cache { id; id }");
+        let m = parse_module("mod x; fn id(x: .) -> . { x } equiv cache { id; id }");
         let metrics = std::sync::Arc::new(EvalMetrics::default());
         let ctx = EvalCtx::new()
             .with_fn_defs(fn_def_map(&m))
@@ -13931,14 +13904,7 @@ mod tests {
     #[test]
     fn direct_structural_recur_nested_helper_calls_are_independent() {
         let m = parse_module(
-            "module x; import __comptime__; \
-             fn run(k: . -> .) -> . { \
-               __structural_recur__(proof)( __type_unit__(), (), .(recur, fuel, input) { k(()) }) \
-             } \
-             fn trigger() -> . { \
-               run(.(unit) { run(.(again) { () }) }) \
-             } \
-             equiv cache { trigger(); () }",
+            "mod x; import __comptime__; fn run(k: . -> .) -> . { __structural_recur__(proof)( __type_unit__(), (), .(recur, fuel, input) { k(()) }) } fn trigger() -> . { run(.(unit) { run(.(again) { () }) }) } equiv cache { trigger(); () }",
         );
         let ctx = test_primitive_ctx_for(
             "x",
@@ -13956,14 +13922,7 @@ mod tests {
     #[test]
     fn direct_grouped_structural_recur_nested_helper_calls_are_independent() {
         let m = parse_module(
-            "module x; import __comptime__; \
-             fn run(proof: ., k: . -> .) -> . { \
-               __structural_recur__(proof)(__type_unit__(), (), .(recur, fuel, input) { k(()) }) \
-             } \
-             fn trigger(proof: .) -> . { \
-               run(proof, .(unit) { run(proof, .(again) { () }) }) \
-             } \
-             equiv cache { trigger(proof); () }",
+            "mod x; import __comptime__; fn run(proof: ., k: . -> .) -> . { __structural_recur__(proof)(__type_unit__(), (), .(recur, fuel, input) { k(()) }) } fn trigger(proof: .) -> . { run(proof, .(unit) { run(proof, .(again) { () }) }) } equiv cache { trigger(proof); () }",
         );
         let ctx = test_primitive_ctx_for(
             "x",
@@ -14838,14 +14797,7 @@ mod tests {
     #[test]
     fn omitted_value_prefixes_execute_before_direct_specializations() {
         let module = parse_module(
-            "module x; import __comptime__; \
-             type { Box: . { mk; get; }; }; \
-             fn reject(proof: .) -> . { \
-               __structural_recur__(proof)( __type_unit__(), (), \
-                 .(recur, fuel, input) { recur(fuel, input) }) \
-             } \
-             fn step(recur: ., fuel: ., input: .) -> . { input } \
-             equiv keep { (); () }",
+            "mod x; import __comptime__; type { Box: . { mk; get; }; }; fn reject(proof: .) -> . { __structural_recur__(proof)( __type_unit__(), (), .(recur, fuel, input) { recur(fuel, input) }) } fn step(recur: ., fuel: ., input: .) -> . { input } equiv keep { (); () }",
         );
         let ctx = test_primitive_ctx_for(
             "x",
@@ -14965,14 +14917,7 @@ mod tests {
     #[test]
     fn grouped_local_shadow_never_acquires_structural_recur_authority() {
         let mut m = parse_module(
-            "module x; import __comptime__; \
-             fn invoke(shadow: ., proof: .) -> . { \
-               shadow(proof)((), (), ()) \
-             } \
-             equiv cache { \
-               invoke(.(captured) { .(left, middle, right) { left } }, ()); \
-               () \
-             }",
+            "mod x; import __comptime__; fn invoke(shadow: ., proof: .) -> . { shadow(proof)((), (), ()) } equiv cache { invoke(.(captured) { .(left, middle, right) { left } }, ()); () }",
         );
         let invoke = m
             .module
@@ -15022,26 +14967,7 @@ mod tests {
     #[test]
     fn indirect_structural_recur_nested_calls_are_independent() {
         let mut m = parse_module(
-            "module x; import __comptime__; \
-             fn invoke(helper: ., fuel: Type, k: Type -> .) -> . { \
-               helper(fuel, (), .(recur, current, input) { k(current) }) \
-             } \
-             fn make(proof: .) -> . { \
-               __structural_recur__(proof)[Type][.][.] \
-             } \
-             fn same(proof: .) -> . { \
-               let helper = make(proof); \
-               invoke(helper, __type_product__(proof, __type_unit__(proof), __type_unit__(proof)), \
-                 .(root) { invoke(helper, __type_unit__(proof), \
-                   .(unit) { invoke(helper, __type_bottom__(proof), .(bottom) { () }) }) }) \
-             } \
-             fn distinct(proof: .) -> . { \
-               let left = __structural_recur__(proof)[Type][.][.]; \
-               let right = __structural_recur__(proof)[Type][.][.]; \
-               invoke(left, __type_unit__(proof), \
-                 .(unit) { invoke(right, __type_bottom__(proof), .(bottom) { () }) }) \
-             } \
-             equiv origins { same(proof); (); distinct(proof); () }",
+            "mod x; import __comptime__; fn invoke(helper: ., fuel: Type, k: Type -> .) -> . { helper(fuel, (), .(recur, current, input) { k(current) }) } fn make(proof: .) -> . { __structural_recur__(proof)[Type][.][.] } fn same(proof: .) -> . { let helper = make(proof); invoke(helper, __type_product__(proof, __type_unit__(proof), __type_unit__(proof)), .(root) { invoke(helper, __type_unit__(proof), .(unit) { invoke(helper, __type_bottom__(proof), .(bottom) { () }) }) }) } fn distinct(proof: .) -> . { let left = __structural_recur__(proof)[Type][.][.]; let right = __structural_recur__(proof)[Type][.][.]; invoke(left, __type_unit__(proof), .(unit) { invoke(right, __type_bottom__(proof), .(bottom) { () }) }) } equiv origins { same(proof); (); distinct(proof); () }",
         );
         let mut rewritten_sites = 0usize;
         let mut rewritten_args = 0usize;
@@ -15111,22 +15037,7 @@ mod tests {
     #[test]
     fn direct_and_indirect_sites_enter_after_operand_evaluation() {
         let mut m = parse_module(
-            "module x; import __comptime__; \
-             fn direct(k: . -> .) -> . { \
-               __structural_recur__(proof)( __type_unit__(), k(), \
-                 .(recur, fuel, input) { input }) \
-             } \
-             fn direct_trigger() -> . { \
-               direct(.() { direct(.() { () }) }) \
-             } \
-             fn indirect(proof: ., k: . -> .) -> . { \
-               let helper = __structural_recur__(proof)[Type][.][.]; \
-               helper(__type_unit__(), k(), .(recur, fuel, input) { input }) \
-             } \
-             fn indirect_trigger(proof: .) -> . { \
-               indirect(proof, .() { indirect(proof, .() { () }) }) \
-             } \
-             equiv operand_order { direct_trigger(); (); indirect_trigger(proof); () }",
+            "mod x; import __comptime__; fn direct(k: . -> .) -> . { __structural_recur__(proof)( __type_unit__(), k(), .(recur, fuel, input) { input }) } fn direct_trigger() -> . { direct(.() { direct(.() { () }) }) } fn indirect(proof: ., k: . -> .) -> . { let helper = __structural_recur__(proof)[Type][.][.]; helper(__type_unit__(), k(), .(recur, fuel, input) { input }) } fn indirect_trigger(proof: .) -> . { indirect(proof, .() { indirect(proof, .() { () }) }) } equiv operand_order { direct_trigger(); (); indirect_trigger(proof); () }",
         );
         let mut rewritten_sites = 0usize;
         let mut rewritten_args = 0usize;
@@ -15179,19 +15090,7 @@ mod tests {
     #[test]
     fn direct_structural_recur_same_origin_reentry_with_smaller_fuel_reduces() {
         let m = parse_module(
-            "module x; import __comptime__; \
-             fn run(k: Type -> ., fuel: Type) -> . { \
-               __structural_recur__(proof)( fuel, (), .(recur, current, input) { \
-                 __if_then_else__( \
-                   __type_equal__(proof, current, __type_unit__(proof)), \
-                   .() { () }, \
-                   .() { k(__type_unit__(proof)) }) \
-               }) \
-             } \
-             fn trigger() -> . { \
-               run(.(next) { run(.(again) { () }, next) }, __type_product__(proof, __type_unit__(proof), __type_unit__(proof))) \
-             } \
-             equiv cache { trigger(); () }",
+            "mod x; import __comptime__; fn run(k: Type -> ., fuel: Type) -> . { __structural_recur__(proof)( fuel, (), .(recur, current, input) { __if_then_else__( __type_equal__(proof, current, __type_unit__(proof)), .() { () }, .() { k(__type_unit__(proof)) }) }) } fn trigger() -> . { run(.(next) { run(.(again) { () }, next) }, __type_product__(proof, __type_unit__(proof), __type_unit__(proof))) } equiv cache { trigger(); () }",
         );
         let ctx = test_primitive_ctx_for(
             "x",
@@ -15222,18 +15121,7 @@ mod tests {
     #[test]
     fn direct_structural_recur_nested_calls_accept_distinct_equal_measure_fuel() {
         let m = parse_module(
-            "module x; import __comptime__; \
-             fn run(k: Type -> ., fuel: Type) -> . { \
-               __structural_recur__(proof)( fuel, (), .(recur, current, input) { k(current) }) \
-             } \
-             fn trigger() -> . { \
-               run(.(root) { \
-                 run(.(unit) { \
-                   run(.(bottom) { () }, __type_bottom__(proof)) \
-                 }, __type_unit__(proof)) \
-               }, __type_product__(proof, __type_unit__(proof), __type_unit__(proof))) \
-             } \
-             equiv cache { trigger(); () }",
+            "mod x; import __comptime__; fn run(k: Type -> ., fuel: Type) -> . { __structural_recur__(proof)( fuel, (), .(recur, current, input) { k(current) }) } fn trigger() -> . { run(.(root) { run(.(unit) { run(.(bottom) { () }, __type_bottom__(proof)) }, __type_unit__(proof)) }, __type_product__(proof, __type_unit__(proof), __type_unit__(proof))) } equiv cache { trigger(); () }",
         );
         let ctx = test_primitive_ctx_for(
             "x",
@@ -15264,18 +15152,7 @@ mod tests {
     #[test]
     fn direct_structural_recur_returned_thunk_preserves_callback_descent() {
         let m = parse_module(
-            "module x; import __comptime__; \
-             equiv cache { .() { \
-               let attempt = __structural_recur__(proof)( __type_product__(proof, __type_unit__(proof), __type_unit__(proof)), (), \
-                 .(recur, fuel, input) { \
-                   .() { \
-                     __if_then_else__(__type_equal__(proof, fuel, __type_unit__(proof)), \
-                       .() { () }, .() { recur(__type_unit__(proof), ())() }) \
-                   } \
-                 }); \
-               attempt() }(); \
-               () \
-             }",
+            "mod x; import __comptime__; equiv cache { .() { let attempt = __structural_recur__(proof)( __type_product__(proof, __type_unit__(proof), __type_unit__(proof)), (), .(recur, fuel, input) { .() { __if_then_else__(__type_equal__(proof, fuel, __type_unit__(proof)), .() { () }, .() { recur(__type_unit__(proof), ())() }) } }); attempt() }(); () }",
         );
         let ctx = test_primitive_ctx_for(
             "x",
@@ -15305,13 +15182,7 @@ mod tests {
     #[test]
     fn direct_structural_recur_returned_thunk_rejects_non_descending_callback() {
         let m = parse_module(
-            "module x; import __comptime__; \
-             equiv cache { .() { \
-               let attempt = __structural_recur__(proof)( __type_product__(proof, __type_unit__(proof), __type_unit__(proof)), (), \
-                 .(recur, fuel, input) { .() { recur(__type_unit__(proof), ())() } }); \
-               attempt() }(); \
-               () \
-             }",
+            "mod x; import __comptime__; equiv cache { .() { let attempt = __structural_recur__(proof)( __type_product__(proof, __type_unit__(proof), __type_unit__(proof)), (), .(recur, fuel, input) { .() { recur(__type_unit__(proof), ())() } }); attempt() }(); () }",
         );
         let ctx = test_primitive_ctx_for(
             "x",
@@ -15346,30 +15217,7 @@ mod tests {
     #[test]
     fn direct_structural_recur_sibling_calls_compare_against_parent_fuel() {
         let m = parse_module(
-            "module x; import __comptime__; \
-             equiv cache { \
-               __either__[.][.][.](\
-                 __structural_recur__(proof)( \
-                   __type_product__(proof, __type_unit__(proof), __type_product__(proof, __type_unit__(proof), __type_unit__(proof))), \
-                   (), \
-                   .(recur, fuel, input) { \
-                     __if_then_else__(__type_equal__(proof, fuel, __type_unit__(proof)), \
-                       .() { __left__[.][.](()) }, \
-                       .() { \
-                         __if_then_else__( \
-                           __type_equal__(proof, fuel, __type_product__(proof, __type_unit__(proof), __type_unit__(proof))), \
-                           .() { __left__[.][.](()) }, \
-                           .() { \
-                             __either__[.][.][. | .]( recur(__type_unit__(proof), ()), \
-                               .(left_done) { recur(__type_product__(proof, __type_unit__(proof), __type_unit__(proof)), ()) }, \
-                               .(left_err) { __right__[.][.](()) }) \
-                           }) \
-                       }) \
-                   }), \
-                 .(ok) { () }, \
-                 .(err) { err }); \
-               () \
-             }",
+            "mod x; import __comptime__; equiv cache { __either__[.][.][.](__structural_recur__(proof)( __type_product__(proof, __type_unit__(proof), __type_product__(proof, __type_unit__(proof), __type_unit__(proof))), (), .(recur, fuel, input) { __if_then_else__(__type_equal__(proof, fuel, __type_unit__(proof)), .() { __left__[.][.](()) }, .() { __if_then_else__( __type_equal__(proof, fuel, __type_product__(proof, __type_unit__(proof), __type_unit__(proof))), .() { __left__[.][.](()) }, .() { __either__[.][.][. | .]( recur(__type_unit__(proof), ()), .(left_done) { recur(__type_product__(proof, __type_unit__(proof), __type_unit__(proof)), ()) }, .(left_err) { __right__[.][.](()) }) }) }) }), .(ok) { () }, .(err) { err }); () }",
         );
         let ctx = test_primitive_ctx_for(
             "x",
@@ -15502,42 +15350,7 @@ mod tests {
     #[test]
     fn direct_structural_recur_outer_continuation_survives_nested_loop_iterations() {
         let m = parse_module(
-            "module x; import __comptime__; \
-             equiv cache { \
-               __either__[.][.][.](\
-                 __structural_recur__(proof)( \
-                   __type_product__(proof, __type_unit__(proof), __type_product__(proof, __type_unit__(proof), __type_unit__(proof))), \
-                   (), \
-                   .(outer_recur, outer_fuel, outer_input) { \
-                     __if_then_else__(__type_equal__(proof, outer_fuel, __type_unit__(proof)), \
-                       .() { __left__[.][.](()) }, \
-                       .() { \
-                         __if_then_else__( \
-                           __type_equal__(proof, outer_fuel, __type_product__(proof, __type_unit__(proof), __type_unit__(proof))), \
-                           .() { __left__[.][.](()) }, \
-                           .() { \
-                             __structural_recur__(proof)( \
-                               __type_product__(proof, __type_unit__(proof), __type_unit__(proof)), \
-                               (), \
-                               .(inner_recur, inner_fuel, inner_input) { \
-                                 __if_then_else__( \
-                                   __type_equal__(proof, inner_fuel, __type_unit__(proof)), \
-                                   .() { \
-                                     outer_recur(__type_product__(proof, __type_unit__(proof), __type_unit__(proof)), ()) \
-                                   }, \
-                                   .() { \
-                                     __either__[.][.][. | .]( outer_recur(__type_unit__(proof), ()), \
-                                       .(left_done) { inner_recur(__type_unit__(proof), ()) }, \
-                                       .(left_err) { __right__[.][.](()) }) \
-                                   }) \
-                               }) \
-                           }) \
-                       }) \
-                   }), \
-                 .(ok) { () }, \
-                 .(err) { err }); \
-               () \
-             }",
+            "mod x; import __comptime__; equiv cache { __either__[.][.][.](__structural_recur__(proof)( __type_product__(proof, __type_unit__(proof), __type_product__(proof, __type_unit__(proof), __type_unit__(proof))), (), .(outer_recur, outer_fuel, outer_input) { __if_then_else__(__type_equal__(proof, outer_fuel, __type_unit__(proof)), .() { __left__[.][.](()) }, .() { __if_then_else__( __type_equal__(proof, outer_fuel, __type_product__(proof, __type_unit__(proof), __type_unit__(proof))), .() { __left__[.][.](()) }, .() { __structural_recur__(proof)( __type_product__(proof, __type_unit__(proof), __type_unit__(proof)), (), .(inner_recur, inner_fuel, inner_input) { __if_then_else__( __type_equal__(proof, inner_fuel, __type_unit__(proof)), .() { outer_recur(__type_product__(proof, __type_unit__(proof), __type_unit__(proof)), ()) }, .() { __either__[.][.][. | .]( outer_recur(__type_unit__(proof), ()), .(left_done) { inner_recur(__type_unit__(proof), ()) }, .(left_err) { __right__[.][.](()) }) }) }) }) }) }), .(ok) { () }, .(err) { err }); () }",
         );
         let ctx = test_primitive_ctx_for(
             "x",
@@ -15567,45 +15380,7 @@ mod tests {
     #[test]
     fn direct_structural_recur_outer_continuation_survives_top_level_helper_loop() {
         let m = parse_module(
-            "module x; import __comptime__; \
-             fn walk(outer_recur: (Type & .) -> ., parent: Type) -> . { \
-               __structural_recur__(proof)( \
-                 __type_product__(proof, __type_unit__(proof), __type_unit__(proof)), \
-                 (), \
-                 .(inner_recur, inner_fuel, inner_input) { \
-                   __if_then_else__( \
-                     __type_equal__(proof, inner_fuel, __type_unit__(proof)), \
-                     .() { outer_recur(parent, ()) }, \
-                     .() { \
-                       __either__[.][.][. | .]( outer_recur(__type_unit__(proof), ()), \
-                         .(left_done) { inner_recur(__type_unit__(proof), ()) }, \
-                         .(left_err) { left_err }) \
-                     }) \
-                 }) \
-             } \
-             equiv cache { \
-               __either__[.][.][.](\
-                 __structural_recur__(proof)( \
-                   __type_product__(proof,  \
-                     __type_unit__(proof), \
-                     __type_product__(proof, __type_unit__(proof), __type_product__(proof, __type_unit__(proof), __type_unit__(proof)))), \
-                   (), \
-                   .(outer_recur, outer_fuel, outer_input) { \
-                     __if_then_else__(__type_equal__(proof, outer_fuel, __type_unit__(proof)), \
-                       .() { __left__[.][.](()) }, \
-                       .() { \
-                         __if_then_else__( \
-                           __type_equal__(proof, outer_fuel, __type_product__(proof, __type_unit__(proof), __type_unit__(proof))), \
-                           .() { __left__[.][.](()) }, \
-                           .() { \
-                             walk(outer_recur, __type_product__(proof, __type_unit__(proof), __type_unit__(proof))) \
-                           }) \
-                       }) \
-                   }), \
-                 .(ok) { () }, \
-                 .(err) { err }); \
-               () \
-             }",
+            "mod x; import __comptime__; fn walk(outer_recur: (Type & .) -> ., parent: Type) -> . { __structural_recur__(proof)( __type_product__(proof, __type_unit__(proof), __type_unit__(proof)), (), .(inner_recur, inner_fuel, inner_input) { __if_then_else__( __type_equal__(proof, inner_fuel, __type_unit__(proof)), .() { outer_recur(parent, ()) }, .() { __either__[.][.][. | .]( outer_recur(__type_unit__(proof), ()), .(left_done) { inner_recur(__type_unit__(proof), ()) }, .(left_err) { left_err }) }) }) } equiv cache { __either__[.][.][.](__structural_recur__(proof)( __type_product__(proof,  __type_unit__(proof), __type_product__(proof, __type_unit__(proof), __type_product__(proof, __type_unit__(proof), __type_unit__(proof)))), (), .(outer_recur, outer_fuel, outer_input) { __if_then_else__(__type_equal__(proof, outer_fuel, __type_unit__(proof)), .() { __left__[.][.](()) }, .() { __if_then_else__( __type_equal__(proof, outer_fuel, __type_product__(proof, __type_unit__(proof), __type_unit__(proof))), .() { __left__[.][.](()) }, .() { walk(outer_recur, __type_product__(proof, __type_unit__(proof), __type_unit__(proof))) }) }) }), .(ok) { () }, .(err) { err }); () }",
         );
         let ctx = test_primitive_ctx_for(
             "x",
@@ -17349,7 +17124,7 @@ mod tests {
     #[test]
     fn call_stages_type_fold_preserves_direct_dispatch() {
         let (module, [body]) = parse_module_with_bodies(
-            "module x; import __comptime__;",
+            "mod x; import __comptime__;",
             [
                 "__type_product_spine_fold__(ct)[.](typ, (), .(acc: ., _item: __Type__) -> . { acc })",
             ],
@@ -17383,7 +17158,7 @@ mod tests {
     #[test]
     fn call_stages_type_fold_keeps_proof_packet_and_shadowing_boundaries() {
         let (module, bodies) = parse_module_with_bodies(
-            "module x; import __comptime__;",
+            "mod x; import __comptime__;",
             [
                 "__type_product_spine_fold__(ct)[.](typ, (), .(acc, _item) { acc })",
                 "__type_product_spine_fold__(.() { ct }())[.](typ, (), .(acc, _item) { acc })",
@@ -17486,7 +17261,7 @@ mod tests {
 
     #[test]
     fn unit_terms_equal() {
-        let m = parse_module("module x; equiv u { (); () }");
+        let m = parse_module("mod x; equiv u { (); () }");
         let ctx = EvalCtx::new();
         let v = eval_each(&equiv_terms(&m), &ctx);
         let (a, b) = first_two(&v);
@@ -17495,7 +17270,7 @@ mod tests {
 
     #[test]
     fn beta_reduces_under_app() {
-        let m = parse_module("module x; equiv beta { (.(x) { x })(()); () }");
+        let m = parse_module("mod x; equiv beta { (.(x) { x })(()); () }");
         let ctx = EvalCtx::new();
         let v = eval_each(&equiv_terms(&m), &ctx);
         let (a, b) = first_two(&v);
@@ -17506,7 +17281,7 @@ mod tests {
     fn let_binding_evaluates() {
         // A statement body in an equiv arm exercises the evaluator's let path.
         let (mut m, [body]) =
-            parse_module_with_bodies("module x; equiv let_eq { (); () }", ["let y = (); y"]);
+            parse_module_with_bodies("mod x; equiv let_eq { (); () }", ["let y = (); y"]);
         m.equivs[0].terms[0] = body;
         let ctx = EvalCtx::new();
         let v = eval_each(&equiv_terms(&m), &ctx);
@@ -17517,7 +17292,7 @@ mod tests {
     #[test]
     fn seq_unit_statement_collapses() {
         let (mut m, [body]) =
-            parse_module_with_bodies("module x; equiv seq_unit { (); foo() }", ["(); foo()"]);
+            parse_module_with_bodies("mod x; equiv seq_unit { (); foo() }", ["(); foo()"]);
         m.equivs[0].terms[0] = body;
         let ctx = EvalCtx::new();
         let v = eval_each(&equiv_terms(&m), &ctx);
@@ -17528,7 +17303,7 @@ mod tests {
     #[test]
     fn seq_stuck_unit_action_stays_residual() {
         let (mut m, [body]) = parse_module_with_bodies(
-            "module x; equiv seq_effect { (); print(\"x\") }",
+            "mod x; equiv seq_effect { (); print(\"x\") }",
             ["print(\"x\"); print(\"x\")"],
         );
         m.equivs[0].terms[0] = body;
@@ -17541,7 +17316,7 @@ mod tests {
 
     #[test]
     fn distinct_atoms_are_unequal() {
-        let m = parse_module("module x; equiv neq { foo; bar }");
+        let m = parse_module("mod x; equiv neq { foo; bar }");
         let ctx = EvalCtx::new();
         let v = eval_each(&equiv_terms(&m), &ctx);
         let (a, b) = first_two(&v);
@@ -17550,7 +17325,7 @@ mod tests {
 
     #[test]
     fn alpha_eq_under_lambda() {
-        let m = parse_module("module x; equiv alpha { .(x) { x }; .(y) { y } }");
+        let m = parse_module("mod x; equiv alpha { .(x) { x }; .(y) { y } }");
         let ctx = EvalCtx::new();
         let v = eval_each(&equiv_terms(&m), &ctx);
         let (a, b) = first_two(&v);
@@ -17559,7 +17334,7 @@ mod tests {
 
     #[test]
     fn alpha_neq_under_lambda_distinguishes_bodies() {
-        let m = parse_module("module x; equiv alpha_ne { .(x) { x }; .(x) { y } }");
+        let m = parse_module("mod x; equiv alpha_ne { .(x) { x }; .(x) { y } }");
         let ctx = EvalCtx::new();
         let v = eval_each(&equiv_terms(&m), &ctx);
         let (a, b) = first_two(&v);
@@ -17569,10 +17344,7 @@ mod tests {
     #[test]
     fn fn_def_unfolds_to_body() {
         // `unit_a()` (a fn application) reduces to its body `()`.
-        let m = parse_module(
-            "module x; fn unit_a() -> . { () } \
-             equiv eq { unit_a(); () }",
-        );
+        let m = parse_module("mod x; fn unit_a() -> . { () } equiv eq { unit_a(); () }");
         let ctx = EvalCtx::new().with_fn_defs(fn_def_map(&m));
         let v = eval_each(&equiv_terms(&m), &ctx);
         let (a, b) = first_two(&v);
@@ -17583,10 +17355,7 @@ mod tests {
     fn type_application_erases_then_beta_reduces() {
         // Type application consumes the abstraction before value beta
         // reduction; the erased binder contributes no value local.
-        let m = parse_module(
-            "module x; fn poly_id[T](v: T) -> T { v } \
-             equiv ta { poly_id[A](v); v }",
-        );
+        let m = parse_module("mod x; fn poly_id[T](v: T) -> T { v } equiv ta { poly_id[A](v); v }");
         let ctx = EvalCtx::new().with_fn_defs(fn_def_map(&m));
         let v = eval_each(&equiv_terms(&m), &ctx);
         let (a, b) = first_two(&v);
@@ -17595,10 +17364,7 @@ mod tests {
 
     #[test]
     fn type_only_fn_reduces_to_body() {
-        let m = parse_module(
-            "module x; fn type_only[T] -> . { () } \
-             equiv tof { type_only[A]; () }",
-        );
+        let m = parse_module("mod x; fn type_only[T] -> . { () } equiv tof { type_only[A]; () }");
         let ctx = EvalCtx::new().with_fn_defs(fn_def_map(&m));
         let v = eval_each(&equiv_terms(&m), &ctx);
         let (a, b) = first_two(&v);
@@ -17608,8 +17374,7 @@ mod tests {
     #[test]
     fn type_only_specialization_retains_explicit_unit_stage() {
         let m = parse_module(
-            "module x; fn delayed[T]() -> . { () } \
-             equiv stages { delayed[A]; .() { () } }",
+            "mod x; fn delayed[T]() -> . { () } equiv stages { delayed[A]; .() { () } }",
         );
         let ctx = EvalCtx::new().with_fn_defs(fn_def_map(&m));
         let values = eval_each(&equiv_terms(&m), &ctx);
@@ -17627,8 +17392,7 @@ mod tests {
         // Bind a fn to a local and apply via the local — exercises
         // the path through the env into the closure form.
         let (mut m, [body]) = parse_module_with_bodies(
-            "module x; fn unit_a() -> . { () } \
-             equiv eq2 { (); () }",
+            "mod x; fn unit_a() -> . { () } equiv eq2 { (); () }",
             ["let f = unit_a; f()"],
         );
         m.equivs[0].terms[0] = body;
@@ -17641,7 +17405,7 @@ mod tests {
     #[test]
     fn eta_lambda_equals_callee() {
         // λx. f(x) ≡ f when x is not free in f.
-        let m = parse_module("module x; equiv eta { .(x) { f(x) }; f }");
+        let m = parse_module("mod x; equiv eta { .(x) { f(x) }; f }");
         let ctx = EvalCtx::new();
         let v = eval_each(&equiv_terms(&m), &ctx);
         let (a, b) = first_two(&v);
@@ -17651,7 +17415,7 @@ mod tests {
     #[test]
     fn stuck_residuals_with_same_shape_are_equal() {
         // Identical residual applications compare equal.
-        let m = parse_module("module x; equiv stuck_eq { f(()); f(()) }");
+        let m = parse_module("mod x; equiv stuck_eq { f(()); f(()) }");
         let ctx = EvalCtx::new();
         let v = eval_each(&equiv_terms(&m), &ctx);
         let (a, b) = first_two(&v);
@@ -17661,7 +17425,7 @@ mod tests {
 
     #[test]
     fn stuck_residuals_with_different_callees_are_unequal() {
-        let m = parse_module("module x; equiv stuck_neq { f(()); g(()) }");
+        let m = parse_module("mod x; equiv stuck_neq { f(()); g(()) }");
         let ctx = EvalCtx::new();
         let v = eval_each(&equiv_terms(&m), &ctx);
         let (a, b) = first_two(&v);
@@ -17670,7 +17434,7 @@ mod tests {
 
     #[test]
     fn stuck_residuals_with_different_args_are_unequal() {
-        let m = parse_module("module x; equiv stuck_arg_neq { f(a); f(b) }");
+        let m = parse_module("mod x; equiv stuck_arg_neq { f(a); f(b) }");
         let ctx = EvalCtx::new();
         let v = eval_each(&equiv_terms(&m), &ctx);
         let (a, b) = first_two(&v);
@@ -17683,11 +17447,7 @@ mod tests {
         // reduction rule, so the opaque bottom-producing call remains
         // observable below the `__absurd__` residual.
         let m = parse_module(
-            "module x; import __intrinsics__; \
-             equiv opaque_absurd { \
-               __absurd__(never_a(x)); \
-               __absurd__(never_a(x)); \
-               __absurd__(never_b(x)) }",
+            "mod x; import __intrinsics__; equiv opaque_absurd { __absurd__(never_a(x)); __absurd__(never_a(x)); __absurd__(never_b(x)) }",
         );
         let ctx = EvalCtx::new();
         let values = eval_each(&equiv_terms(&m), &ctx);
@@ -17719,8 +17479,7 @@ mod tests {
         // A 2-param closure given 1 arg should residualize as Stuck.
         // Two such residuals built from alpha-equivalent closures
         // compare equal.
-        let m =
-            parse_module("module x; equiv partial { (.(x, y) { y })(()); (.(a, b) { b })(()) }");
+        let m = parse_module("mod x; equiv partial { (.(x, y) { y })(()); (.(a, b) { b })(()) }");
         let ctx = EvalCtx::new();
         let v = eval_each(&equiv_terms(&m), &ctx);
         let (a, b) = first_two(&v);
@@ -17734,7 +17493,7 @@ mod tests {
     #[test]
     fn returned_function_application_recurses_into_apply() {
         // A completed value stage returns the callable for the following stage.
-        let m = parse_module("module x; equiv leftover { (.(x) { x })(f)(a); f(a) }");
+        let m = parse_module("mod x; equiv leftover { (.(x) { x })(f)(a); f(a) }");
         let ctx = EvalCtx::new();
         let v = eval_each(&equiv_terms(&m), &ctx);
         let (a, b) = first_two(&v);
@@ -17745,7 +17504,7 @@ mod tests {
     fn multi_arg_closure_full_application() {
         // (λx y. y)(a, b) ≡ b. Exercises the multi-param substitution
         // loop in `apply`.
-        let m = parse_module("module x; equiv multi { (.(x, y) { y })(a, b); b }");
+        let m = parse_module("mod x; equiv multi { (.(x, y) { y })(a, b); b }");
         let ctx = EvalCtx::new();
         let v = eval_each(&equiv_terms(&m), &ctx);
         let (a, b) = first_two(&v);
@@ -17772,7 +17531,7 @@ mod tests {
                 ),
             ] {
                 let m = parse_module(&format!(
-                    "module x; import __intrinsics__; equiv choose {{ {call}; {expected} }}"
+                    "mod x; import __intrinsics__; equiv choose {{ {call}; {expected} }}"
                 ));
                 let ctx = EvalCtx::new();
                 let values = eval_each(&equiv_terms(&m), &ctx);
@@ -17801,7 +17560,7 @@ mod tests {
     fn boolean_operand_intrinsics_keep_unknown_conditions_structural() {
         for intrinsic in ["__and__", "__or__"] {
             let m = parse_module(&format!(
-                "module x; import __intrinsics__; equiv choose {{ {intrinsic}(condition(), .() {{ rhs() }}); {intrinsic}(condition(), .() {{ rhs() }}); {intrinsic}(condition(), .() {{ other() }}) }}"
+                "mod x; import __intrinsics__; equiv choose {{ {intrinsic}(condition(), .() {{ rhs() }}); {intrinsic}(condition(), .() {{ rhs() }}); {intrinsic}(condition(), .() {{ other() }}) }}"
             ));
             let ctx = EvalCtx::new();
             let values = eval_each(&equiv_terms(&m), &ctx);
@@ -17825,10 +17584,7 @@ mod tests {
         // Both arms branch on `.t`, so both reduce to the then-arm
         // `f()` regardless of the (discarded) else arm.
         let m = parse_module(
-            "module x; import __intrinsics__; \
-             equiv if_t { \
-               __if_then_else__(.t, .() { f() }, .() { g() }); \
-               __if_then_else__(.t, .() { f() }, .() { h() }) }",
+            "mod x; import __intrinsics__; equiv if_t { __if_then_else__(.t, .() { f() }, .() { g() }); __if_then_else__(.t, .() { f() }, .() { h() }) }",
         );
         let ctx = EvalCtx::new();
         let v = eval_each(&equiv_terms(&m), &ctx);
@@ -17840,10 +17596,7 @@ mod tests {
     fn if_then_else_false_selects_else_arm() {
         // ι-IfFalse: a literal `.f` condition reduces to `e(())`.
         let m = parse_module(
-            "module x; import __intrinsics__; \
-             equiv if_f { \
-               __if_then_else__(.f, .() { g() }, .() { f() }); \
-               __if_then_else__(.f, .() { h() }, .() { f() }) }",
+            "mod x; import __intrinsics__; equiv if_f { __if_then_else__(.f, .() { g() }, .() { f() }); __if_then_else__(.f, .() { h() }, .() { f() }) }",
         );
         let ctx = EvalCtx::new();
         let v = eval_each(&equiv_terms(&m), &ctx);
@@ -17856,11 +17609,7 @@ mod tests {
         // specs/formal/equiv.md § 2.2: a non-literal condition must
         // retain the condition and both handlers as structural residuals.
         let m = parse_module(
-            "module x; import __intrinsics__; \
-             equiv if_stuck { \
-               __if_then_else__(condition(x), .() { f() }, .() { g() }); \
-               __if_then_else__(condition(x), .() { f() }, .() { g() }); \
-               __if_then_else__(condition(x), .() { f() }, .() { h() }) }",
+            "mod x; import __intrinsics__; equiv if_stuck { __if_then_else__(condition(x), .() { f() }, .() { g() }); __if_then_else__(condition(x), .() { f() }, .() { g() }); __if_then_else__(condition(x), .() { f() }, .() { h() }) }",
         );
         let ctx = EvalCtx::new();
         let v = eval_each(&equiv_terms(&m), &ctx);
@@ -17917,10 +17666,7 @@ mod tests {
         // so both arms reduce to `f(a)` regardless of the (discarded)
         // right handler.
         let m = parse_module(
-            "module x; import __intrinsics__; \
-             equiv il { \
-               __either__(__left__(a), .(l) { f(l) }, .(r) { g(r) }); \
-               f(a) }",
+            "mod x; import __intrinsics__; equiv il { __either__(__left__(a), .(l) { f(l) }, .(r) { g(r) }); f(a) }",
         );
         let ctx = EvalCtx::new();
         let v = eval_each(&equiv_terms(&m), &ctx);
@@ -17933,10 +17679,7 @@ mod tests {
         // ι-RightEither: a known right injection selects the right
         // handler.
         let m = parse_module(
-            "module x; import __intrinsics__; \
-             equiv ir { \
-               __either__(__right__(b), .(l) { g(l) }, .(r) { f(r) }); \
-               f(b) }",
+            "mod x; import __intrinsics__; equiv ir { __either__(__right__(b), .(l) { g(l) }, .(r) { f(r) }); f(b) }",
         );
         let ctx = EvalCtx::new();
         let v = eval_each(&equiv_terms(&m), &ctx);
@@ -17949,10 +17692,7 @@ mod tests {
         // specs/formal/equiv.md § 2.6: a genuine application residual
         // retains both possible branches in a symbolic case split.
         let m = parse_module(
-            "module x; import __intrinsics__; \
-             equiv ie { \
-               __either__(source(x), .(l) { f(l) }, .(r) { g(r) }); \
-               __either__(source(x), .(l) { g(l) }, .(r) { f(r) }) }",
+            "mod x; import __intrinsics__; equiv ie { __either__(source(x), .(l) { f(l) }, .(r) { g(r) }); __either__(source(x), .(l) { g(l) }, .(r) { f(r) }) }",
         );
         let ctx = EvalCtx::new();
         let v = eval_each(&equiv_terms(&m), &ctx);
@@ -17976,14 +17716,10 @@ mod tests {
         // ι-Fst / ι-Snd: a projection over a known pair selects the
         // matching component. `__fst__(__pair__(a, b)) → a`,
         // `__snd__(__pair__(a, b)) → b`.
-        let m_fst = parse_module(
-            "module x; import __intrinsics__; \
-             equiv pf { __fst__(__pair__(a, b)); a }",
-        );
-        let m_snd = parse_module(
-            "module x; import __intrinsics__; \
-             equiv ps { __snd__(__pair__(a, b)); b }",
-        );
+        let m_fst =
+            parse_module("mod x; import __intrinsics__; equiv pf { __fst__(__pair__(a, b)); a }");
+        let m_snd =
+            parse_module("mod x; import __intrinsics__; equiv ps { __snd__(__pair__(a, b)); b }");
         let ctx = EvalCtx::new();
         for m in [&m_fst, &m_snd] {
             let v = eval_each(&equiv_terms(m), &ctx);
@@ -17997,11 +17733,8 @@ mod tests {
         // ι-Newtype (specs/formal/equiv.md § 2.1): the matching projector
         // unwraps its constructor's payload. Compact declaration lowering
         // supplies the ordinary nominal identity before evaluation.
-        let m = parse_module(
-            "module x; \
-             type { Wrap[A]: A; }; \
-             equiv nt { Wrap.get[A](Wrap.mk[A](x)); x }",
-        );
+        let m =
+            parse_module("mod x; type { Wrap[A]: A; }; equiv nt { Wrap.get[A](Wrap.mk[A](x)); x }");
         let ctx = EvalCtx::new()
             .with_fn_defs(fn_def_map(&m))
             .with_root_module(&m);
@@ -18017,8 +17750,7 @@ mod tests {
         // pairing. `wrap(mk_wrap(x))` with no member scope stays a residual,
         // distinct from the bare `x`.
         let m = parse_module(
-            "module x; import __intrinsics__; \
-             equiv nt_stuck { Wrap.wrap(Wrap.mk_wrap(x)); x }",
+            "mod x; import __intrinsics__; equiv nt_stuck { Wrap.wrap(Wrap.mk_wrap(x)); x }",
         );
         let ctx = EvalCtx::new(); // no registry
         let v = eval_each(&equiv_terms(&m), &ctx);
@@ -18031,19 +17763,19 @@ mod tests {
         let pkg = lowered_package(&[
             (
                 "a.kio",
-                "module a; pub type { Wrap[A]: A { pub mk; pub get; }; };",
+                "mod a; pub type { Wrap[A]: A { pub mk; pub get; }; };",
             ),
             (
                 "b.kio",
-                "module b; pub type { Wrap[A]: A { pub mk; pub get; }; };",
+                "mod b; pub type { Wrap[A]: A { pub mk; pub get; }; };",
             ),
             (
                 "consumer.kio",
-                "module consumer; import a as n; fn keep() -> . { () }",
+                "mod consumer; import a as n; fn keep() -> . { () }",
             ),
             (
                 "selective.kio",
-                "module selective; import a(Wrap); fn keep() -> . { () }",
+                "mod selective; import a {type Wrap} fn keep() -> . { () }",
             ),
         ]);
         let a = &pkg.module("a").expect("module a").module;
@@ -18088,13 +17820,7 @@ mod tests {
     #[test]
     fn newtype_member_values_apply_higher_order() {
         let (mut m, [body]) = parse_module_with_bodies(
-            "module a; \
-             type { Wrap[A]: A { pub mk; pub get; }; }; \
-             equiv members { Wrap.mk; Wrap.get } \
-             equiv applied { \
-                 (); \
-                 x \
-             }",
+            "mod a; type { Wrap[A]: A { pub mk; pub get; }; }; equiv members { Wrap.mk; Wrap.get } equiv applied { (); x }",
             ["let ctor = Wrap.mk; let proj = Wrap.get; proj[A](ctor[A](x))"],
         );
         m.equivs[1].terms[0] = body;
@@ -18129,20 +17855,11 @@ mod tests {
         let pkg = lowered_package(&[
             (
                 "provider.kio",
-                "module provider; \
-                 rec { \
-                   pub type { Wrap[A]: A & Peer[A] { pub mk; pub get; }; }; \
-                   type { Peer[A]: Wrap[A] { mk; get; }; }; \
-                 } \
-                 pub type Alias[A] = Wrap[A]; \
-                 pub type { Hidden[A]: A { mk; get; }; };",
+                "mod provider; rec { pub type { Wrap[A]: A & Peer[A] { pub mk; pub get; }; }; type { Peer[A]: Wrap[A] { mk; get; }; }; } pub type Alias[A] = Wrap[A]; pub type { Hidden[A]: A { mk; get; }; };",
             ),
             (
                 "consumer.kio",
-                "module consumer; \
-                 import provider(Wrap, Alias, Hidden); \
-                 import provider as p; \
-                 fn keep() -> . { () }",
+                "mod consumer; import provider {type Wrap; type Alias; type Hidden} import provider as p; fn keep() -> . { () }",
             ),
         ]);
         let provider = &pkg.module("provider").expect("provider").module;
@@ -18195,16 +17912,11 @@ mod tests {
         let pkg = lowered_package(&[
             (
                 "provider.kio",
-                "module provider; \
-                 pub type { Wrap[A]: A { pub mk; pub get; }; }; \
-                 pub fn wrap[A](x: A) -> Wrap[A] { Wrap.mk[A](x) }",
+                "mod provider; pub type { Wrap[A]: A { pub mk; pub get; }; }; pub fn wrap[A](x: A) -> Wrap[A] { Wrap.mk[A](x) }",
             ),
             (
                 "consumer.kio",
-                "module consumer; \
-                 import provider as p; \
-                 type { Wrap[A]: A { mk; get; }; }; \
-                 fn run[A](x: A) -> A { p.Wrap.get[A](p.wrap[A](x)) }",
+                "mod consumer; import provider as p; type { Wrap[A]: A { mk; get; }; }; fn run[A](x: A) -> A { p.Wrap.get[A](p.wrap[A](x)) }",
             ),
         ]);
         let consumer = &pkg.module("consumer").expect("consumer").module;
@@ -18234,7 +17946,7 @@ mod tests {
     /// `__intrinsics__` in scope. Returns the first arm's NF.
     fn eval_one(src_body: &str) -> Value {
         let m = parse_module(&format!(
-            "module x; import __intrinsics__; equiv probe {{ {src_body}; () }}"
+            "mod x; import __intrinsics__; equiv probe {{ {src_body}; () }}"
         ));
         let ctx = EvalCtx::new();
         eval(equiv_terms(&m)[0], &Env::new(), &ctx)
@@ -18264,7 +17976,7 @@ mod tests {
             ("-1.0e-9999[F64]", "-0.0[F64]", true),
         ] {
             let source = format!(
-                "module x; host type I role(i8); host type U role(u8); host type F32 role(f32); host type F64 role(f64); type Alias[A] = F32; equiv probe {{ {first}; {second} }}"
+                "mod x; host type I role(i8); host type U role(u8); host type F32 role(f32); host type F64 role(f64); type Alias[A] = F32; equiv probe {{ {first}; {second} }}"
             );
             let pkg = lowered_package(&[("x.kio", &source)]);
             let module = &pkg.module("x").unwrap().module;
@@ -18285,7 +17997,7 @@ mod tests {
         }
         for value in ["128[I]", "1.0e9999[F32]"] {
             let module = parse_module(&format!(
-                "module x; host type I role(i8); host type F32 role(f32); equiv probe {{ {value}; () }}"
+                "mod x; host type I role(i8); host type F32 role(f32); equiv probe {{ {value}; () }}"
             ));
             let ctx = EvalCtx::new().with_root_module(&module);
             assert!(compile_eval_root(equiv_terms(&module)[0], &ctx, Vec::new()).is_none());
@@ -18353,10 +18065,7 @@ mod tests {
         // `Value::Data`; `__either__(C, D, E, scrut, fl, fr)` selects
         // `fl(x)`. Both arms must reduce to `f(x)`.
         let m = parse_module(
-            "module x; import __intrinsics__; \
-             equiv il { \
-               __either__[A][B][C](__left__[A][B](x), .(l) { f(l) }, .(r) { g(r) }); \
-               f(x) }",
+            "mod x; import __intrinsics__; equiv il { __either__[A][B][C](__left__[A][B](x), .(l) { f(l) }, .(r) { g(r) }); f(x) }",
         );
         let ctx = EvalCtx::new();
         let v = eval_each(&equiv_terms(&m), &ctx);
@@ -18367,10 +18076,7 @@ mod tests {
     #[test]
     fn either_over_data_right_with_type_args_selects_right() {
         let m = parse_module(
-            "module x; import __intrinsics__; \
-             equiv ir { \
-               __either__[A][B][C](__right__[A][B](y), .(l) { g(l) }, .(r) { f(r) }); \
-               f(y) }",
+            "mod x; import __intrinsics__; equiv ir { __either__[A][B][C](__right__[A][B](y), .(l) { g(l) }, .(r) { f(r) }); f(y) }",
         );
         let ctx = EvalCtx::new();
         let v = eval_each(&equiv_terms(&m), &ctx);
@@ -18381,10 +18087,7 @@ mod tests {
     #[test]
     fn either_unit_branch_accepts_zero_arg_handler() {
         let m = parse_module(
-            "module x; import __intrinsics__; \
-             equiv unit_handler { \
-               __either__[A][.][C](__right__[A][.](()), .(l) { f(l) }, .() { done }); \
-               done }",
+            "mod x; import __intrinsics__; equiv unit_handler { __either__[A][.][C](__right__[A][.](()), .(l) { f(l) }, .() { done }); done }",
         );
         let ctx = EvalCtx::new();
         let v = eval_each(&equiv_terms(&m), &ctx);
@@ -18398,12 +18101,10 @@ mod tests {
         // `__fst__[A][B](__pair__[A][B](x, y)) → x`,
         // `__snd__(...) → y`.
         let m_fst = parse_module(
-            "module x; import __intrinsics__; \
-             equiv pf { __fst__[A][B](__pair__[A][B](x, y)); x }",
+            "mod x; import __intrinsics__; equiv pf { __fst__[A][B](__pair__[A][B](x, y)); x }",
         );
         let m_snd = parse_module(
-            "module x; import __intrinsics__; \
-             equiv ps { __snd__[A][B](__pair__[A][B](x, y)); y }",
+            "mod x; import __intrinsics__; equiv ps { __snd__[A][B](__pair__[A][B](x, y)); y }",
         );
         let ctx = EvalCtx::new();
         for m in [&m_fst, &m_snd] {
@@ -18419,7 +18120,7 @@ mod tests {
         // the projector case-reduces over it. `Wrap` has constructor
         // `mk` and projector `get`. First confirm `Wrap.mk(x)` is built as `Value::Data`,
         // then confirm `Wrap.get(Wrap.mk(x)) → x` (ι-Newtype).
-        let cons_m = parse_module("module x; type { Wrap[A]: A; }; equiv c { Wrap.mk[A](x); () }");
+        let cons_m = parse_module("mod x; type { Wrap[A]: A; }; equiv c { Wrap.mk[A](x); () }");
         let cons_ctx = EvalCtx::new().with_root_module(&cons_m);
         let constructed = eval(equiv_terms(&cons_m)[0], &Env::new(), &cons_ctx);
         assert!(
@@ -18428,9 +18129,8 @@ mod tests {
             "newtype ctor should build single-payload Value::Data, got {constructed:?}"
         );
 
-        let m = parse_module(
-            "module x; type { Wrap[A]: A; }; equiv nt { Wrap.get[A](Wrap.mk[A](x)); x }",
-        );
+        let m =
+            parse_module("mod x; type { Wrap[A]: A; }; equiv nt { Wrap.get[A](Wrap.mk[A](x)); x }");
         let ctx = EvalCtx::new()
             .with_fn_defs(fn_def_map(&m))
             .with_root_module(&m);
@@ -18442,9 +18142,7 @@ mod tests {
     #[test]
     fn newtype_ctor_product_payload_rebuilds_packet_from_abi_slots() {
         let m = parse_module(
-            "module x; \
-             type { Wrap: . & . { pub mk; pub get; }; }; \
-             equiv c { Wrap.mk((), ()); () }",
+            "mod x; type { Wrap: . & . { pub mk; pub get; }; }; equiv c { Wrap.mk((), ()); () }",
         );
         let ctx = EvalCtx::new().with_root_module(&m);
 
@@ -18464,9 +18162,7 @@ mod tests {
         assert!(matches!(pair.args(), [Value::Unit, Value::Unit]));
 
         let packet_m = parse_module(
-            "module x; import __intrinsics__; \
-             type { Wrap: . & . { pub mk; pub get; }; }; \
-             equiv c { Wrap.mk(__pair__[.][.]((), ())); () }",
+            "mod x; import __intrinsics__; type { Wrap: . & . { pub mk; pub get; }; }; equiv c { Wrap.mk(__pair__[.][.]((), ())); () }",
         );
         let packet_ctx = EvalCtx::new().with_root_module(&packet_m);
         let constructed = eval(equiv_terms(&packet_m)[0], &Env::new(), &packet_ctx);
@@ -18622,14 +18318,7 @@ mod tests {
     #[test]
     fn case_split_alpha_renaming_reaches_closure_captures() {
         let m = parse_module(
-            "module x; import __intrinsics__; \
-             equiv case_closure_alpha { \
-               __either__[A][A][C](s, \
-                 .(left_payload) { .(x) { keep(left_payload, x) } }, \
-                 .(right_payload) { .(x) { keep(right_payload, x) } }); \
-               __either__[A][A][C](s, \
-                 .(l) { .(y) { keep(l, y) } }, \
-                 .(r) { .(y) { keep(r, y) } }) }",
+            "mod x; import __intrinsics__; equiv case_closure_alpha { __either__[A][A][C](s, .(left_payload) { .(x) { keep(left_payload, x) } }, .(right_payload) { .(x) { keep(right_payload, x) } }); __either__[A][A][C](s, .(l) { .(y) { keep(l, y) } }, .(r) { .(y) { keep(r, y) } }) }",
         );
         let ctx = EvalCtx::new();
         let values = eval_each(&equiv_terms(&m), &ctx);
@@ -18675,10 +18364,7 @@ mod tests {
         // differently on each branch and must compare unequal — the
         // soundness property (a non-identity dispatch is not erased).
         let m = parse_module(
-            "module x; import __intrinsics__; \
-             equiv ie { \
-               __either__[A][B][C](c(), .(l) { f(l) }, .(r) { g(r) }); \
-               __either__[A][B][C](c(), .(l) { g(l) }, .(r) { f(r) }) }",
+            "mod x; import __intrinsics__; equiv ie { __either__[A][B][C](c(), .(l) { f(l) }, .(r) { g(r) }); __either__[A][B][C](c(), .(l) { g(l) }, .(r) { f(r) }) }",
         );
         let ctx = EvalCtx::new();
         let v = eval_each(&equiv_terms(&m), &ctx);
@@ -18726,10 +18412,7 @@ mod tests {
         // an opaque equiv parameter. The first arm re-pairs the
         // projections of `p`; it must compare equal to `p` itself.
         let m = parse_module(
-            "module x; import __intrinsics__; \
-             equiv prod_eta(p: T) { \
-               __pair__[A][B](__fst__[A][B](p), __snd__[A][B](p)); \
-               p }",
+            "mod x; import __intrinsics__; equiv prod_eta(p: T) { __pair__[A][B](__fst__[A][B](p), __snd__[A][B](p)); p }",
         );
         let ctx = EvalCtx::new();
         let (a, b) = eval_parametric(&m, &ctx);
@@ -18741,10 +18424,7 @@ mod tests {
         // The guard requires the SAME base: re-pairing `__fst__(p)` with
         // `__snd__(q)` (different bases) must NOT contract.
         let m = parse_module(
-            "module x; import __intrinsics__; \
-             equiv prod_eta_ne(p: T, q: T) { \
-               __pair__[A][B](__fst__[A][B](p), __snd__[A][B](q)); \
-               p }",
+            "mod x; import __intrinsics__; equiv prod_eta_ne(p: T, q: T) { __pair__[A][B](__fst__[A][B](p), __snd__[A][B](q)); p }",
         );
         let ctx = EvalCtx::new();
         let (a, b) = eval_parametric(&m, &ctx);
@@ -18758,10 +18438,7 @@ mod tests {
         // straight back through the two bare injection constructors,
         // which is the identity on the sum.
         let m = parse_module(
-            "module x; import __intrinsics__; \
-             equiv sum_eta(s: T) { \
-               __either__[A][B][C](s, __left__, __right__); \
-               s }",
+            "mod x; import __intrinsics__; equiv sum_eta(s: T) { __either__[A][B][C](s, __left__, __right__); s }",
         );
         let ctx = EvalCtx::new();
         let (a, b) = eval_parametric(&m, &ctx);
@@ -18774,10 +18451,7 @@ mod tests {
         // __left__(l) }` rather than the bare atom; sum-η still fires
         // (the handler is η-equal to the injection).
         let m = parse_module(
-            "module x; import __intrinsics__; \
-             equiv sum_eta2(s: T) { \
-               __either__[A][B][C](s, .(l) { __left__(l) }, .(r) { __right__(r) }); \
-               s }",
+            "mod x; import __intrinsics__; equiv sum_eta2(s: T) { __either__[A][B][C](s, .(l) { __left__(l) }, .(r) { __right__(r) }); s }",
         );
         let ctx = EvalCtx::new();
         let (a, b) = eval_parametric(&m, &ctx);
@@ -18792,10 +18466,7 @@ mod tests {
         // Swapping the handlers (left↦right, right↦left) is NOT the
         // identity — sum-η must not fire.
         let m = parse_module(
-            "module x; import __intrinsics__; \
-             equiv sum_eta_ne(s: T) { \
-               __either__[A][B][C](s, __right__, __left__); \
-               s }",
+            "mod x; import __intrinsics__; equiv sum_eta_ne(s: T) { __either__[A][B][C](s, __right__, __left__); s }",
         );
         let ctx = EvalCtx::new();
         let (a, b) = eval_parametric(&m, &ctx);
@@ -18896,7 +18567,7 @@ mod tests {
     fn value_to_string_renders_each_variant() {
         // Equivalence diagnostics retain the source-shaped normal form, while
         // REPL rendering uses the informational closure identity.
-        let m = parse_module("module x; equiv c { .(a) { a }; .(a) { a } }");
+        let m = parse_module("mod x; equiv c { .(a) { a }; .(a) { a } }");
         let ctx = EvalCtx::new();
         let terms = equiv_terms(&m);
         let Expr::FnExpr { meta, .. } = terms[0] else {
@@ -19725,7 +19396,7 @@ mod tests {
 
         // A closure that is NOT η-equal to the other side stays unequal —
         // A closure is not equal to an unrelated normal form.
-        let m = parse_module("module x; equiv ne { .(x) { f(x) }; g }");
+        let m = parse_module("mod x; equiv ne { .(x) { f(x) }; g }");
         let v = eval_each(&equiv_terms(&m), &ctx);
         let (a, b) = first_two(&v);
         assert!(
@@ -19736,7 +19407,7 @@ mod tests {
         // η with the closure on the SECOND arm exercises the
         // `closure_partition_width(b)` guard/arm, so forcing that guard in
         // either direction trips this test.
-        let m = parse_module("module x; equiv eta_rev { f; .(x) { f(x) } }");
+        let m = parse_module("mod x; equiv eta_rev { f; .(x) { f(x) } }");
         let v = eval_each(&equiv_terms(&m), &ctx);
         let (a, b) = first_two(&v);
         assert!(
@@ -19747,7 +19418,7 @@ mod tests {
         // Two Seqs with the same value but different bodies are unequal —
         // kills the Seq `&&`→`||`.
         let (mut m, [left, right]) = parse_module_with_bodies(
-            "module x; equiv seq_ne { (); () }",
+            "mod x; equiv seq_ne { (); () }",
             ["print(\"x\"); f()", "print(\"x\"); g()"],
         );
         m.equivs[0].terms[0] = left;
@@ -19841,10 +19512,10 @@ mod tests {
     #[test]
     fn reflected_fuel_measure_materializes_package_qualified_aliases() {
         let artifact = lowered_package(&[
-            ("aliases.kio", "module aliases; pub type Pair = . & .;"),
+            ("aliases.kio", "mod aliases; pub type Pair = . & .;"),
             (
                 "consumer.kio",
-                "module consumer; import aliases as imported; fn keep() -> . { () }",
+                "mod consumer; import aliases as imported; fn keep() -> . { () }",
             ),
         ]);
         let module = &artifact.module("consumer").expect("consumer module").module;
@@ -19910,10 +19581,7 @@ mod tests {
         // into one pair payload (kills the newtype fast-path / split-off
         // arithmetic); the projector unwraps it (kills the projector
         // / constructor-identity match flips).
-        let m = parse_module(
-            "module x; \
-             type { Wrap: . & . { pub mk; pub get; }; };",
-        );
+        let m = parse_module("mod x; type { Wrap: . & . { pub mk; pub get; }; };");
         let nt_ctx = EvalCtx::new().with_root_module(&m);
         let member = |name: &str| {
             resolve_module_newtype_member(
@@ -19964,10 +19632,7 @@ mod tests {
         // scrutinee guard and the left-branch early-out must not invert
         // (kills the deleted `!`s at those two checks).
         let m = parse_module(
-            "module x; import __intrinsics__; \
-             equiv cs { \
-               __either__[A][B][C](c(), .(l) { f(l) }, .(r) { g(r) }); \
-               __either__[A][B][C](c(), .(l) { f(l) }, .(r) { g(r) }) }",
+            "mod x; import __intrinsics__; equiv cs { __either__[A][B][C](c(), .(l) { f(l) }, .(r) { g(r) }); __either__[A][B][C](c(), .(l) { f(l) }, .(r) { g(r) }) }",
         );
         let v = eval_each(&equiv_terms(&m), &ctx);
         let (a, b) = first_two(&v);
@@ -19982,10 +19647,7 @@ mod tests {
 
         // Distinct scrutinees stay unequal.
         let m = parse_module(
-            "module x; import __intrinsics__; \
-             equiv cs { \
-               __either__[A][B][C](c(), .(l) { f(l) }, .(r) { g(r) }); \
-               __either__[A][B][C](d(), .(l) { f(l) }, .(r) { g(r) }) }",
+            "mod x; import __intrinsics__; equiv cs { __either__[A][B][C](c(), .(l) { f(l) }, .(r) { g(r) }); __either__[A][B][C](d(), .(l) { f(l) }, .(r) { g(r) }) }",
         );
         let v = eval_each(&equiv_terms(&m), &ctx);
         let (a, b) = first_two(&v);
@@ -20000,13 +19662,7 @@ mod tests {
         // (kills the fresh-counter mutation on the right payload).
         let nested = |inner_left: &str| {
             parse_module(&format!(
-                "module x; import __intrinsics__; \
-                 equiv cs {{ \
-                   __either__[A][B][C](c(), \
-                     .(l) {{ h(l) }}, \
-                     .(r) {{ __either__[A][B][C](r, \
-                       .(m) {{ {inner_left} }}, .(n) {{ g(n) }}) }}); \
-                   () }}"
+                "mod x; import __intrinsics__; equiv cs {{ __either__[A][B][C](c(), .(l) {{ h(l) }}, .(r) {{ __either__[A][B][C](r, .(m) {{ {inner_left} }}, .(n) {{ g(n) }}) }}); () }}"
             ))
         };
         let m_rm = nested("k(r, m)");
@@ -20027,14 +19683,7 @@ mod tests {
         // the two right payloads collide and conflates the argument order.
         let spine = |deepest: &str| {
             parse_module(&format!(
-                "module x; import __intrinsics__; \
-                 equiv cs {{ \
-                   __either__[A][B][C](c(), \
-                     .(l) {{ h(l) }}, \
-                     .(r0) {{ __either__[A][B][C](r0, \
-                       .(l1) {{ h(l1) }}, \
-                       .(r1) {{ {deepest} }}) }}); \
-                   () }}"
+                "mod x; import __intrinsics__; equiv cs {{ __either__[A][B][C](c(), .(l) {{ h(l) }}, .(r0) {{ __either__[A][B][C](r0, .(l1) {{ h(l1) }}, .(r1) {{ {deepest} }}) }}); () }}"
             ))
         };
         let s_01 = spine("k(r0, r1)");
@@ -20056,7 +19705,7 @@ mod tests {
         // returns `g()`); a slot that never pops collapses the whole
         // thing to the first body's unit instead.
         let (mut m, [first, second]) = parse_module_with_bodies(
-            "module x; equiv slots { (); g() }",
+            "mod x; equiv slots { (); g() }",
             ["let a = (); a", "let b = g(); b"],
         );
         m.equivs[0].terms[0] = Expr::Seq {
@@ -20165,10 +19814,10 @@ mod tests {
         );
 
         let pkg = lowered_package(&[
-            ("other.kio", "module other; host type I32 role(i32);"),
+            ("other.kio", "mod other; host type I32 role(i32);"),
             (
                 "vec.kio",
-                "module vec; import other as vec; host type I32 role(i32);",
+                "mod vec; import other as vec; host type I32 role(i32);",
             ),
         ]);
         pkg.resolve_imports().expect("resolve imports");
@@ -20381,7 +20030,7 @@ mod tests {
         let ctx = diagnostic_literal_ctx();
         let eval_body = |body: &str| {
             let m = parse_module(&format!(
-                "module x; import __intrinsics__; import __comptime__; equiv probe {{ {body}; () }}"
+                "mod x; import __intrinsics__; import __comptime__; equiv probe {{ {body}; () }}"
             ));
             let mut env = Env::new();
             env.insert(
@@ -20424,7 +20073,7 @@ mod tests {
         let ctx = diagnostic_literal_ctx();
         let eval_body = |body: &str| {
             let (_m, [extracted]) = parse_module_with_bodies(
-                "module x; import __intrinsics__; import __comptime__; equiv probe { (); () }",
+                "mod x; import __intrinsics__; import __comptime__; equiv probe { (); () }",
                 [body],
             );
             let mut env = Env::new();
@@ -20456,10 +20105,8 @@ mod tests {
     fn type_parameterized_fn_requires_materialized_type_stage() {
         // This helper bypasses type checking and elaboration. The actual
         // inferred type stage is supplied by the Lowered to Prime boundary.
-        let m = parse_module(
-            "module x; fn id[T](x: T) -> T { x } \
-             equiv stages { id(a); id[.](a); a }",
-        );
+        let m =
+            parse_module("mod x; fn id[T](x: T) -> T { x } equiv stages { id(a); id[.](a); a }");
         let ctx = EvalCtx::new().with_fn_defs(fn_def_map(&m));
         let v = eval_each(&equiv_terms(&m), &ctx);
         assert!(matches!(&v[0], Value::Stuck(callee, args)
@@ -20950,8 +20597,8 @@ mod tests {
     fn closed_reflection_and_projected_type_fuel_agree_for_aliases_and_binders() {
         use crate::pass::typecheck_core::apply::fills::projected_type_for_fuel_test;
         let artifact = lowered_package(&[
-            ("aliases.kio", "module aliases; pub type Pair = . & .;"),
-            ("consumer.kio", "module consumer; fn keep() -> . { () }"),
+            ("aliases.kio", "mod aliases; pub type Pair = . & .;"),
+            ("consumer.kio", "mod consumer; fn keep() -> . { () }"),
         ]);
         let module = &artifact.module("consumer").unwrap().module;
         let ctx = EvalCtx::for_module(&artifact, module, "consumer").unwrap();
@@ -20998,9 +20645,7 @@ mod tests {
         // arguments; the wrong fold-kind (function params) would fold
         // nothing and return the init unchanged.
         let m = parse_module(
-            "module x; import __intrinsics__; import __comptime__; \
-             equiv f(t: T) { \
-               __type_args_fold__(t, __type_unit__(), .(acc, item) { item }); () }",
+            "mod x; import __intrinsics__; import __comptime__; equiv f(t: T) { __type_args_fold__(t, __type_unit__(), .(acc, item) { item }); () }",
         );
         let ctx = test_primitive_ctx(&[ComptimeBuiltin::TypeArgsFold, ComptimeBuiltin::TypeUnit]);
         let mut env = Env::new();
@@ -21521,10 +21166,9 @@ mod tests {
         let package = lowered_package(&[
             (
                 "owner.kio",
-                "module owner; host type Box[A]; \
-                 fn keep[A][B](value: Box[A] & Box[B]) -> Box[A] & Box[B] { value }",
+                "mod owner; host type Box[A]; fn keep[A][B](value: Box[A] & Box[B]) -> Box[A] & Box[B] { value }",
             ),
-            ("other.kio", "module other; host type Box[A];"),
+            ("other.kio", "mod other; host type Box[A];"),
         ]);
         let owner = &package.module("owner").expect("owner module").module;
         let ctx = EvalCtx::for_module(&package, owner, "owner").expect("owner context");
@@ -25353,7 +24997,7 @@ mod tests {
 
         let artifact = lowered_package(&[(
             "consumer.kio",
-            "module consumer; type Alias[T] = T; type A = .;",
+            "mod consumer; type Alias[T] = T; type A = .;",
         )]);
         let module_entry = artifact.module("consumer").expect("consumer module");
         let ctx = EvalCtx::for_module(&artifact, &module_entry.module, "consumer")
@@ -25670,13 +25314,11 @@ mod tests {
         let artifact = lowered_package(&[
             (
                 "provider.kio",
-                "module provider; pub type { Remote: . { mk; get; }; };",
+                "mod provider; pub type { Remote: . { mk; get; }; };",
             ),
             (
                 "caller.kio",
-                "module caller; import provider(Remote); \
-                 type { Local: . { mk; get; }; }; \
-                 type { Other: . { mk; get; }; };",
+                "mod caller; import provider {type Remote} type { Local: . { mk; get; }; }; type { Other: . { mk; get; }; };",
             ),
         ]);
         let caller = &artifact.module("caller").expect("caller module").module;
@@ -25728,16 +25370,13 @@ mod tests {
         let artifact = lowered_package(&[
             (
                 "owner.kio",
-                "module owner; pub type Box[A] = A; pub type Choice[A][B] = A & B; pub type Item = .;",
+                "mod owner; pub type Box[A] = A; pub type Choice[A][B] = A & B; pub type Item = .;",
             ),
-            ("tie_owner.kio", "module tie_owner; pub type Thing = .;"),
-            ("unimported.kio", "module unimported; pub type Hidden = .;"),
+            ("tie_owner.kio", "mod tie_owner; pub type Thing = .;"),
+            ("unimported.kio", "mod unimported; pub type Hidden = .;"),
             (
                 "consumer.kio",
-                "module consumer; \
-                 import owner as verbose; import owner(Box); import owner as o; \
-                 import tie_owner as aa; import tie_owner as bb; \
-                 type Local = .; fn keep() -> . { () }",
+                "mod consumer; import owner as verbose; import owner {type Box} import owner as o; import tie_owner as aa; import tie_owner as bb; type Local = .; fn keep() -> . { () }",
             ),
         ]);
         let consumer = &artifact.module("consumer").expect("consumer module").module;
@@ -25855,14 +25494,12 @@ mod tests {
         let artifact = lowered_package(&[
             (
                 "owner.kio",
-                "module owner; pub type Box[A] = A; pub type Choice[A][B] = A & B; pub type Item = .;",
+                "mod owner; pub type Box[A] = A; pub type Choice[A][B] = A & B; pub type Item = .;",
             ),
-            ("missing.kio", "module missing; pub type Hidden = .;"),
+            ("missing.kio", "mod missing; pub type Hidden = .;"),
             (
                 "consumer.kio",
-                "module consumer; \
-                 import owner as verbose; import owner(Box); import owner as o; \
-                 type Local = .; fn keep() -> . { () }",
+                "mod consumer; import owner as verbose; import owner {type Box} import owner as o; type Local = .; fn keep() -> . { () }",
             ),
         ]);
         let consumer = &artifact.module("consumer").expect("consumer module").module;
@@ -25967,10 +25604,10 @@ mod tests {
         use crate::pass::typecheck_core::apply::fills::closed_specialized_type_for_test;
 
         let artifact = lowered_package(&[
-            ("owner.kio", "module owner; pub type Item = .;"),
+            ("owner.kio", "mod owner; pub type Item = .;"),
             (
                 "consumer.kio",
-                "module consumer; import owner as verbose; import owner as o; fn keep() -> . { () }",
+                "mod consumer; import owner as verbose; import owner as o; fn keep() -> . { () }",
             ),
         ]);
         let consumer = &artifact.module("consumer").expect("consumer module").module;
@@ -26098,11 +25735,11 @@ mod tests {
         let pkg = lowered_package(&[
             (
                 "provider.kio",
-                "module provider; fn hidden() -> . { () } pub fn shown() -> . { () }",
+                "mod provider; fn hidden() -> . { () } pub fn shown() -> . { () }",
             ),
             (
                 "ordinary.kio",
-                "module ordinary; import provider as p; fn keep() -> . { () }",
+                "mod ordinary; import provider as p; fn keep() -> . { () }",
             ),
         ]);
         pkg.resolve_imports().expect("resolve imports");
@@ -26118,9 +25755,9 @@ mod tests {
 
     #[test]
     fn module_path_string_joins_declared_segments_with_slash() {
-        let m = parse_module("module x; equiv u { (); () }");
+        let m = parse_module("mod x; equiv u { (); () }");
         assert_eq!(module_path_string(&m), "x");
-        let pkg = lowered_package(&[("a/b.kio", "module a/b; equiv u { (); () }")]);
+        let pkg = lowered_package(&[("a/b.kio", "mod a/b; equiv u { (); () }")]);
         let nested = &pkg.module("a/b").expect("module a/b").module;
         assert_eq!(module_path_string(nested), "a/b");
     }
@@ -26173,9 +25810,9 @@ mod tests {
         let artifact = lowered_package(&[
             (
                 "enabled.kio",
-                "module enabled; import __comptime__; fn keep() -> . { () }",
+                "mod enabled; import __comptime__; fn keep() -> . { () }",
             ),
-            ("disabled.kio", "module disabled; fn keep() -> . { () }"),
+            ("disabled.kio", "mod disabled; fn keep() -> . { () }"),
         ]);
         assert_eq!(
             artifact.primitives().resolve("enabled", "__type_unit__"),
@@ -26199,7 +25836,7 @@ mod tests {
         let direct = eval(&type_unit_call(), &Env::new(), &ctx);
         assert!(matches!(direct, Value::Atom(name) if name == "__type_unit__"));
 
-        let imported = parse_module("module imported; import __comptime__;");
+        let imported = parse_module("mod imported; import __comptime__;");
         assert!(
             imported
                 .imports
@@ -26380,9 +26017,8 @@ mod tests {
 
     #[test]
     fn reflected_type_constant_fold_evaluates_computed_proof_once_direct_and_grouped() {
-        let module = parse_module(
-            "module x; fn computed(proof: .) -> . { (); proof } equiv keep { (); () }",
-        );
+        let module =
+            parse_module("mod x; fn computed(proof: .) -> . { (); proof } equiv keep { (); () }");
         for grouped in [false, true] {
             let metrics = Arc::new(EvalMetrics::default());
             let ctx = test_primitive_ctx_for("x", &[ComptimeBuiltin::ReflectType])
@@ -26420,12 +26056,7 @@ mod tests {
     #[test]
     fn reflected_type_constant_fold_cannot_discard_a_structural_fault_direct_or_grouped() {
         let module = parse_module(
-            "module x; import __comptime__; \
-             fn reject(proof: .) -> . { \
-               __structural_recur__(proof)( __type_unit__(), (), \
-                 .(recur, fuel, input) { recur(fuel, input) }) \
-             } \
-             equiv keep { (); () }",
+            "mod x; import __comptime__; fn reject(proof: .) -> . { __structural_recur__(proof)( __type_unit__(), (), .(recur, fuel, input) { recur(fuel, input) }) } equiv keep { (); () }",
         );
         for grouped in [false, true] {
             let ctx = test_primitive_ctx_for(
@@ -26468,15 +26099,15 @@ mod tests {
     #[test]
     fn artifact_reflection_preserves_exact_paths_and_caller_binders() {
         let pkg = lowered_package(&[
-            ("types.kio", "module types; host type Actual role(i64);"),
-            ("other.kio", "module other; host type Actual role(i32);"),
+            ("types.kio", "mod types; host type Actual role(i64);"),
+            ("other.kio", "mod other; host type Actual role(i32);"),
             (
                 "reflect_helper.kio",
-                "module reflect_helper; import types as local_alias; host type String role(i64); type Local = local_alias.Actual;",
+                "mod reflect_helper; import types as local_alias; host type String role(i64); type Local = local_alias.Actual;",
             ),
             (
                 "main.kio",
-                "module main; import other as types; import types as real; host type String role(i32); type { T: . { mk; get; }; };",
+                "mod main; import other as types; import types as real; host type String role(i32); type { T: . { mk; get; }; };",
             ),
         ]);
         pkg.resolve_imports().expect("resolve imports");
@@ -26650,10 +26281,10 @@ mod tests {
     #[test]
     fn eval_fn_tables_collects_module_and_qualified_fns() {
         let pkg = lowered_package(&[
-            ("a.kio", "module a; pub fn unit_a() -> . { () }"),
+            ("a.kio", "mod a; pub fn unit_a() -> . { () }"),
             (
                 "c.kio",
-                "module c; import a as ax; equiv q { ax.unit_a(); () }",
+                "mod c; import a as ax; equiv q { ax.unit_a(); () }",
             ),
         ]);
         pkg.resolve_imports().expect("resolve imports");
@@ -26680,10 +26311,7 @@ mod tests {
     fn artifact_newtype_registry_uses_exact_declaration_spelling() {
         let pkg = lowered_package(&[(
             "a.kio",
-            "module a; rec { \
-               type { Wrap: Peer { pub mk; pub get; }; }; \
-               type { Peer: Wrap { mk; get; }; }; \
-             }",
+            "mod a; rec { type { Wrap: Peer { pub mk; pub get; }; }; type { Peer: Wrap { mk; get; }; }; }",
         )]);
         let registry = newtype_registry_for_package(&pkg);
         assert_eq!(
@@ -26704,14 +26332,11 @@ mod tests {
         let pkg = lowered_package(&[
             (
                 "a.kio",
-                "module a; \
-                 type { Wrap[A]: A { pub mk; pub get; }; }; \
-                 fn unwrap[A](x: A) -> A { Wrap.get[A](Wrap.mk[A](x)) }",
+                "mod a; type { Wrap[A]: A { pub mk; pub get; }; }; fn unwrap[A](x: A) -> A { Wrap.get[A](Wrap.mk[A](x)) }",
             ),
             (
                 "unrelated.kio",
-                "module unrelated; \
-                 type { Wrap[A]: A { pub mk; pub get; }; };",
+                "mod unrelated; type { Wrap[A]: A { pub mk; pub get; }; };",
             ),
         ]);
         let module = &pkg.module("a").expect("module a").module;
@@ -26746,11 +26371,7 @@ mod tests {
     fn identity_alias_members_retain_terminal_newtype_reduction() {
         let pkg = lowered_package(&[(
             "main.kio",
-            "module main; \
-             type { Box[A]: A { mk; get; }; }; \
-             type Mid[A] = Box[A]; \
-             type Alias[A] = Mid[A]; \
-             fn unwrap[A](x: A) -> A { Alias.get[A](Alias.mk[A](x)) }",
+            "mod main; type { Box[A]: A { mk; get; }; }; type Mid[A] = Box[A]; type Alias[A] = Mid[A]; fn unwrap[A](x: A) -> A { Alias.get[A](Alias.mk[A](x)) }",
         )]);
         let module = &pkg.module("main").expect("main module").module;
         let unwrap = find_module_fn(module, "unwrap").expect("unwrap fn");
@@ -26768,12 +26389,12 @@ mod tests {
     #[test]
     fn host_converter_result_preserves_a_rehost_alias_and_nominal_identity() {
         let package = lowered_package(&[
-            ("host.kio", "module host; host type Text; host type Input;"),
+            ("host.kio", "mod host; host type Text; host type Input;"),
             (
                 "bridge.kio",
-                "module bridge; import host as runtime; pub type Text = runtime.Text;",
+                "mod bridge; import host as runtime; pub type Text = runtime.Text;",
             ),
-            ("other.kio", "module other; host type Text;"),
+            ("other.kio", "mod other; host type Text;"),
         ]);
         package.resolve_imports().expect("resolve alias owner");
         let ctx = EvalCtx::new().with_package(Some(&package));
@@ -26813,7 +26434,7 @@ mod tests {
     fn canonical_refl_type_equiv_unfolds_module_qualified_alias() {
         // `a.Foo` (a module-qualified alias head) must compare equal to
         // its unfolded body `. & .` — the alias-unfold + cycle-guard path.
-        let pkg = lowered_package(&[("a.kio", "module a; type Foo = . & .;")]);
+        let pkg = lowered_package(&[("a.kio", "mod a; type Foo = . & .;")]);
         let ctx = EvalCtx::new().with_package(Some(&pkg));
         let alias_head = Type::synth_path(
             vec!["a".to_string(), "Foo".to_string()],
@@ -26834,11 +26455,11 @@ mod tests {
     #[test]
     fn eval_canonical_alias_owner_is_not_reinterpreted_as_a_root_import() {
         let pkg = lowered_package(&[
-            ("owner.kio", "module owner; pub type A = .;"),
-            ("other.kio", "module other; pub type A = . & .;"),
+            ("owner.kio", "mod owner; pub type A = .;"),
+            ("other.kio", "mod other; pub type A = . & .;"),
             (
                 "consumer.kio",
-                "module consumer; import other as owner; fn keep() -> . { () }",
+                "mod consumer; import other as owner; fn keep() -> . { () }",
             ),
         ]);
         pkg.resolve_imports().expect("resolve imports");
@@ -26862,12 +26483,7 @@ mod tests {
     fn reflected_repeated_formal_uses_of_one_higher_kinded_alias_all_expand() {
         let pkg = lowered_package(&[(
             "owner.kio",
-            "module owner; \
-             host type String; \
-             host type N; \
-             host type Either[E][A]; \
-             type Unary[E] = Either[E]; \
-             type Twice[*F][A] = F[F[A]];",
+            "mod owner; host type String; host type N; host type Either[E][A]; type Unary[E] = Either[E]; type Twice[*F][A] = F[F[A]];",
         )]);
         pkg.resolve_imports().expect("resolve imports");
         let ctx = EvalCtx::new().with_package(Some(&pkg));
@@ -26895,11 +26511,11 @@ mod tests {
         let pkg = lowered_package(&[
             (
                 "library/type_of.kio",
-                "module library/type_of; pub type { Rep_unit: . { pub mk; pub get; }; };",
+                "mod library/type_of; pub type { Rep_unit: . { pub mk; pub get; }; };",
             ),
             (
                 "consumer.kio",
-                "module consumer; import library/type_of as captured; fn keep() -> . { () }",
+                "mod consumer; import library/type_of as captured; fn keep() -> . { () }",
             ),
         ]);
         pkg.resolve_imports().expect("resolve imports");
@@ -26935,10 +26551,10 @@ mod tests {
     #[test]
     fn reflected_alias_body_resolves_qualified_import_in_owner_scope() {
         let pkg = lowered_package(&[
-            ("testapi.kio", "module testapi; host type Bool role(bool);"),
+            ("testapi.kio", "mod testapi; host type Bool role(bool);"),
             (
                 "list_host.kio",
-                "module list_host; import testapi as api; pub type Bool = api.Bool;",
+                "mod list_host; import testapi as api; pub type Bool = api.Bool;",
             ),
         ]);
         pkg.resolve_imports().expect("resolve imports");
@@ -26966,10 +26582,10 @@ mod tests {
     #[test]
     fn reflected_alias_body_follows_selectively_imported_alias() {
         let pkg = lowered_package(&[
-            ("base.kio", "module base; pub type Inner[A] = A & A;"),
+            ("base.kio", "mod base; pub type Inner[A] = A & A;"),
             (
                 "owner.kio",
-                "module owner; import base(Inner); pub type Outer[A] = Inner[A];",
+                "mod owner; import base {type Inner} pub type Outer[A] = Inner[A];",
             ),
         ]);
         pkg.resolve_imports().expect("resolve imports");
@@ -26996,11 +26612,11 @@ mod tests {
     #[test]
     fn reflected_alias_owner_qualifier_precedes_global_alias() {
         let pkg = lowered_package(&[
-            ("target.kio", "module target; host type T;"),
-            ("decoy.kio", "module decoy; host type T;"),
+            ("target.kio", "mod target; host type T;"),
+            ("decoy.kio", "mod decoy; host type T;"),
             (
                 "owner.kio",
-                "module owner; import target as target; pub type A = target.T;",
+                "mod owner; import target as target; pub type A = target.T;",
             ),
         ]);
         pkg.resolve_imports().expect("resolve imports");
@@ -27027,7 +26643,7 @@ mod tests {
 
     #[test]
     fn canonical_reflected_bare_binder_is_not_reinterpreted_as_root_alias() {
-        let pkg = lowered_package(&[("main.kio", "module main; type T = .;")]);
+        let pkg = lowered_package(&[("main.kio", "mod main; type T = .;")]);
         pkg.resolve_imports().expect("resolve imports");
         let main = &pkg.module("main").expect("main module").module;
         let ctx = EvalCtx::new()
@@ -27046,11 +26662,7 @@ mod tests {
     fn reflected_generic_alias_keeps_caller_and_owner_identities_distinct() {
         let pkg = lowered_package(&[(
             "owner.kio",
-            "module owner; \
-             type { A: . { mk; get; }; }; \
-             pub type Pair[T] = T & A; \
-             type Inner[T] = T & A; \
-             pub type Outer[A] = Inner[A];",
+            "mod owner; type { A: . { mk; get; }; }; pub type Pair[T] = T & A; type Inner[T] = T & A; pub type Outer[A] = Inner[A];",
         )]);
         pkg.resolve_imports().expect("resolve imports");
         let ctx = EvalCtx::new().with_package(Some(&pkg));
@@ -27086,9 +26698,7 @@ mod tests {
     fn reflected_alias_forall_binder_avoids_caller_capture() {
         let pkg = lowered_package(&[(
             "owner.kio",
-            "module owner; \
-             type { A: . { mk; get; }; }; \
-             pub type Poly[T] = [A] T & A;",
+            "mod owner; type { A: . { mk; get; }; }; pub type Poly[T] = [A] T & A;",
         )]);
         pkg.resolve_imports().expect("resolve imports");
         let ctx = EvalCtx::new().with_package(Some(&pkg));
@@ -27123,8 +26733,8 @@ mod tests {
     #[test]
     fn reflected_alias_forall_does_not_treat_same_spelled_nominal_as_a_rigid() {
         let pkg = lowered_package(&[
-            ("owner.kio", "module owner; pub type Poly[T] = [X] T & X;"),
-            ("caller.kio", "module caller; host type X;"),
+            ("owner.kio", "mod owner; pub type Poly[T] = [X] T & X;"),
+            ("caller.kio", "mod caller; host type X;"),
         ]);
         pkg.resolve_imports().expect("resolve imports");
         let caller = &pkg.module("caller").expect("caller module").module;
@@ -27250,10 +26860,7 @@ mod tests {
         // the binder — it must not be left over and stuck-applied onto
         // the body's residual (`()(x)` is outside the § 3 residual
         // grammar).
-        let m = parse_module(
-            "module x; fn wrap(y: .) -> . { y } \
-             equiv b(x: .) { wrap(x); x }",
-        );
+        let m = parse_module("mod x; fn wrap(y: .) -> . { y } equiv b(x: .) { wrap(x); x }");
         let ctx = EvalCtx::new().with_fn_defs(fn_def_map(&m));
         let (a, b) = eval_parametric(&m, &ctx);
         assert!(
@@ -27265,7 +26872,7 @@ mod tests {
 
     #[test]
     fn unit_param_lambda_apply_substitutes_opaque_argument() {
-        let m = parse_module("module x; equiv b(x: .) { .(y: .) { y }(x); x }");
+        let m = parse_module("mod x; equiv b(x: .) { .(y: .) { y }(x); x }");
         let ctx = EvalCtx::new();
         let (a, b) = eval_parametric(&m, &ctx);
         assert!(
@@ -27280,10 +26887,7 @@ mod tests {
         // Binding the actual argument (not a hardwired `()`) is what
         // keeps a stuck unit-typed action alive through β: collapsing
         // the binder to `()` would erase `mk(a)` and split the arms.
-        let m = parse_module(
-            "module x; fn wrap(y: .) -> . { y } \
-             equiv b { wrap(mk(a)); mk(a) }",
-        );
+        let m = parse_module("mod x; fn wrap(y: .) -> . { y } equiv b { wrap(mk(a)); mk(a) }");
         let ctx = EvalCtx::new().with_fn_defs(fn_def_map(&m));
         let v = eval_each(&equiv_terms(&m), &ctx);
         let (a, b) = first_two(&v);
@@ -27296,10 +26900,7 @@ mod tests {
 
         // The nullary spelling residualizes to the bare atom; β must
         // thread it identically.
-        let m = parse_module(
-            "module x; fn wrap(y: .) -> . { y } \
-             equiv b { wrap(mk()); mk() }",
-        );
+        let m = parse_module("mod x; fn wrap(y: .) -> . { y } equiv b { wrap(mk()); mk() }");
         let ctx = EvalCtx::new().with_fn_defs(fn_def_map(&m));
         let v = eval_each(&equiv_terms(&m), &ctx);
         let (a, b) = first_two(&v);
@@ -27308,10 +26909,7 @@ mod tests {
 
     #[test]
     fn unit_param_fn_apply_accepts_literal_unit() {
-        let m = parse_module(
-            "module x; fn wrap(y: .) -> . { y } \
-             equiv b { wrap(()); () }",
-        );
+        let m = parse_module("mod x; fn wrap(y: .) -> . { y } equiv b { wrap(()); () }");
         let ctx = EvalCtx::new().with_fn_defs(fn_def_map(&m));
         let v = eval_each(&equiv_terms(&m), &ctx);
         let (a, b) = first_two(&v);
@@ -27324,8 +26922,7 @@ mod tests {
         // (collect_value_param_layout only zero-sizes a single-param
         // group), so multi-param binding is positional as before.
         let m = parse_module(
-            "module x; fn pick(u: ., v: .) -> . { v } \
-             equiv b(x: ., y: .) { pick(x, y); y }",
+            "mod x; fn pick(u: ., v: .) -> . { v } equiv b(x: ., y: .) { pick(x, y); y }",
         );
         let ctx = EvalCtx::new().with_fn_defs(fn_def_map(&m));
         let (a, b) = eval_parametric(&m, &ctx);
@@ -27336,10 +26933,8 @@ mod tests {
     fn unit_param_binder_coexists_with_let_locals() {
         // The bound argument occupies the binder's slot and the body's
         // let-locals stack after it — β must not shift either side.
-        let m = parse_module(
-            "module x; fn wrap(y: .) -> . { let t = y; t } \
-             equiv b(x: .) { wrap(x); x }",
-        );
+        let m =
+            parse_module("mod x; fn wrap(y: .) -> . { let t = y; t } equiv b(x: .) { wrap(x); x }");
         let ctx = EvalCtx::new().with_fn_defs(fn_def_map(&m));
         let (a, b) = eval_parametric(&m, &ctx);
         assert!(nf_eq(&a, &b, &ctx), "let-body wrap(x) ~ x: {a:?} vs {b:?}");
@@ -27403,10 +26998,7 @@ mod tests {
         // opaque equiv parameter included, not only the synthesized
         // literal `()`. The group claims the argument position and
         // β-Lam at zero binders reduces to the body.
-        let m = parse_module(
-            "module x; fn f() -> . { () } \
-             equiv b(x: .) { f(x); () }",
-        );
+        let m = parse_module("mod x; fn f() -> . { () } equiv b(x: .) { f(x); () }");
         let ctx = EvalCtx::new().with_fn_defs(fn_def_map(&m));
         let (a, b) = eval_parametric(&m, &ctx);
         assert!(
@@ -27425,10 +27017,7 @@ mod tests {
         // depending on whether the argument reduced first. Unlike
         // `wrap(mk())`, where the binder returns the argument, there is
         // no binder here to carry the action into the residual.
-        let m = parse_module(
-            "module x; fn f() -> . { () } \
-             equiv b { f(mk(a)); () }",
-        );
+        let m = parse_module("mod x; fn f() -> . { () } equiv b { f(mk(a)); () }");
         let ctx = EvalCtx::new().with_fn_defs(fn_def_map(&m));
         let v = eval_each(&equiv_terms(&m), &ctx);
         let (a, b) = first_two(&v);
@@ -27446,8 +27035,7 @@ mod tests {
         // only, so it is a closure over the second group — not the body
         // run with an implicit `()` for the unfed layer.
         let m = parse_module(
-            "module x; fn pass_second(u: .)(v: .) -> . { v } \
-             equiv b(x: .) { pass_second(x); .(v: .) { v } }",
+            "mod x; fn pass_second(u: .)(v: .) -> . { v } equiv b(x: .) { pass_second(x); .(v: .) { v } }",
         );
         let ctx = EvalCtx::new().with_fn_defs(fn_def_map(&m));
         let (a, b) = eval_parametric(&m, &ctx);
@@ -27463,8 +27051,7 @@ mod tests {
         // Applying the suspension substitutes the actual second-group
         // argument — a stuck action flows through, never `()(mk)`.
         let m = parse_module(
-            "module x; fn pass_second(u: .)(v: .) -> . { v } \
-             equiv b(x: .) { pass_second(x)(mk(a)); mk(a) }",
+            "mod x; fn pass_second(u: .)(v: .) -> . { v } equiv b(x: .) { pass_second(x)(mk(a)); mk(a) }",
         );
         let ctx = EvalCtx::new().with_fn_defs(fn_def_map(&m));
         let (a, b) = eval_parametric(&m, &ctx);
@@ -27481,8 +27068,7 @@ mod tests {
 
     #[test]
     fn curried_three_unit_groups_suspend_per_layer() {
-        let src = "module x; fn g3(u: .)(v: .)(w: .) -> . { w } \
-             equiv b(x: ., y: ., z: .) { g3(x)(y)(z); z }";
+        let src = "mod x; fn g3(u: .)(v: .)(w: .) -> . { w } equiv b(x: ., y: ., z: .) { g3(x)(y)(z); z }";
         let m = parse_module(src);
         let ctx = EvalCtx::new().with_fn_defs(fn_def_map(&m));
         let (a, b) = eval_parametric(&m, &ctx);
@@ -27490,8 +27076,7 @@ mod tests {
 
         // Each partial application is itself a suspension.
         let m = parse_module(
-            "module x; fn g3(u: .)(v: .)(w: .) -> . { w } \
-             equiv b(x: ., y: .) { g3(x)(y); g3(x)(y) }",
+            "mod x; fn g3(u: .)(v: .)(w: .) -> . { w } equiv b(x: ., y: .) { g3(x)(y); g3(x)(y) }",
         );
         let ctx = EvalCtx::new().with_fn_defs(fn_def_map(&m));
         let (a, _) = eval_parametric(&m, &ctx);
@@ -27504,8 +27089,7 @@ mod tests {
     #[test]
     fn zero_arg_call_saturates_computed_closure_unit_group() {
         let m = parse_module(
-            "module x; fn getf(k: T) -> . -> T -> T { .(u: .)(b: T) -> T { b } } \
-             equiv b(k: T, y: T) { getf(k)()(y); y }",
+            "mod x; fn getf(k: T) -> . -> T -> T { .(u: .)(b: T) -> T { b } } equiv b(k: T, y: T) { getf(k)()(y); y }",
         );
         let ctx = EvalCtx::new().with_fn_defs(fn_def_map(&m));
         let (a, b) = eval_parametric(&m, &ctx);
@@ -27515,8 +27099,7 @@ mod tests {
         );
 
         let m = parse_module(
-            "module x; fn f2(u: .)(v: .)(b: T) -> T { b } \
-             equiv b(y: T, z: T) { f2()()(y); f2()()(z) }",
+            "mod x; fn f2(u: .)(v: .)(b: T) -> T { b } equiv b(y: T, z: T) { f2()()(y); f2()()(z) }",
         );
         let ctx = EvalCtx::new().with_fn_defs(fn_def_map(&m));
         let (a, b) = eval_parametric(&m, &ctx);
@@ -27530,10 +27113,8 @@ mod tests {
     fn curried_non_unit_groups_suspend_and_substitute() {
         // Control: suspension is per-group generally, not a unit-domain
         // special case — one-slot groups suspend at the same boundary.
-        let m = parse_module(
-            "module x; fn h(a: T)(b: T) -> T { b } \
-             equiv b(p: T, q: T) { h(p)(q); q }",
-        );
+        let m =
+            parse_module("mod x; fn h(a: T)(b: T) -> T { b } equiv b(p: T, q: T) { h(p)(q); q }");
         let ctx = EvalCtx::new().with_fn_defs(fn_def_map(&m));
         let (a, b) = eval_parametric(&m, &ctx);
         assert!(nf_eq(&a, &b, &ctx), "h(p)(q) ~ q: {a:?} vs {b:?}");
@@ -27544,16 +27125,13 @@ mod tests {
         for src in [
             // A comma call supplies the current group's flattened ABI
             // slots; its final slot must not become the next unit packet.
-            "module x; fn pick(a: T, b: T)(u: .) -> T { b } \
-             equiv e(a: T, b: T) { pick(a, b); .(u: .) -> T { b } }",
+            "mod x; fn pick(a: T, b: T)(u: .) -> T { b } equiv e(a: T, b: T) { pick(a, b); .(u: .) -> T { b } }",
             // The structurally equivalent one-packet spelling remains
             // valid and suspends at the same boundary.
-            "module x; import __intrinsics__; fn pick(a: T, b: T)(u: .) -> T { b } \
-             equiv e(a: T, b: T) { pick(__pair__[T][T](a, b)); .(u: .) -> T { b } }",
+            "mod x; import __intrinsics__; fn pick(a: T, b: T)(u: .) -> T { b } equiv e(a: T, b: T) { pick(__pair__[T][T](a, b)); .(u: .) -> T { b } }",
             // The same boundary rule holds when the following group has
             // a positive ABI arity.
-            "module x; fn pick(a: T, b: T)(c: T) -> T { b } \
-             equiv e(a: T, b: T) { pick(a, b); .(c: T) -> T { b } }",
+            "mod x; fn pick(a: T, b: T)(c: T) -> T { b } equiv e(a: T, b: T) { pick(a, b); .(c: T) -> T { b } }",
         ] {
             let m = parse_module(src);
             let ctx = EvalCtx::new().with_fn_defs(fn_def_map(&m));
@@ -27572,13 +27150,7 @@ mod tests {
     #[test]
     fn product_packet_binder_partitions_compare_pointwise() {
         let m = parse_module(
-            "module x; import __intrinsics__; equiv e { \
-             .(packet: T & T & T) -> T & T & T { packet }; \
-             .(head: T, tail: T & T) -> T & T & T { __pair__[T][T](head, tail) }; \
-             .(first: T, second: T, third: T) -> T & T & T { \
-               __pair__[T][T](first, __pair__[T][T](second, third)) \
-             } \
-             }",
+            "mod x; import __intrinsics__; equiv e { .(packet: T & T & T) -> T & T & T { packet }; .(head: T, tail: T & T) -> T & T & T { __pair__[T][T](head, tail) }; .(first: T, second: T, third: T) -> T & T & T { __pair__[T][T](first, __pair__[T][T](second, third)) } }",
         );
         let ctx = EvalCtx::new();
         let values = eval_each(&equiv_terms(&m), &ctx);
@@ -27599,10 +27171,7 @@ mod tests {
     #[test]
     fn product_packet_binder_forwarding_compares_final_packet() {
         let m = parse_module(
-            "module x; equiv e { \
-             .(packet: T & T) -> T { forward(packet) }; \
-             .(left: T, right: T) -> T { forward(left, right) } \
-             }",
+            "mod x; equiv e { .(packet: T & T) -> T { forward(packet) }; .(left: T, right: T) -> T { forward(left, right) } }",
         );
         let ctx = EvalCtx::new();
         let v = eval_each(&equiv_terms(&m), &ctx);
@@ -27616,11 +27185,7 @@ mod tests {
     #[test]
     fn stuck_final_product_packet_matches_flat_arguments() {
         let m = parse_module(
-            "module x; import __intrinsics__; equiv e { \
-             forward(__pair__[T][T](a, __pair__[T][T](b, c))); \
-             forward(a, __pair__[T][T](b, c)); \
-             forward(a, b, c) \
-             }",
+            "mod x; import __intrinsics__; equiv e { forward(__pair__[T][T](a, __pair__[T][T](b, c))); forward(a, __pair__[T][T](b, c)); forward(a, b, c) }",
         );
         let ctx = EvalCtx::new();
         let values = eval_each(&equiv_terms(&m), &ctx);
@@ -27676,10 +27241,7 @@ mod tests {
             rebuilt = format!("__pair__[T][T](x{index}, {rebuilt})");
         }
         let source = format!(
-            "module x; import __intrinsics__; equiv e {{ \
-             .(packet: {product_ty}) -> {product_ty} {{ packet }}; \
-             .({params}) -> {product_ty} {{ {rebuilt} }} \
-             }}"
+            "mod x; import __intrinsics__; equiv e {{ .(packet: {product_ty}) -> {product_ty} {{ packet }}; .({params}) -> {product_ty} {{ {rebuilt} }} }}"
         );
         let m = parse_module(&source);
         let ctx = EvalCtx::new();
@@ -27691,10 +27253,7 @@ mod tests {
     #[test]
     fn product_packet_probe_preserves_later_curry_group() {
         let m = parse_module(
-            "module x; equiv e { \
-             .(packet: T & T)(last: T) -> T { last }; \
-             .(left: T, right: T)(last: T) -> T { last } \
-             }",
+            "mod x; equiv e { .(packet: T & T)(last: T) -> T { last }; .(left: T, right: T)(last: T) -> T { last } }",
         );
         let ctx = EvalCtx::new();
         let v = eval_each(&equiv_terms(&m), &ctx);
@@ -27705,10 +27264,7 @@ mod tests {
         );
 
         let m = parse_module(
-            "module x; equiv e { \
-             .(packet: T & T)(last: T) -> T { last }; \
-             .(left: T, right: T)(last: T) -> T { left } \
-             }",
+            "mod x; equiv e { .(packet: T & T)(last: T) -> T { last }; .(left: T, right: T)(last: T) -> T { left } }",
         );
         let ctx = EvalCtx::new();
         let v = eval_each(&equiv_terms(&m), &ctx);
@@ -27722,10 +27278,9 @@ mod tests {
     #[test]
     fn final_packet_equivalence_preserves_other_call_boundaries() {
         for src in [
-            "module x; import __intrinsics__; \
-             equiv e { forward(__pair__[T][T](a, b), c); forward(a, b, c) }",
-            "module x; equiv e { forward(packet); forward(a, b) }",
-            "module x; equiv e { forward(a)(b); forward(a, b) }",
+            "mod x; import __intrinsics__; equiv e { forward(__pair__[T][T](a, b), c); forward(a, b, c) }",
+            "mod x; equiv e { forward(packet); forward(a, b) }",
+            "mod x; equiv e { forward(a)(b); forward(a, b) }",
         ] {
             let m = parse_module(src);
             let ctx = EvalCtx::new();
@@ -27745,7 +27300,7 @@ mod tests {
         // differently on that atom and must stay apart. Probing with
         // the literal `()` instead would conflate them and break
         // congruence: applied to a stuck unit action they differ.
-        let m = parse_module("module x; equiv ne { .(y: .) { y }; .(y: .) { () } }");
+        let m = parse_module("mod x; equiv ne { .(y: .) { y }; .(y: .) { () } }");
         let ctx = EvalCtx::new();
         let v = eval_each(&equiv_terms(&m), &ctx);
         let (a, b) = first_two(&v);
@@ -27765,8 +27320,8 @@ mod tests {
         // path: both sides applied to the same fresh atom (§ 4.1 /
         // § 4.4), no literal-`()` forcing involved.
         for src in [
-            "module x; equiv eta { .(u: .) { f(u) }; f }",
-            "module x; equiv eta { f; .(u: .) { f(u) } }",
+            "mod x; equiv eta { .(u: .) { f(u) }; f }",
+            "mod x; equiv eta { f; .(u: .) { f(u) } }",
         ] {
             let m = parse_module(src);
             let ctx = EvalCtx::new();
@@ -27779,9 +27334,8 @@ mod tests {
     #[test]
     fn nullary_and_explicit_unit_closures_are_eta_compatible() {
         for src in [
-            "module x; fn thunk() -> . { () } \
-             equiv eta { .(u: .) { thunk(u) }; thunk }",
-            "module x; equiv eta { .() { () }; .(u: .) { () } }",
+            "mod x; fn thunk() -> . { () } equiv eta { .(u: .) { thunk(u) }; thunk }",
+            "mod x; equiv eta { .() { () }; .(u: .) { () } }",
         ] {
             let m = parse_module(src);
             let ctx = EvalCtx::new().with_fn_defs(fn_def_map(&m));

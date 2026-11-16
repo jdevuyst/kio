@@ -1,7 +1,7 @@
-module main;
+mod main;
 
 import provider as p;
-import provider(Provider_value, provider_identity);
+import provider { type Provider_value; fn provider_identity }
 
 host type Local_value;
 

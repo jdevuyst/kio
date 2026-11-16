@@ -1,4 +1,4 @@
-package typedcache_local_elab;
+pkg typedcache_local_elab;
 
 build {
   cache "out/.kio-cache/";

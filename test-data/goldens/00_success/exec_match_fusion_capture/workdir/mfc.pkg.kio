@@ -1,4 +1,4 @@
-package mfc;
+pkg mfc;
 
 build {
   cache "out/.kio-cache/";

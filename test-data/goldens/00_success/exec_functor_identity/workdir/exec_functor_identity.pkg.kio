@@ -1,4 +1,4 @@
-package exec_functor_identity;
+pkg exec_functor_identity;
 
 build {
   cache "out/.kio-cache/";

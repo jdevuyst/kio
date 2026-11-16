@@ -1,4 +1,4 @@
-package exec_derive_transformer_stack;
+pkg exec_derive_transformer_stack;
 
 build {
   cache "out/.kio-cache/";

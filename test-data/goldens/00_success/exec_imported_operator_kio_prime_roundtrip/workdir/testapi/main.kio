@@ -1,8 +1,8 @@
-module testapi/main;
+mod testapi/main;
 
-import ops(op _ + _);
-import testapi(String);
-import testapi/io(print);
+import ops { op _ + _ }
+import testapi { type String }
+import testapi/io { fn print }
 
 fn keep_unit() { () }
 

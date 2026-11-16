@@ -1,4 +1,4 @@
-package reflected_boolean_impure_callback;
+pkg reflected_boolean_impure_callback;
 
 build {
   cache "out/.kio-cache/";

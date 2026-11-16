@@ -1,4 +1,4 @@
-package comptime_literal_invalid_proof;
+pkg comptime_literal_invalid_proof;
 
 build {
   target js {

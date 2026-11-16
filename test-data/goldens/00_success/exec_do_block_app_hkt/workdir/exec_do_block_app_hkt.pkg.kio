@@ -1,4 +1,4 @@
-package exec_do_block_app_hkt;
+pkg exec_do_block_app_hkt;
 
 build {
   cache "out/.kio-cache/";

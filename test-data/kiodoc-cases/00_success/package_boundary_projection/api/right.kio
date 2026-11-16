@@ -1,4 +1,4 @@
-module api/right;
+mod api/right;
 
 /// Right public function uses its private [`helper`].
 pub fn make() { helper() }

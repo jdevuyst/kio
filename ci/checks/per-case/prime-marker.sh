@@ -19,7 +19,7 @@
 # carries an IS_KIO_PRIME marker iff every regular-module `.kio` file
 # under `workdir/` parses against the formal Kio' grammar. Package
 # files are package-boundary syntax, not a regular-module Kio' source
-# file. Root `module <name>;` files containing host declarations are
+# file. Root `mod <name>;` files containing host declarations are
 # regular modules and are checked here.
 #
 # This check is impl-independent — it operates on the case source
@@ -131,7 +131,7 @@ if [ -d "$src_dir" ]; then
         while ((status = (getline line < path)) > 0) {
           sub(/^[[:space:]]*/, "", line)
           if (line == "" || line ~ /^\/\//) continue
-          if (line ~ /^module([[:space:]]|\/\/|$)/) print path
+          if (line ~ /^mod([[:space:]]|\/\/|$)/) print path
           break
         }
         close(path)

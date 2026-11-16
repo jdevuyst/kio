@@ -1,17 +1,17 @@
-module petri/search;
+mod petri/search;
 
-import macros/control(macro if);
-import macros/match(macro match);
-import macros/row_macros(macro select);
-import macros/spine_macros(macro widen_sum);
+import macros/control { macro if }
+import macros/match { macro match }
+import macros/row_macros { macro select }
+import macros/spine_macros { macro widen_sum }
 import petri/model as model;
 import queue/core as queues;
 import queue/list/core as lists;
 import queue/list/list as traversal;
 import queue/queue as fifo;
-import testapi(Bool, I32);
+import testapi { type Bool; type I32 }
 import testapi/arith as arithmetic;
-import testapi/iter(loop);
+import testapi/iter { fn loop }
 
 pub type Node = { Id: I32; Marking: model.Marking; Parent: I32; Via: I32; Depth: I32 };
 

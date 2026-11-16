@@ -1,6 +1,6 @@
-module testapi/main;
+mod testapi/main;
 
-import macros/sequence(macro do);
+import macros/sequence { macro do }
 import testapi/io as io;
 
 type Constant[A] = .;

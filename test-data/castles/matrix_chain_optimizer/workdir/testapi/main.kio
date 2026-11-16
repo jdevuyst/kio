@@ -1,12 +1,21 @@
-module testapi/main;
+mod testapi/main;
 
 import chain as chain;
-import chain(Cols, Cost, Evaluation, First, Last, Leaves, Matrix, Rows);
-import macros/control(macro if);
-import macros/match(macro match);
-import macros/row_macros(macro select);
+import chain {
+  type Cols;
+  type Cost;
+  type Evaluation;
+  type First;
+  type Last;
+  type Leaves;
+  type Matrix;
+  type Rows
+}
+import macros/control { macro if }
+import macros/match { macro match }
+import macros/row_macros { macro select }
 import optimizer as optimizer;
-import testapi(Array, Bool, I32, String);
+import testapi { type Array; type Bool; type I32; type String }
 import testapi/arith as math;
 import testapi/array as arrays;
 import testapi/fmt as fmt;

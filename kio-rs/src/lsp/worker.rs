@@ -719,8 +719,8 @@ mod tests {
     #[test]
     fn worker_runs_one_analysis_against_overlay() {
         let dir = TempDir::new("one");
-        let main_path = dir.write("main.kio", "module main;\n\npub fn run() -> . { () }\n");
-        dir.write("pkg.pkg.kio", "package pkg;\n\nbridge { main; }\n");
+        let main_path = dir.write("main.kio", "mod main;\n\npub fn run() -> . { () }\n");
+        dir.write("pkg.pkg.kio", "pkg pkg;\n\nbridge { main; }\n");
         let canonical_main = fs::canonicalize(&main_path).expect("canon");
         let canonical_root = fs::canonicalize(dir.path()).expect("canon");
 
@@ -728,7 +728,7 @@ mod tests {
         let mut overlay = SourceOverlay::empty();
         overlay.insert(
             canonical_main.clone(),
-            "module main;\n\npub fn run() -> . { () }\n".to_owned(),
+            "mod main;\n\npub fn run() -> . { () }\n".to_owned(),
         );
         let mut overlay_versions = BTreeMap::new();
         overlay_versions.insert(uri("file:///x.kio"), 5);
@@ -760,8 +760,8 @@ mod tests {
     #[test]
     fn worker_surfaces_type_error_against_overlay() {
         let dir = TempDir::new("type-err");
-        let main_path = dir.write("main.kio", "module main;\n\npub fn run() -> . { 1 }\n");
-        dir.write("pkg.pkg.kio", "package pkg;\n\nbridge { main; }\n");
+        let main_path = dir.write("main.kio", "mod main;\n\npub fn run() -> . { 1 }\n");
+        dir.write("pkg.pkg.kio", "pkg pkg;\n\nbridge { main; }\n");
         let canonical_main = fs::canonicalize(&main_path).expect("canon");
         let canonical_root = fs::canonicalize(dir.path()).expect("canon");
 
@@ -770,7 +770,7 @@ mod tests {
         // Overlay reuses the on-disk text; the type error is real.
         overlay.insert(
             canonical_main.clone(),
-            "module main;\n\npub fn run() -> . { 1 }\n".to_owned(),
+            "mod main;\n\npub fn run() -> . { 1 }\n".to_owned(),
         );
 
         let id = scheduler.next_snapshot_id();
@@ -792,8 +792,8 @@ mod tests {
     #[test]
     fn debounce_coalesces_rapid_schedules() {
         let dir = TempDir::new("debounce");
-        let main_path = dir.write("main.kio", "module main;\n\npub fn run() -> . { () }\n");
-        dir.write("pkg.pkg.kio", "package pkg;\n\nbridge { main; }\n");
+        let main_path = dir.write("main.kio", "mod main;\n\npub fn run() -> . { () }\n");
+        dir.write("pkg.pkg.kio", "pkg pkg;\n\nbridge { main; }\n");
         let canonical_main = fs::canonicalize(&main_path).expect("canon");
         let canonical_root = fs::canonicalize(dir.path()).expect("canon");
 
@@ -804,7 +804,7 @@ mod tests {
             let mut overlay = SourceOverlay::empty();
             overlay.insert(
                 canonical_main.clone(),
-                "module main;\n\npub fn run() -> . { () }\n".to_owned(),
+                "mod main;\n\npub fn run() -> . { () }\n".to_owned(),
             );
             let id = scheduler.next_snapshot_id();
             scheduler.schedule(WorkRequest {
@@ -837,8 +837,8 @@ mod tests {
     #[test]
     fn worker_drops_obsolete_queued_work_before_running() {
         let dir = TempDir::new("worker-queue");
-        let main_path = dir.write("main.kio", "module main;\n\npub fn run() -> . { () }\n");
-        dir.write("pkg.pkg.kio", "package pkg;\n\nbridge { main; }\n");
+        let main_path = dir.write("main.kio", "mod main;\n\npub fn run() -> . { () }\n");
+        dir.write("pkg.pkg.kio", "pkg pkg;\n\nbridge { main; }\n");
         let canonical_main = fs::canonicalize(&main_path).expect("canon");
         let canonical_root = fs::canonicalize(dir.path()).expect("canon");
 
@@ -850,7 +850,7 @@ mod tests {
             let mut overlay = SourceOverlay::empty();
             overlay.insert(
                 canonical_main.clone(),
-                "module main;\n\npub fn run() -> . { () }\n".to_owned(),
+                "mod main;\n\npub fn run() -> . { () }\n".to_owned(),
             );
             let id = ids.next();
             expected_latest = Some(id);
@@ -884,8 +884,8 @@ mod tests {
     #[test]
     fn worker_prefers_highest_snapshot_id_not_receive_order() {
         let dir = TempDir::new("worker-freshness-order");
-        let main_path = dir.write("main.kio", "module main;\n\npub fn run() -> . { () }\n");
-        dir.write("pkg.pkg.kio", "package pkg;\n\nbridge { main; }\n");
+        let main_path = dir.write("main.kio", "mod main;\n\npub fn run() -> . { () }\n");
+        dir.write("pkg.pkg.kio", "pkg pkg;\n\nbridge { main; }\n");
         let canonical_main = fs::canonicalize(&main_path).expect("canon");
         let canonical_root = fs::canonicalize(dir.path()).expect("canon");
 
@@ -902,7 +902,7 @@ mod tests {
             let mut overlay = SourceOverlay::empty();
             overlay.insert(
                 canonical_main.clone(),
-                "module main;\n\npub fn run() -> . { () }\n".to_owned(),
+                "mod main;\n\npub fn run() -> . { () }\n".to_owned(),
             );
             let mut overlay_versions = BTreeMap::new();
             overlay_versions.insert(uri("file:///tmp/main.kio"), version);
@@ -938,8 +938,8 @@ mod tests {
     #[test]
     fn scheduling_new_background_work_cancels_older_tokens() {
         let dir = TempDir::new("cancel-background");
-        let main_path = dir.write("main.kio", "module main;\n\npub fn run() -> . { () }\n");
-        dir.write("pkg.pkg.kio", "package pkg;\n\nbridge { main; }\n");
+        let main_path = dir.write("main.kio", "mod main;\n\npub fn run() -> . { () }\n");
+        dir.write("pkg.pkg.kio", "pkg pkg;\n\nbridge { main; }\n");
         let canonical_main = fs::canonicalize(&main_path).expect("canon");
         let canonical_root = fs::canonicalize(dir.path()).expect("canon");
 
@@ -950,7 +950,7 @@ mod tests {
         let mut old_overlay = SourceOverlay::empty();
         old_overlay.insert(
             canonical_main.clone(),
-            "module main;\n\npub fn run() -> . { () }\n".to_owned(),
+            "mod main;\n\npub fn run() -> . { () }\n".to_owned(),
         );
         scheduler.schedule(WorkRequest {
             package_root: canonical_root.clone(),
@@ -966,7 +966,7 @@ mod tests {
         let mut new_overlay = SourceOverlay::empty();
         new_overlay.insert(
             canonical_main,
-            "module main;\n\npub fn run() -> . { () }\n".to_owned(),
+            "mod main;\n\npub fn run() -> . { () }\n".to_owned(),
         );
         scheduler.schedule(WorkRequest {
             package_root: canonical_root,
@@ -986,8 +986,8 @@ mod tests {
     #[test]
     fn focused_foreground_preserves_full_diagnostics_token() {
         let dir = TempDir::new("focused-preserves-token");
-        let main_path = dir.write("main.kio", "module main;\n\npub fn run() -> . { () }\n");
-        dir.write("pkg.pkg.kio", "package pkg;\n\nbridge { main; }\n");
+        let main_path = dir.write("main.kio", "mod main;\n\npub fn run() -> . { () }\n");
+        dir.write("pkg.pkg.kio", "pkg pkg;\n\nbridge { main; }\n");
         let canonical_main = fs::canonicalize(&main_path).expect("canon");
         let canonical_root = fs::canonicalize(dir.path()).expect("canon");
 
@@ -997,7 +997,7 @@ mod tests {
         let mut full_overlay = SourceOverlay::empty();
         full_overlay.insert(
             canonical_main.clone(),
-            "module main;\n\npub fn run() -> . { () }\n".to_owned(),
+            "mod main;\n\npub fn run() -> . { () }\n".to_owned(),
         );
         scheduler.schedule(WorkRequest {
             package_root: canonical_root.clone(),
@@ -1015,7 +1015,7 @@ mod tests {
         let mut focused_overlay = SourceOverlay::empty();
         focused_overlay.insert(
             canonical_main.clone(),
-            "module main;\n\npub fn run() -> . { () }\n".to_owned(),
+            "mod main;\n\npub fn run() -> . { () }\n".to_owned(),
         );
         scheduler.schedule_immediate_preserving_debounce(WorkRequest {
             package_root: canonical_root,
@@ -1057,8 +1057,8 @@ mod tests {
     #[test]
     fn foreground_schedule_bypasses_and_cancels_debounce() {
         let dir = TempDir::new("foreground");
-        let main_path = dir.write("main.kio", "module main;\n\npub fn run() -> . { () }\n");
-        dir.write("pkg.pkg.kio", "package pkg;\n\nbridge { main; }\n");
+        let main_path = dir.write("main.kio", "mod main;\n\npub fn run() -> . { () }\n");
+        dir.write("pkg.pkg.kio", "pkg pkg;\n\nbridge { main; }\n");
         let canonical_main = fs::canonicalize(&main_path).expect("canon");
         let canonical_root = fs::canonicalize(dir.path()).expect("canon");
 
@@ -1068,7 +1068,7 @@ mod tests {
         let mut background_overlay = SourceOverlay::empty();
         background_overlay.insert(
             canonical_main.clone(),
-            "module main;\n\npub fn run() -> . { () }\n".to_owned(),
+            "mod main;\n\npub fn run() -> . { () }\n".to_owned(),
         );
         scheduler.schedule(WorkRequest {
             package_root: canonical_root.clone(),
@@ -1086,7 +1086,7 @@ mod tests {
         let mut foreground_overlay = SourceOverlay::empty();
         foreground_overlay.insert(
             canonical_main,
-            "module main;\n\npub fn run() -> . { () }\n".to_owned(),
+            "mod main;\n\npub fn run() -> . { () }\n".to_owned(),
         );
         scheduler.schedule_immediate(WorkRequest {
             package_root: canonical_root,
@@ -1122,14 +1122,11 @@ mod tests {
     #[test]
     fn foreground_focus_typechecks_one_module_despite_sibling_body_error() {
         let dir = TempDir::new("foreground-focus");
-        let main_source = "module pkg/main;\n\npub fn run() -> . { () }\n";
-        dir.write("pkg.kio", "module pkg;\n");
+        let main_source = "mod pkg/main;\n\npub fn run() -> . { () }\n";
+        dir.write("pkg.kio", "mod pkg;\n");
         let main_path = dir.write("pkg/main.kio", main_source);
-        dir.write(
-            "pkg/bad.kio",
-            "module pkg/bad;\n\npub fn bad() -> . { 1 }\n",
-        );
-        dir.write("pkg.pkg.kio", "package pkg;\n\nbridge { pkg; }\n");
+        dir.write("pkg/bad.kio", "mod pkg/bad;\n\npub fn bad() -> . { 1 }\n");
+        dir.write("pkg.pkg.kio", "pkg pkg;\n\nbridge { pkg; }\n");
         let canonical_main = fs::canonicalize(&main_path).expect("canon main");
         let canonical_root = fs::canonicalize(dir.path()).expect("canon root");
         let focus_uri = uri("file:///tmp/main.kio");
@@ -1172,14 +1169,11 @@ mod tests {
     #[test]
     fn focused_foreground_does_not_displace_full_diagnostics_work() {
         let dir = TempDir::new("focused-keeps-full");
-        let main_source = "module pkg/main;\n\npub fn run() -> . { () }\n";
-        dir.write("pkg.kio", "module pkg;\n");
+        let main_source = "mod pkg/main;\n\npub fn run() -> . { () }\n";
+        dir.write("pkg.kio", "mod pkg;\n");
         let main_path = dir.write("pkg/main.kio", main_source);
-        dir.write(
-            "pkg/bad.kio",
-            "module pkg/bad;\n\npub fn bad() -> . { 1 }\n",
-        );
-        dir.write("pkg.pkg.kio", "package pkg;\n\nbridge { pkg; }\n");
+        dir.write("pkg/bad.kio", "mod pkg/bad;\n\npub fn bad() -> . { 1 }\n");
+        dir.write("pkg.pkg.kio", "pkg pkg;\n\nbridge { pkg; }\n");
         let canonical_main = fs::canonicalize(&main_path).expect("canon main");
         let canonical_root = fs::canonicalize(dir.path()).expect("canon root");
         let focus_uri = uri("file:///tmp/main.kio");
@@ -1234,8 +1228,8 @@ mod tests {
     #[test]
     fn shutdown_drains_pending_then_exits() {
         let dir = TempDir::new("shutdown");
-        let main_path = dir.write("main.kio", "module main;\n\npub fn run() -> . { () }\n");
-        dir.write("pkg.pkg.kio", "package pkg;\n\nbridge { main; }\n");
+        let main_path = dir.write("main.kio", "mod main;\n\npub fn run() -> . { () }\n");
+        dir.write("pkg.pkg.kio", "pkg pkg;\n\nbridge { main; }\n");
         let canonical_main = fs::canonicalize(&main_path).expect("canon");
         let canonical_root = fs::canonicalize(dir.path()).expect("canon");
 
@@ -1246,7 +1240,7 @@ mod tests {
         let mut overlay = SourceOverlay::empty();
         overlay.insert(
             canonical_main.clone(),
-            "module main;\n\npub fn run() -> . { () }\n".to_owned(),
+            "mod main;\n\npub fn run() -> . { () }\n".to_owned(),
         );
         let id = scheduler.next_snapshot_id();
         scheduler.schedule(WorkRequest {

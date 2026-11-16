@@ -1,9 +1,9 @@
-module testapi/main;
+mod testapi/main;
 
 import __intrinsics__;
 
 import __comptime__;
-import testapi/io(print);
+import testapi/io { fn print }
 
 type { Pair[A][B]: A & B { mk; get } }
 

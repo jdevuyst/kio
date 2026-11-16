@@ -1,4 +1,4 @@
-module pkg/main;
+mod pkg/main;
 
 /// Documentation belonging only to the function.
 fn value() { () }

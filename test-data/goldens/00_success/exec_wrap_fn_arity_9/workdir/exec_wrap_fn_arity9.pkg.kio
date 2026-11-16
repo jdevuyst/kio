@@ -1,4 +1,4 @@
-package exec_wrap_fn_arity9;
+pkg exec_wrap_fn_arity9;
 
 build {
   cache "out/.kio-cache/";

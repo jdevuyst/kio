@@ -6,6 +6,6 @@
 /// ```kio {check_exit_code=14 @}
 /// identity(identity)
 /// ```
-module doctest/trailing_self_ref;
+mod doctest/trailing_self_ref;
 
 pub fn identity(x: .) { x }

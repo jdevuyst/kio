@@ -1,8 +1,8 @@
-module testapi/main;
+mod testapi/main;
 
-import macros/spine_macros(macro narrow_sum, macro one_prod, macro widen_prod, macro widen_sum);
-import testapi(String);
-import testapi/io(print);
+import macros/spine_macros { macro narrow_sum; macro one_prod; macro widen_prod; macro widen_sum }
+import testapi { type String }
+import testapi/io { fn print }
 
 // Lift a String into a `String | String` sum so we have a value to
 // exercise narrow_sum against.

@@ -1,6 +1,6 @@
 use super::*;
 
-const PROVIDER: &str = "module provider; import __comptime__; pure fn implementation(_ct: __Comptime__, _source: __Type__, value: __Checked_term__) -> __Checked_term__ { value } pub macro identity : [Source] Source -> Source { impl implementation; }; pub fn ordinary(value: .) { value }";
+const PROVIDER: &str = "mod provider; import __comptime__; pure fn implementation(_ct: __Comptime__, _source: __Type__, value: __Checked_term__) -> __Checked_term__ { value } pub macro identity : [Source] Source -> Source { impl implementation; }; pub fn ordinary(value: .) { value }";
 
 fn token_type_at(lsp: &mut LspProcess, uri: &str, source: &str, needle: &str) -> u64 {
     let wanted = source_position(source, source.find(needle).unwrap());
@@ -25,9 +25,9 @@ fn token_type_at(lsp: &mut LspProcess, uri: &str, source: &str, needle: &str) ->
 #[test]
 fn lsp_macro_tokens_follow_alias_shadowing_and_import_edits() {
     let dir = TempDir::new("macro-token-scope");
-    dir.write("app.pkg.kio", "package app; bridge { app; }");
+    dir.write("app.pkg.kio", "pkg app; bridge { app; }");
     dir.write("provider.kio", PROVIDER);
-    let source = "module app; import provider(macro identity as selected); pub fn run() { selected(()); (.(selected: . -> .) { selected(()) })(.(value: .) { value }) }";
+    let source = "mod app; import provider {macro identity as selected} pub fn run() { selected(()); (.(selected: . -> .) { selected(()) })(.(value: .) { value }) }";
     let uri = path_to_file_uri(&dir.write("app.kio", source));
     let mut lsp = LspProcess::spawn();
     lsp.initialize(&path_to_file_uri(dir.path()));
@@ -37,7 +37,7 @@ fn lsp_macro_tokens_follow_alias_shadowing_and_import_edits() {
     );
     assert_eq!(token_type_at(&mut lsp, &uri, source, "selected(());"), 12);
     assert_eq!(token_type_at(&mut lsp, &uri, source, "selected(()) }"), 5);
-    let edited = source.replace("macro identity", "ordinary");
+    let edited = source.replace("macro identity", "fn ordinary");
     send_full_text_change(&mut lsp, &uri, 2, &edited);
     assert_eq!(token_type_at(&mut lsp, &uri, &edited, "selected(());"), 5);
     send_full_text_change(&mut lsp, &uri, 3, source);
@@ -48,17 +48,17 @@ fn lsp_macro_tokens_follow_alias_shadowing_and_import_edits() {
 #[test]
 fn lsp_macro_import_kind_fixes_apply_and_refuse_stale_diagnostics() {
     for (selection, expected_selection) in [
-        ("identity as selected", "macro identity as selected"),
+        ("fn identity as selected", "macro identity as selected"),
         (
             "macro // keep\n ordinary as selected",
-            " // keep\n ordinary as selected",
+            "fn // keep\n ordinary as selected",
         ),
     ] {
         let dir = TempDir::new("macro-import-kind-fix");
-        dir.write("app.pkg.kio", "package app; bridge { app; }");
+        dir.write("app.pkg.kio", "pkg app; bridge { app; }");
         dir.write("provider.kio", PROVIDER);
         let source =
-            format!("module app; import provider({selection}); pub fn run() {{ selected(()) }}");
+            format!("mod app; import provider {{{selection}}} pub fn run() {{ selected(()) }}");
         let uri = path_to_file_uri(&dir.write("app.kio", &source));
         let mut lsp = LspProcess::spawn();
         lsp.initialize(&path_to_file_uri(dir.path()));
@@ -68,8 +68,12 @@ fn lsp_macro_import_kind_fixes_apply_and_refuse_stale_diagnostics() {
             .as_array()
             .unwrap()
             .iter()
-            .find(|diagnostic| diagnostic["message"].as_str().unwrap().contains("macro"))
-            .unwrap()
+            .find(|diagnostic| {
+                diagnostic["message"]
+                    .as_str()
+                    .is_some_and(|message| message.contains("is not a"))
+            })
+            .unwrap_or_else(|| panic!("missing kind mismatch: {published}"))
             .clone();
         let response = send_code_action(&mut lsp, &uri, &diagnostic);
         let action = response["result"]
@@ -98,14 +102,14 @@ fn lsp_macro_import_kind_fixes_apply_and_refuse_stale_diagnostics() {
 #[test]
 fn lsp_unused_macro_import_removal_owns_its_tag_and_preserves_other_kinds() {
     for (selection, expected) in [
-        ("macro identity, ordinary", " ordinary"),
-        ("ordinary, macro identity as selected", "ordinary"),
+        ("macro identity; fn ordinary", " fn ordinary"),
+        ("fn ordinary; macro identity as selected", "fn ordinary"),
     ] {
         let dir = TempDir::new("unused-macro-import");
-        dir.write("app.pkg.kio", "package app; bridge { app; }");
+        dir.write("app.pkg.kio", "pkg app; bridge { app; }");
         dir.write("provider.kio", PROVIDER);
         let source =
-            format!("module app; import provider({selection}); pub fn run() {{ ordinary(()) }}");
+            format!("mod app; import provider {{{selection}}} pub fn run() {{ ordinary(()) }}");
         let uri = path_to_file_uri(&dir.write("app.kio", &source));
         let mut lsp = LspProcess::spawn();
         lsp.initialize(&path_to_file_uri(dir.path()));

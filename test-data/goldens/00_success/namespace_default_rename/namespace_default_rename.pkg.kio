@@ -1,4 +1,4 @@
-package namespace_default_rename;
+pkg namespace_default_rename;
 
 build {
   cache ();

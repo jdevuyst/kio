@@ -1,4 +1,4 @@
-package typecheck_operator_private_rec_member_implementation;
+pkg typecheck_operator_private_rec_member_implementation;
 
 build {
   cache "out/.kio-cache/";

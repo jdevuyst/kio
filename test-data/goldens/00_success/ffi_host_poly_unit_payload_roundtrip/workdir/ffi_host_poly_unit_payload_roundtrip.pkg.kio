@@ -1,4 +1,4 @@
-package ffi_host_poly_unit_payload_roundtrip;
+pkg ffi_host_poly_unit_payload_roundtrip;
 
 build {
   cache "out/.kio-cache/";

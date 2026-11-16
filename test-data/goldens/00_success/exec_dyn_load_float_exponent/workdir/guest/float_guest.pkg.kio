@@ -1,4 +1,4 @@
-package float_guest;
+pkg float_guest;
 
 build {
   cache "out/.kio-cache/";

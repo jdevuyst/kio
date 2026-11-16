@@ -1,4 +1,4 @@
-package exec_row_family_effect_order;
+pkg exec_row_family_effect_order;
 
 build {
   cache "out/.kio-cache/";

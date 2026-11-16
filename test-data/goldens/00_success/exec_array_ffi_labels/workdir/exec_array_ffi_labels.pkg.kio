@@ -1,4 +1,4 @@
-package exec_array_ffi_labels;
+pkg exec_array_ffi_labels;
 
 build {
   cache "out/.kio-cache/";

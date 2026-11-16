@@ -1,4 +1,4 @@
-package exec_rec_macro_optional_escape_bypass;
+pkg exec_rec_macro_optional_escape_bypass;
 
 build {
   cache "out/.kio-cache/";

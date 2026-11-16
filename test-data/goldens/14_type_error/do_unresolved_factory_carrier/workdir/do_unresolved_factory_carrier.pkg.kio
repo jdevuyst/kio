@@ -1,4 +1,4 @@
-package do_unresolved_factory_carrier;
+pkg do_unresolved_factory_carrier;
 
 build {
   target js {

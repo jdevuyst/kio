@@ -167,7 +167,7 @@ export function checkDocHighlighting(parser, querySource = fs.readFileSync(query
     }
     for (const width of [2, 7, 8, 15, 31, 257]) {
       const marker = "`".repeat(width);
-      const source = `/// prose ${marker}x${marker}\` [\`hidden\`] ${marker} [\`live\`].\nmodule app;\n`;
+      const source = `/// prose ${marker}x${marker}\` [\`hidden\`] ${marker} [\`live\`].\nmod app;\n`;
       parser.reset();
       const tree = parser.parse(source);
       try {
@@ -180,7 +180,7 @@ export function checkDocHighlighting(parser, querySource = fs.readFileSync(query
       ["/// <!--kio\n/// [`inside`]\n", (s) => s + "/// -->\n"],
       ["/// ```text\n/// [`inside`]\n/// ```\n/// [`after`]\n", (s) => s.replace("```text", "````text")],
       ["/// ```text\n/// [`inside`]\n/// ```\n/// [`after`]\n", (s) => s.replace("/// ```\n", "/// ``\n")],
-      ["/// [`name`]\nmodule app;\n", (s) => s.replace("///", "//")],
+      ["/// [`name`]\nmod app;\n", (s) => s.replace("///", "//")],
       ["/// ```text\n/// [`inside`]\n", (s) => s.replace("text\n", "text\n\n")],
       ["/// [`@ty", (s) => s + "pe Item`]"],
       ["/// ``start\n/// [`inside`]`` [`after`]\n", (s) => s.replace("]``", "]`")],
@@ -227,12 +227,12 @@ export function checkDocScannerCosts(parser) {
         if (body === "distinct widths") return `/// prose ${"`".repeat(index + 1)} unmatched\n`;
         if (body === "mixed widths") return `/// \`matched\` prose ${"`".repeat(index + 2)} unmatched [\`neutral\`]\n${index % 2 ? "\n" : ""}`;
         return `/// ${body}\n`;
-      }).join("") + "module app;\n";
-      if (body === "same-line closed") source = `/// ${"`x` ".repeat(lines)}\nmodule app;\n`;
+      }).join("") + "mod app;\n";
+      if (body === "same-line closed") source = `/// ${"`x` ".repeat(lines)}\nmod app;\n`;
       if (body === "same-line varying widths") source = `/// ${Array.from({ length: lines }, (_, index) => {
         const marker = "`".repeat(index % 5 + 1);
         return `${marker}x${marker} `;
-      }).join("")} unmatched \`\` tail [\`neutral\`]\nmodule app;\n`;
+      }).join("")} unmatched \`\` tail [\`neutral\`]\nmod app;\n`;
       let external = false, advances = 0;
       parser.reset();
       parser.setLogger((message, lexical) => {

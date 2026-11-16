@@ -1,5 +1,5 @@
 /// Shared reflected-type and checked-term utilities used by the POC macro modules.
-module stack/macros/macro_util;
+mod stack/macros/macro_util;
 
 import __intrinsics__;
 

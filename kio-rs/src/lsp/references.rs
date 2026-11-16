@@ -502,7 +502,7 @@ mod tests {
 
     #[test]
     fn references_returns_none_outside_any_binder() {
-        let source = "module pkg/main;\n";
+        let source = "mod pkg/main;\n";
         let analysis = make_analysis_refs(vec![(
             "pkg/main",
             Span::new(20, 30),
@@ -524,7 +524,7 @@ mod tests {
 
     #[test]
     fn broken_live_overlay_does_not_authorize_stale_typed_references() {
-        let analyzed_source = "module pkg/main;\nfn f() -> . { run() }\n";
+        let analyzed_source = "mod pkg/main;\nfn f() -> . { run() }\n";
         let live_source = format!("{analyzed_source}\"");
         assert!(crate::pass::parser::parse_module_file(&live_source).is_err());
         let start = analyzed_source.find("run").expect("ordinary reference") as u32;
@@ -576,7 +576,7 @@ mod tests {
 
     #[test]
     fn references_finds_two_uses_of_same_fn() {
-        let source = "module pkg/main;\n  run  run  ";
+        let source = "mod pkg/main;\n  run  run  ";
         // Two binder entries for `pkg/main.run`.
         let binder1 = ResolvedBinder::Fn {
             module_path: "pkg/main".to_owned(),

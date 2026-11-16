@@ -1,4 +1,4 @@
-package do_bind_expr_not_monadic;
+pkg do_bind_expr_not_monadic;
 
 build {
   cache "out/.kio-cache/";

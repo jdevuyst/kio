@@ -4,7 +4,7 @@ set -eu
 formatted=$("$KIO_BIN" fmt - <<'KIO'
 // file note
 /// Module documentation.
-module // keyword
+mod // keyword
 app // slash
 / // segment
 main // terminator

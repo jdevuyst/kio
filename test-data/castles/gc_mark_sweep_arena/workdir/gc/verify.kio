@@ -10,21 +10,21 @@
 /// tracing an unvalidated heap is how a verifier turns a diagnosable
 /// fault into a crash. On an unsound heap `reachable` is absent rather
 /// than a count nobody should believe.
-module gc/verify;
+mod gc/verify;
 
-import gc/heap(field_slot, fold_fields, fold_objects, header_map, in_arena);
-import gc/mark(Mark_bits, mark_heap);
-import gc/num(and, int_eq, int_lt);
-import gc/slot(Imm, Ptr);
-import gc/sweep(Live_objects, sweep);
-import macros/control(macro if);
-import macros/match(macro match);
-import macros/row_macros(macro select);
-import macros/spine_macros(macro widen_sum);
-import testapi(Array, Bool, I32);
-import testapi/arith(add_i32);
-import testapi/array(array_get, array_len);
-import testapi/iter(loop);
+import gc/heap { fn field_slot; fn fold_fields; fn fold_objects; fn header_map; fn in_arena }
+import gc/mark { type Mark_bits; fn mark_heap }
+import gc/num { fn and; fn int_eq; fn int_lt }
+import gc/slot { type Imm; type Ptr }
+import gc/sweep { type Live_objects; fn sweep }
+import macros/control { macro if }
+import macros/match { macro match }
+import macros/row_macros { macro select }
+import macros/spine_macros { macro widen_sum }
+import testapi { type Array; type Bool; type I32 }
+import testapi/arith { fn add_i32 }
+import testapi/array { fn array_get; fn array_len }
+import testapi/iter { fn loop }
 
 /// `reachable` is absent exactly when the pointer check failed and the
 /// re-walk was refused.

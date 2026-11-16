@@ -1,4 +1,4 @@
-module main;
+mod main;
 // Before the group.
 /// Group documentation.
 rec // Opening boundary.

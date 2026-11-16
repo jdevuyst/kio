@@ -1,4 +1,4 @@
-package grouped;
+pkg grouped;
 
 build {
   target java {

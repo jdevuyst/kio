@@ -1,6 +1,6 @@
-module testapi/fmt;
+mod testapi/fmt;
 
-import testapi(Int, Str);
+import testapi { type Int; type Str }
 
 host fn int_to_string(p0: Int) -> Str;
 

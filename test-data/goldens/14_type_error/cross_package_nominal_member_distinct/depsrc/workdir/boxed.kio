@@ -1,8 +1,8 @@
 /// A `Box` newtype the dependency owns, over its own `String`.
-module boxed;
+mod boxed;
 
 host type String role(str);
 
 /// The dependency's `Box`, whose constructor/projector PAYLOAD is the
 /// dependency's own `String`.
-pub type { Box: String { pub mk; pub get; }; }
+pub type { Box: String { pub mk; pub get } }

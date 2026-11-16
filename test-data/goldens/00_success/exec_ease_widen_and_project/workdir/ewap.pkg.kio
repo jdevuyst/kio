@@ -1,4 +1,4 @@
-package ewap;
+pkg ewap;
 
 build {
   cache "out/.kio-cache/";

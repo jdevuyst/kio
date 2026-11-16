@@ -21,7 +21,7 @@ bridge {
   kiodoc;
 }
 
-module kiodoc;
+mod kiodoc;
 
 __INSERT_CODE_HERE__
 -->
@@ -32,8 +32,8 @@ A dependency is usually just a function value. If a service needs a logger and
 a configuration loader, write those two function types down and pass them in:
 
 ```kio {@di}
-import macros/row_macros(macro record, macro select);
-import macros/spine_macros(macro one_prod);
+import macros/row_macros { macro record; macro select }
+import macros/spine_macros { macro one_prod }
 
 host type String role(str);
 

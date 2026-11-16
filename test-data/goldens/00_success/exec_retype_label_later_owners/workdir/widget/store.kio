@@ -1,7 +1,7 @@
-module widget/store;
+mod widget/store;
 
 import core/relay as _rehost_gdgphcgfcphcgfgmgbhj;
-import widget/macros/row_macros(macro select);
+import widget/macros/row_macros { macro select }
 
 pub type Foo = _rehost_gdgphcgfcphcgfgmgbhj.Foo;
 

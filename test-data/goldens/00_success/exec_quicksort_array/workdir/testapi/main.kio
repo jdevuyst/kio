@@ -1,15 +1,21 @@
-module testapi/main;
+mod testapi/main;
 
-import macros/control(macro if);
-import macros/match(macro match);
-import macros/spine_macros(macro widen_sum);
-import testapi(Array, Bool, I32, String);
-import testapi/arith(add_i32, leq_i32, sub_i32);
-import testapi/array(array_get, array_len, array_make_empty, array_push, array_swap);
-import testapi/fmt(int_to_string);
-import testapi/io(print);
-import testapi/iter(loop);
-import testapi/text(string_concat);
+import macros/control { macro if }
+import macros/match { macro match }
+import macros/spine_macros { macro widen_sum }
+import testapi { type Array; type Bool; type I32; type String }
+import testapi/arith { fn add_i32; fn leq_i32; fn sub_i32 }
+import testapi/array {
+  fn array_get;
+  fn array_len;
+  fn array_make_empty;
+  fn array_push;
+  fn array_swap
+}
+import testapi/fmt { fn int_to_string }
+import testapi/io { fn print }
+import testapi/iter { fn loop }
+import testapi/text { fn string_concat }
 
 // Cons-list of `a`. Same shape as the other host-loop goldens —
 // `()` is empty, `(A & List(A))` is a cons cell. Used here for

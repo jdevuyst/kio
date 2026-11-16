@@ -1,9 +1,9 @@
-module testapi/main;
+mod testapi/main;
 
-import macros/control(macro if);
-import macros/row_macros(macro select);
-import testapi(Bool, String);
-import testapi/io(print);
+import macros/control { macro if }
+import macros/row_macros { macro select }
+import testapi { type Bool; type String }
+import testapi/io { fn print }
 
 type { Flag: Bool { mk; get } }
 

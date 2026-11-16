@@ -1,4 +1,4 @@
-package do_recursive_original_result;
+pkg do_recursive_original_result;
 
 build {
   target js {

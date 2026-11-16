@@ -1,4 +1,4 @@
-package float_signal_filter;
+pkg float_signal_filter;
 
 build {
   cache "out/.kio-cache/";

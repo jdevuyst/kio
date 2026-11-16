@@ -1,7 +1,7 @@
-module egraph/numbers;
+mod egraph/numbers;
 
-import macros/control(macro if);
-import testapi(Bool, I32);
+import macros/control { macro if }
+import testapi { type Bool; type I32 }
 import testapi/arith as host;
 
 pub fn both(a: Bool, b: Bool) -> Bool {

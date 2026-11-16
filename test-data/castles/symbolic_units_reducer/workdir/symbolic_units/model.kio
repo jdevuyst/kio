@@ -1,9 +1,9 @@
-module symbolic_units/model;
+mod symbolic_units/model;
 
-import macros/match(macro match);
-import macros/row_macros(macro record);
-import macros/spine_macros(macro widen_sum);
-import testapi(I32);
+import macros/match { macro match }
+import macros/row_macros { macro record }
+import macros/spine_macros { macro widen_sum }
+import testapi { type I32 }
 
 pub type Unit = { Meter: . } | { Second: . } | { Kilogram: . };
 

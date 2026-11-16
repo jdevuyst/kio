@@ -8,13 +8,14 @@ fn lsp_reverse_block_ufcs_brace_fix_applies_without_a_parsed_module() {
             ("((", "))", "two { () } fallback two { () } fallback { () }"),
         ] {
             let dir = TempDir::new("block-ufcs-brace-fix");
-            dir.write("app.pkg.kio", "package app; bridge { app; provider; }");
+            dir.write("app.pkg.kio", "pkg app; bridge { app; provider; }");
             let provider = format!(
                 "{}\npub macro prefixed : (. & . & .) -> . {{ trailing product; trailing product fallback; impl unit_checked }}",
                 include_str!("../fixtures/trailing-blocks/provider.kio")
             );
             let provider_file = dir.write("provider.kio", &provider);
-            let head = "module app; import provider(macro prefixed, macro two); pub fn run(value: .) -> . { ";
+            let head =
+                "mod app; import provider {macro prefixed; macro two} pub fn run(value: .) -> . { ";
             let source = format!(
                 "{head}{open}prefixed {{ () }} fallback // child\n  {child}{close} // suffix\n  {arrow}value }}"
             );
@@ -101,14 +102,14 @@ fn lsp_reverse_block_ufcs_brace_fix_applies_without_a_parsed_module() {
 #[test]
 fn lsp_block_ufcs_receivers_keep_navigation_tokens_and_signature_help() {
     let dir = TempDir::new("block-ufcs-receivers");
-    dir.write("app.pkg.kio", "package app; bridge { app; provider; }");
+    dir.write("app.pkg.kio", "pkg app; bridge { app; provider; }");
     let provider = format!(
         "{}\npub macro prefixed : ((. & .) & . & .) -> . {{ trailing product; trailing product fallback; impl first_checked }}",
         include_str!("../fixtures/trailing-blocks/provider.kio")
     );
     let provider_file = dir.write("provider.kio", &provider);
     let source = concat!(
-        "module app;\nimport provider(macro prefixed);\n",
+        "mod app;\nimport provider {macro prefixed}\n",
         "pub fn run(value: .) -> . {\n",
         "  value.>prefixed(()) { () } fallback { () };\n",
         "  value.>>prefixed(()) { () } fallback { () };\n",
@@ -231,13 +232,13 @@ fn lsp_block_ufcs_receivers_keep_navigation_tokens_and_signature_help() {
 #[test]
 fn lsp_block_ufcs_label_completion_applies_in_every_direction() {
     let dir = TempDir::new("block-ufcs-label-completion");
-    dir.write("app.pkg.kio", "package app; bridge { app; provider; }");
+    dir.write("app.pkg.kio", "pkg app; bridge { app; provider; }");
     let provider = format!(
         "{}\npub macro prefixed : ((. & .) & . & .) -> . {{ trailing product; trailing product fallback; impl first_checked }}",
         include_str!("../fixtures/trailing-blocks/provider.kio")
     );
     let provider_file = dir.write("provider.kio", &provider);
-    let source = "module app; import provider(macro prefixed); pub fn run(value: .) { value.>prefixed(()) { () } fallback { () } }";
+    let source = "mod app; import provider {macro prefixed} pub fn run(value: .) { value.>prefixed(()) { () } fallback { () } }";
     let file = dir.write("app.kio", source);
     let uri = path_to_file_uri(&file);
     let mut lsp = LspProcess::spawn();
@@ -254,7 +255,7 @@ fn lsp_block_ufcs_label_completion_applies_in_every_direction() {
     .enumerate()
     {
         let source = format!(
-            "module app; import provider(macro prefixed); pub fn run(value: .) {{ {call} }}"
+            "mod app; import provider {{macro prefixed}} pub fn run(value: .) {{ {call} }}"
         );
         let version = 2 + 2 * ordinal as i32;
         send_full_text_change(&mut lsp, &uri, version, &source);
@@ -288,13 +289,13 @@ fn lsp_block_ufcs_label_completion_applies_in_every_direction() {
 #[test]
 fn lsp_block_ufcs_missing_blocks_insert_before_reverse_receiver() {
     let dir = TempDir::new("block-ufcs-scaffold");
-    dir.write("app.pkg.kio", "package app; bridge { app; provider; }");
+    dir.write("app.pkg.kio", "pkg app; bridge { app; provider; }");
     let provider = format!(
         "{}\npub macro prefixed : ((. & .) & . & .) -> . {{ trailing product; trailing product fallback; impl first_checked }}",
         include_str!("../fixtures/trailing-blocks/provider.kio")
     );
     let provider_file = dir.write("provider.kio", &provider);
-    let source = "module app; import provider(macro prefixed); pub fn run(value: .) { prefixed(()) { () }.<value }";
+    let source = "mod app; import provider {macro prefixed} pub fn run(value: .) { prefixed(()) { () }.<value }";
     let file = dir.write("app.kio", source);
     let uri = path_to_file_uri(&file);
     let mut lsp = LspProcess::spawn();
@@ -335,17 +336,17 @@ fn lsp_block_ufcs_missing_blocks_insert_before_reverse_receiver() {
 #[test]
 fn lsp_block_snippets_require_client_capability() {
     let dir = TempDir::new("block-editor-plain-completion");
-    dir.write("app.pkg.kio", "package app; bridge { app; provider; }");
+    dir.write("app.pkg.kio", "pkg app; bridge { app; provider; }");
     let provider = include_str!("../fixtures/trailing-blocks/provider.kio");
     let provider_file = dir.write("provider.kio", provider);
-    let valid = "module app; import provider(macro two); fn run() { two { () } fallback { () } }";
+    let valid = "mod app; import provider {macro two} fn run() { two { () } fallback { () } }";
     let file = dir.write("app.kio", valid);
     let uri = path_to_file_uri(&file);
     let mut lsp = LspProcess::spawn();
     lsp.initialize(&path_to_file_uri(dir.path()));
     open_and_wait_for_analysis(&mut lsp, &path_to_file_uri(&provider_file), provider);
     open_and_wait_for_analysis(&mut lsp, &uri, valid);
-    let incomplete = "module app; import provider(macro two); fn run() { tw";
+    let incomplete = "mod app; import provider {macro two} fn run() { tw";
     send_full_text_change(&mut lsp, &uri, 2, incomplete);
     assert!(
         !wait_for_publish_version(&mut lsp, &uri, 2)["diagnostics"]
@@ -366,7 +367,7 @@ fn lsp_block_snippets_require_client_capability() {
     assert_eq!(item["textEdit"]["newText"], "two");
     assert_eq!(
         apply_lsp_text_edits(incomplete, &[item["textEdit"].clone()]),
-        "module app; import provider(macro two); fn run() { two"
+        "mod app; import provider {macro two} fn run() { two"
     );
     assert_eq!(lsp.shutdown(), 0);
 }
@@ -374,12 +375,12 @@ fn lsp_block_snippets_require_client_capability() {
 #[test]
 fn lsp_block_editor_regions_use_current_selected_headers() {
     let dir = TempDir::new("block-editor-regions");
-    dir.write("app.pkg.kio", "package app; bridge { app; provider; }");
+    dir.write("app.pkg.kio", "pkg app; bridge { app; provider; }");
     let provider = include_str!("../fixtures/trailing-blocks/provider.kio")
         .replace("macro two :", "macro renamed :");
     let provider_file = dir.write("provider.kio", &provider);
     let provider_uri = path_to_file_uri(&provider_file);
-    let valid = "module app; import provider(macro renamed); fn run() { renamed((), ()); renamed { () } fallback { () } }";
+    let valid = "mod app; import provider {macro renamed} fn run() { renamed((), ()); renamed { () } fallback { () } }";
     let file = dir.write("app.kio", valid);
     let uri = path_to_file_uri(&file);
     let mut lsp = LspProcess::spawn();
@@ -406,7 +407,7 @@ fn lsp_block_editor_regions_use_current_selected_headers() {
         "selected provider header is not ready: {ready}"
     );
 
-    let incomplete = "module app; import provider(macro renamed); fn run() { ren";
+    let incomplete = "mod app; import provider {macro renamed} fn run() { ren";
     send_full_text_change(&mut lsp, &uri, 2, incomplete);
     assert!(
         !wait_for_publish_version(&mut lsp, &uri, 2)["diagnostics"]
@@ -447,12 +448,12 @@ fn lsp_block_editor_regions_use_current_selected_headers() {
     for (version, source, expected) in [
         (
             4,
-            "module app; import provider(macro renamed); fn run() { renamed { () } fal",
+            "mod app; import provider {macro renamed} fn run() { renamed { () } fal",
             vec!["fallback"],
         ),
         (
             5,
-            "module app; import provider(macro renamed); fn run() { renamed { () } fallback { () } ",
+            "mod app; import provider {macro renamed} fn run() { renamed { () } fallback { () } ",
             vec![],
         ),
     ] {
@@ -495,7 +496,7 @@ fn lsp_block_editor_regions_use_current_selected_headers() {
             "{label}"
         );
     }
-    let incomplete = "module app; import provider(macro renamed); fn run() { renamed { () } ";
+    let incomplete = "mod app; import provider {macro renamed} fn run() { renamed { () } ";
     send_full_text_change(&mut lsp, &uri, 7, incomplete);
     assert!(
         !wait_for_publish_version(&mut lsp, &uri, 7)["diagnostics"]
@@ -573,14 +574,14 @@ fn lsp_block_editor_regions_use_current_selected_headers() {
 #[test]
 fn lsp_block_label_repairs_and_missing_block_scaffolds_reanalyse() {
     let dir = TempDir::new("block-editor-fixes");
-    dir.write("app.pkg.kio", "package app; bridge { app; provider; }");
+    dir.write("app.pkg.kio", "pkg app; bridge { app; provider; }");
     let provider = format!(
         "{}\npub macro finish : (. & Sequence[Box][.]) -> . {{ trailing product; trailing sequence after; impl first_checked }}",
         include_str!("../fixtures/trailing-blocks/provider.kio")
     );
     let provider_file = dir.write("provider.kio", &provider);
     let provider_uri = path_to_file_uri(&provider_file);
-    let source = "module app; import provider(macro two); fn run() { two { () } wrong { () } }";
+    let source = "mod app; import provider {macro two} fn run() { two { () } wrong { () } }";
     let file = dir.write("app.kio", source);
     let uri = path_to_file_uri(&file);
     let mut lsp = LspProcess::spawn();
@@ -609,7 +610,7 @@ fn lsp_block_label_repairs_and_missing_block_scaffolds_reanalyse() {
         &[("function", "run")],
     );
 
-    let missing = "module app; import provider(macro finish, box_pure); fn run() { finish { () } }";
+    let missing = "mod app; import provider {macro finish; fn box_pure} fn run() { finish { () } }";
     send_full_text_change(&mut lsp, &uri, 3, missing);
     let published = wait_for_publish_version(&mut lsp, &uri, 3);
     let diagnostic = &published["diagnostics"][0];
@@ -651,11 +652,12 @@ fn lsp_block_label_repairs_and_missing_block_scaffolds_reanalyse() {
 #[test]
 fn lsp_trailing_labels_retract_after_provider_only_edits() {
     let dir = TempDir::new("trailing-label-provider-edit");
-    dir.write("app.pkg.kio", "package app; bridge { app; provider; }");
+    dir.write("app.pkg.kio", "pkg app; bridge { app; provider; }");
     let provider = include_str!("../fixtures/trailing-blocks/provider.kio");
     let provider_file = dir.write("provider.kio", provider);
     let provider_uri = path_to_file_uri(&provider_file);
-    let source = "module app; import provider(macro two); fn run(value: .) { two { value } fallback { () } }";
+    let source =
+        "mod app; import provider {macro two} fn run(value: .) { two { value } fallback { () } }";
     let file = dir.write("app.kio", source);
     let uri = path_to_file_uri(&file);
     let mut lsp = LspProcess::spawn();
@@ -732,7 +734,7 @@ fn lsp_trailing_labels_retract_after_provider_only_edits() {
 #[test]
 fn lsp_trailing_labels_follow_exact_declarations_and_rename_reanalyses() {
     let dir = TempDir::new("trailing-label-identity");
-    dir.write("app.pkg.kio", "package app; bridge { app; provider; }");
+    dir.write("app.pkg.kio", "pkg app; bridge { app; provider; }");
     let provider = format!(
         "{}\n{}\n{}\n",
         include_str!("../fixtures/trailing-blocks/provider.kio"),
@@ -741,7 +743,7 @@ fn lsp_trailing_labels_follow_exact_declarations_and_rename_reanalyses() {
     );
     let provider_file = dir.write("provider.kio", &provider);
     let provider_uri = path_to_file_uri(&provider_file);
-    let source = "module app;\nimport provider(macro two, macro alternate, macro three);\nfn run(fallback: .) {\n  let chosen = two { fallback } fallback { () };\n  alternate { chosen } fallback { () };\n  three { () } fallback { () } final { () }\n}\n";
+    let source = "mod app;\nimport provider {macro two; macro alternate; macro three}\nfn run(fallback: .) {\n  let chosen = two { fallback } fallback { () };\n  alternate { chosen } fallback { () };\n  three { () } fallback { () } final { () }\n}\n";
     let file = dir.write("app.kio", source);
     let uri = path_to_file_uri(&file);
     let mut lsp = LspProcess::spawn();
@@ -799,7 +801,7 @@ fn lsp_trailing_labels_follow_exact_declarations_and_rename_reanalyses() {
         ),
         (
             uri.clone(),
-            source_range(source, source.find("two,").unwrap(), 3),
+            source_range(source, source.find("two;").unwrap(), 3),
         ),
         (
             uri.clone(),
@@ -931,7 +933,7 @@ fn lsp_trailing_labels_follow_exact_declarations_and_rename_reanalyses() {
 #[test]
 fn lsp_neutral_blocks_format_reanalyse_and_complete_lexical_binders() {
     let dir = TempDir::new("trailing-blocks");
-    dir.write("app.pkg.kio", "package app; bridge { app; provider; }");
+    dir.write("app.pkg.kio", "pkg app; bridge { app; provider; }");
     dir.write(
         "provider.kio",
         include_str!("../fixtures/trailing-blocks/provider.kio"),
@@ -1010,13 +1012,13 @@ fn lsp_neutral_blocks_format_reanalyse_and_complete_lexical_binders() {
     for (version, source, present, absent) in [
         (
             3,
-            "module app; import provider(macro enter); fn run(parent: .) { enter { let local = parent; loc",
+            "mod app; import provider {macro enter} fn run(parent: .) { enter { let local = parent; loc",
             "local",
             "other",
         ),
         (
             4,
-            "module app; import provider(macro enter); fn run(parent: .) { enter { let other = parent; loc",
+            "mod app; import provider {macro enter} fn run(parent: .) { enter { let other = parent; loc",
             "parent",
             "local",
         ),

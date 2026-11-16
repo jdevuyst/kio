@@ -1,10 +1,10 @@
-module robot/input;
+mod robot/input;
 
-import macros/control(macro if);
-import macros/match(macro match);
-import macros/spine_macros(macro widen_sum);
+import macros/control { macro if }
+import macros/match { macro match }
+import macros/spine_macros { macro widen_sum }
 import robot/model as model;
-import testapi(Bool, String);
+import testapi { type Bool; type String }
 import testapi/io as io;
 import testapi/text as text;
 

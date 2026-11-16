@@ -1,4 +1,4 @@
-package typecheck_operator_fold_visibility_lattice;
+pkg typecheck_operator_fold_visibility_lattice;
 
 build {
   cache "out/.kio-cache/";

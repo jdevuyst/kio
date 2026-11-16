@@ -4,7 +4,7 @@ use super::*;
 fn lsp_host_unit_default_retains_function_types() {
     let dir = TempDir::new("host-unit-default");
     dir.write_pkg_root_package();
-    let source = "module pkg/test;\n\
+    let source = "mod pkg/test;\n\
 host fn implicit();\n\
 host fn explicit() -> .;\n\
 host fn staged()[A];\n\
@@ -34,7 +34,7 @@ pub fn run() {\n\
 fn lsp_type_only_values_recover_and_preserve_binding_types() {
     let dir = TempDir::new("type-only-values");
     dir.write_pkg_root_package();
-    let source = "module pkg/test;\n\
+    let source = "mod pkg/test;\n\
 pub fn mark[A] { () }\n\
 pub fn delayed[A]() { () }\n\
 pub fn identity[A] -> A -> A { .(value: A) { value } }\n\
@@ -126,7 +126,7 @@ pub fn run() {\n\
 fn lsp_expression_hover_preserves_type_structure_without_redundant_parentheses() {
     let dir = TempDir::new("type-display-hover");
     dir.write_pkg_root_package();
-    let source = "module pkg/test;\n\
+    let source = "mod pkg/test;\n\
 fn right[A][B][C](x: A & B & C) -> A & B & C { x }\n\
 fn left[A][B][C](x: (A & B) & C) -> (A & B) & C { x }\n\
 fn sum_right[A][B][C](x: A | B | C) -> A | B | C { x }\n\
@@ -173,7 +173,7 @@ fn poly(x: [A] A -> A) -> [A] A -> A { x }\n";
 fn lsp_type_display_is_shared_by_inlay_completion_and_signature_help() {
     let dir = TempDir::new("type-display-consumers");
     dir.write_pkg_root_package();
-    let source = "module pkg/test;\n\
+    let source = "mod pkg/test;\n\
 fn packet(x: . & . & .) -> . & . & . { x }\n\
 fn run() -> . & . & . { let triple = ((), (), ()); packet(triple) }\n";
     let file = dir.write("pkg/test.kio", source);

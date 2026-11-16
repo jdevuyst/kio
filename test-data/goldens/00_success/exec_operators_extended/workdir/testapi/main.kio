@@ -1,8 +1,8 @@
-module testapi/main;
+mod testapi/main;
 
-import testapi(String);
-import testapi/brackets(plain_nested, plain_outer);
-import testapi/io(print);
+import testapi { type String }
+import testapi/brackets { fn plain_nested; fn plain_outer }
+import testapi/io { fn print }
 
 fn cat(a: String, b: String) -> String { a }
 

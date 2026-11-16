@@ -1,4 +1,4 @@
-package priority_dispatch;
+pkg priority_dispatch;
 
 build {
   cache "out/.kio-cache/";

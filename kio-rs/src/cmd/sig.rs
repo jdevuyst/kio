@@ -39,8 +39,7 @@ use crate::sig::{self, ContractSnapshot, RecordedSurface};
 use std::fs;
 use std::path::{Path, PathBuf};
 
-const HELP_TEMPLATE: &str = "\
-Usage: kio sig [<package-path>...]
+const HELP_TEMPLATE: &str = "Usage: kio sig [<package-path>...]
        kio sig stage [--force | --stdout] [<package-path>...]
        kio sig commit [-m <message>] [--stdout] [<package-path>...]
        kio sig uncommit [--force] [--stdout] [<package-path>...]
@@ -1440,12 +1439,7 @@ fn validate_compact_prefix(
                     ),
                 ));
             }
-            if let Some(span) = set
-                .remove
-                .first()
-                .map(|section| section.span)
-                .or_else(|| set.remove_refs.first().map(|reference| reference.span))
-            {
+            if let Some(span) = set.remove_refs.first().map(|reference| reference.span) {
                 return Err(crate::error::Error::bridge(
                     span,
                     format!(
@@ -1656,7 +1650,6 @@ fn synthesize_boundary_block(
             add_refs: breaking_add_refs,
             modify: Vec::new(),
             modify_refs: Vec::new(),
-            remove: Vec::new(),
             remove_refs: Vec::new(),
             span: crate::span::Span::new(0, 0),
         })
@@ -1677,7 +1670,6 @@ fn synthesize_boundary_block(
             add_refs: nonbreaking_add_refs,
             modify: Vec::new(),
             modify_refs: Vec::new(),
-            remove: Vec::new(),
             remove_refs: Vec::new(),
             span: crate::span::Span::new(0, 0),
         })
@@ -1846,7 +1838,6 @@ fn normalized_frozen_type_declaration_text(
         add_refs: Vec::new(),
         modify: Vec::new(),
         modify_refs: Vec::new(),
-        remove: Vec::new(),
         remove_refs: Vec::new(),
         span: crate::span::Span::new(0, 0),
     };
@@ -2122,15 +2113,6 @@ fn sig_change_set_names(
                 .map(|name| (module.clone(), name)),
         );
     }
-    for remove in &set.remove {
-        let module = module_path_str(&remove.path);
-        names.extend(
-            remove
-                .names
-                .iter()
-                .map(|name| (module.clone(), name.name.clone())),
-        );
-    }
     names
 }
 
@@ -2294,12 +2276,6 @@ fn all_names(block: &SigVersion<Surface>) -> std::collections::BTreeSet<(String,
         collect_section_item_names(&set.modify, &mut out);
         collect_ref_names(&set.add_refs, &mut out);
         collect_ref_names(&set.modify_refs, &mut out);
-        for remove in &set.remove {
-            let module = module_path_str(&remove.path);
-            for name in &remove.names {
-                out.insert((module.clone(), name.name.clone()));
-            }
-        }
         collect_ref_names(&set.remove_refs, &mut out);
     }
     out
@@ -2581,33 +2557,34 @@ mod tests {
     fn signature_comparisons_ignore_comments_but_preserve_contract_changes() {
         let source = |note: &str, result: &str| {
             format!(
-                "// {note} header\n\
-             signature app v(1);\n\
-             /// {note} version\n\
-             v(1) {{ // {note} partition\n\
-               nonbreaking {{ // {note} operation\n\
-                 add {{ // {note} module\n\
-                   module api {{\n\
-                     /// {note} type\n\
-                     pub type {{ Token: . {{\n\
-                       // {note} constructor\n\
-                       pub mk;\n\
-                       // {note} projector\n\
-                       pub get\n\
-                     }}; }};\n\
-                     type Pair[A] = A & A;\n\
-                     type Twice = Pair[\n\
-                       // {note} argument\n\
-                       Token\n\
-                     ];\n\
-                     // {note} function\n\
-                     host fn consume(value: Token) -> {result}\n\
-                     // {note} closer\n\
-                   }}\n\
-                 }}\n\
-               }}\n\
-             }}\n\
-             // {note} end\n"
+                "// {note} header
+sig app v(1);
+/// {note} version
+v(1) {{ // {note} partition
+nonbreaking {{ // {note} operation
+add {{ // {note} module
+mod api {{
+/// {note} type
+pub type {{ Token: . {{
+// {note} constructor
+pub mk;
+// {note} projector
+pub get
+}}; }};
+type Pair[A] = A & A;
+type Twice = Pair[
+// {note} argument
+Token
+];
+// {note} function
+host fn consume(value: Token) -> {result}
+// {note} closer
+}}
+}}
+}}
+}}
+// {note} end
+"
             )
         };
         let left = parse(&source("left", "."));
@@ -2690,13 +2667,12 @@ mod tests {
     /// the header open at v(2) and no v(2) draft block.
     fn sealed_v1() -> SignatureFile<Surface> {
         parse(
-            "\
-signature app v(2);
+            "sig app v(2);
 
 v(1) {
   nonbreaking {
     add {
-      module api {
+      mod api {
         pub fn serve() -> .;
       }
     }
@@ -2710,13 +2686,12 @@ v(1) {
     /// removed (breaking) and `other` added (compatible).
     fn recorded_break() -> SignatureFile<Surface> {
         parse(
-            "\
-signature app v(2);
+            "sig app v(2);
 
 v(1) {
   nonbreaking {
     add {
-      module api {
+      mod api {
         pub fn serve() -> .;
       }
     }
@@ -2726,14 +2701,14 @@ v(1) {
 v(2) {
   breaking {
     remove {
-      module api {
-        serve;
-      }
+
+        api.serve;
+
     }
   };
   nonbreaking {
     add {
-      module api {
+      mod api {
         pub fn other() -> .;
       }
     }
@@ -2747,13 +2722,12 @@ v(2) {
     /// add (`other`), no breaking section.
     fn recorded_compatible() -> SignatureFile<Surface> {
         parse(
-            "\
-signature app v(2);
+            "sig app v(2);
 
 v(1) {
   nonbreaking {
     add {
-      module api {
+      mod api {
         pub fn serve() -> .;
       }
     }
@@ -2763,7 +2737,7 @@ v(1) {
 v(2) {
   nonbreaking {
     add {
-      module api {
+      mod api {
         pub fn other() -> .;
       }
     }
@@ -2812,12 +2786,11 @@ v(2) {
     #[test]
     fn status_exit_code_stale_breaking_recursive_context_is_80() {
         let existing = parse(
-            "\
-signature app v(1);
+            "sig app v(1);
 
 v(1) {
   with {
-    module api {
+    mod api {
       rec {
         pub type A = B;
         pub type { B: A { pub mk; pub get; }; };
@@ -2829,12 +2802,11 @@ v(1) {
 ",
         );
         let recomputed = parse(
-            "\
-signature app v(1);
+            "sig app v(1);
 
 v(1) {
   with {
-    module api {
+    mod api {
       rec {
         pub type A = B | B;
         pub type { B: A { pub mk; pub get; }; };
@@ -2860,12 +2832,11 @@ v(1) {
     #[test]
     fn status_exit_code_ignores_unrelated_compatible_recursive_context() {
         let existing = parse(
-            "\
-signature app v(1);
+            "sig app v(1);
 
 v(1) {
   with {
-    module api {
+    mod api {
       rec {
         pub type A = B;
         pub type { B: A { pub mk; pub get; }; };
@@ -2882,12 +2853,11 @@ v(1) {
 ",
         );
         let recomputed = parse(
-            "\
-signature app v(1);
+            "sig app v(1);
 
 v(1) {
   with {
-    module api {
+    mod api {
       rec {
         pub type A = B;
         pub type { B: A { pub mk; pub get; }; };
@@ -2919,12 +2889,11 @@ v(1) {
     #[test]
     fn status_exit_code_requires_context_for_unchanged_split_peers() {
         let existing = parse(
-            "\
-signature app v(2);
+            "sig app v(2);
 
 v(1) {
   with {
-    module api {
+    mod api {
       rec {
         pub type A = B | C;
         pub type { B: A { pub mk; pub get; }; };
@@ -2938,7 +2907,7 @@ v(1) {
 v(2) {
   breaking {
     modify {
-      module api {
+      mod api {
         pub type { C: . { pub mk; pub get; }; };
       }
     }
@@ -2947,12 +2916,11 @@ v(2) {
 ",
         );
         let recomputed = parse(
-            "\
-signature app v(2);
+            "sig app v(2);
 
 v(1) {
   with {
-    module api {
+    mod api {
       rec {
         pub type A = B | C;
         pub type { B: A { pub mk; pub get; }; };
@@ -2965,7 +2933,7 @@ v(1) {
 
 v(2) {
   with {
-    module api {
+    mod api {
       rec {
         pub type A = B | C;
         pub type { B: A { pub mk; pub get; }; };
@@ -2974,7 +2942,7 @@ v(2) {
   };
   breaking {
     modify {
-      module api {
+      mod api {
         pub type { C: . { pub mk; pub get; }; };
       }
     }
@@ -3083,7 +3051,7 @@ v(2) {
         let pkg_dir = tmp.join("pkg");
         std::fs::create_dir_all(&pkg_dir).expect("mkdir pkg");
         let pkg_file = pkg_dir.join("app.pkg.kio");
-        std::fs::write(&pkg_file, "package app;\n").expect("write pkg file");
+        std::fs::write(&pkg_file, "pkg app;\n").expect("write pkg file");
 
         // A `*.pkg.kio` file selector resolves to its holding directory.
         let by_file = resolve_package_dirs(&tmp, &[pkg_file.to_string_lossy().into_owned()])
@@ -3119,13 +3087,10 @@ v(2) {
     #[test]
     fn type_only_export_lifecycle_preserves_sealed_explicit_unit_history() {
         let tmp = tempfile::tempdir().expect("create package directory");
-        fs::write(
-            tmp.path().join("app.pkg.kio"),
-            "package app; bridge { api; }",
-        )
-        .expect("write package file");
+        fs::write(tmp.path().join("app.pkg.kio"), "pkg app; bridge { api; }")
+            .expect("write package file");
         let module_path = tmp.path().join("api.kio");
-        let initial = "module api;
+        let initial = "mod api;
             pub pure fn direct[A] { () }
             pub fn delayed[A]() { () }
             pub fn adjacent[A][B] { () }
@@ -3154,7 +3119,7 @@ v(2) {
         run(SigCommand::Status, ExitCode::Success);
         let history_path = tmp.path().join("app.sig.kio");
         let sealed = fs::read_to_string(&history_path).expect("read sealed history");
-        assert!(sealed.starts_with("signature app v(2);"), "{sealed}");
+        assert!(sealed.starts_with("sig app v(2);"), "{sealed}");
         for expected in [
             "pub pure fn direct[A]",
             "pub fn delayed[A]()",
@@ -3174,7 +3139,7 @@ v(2) {
         run(SigCommand::Commit, ExitCode::Success);
         run(SigCommand::Status, ExitCode::Success);
         let updated = fs::read_to_string(&history_path).expect("read updated history");
-        assert!(updated.starts_with("signature app v(3);"), "{updated}");
+        assert!(updated.starts_with("sig app v(3);"), "{updated}");
         let sealed_version = sealed.split_once('\n').unwrap().1.trim();
         assert!(updated.contains(sealed_version), "{updated}");
         assert!(updated.contains("pub fn delayed[A]\n"), "{updated}");
@@ -3193,23 +3158,20 @@ v(2) {
                 .unwrap_or(0)
         ));
         std::fs::create_dir_all(&tmp).expect("create package directory");
-        std::fs::write(
-            tmp.join("app.pkg.kio"),
-            "package app;\n\nbridge {\n  api;\n}\n",
-        )
-        .expect("write package file");
+        std::fs::write(tmp.join("app.pkg.kio"), "pkg app;\n\nbridge {\n  api;\n}\n")
+            .expect("write package file");
         std::fs::write(
             tmp.join("api.kio"),
-            "module api;\n\npub fn live() -> . { () }\n",
+            "mod api;\n\npub fn live() -> . { () }\n",
         )
         .expect("write live module");
         std::fs::write(
             tmp.join("app.sig.kio"),
-            r#"signature app v(2);
+            r#"sig app v(2);
 
 v(1) {
   with {
-    module api {
+    mod api {
       pub rec type { Bad: (Bad -> .) { pub mk; pub get; }; };
     }
   };
@@ -3260,25 +3222,24 @@ v(1) {
     /// text.
     #[test]
     fn compact_preserves_full_replay_and_suffix_removal_generation() {
-        let src = "\
-signature app v(3);
+        let src = "sig app v(3);
 
 v(1) {
   breaking {
     add {
-      module app {
-        import left(Token);
+      mod app {
+        import left {type Token};
         host fn boot_left(x: Token) -> Token;
       };
-      module left {
+      mod left {
         host type Token role(i32);
       }
     }
   };
   nonbreaking {
     add {
-      module app {
-        import left(Token);
+      mod app {
+        import left {type Token};
         pub fn from_left(x: Token) -> Token;
       }
     }
@@ -3288,19 +3249,19 @@ v(1) {
 v(2) {
   breaking {
     add {
-      module right {
+      mod right {
         host type Token role(i32);
       };
-      module app {
-        import right(Token);
+      mod app {
+        import right {type Token};
         host fn boot_right(x: Token) -> Token;
       }
     }
   };
   nonbreaking {
     add {
-      module app {
-        import right(Token);
+      mod app {
+        import right {type Token};
         pub fn from_right(x: Token) -> Token;
       }
     }
@@ -3311,10 +3272,10 @@ v(2) {
 v(3) {
   nonbreaking {
     remove {
-      module app {
-        boot_right;
-        boot_left;
-      }
+
+        app.boot_right;
+        app.boot_left;
+
     }
   }
 }
@@ -3324,10 +3285,9 @@ v(3) {
             .nonbreaking
             .as_ref()
             .expect("v(3) nonbreaking changes")
-            .remove[0];
+            .remove_refs;
         assert_eq!(
             source_remove
-                .names
                 .iter()
                 .map(|name| name.name.as_str())
                 .collect::<Vec<_>>(),
@@ -3390,12 +3350,11 @@ v(3) {
     #[test]
     fn compact_preserves_recursive_context_as_one_later_boundary_group() {
         let file = parse(
-            "\
-signature app v(3);
+            "sig app v(3);
 
 v(1) {
   with {
-    module api {
+    mod api {
       rec {
         pub type A = B;
         pub type { B: A { pub mk; pub get; }; };
@@ -3407,7 +3366,7 @@ v(1) {
 
 v(2) {
   nonbreaking {
-    add { module api { pub fn use_b(value: B) -> A; } }
+    add { mod api { pub fn use_b(value: B) -> A; } }
   }
 }
 ",
@@ -3432,28 +3391,27 @@ v(2) {
     #[test]
     fn compact_keeps_same_module_recursive_origin_imports_separate() {
         let file = parse(
-            "\
-signature app v(3);
+            "sig app v(3);
 
 v(1) {
   with {
-    module api {
+    mod api {
       import left as dep;
       pub rec type { Left: dep.Token | Left { pub mk; pub get; }; };
     }
   };
-  breaking { add { module left { host type Token; } } };
+  breaking { add { mod left { host type Token; } } };
   nonbreaking { add { api.Left; } }
 }
 
 v(2) {
   with {
-    module api {
+    mod api {
       import right as dep;
       pub rec type { Right: dep.Token | Right { pub mk; pub get; }; };
     }
   };
-  breaking { add { module right { host type Token; } } };
+  breaking { add { mod right { host type Token; } } };
   nonbreaking { add { api.Right; } }
 }
 ",
@@ -3462,7 +3420,7 @@ v(2) {
 
         let text = compact_file(&file, "app", 3)
             .expect("distinct recursive origin imports must survive compaction");
-        assert_eq!(text.matches("    module api {").count(), 2, "{text}");
+        assert_eq!(text.matches("    mod api {").count(), 2, "{text}");
         assert_eq!(
             text.matches("      import left as dep;").count(),
             1,
@@ -3488,12 +3446,11 @@ v(2) {
     #[test]
     fn compact_preserves_recursive_singleton_context_at_the_boundary() {
         let file = parse(
-            "\
-signature app v(3);
+            "sig app v(3);
 
 v(1) {
   with {
-    module api {
+    mod api {
       pub rec type { List[A]: . | (A & List[A]) { pub mk; pub get; }; };
     }
   };
@@ -3502,7 +3459,7 @@ v(1) {
 
 v(2) {
   nonbreaking {
-    add { module api { pub fn empty[A]() -> List[A]; } }
+    add { mod api { pub fn empty[A]() -> List[A]; } }
   }
 }
 ",
@@ -3526,16 +3483,15 @@ v(2) {
     #[test]
     fn breaking_log_filter_keeps_only_groups_supporting_surviving_refs() {
         let file = parse(
-            "\
-signature app v(2);
+            "sig app v(2);
 
 v(1) {
-  nonbreaking { add { module api { pub fn seed() -> .; } } }
+  nonbreaking { add { mod api { pub fn seed() -> .; } } }
 }
 
 v(2) {
   with {
-    module api {
+    mod api {
       rec {
         pub type A = B | C;
         pub type { B: A { pub mk; pub get; }; };
@@ -3577,12 +3533,11 @@ v(2) {
     #[test]
     fn breaking_log_filter_keeps_unchanged_peers_from_a_split_epoch() {
         let file = parse(
-            "\
-signature app v(2);
+            "sig app v(2);
 
 v(1) {
   with {
-    module api {
+    mod api {
       rec {
         pub type A = B | C;
         pub type { B: A { pub mk; pub get; }; };
@@ -3595,7 +3550,7 @@ v(1) {
 
 v(2) {
   with {
-    module api {
+    mod api {
       rec {
         pub type A = B | C;
         pub type { B: A { pub mk; pub get; }; };
@@ -3604,7 +3559,7 @@ v(2) {
   };
   breaking {
     modify {
-      module api {
+      mod api {
         pub type { C: . { pub mk; pub get; }; };
       }
     }
@@ -3631,13 +3586,12 @@ v(2) {
     #[test]
     fn compact_rejects_missing_historical_type_before_future_rebinding() {
         let file = parse(
-            "\
-signature app v(3);
+            "sig app v(3);
 
 v(1) {
   breaking {
     add {
-      module api {
+      mod api {
         import api as local;
         host fn consume(x: local.Later) -> .;
       }
@@ -3648,7 +3602,7 @@ v(1) {
 v(2) {
   breaking {
     add {
-      module api {
+      mod api {
         host type Later;
       }
     }
@@ -3673,25 +3627,24 @@ v(2) {
     #[test]
     fn frozen_closure_normalization_ignores_spans_and_import_order() {
         let left = replay_src(
-            "\
-signature app v(3);
+            "sig app v(3);
 
 v(1) {
   nonbreaking {
     add {
-      module right {
+      mod right {
         host type Right;
       };
-      module left {
+      mod left {
         host type Left;
       };
-      module types {
-        import left(Left);
-        import right(Right);
+      mod types {
+        import left {type Left};
+        import right {type Right};
         type Pair = Left & Right;
       };
-      module api {
-        import types(Pair);
+      mod api {
+        import types {type Pair};
         host fn consume(x: Pair) -> .;
       }
     }
@@ -3701,35 +3654,34 @@ v(1) {
 v(2) {
   nonbreaking {
     remove {
-      module api {
-        consume;
-      }
+
+        api.consume;
+
     }
   }
 }
 ",
         );
         let right = replay_src(
-            "\
-signature app v(2);
+            "sig app v(2);
 
 
 v(1) {
   nonbreaking {
     add {
-      module api {
-        import types(Pair);
+      mod api {
+        import types {type Pair};
         host fn consume(x: Pair) -> .;
       };
-      module types {
-        import right(Right);
-        import left(Left);
+      mod types {
+        import right {type Right};
+        import left {type Left};
         type Pair = Left & Right;
       };
-      module left {
+      mod left {
         host type Left;
       };
-      module right {
+      mod right {
         host type Right;
       }
     }
@@ -3739,9 +3691,9 @@ v(1) {
 v(2) {
   nonbreaking {
     remove {
-      module api {
-        consume;
-      }
+
+        api.consume;
+
     }
   }
 }
@@ -3776,26 +3728,25 @@ v(2) {
     fn frozen_closure_normalization_distinguishes_changed_local_import() {
         let with_alias_import = |origin: &str| {
             replay_src(&format!(
-                "\
-signature app v(2);
+                "sig app v(2);
 
 v(1) {{
   nonbreaking {{
     add {{
-      module left {{
+      mod left {{
         host type Raw;
       }};
-      module right {{
+      mod right {{
         host type Raw;
       }};
-      module types {{
-        import {origin}(Raw);
+      mod types {{
+        import {origin} {{type Raw}};
         type Wrapped = Raw;
       }};
-      module api {{
+      mod api {{
         import left as left_types;
         import right as right_types;
-        import types(Wrapped);
+        import types {{type Wrapped}};
         host fn consume(wrapped: Wrapped, left_raw: left_types.Raw, right_raw: right_types.Raw) -> .;
       }}
     }}
@@ -3805,9 +3756,8 @@ v(1) {{
 v(2) {{
   nonbreaking {{
     remove {{
-      module api {{
-        consume;
-      }}
+        api.consume;
+
     }}
   }}
 }}
@@ -3871,8 +3821,8 @@ v(2) {{
             .find(|(name, _)| name == &QualifiedName::new("types", "Wrapped"))
             .expect("right Wrapped declaration")
             .1;
-        assert!(left_wrapped.contains("import left(Raw);"));
-        assert!(right_wrapped.contains("import right(Raw);"));
+        assert!(left_wrapped.contains("import left { type Raw }"));
+        assert!(right_wrapped.contains("import right { type Raw }"));
         assert_ne!(left[0].frozen_type_closure, right[0].frozen_type_closure);
         assert_ne!(
             left, right,
@@ -3885,12 +3835,11 @@ v(2) {{
     #[test]
     fn frozen_closure_normalization_distinguishes_all_type_declaration_kinds() {
         let host_type = normalized_live_closure(
-            "\
-signature app v(1);
+            "sig app v(1);
 v(1) {
   nonbreaking {
     add {
-      module api {
+      mod api {
         host type Token;
         host fn consume(x: Token) -> .;
       }
@@ -3903,12 +3852,11 @@ v(1) {
         )
         .expect("host root closure");
         let type_alias = normalized_live_closure(
-            "\
-signature app v(1);
+            "sig app v(1);
 v(1) {
   nonbreaking {
     add {
-      module api {
+      mod api {
         type Token = .;
         host fn consume(x: Token) -> .;
       }
@@ -3921,12 +3869,11 @@ v(1) {
         )
         .expect("host root closure");
         let newtype = normalized_live_closure(
-            "\
-signature app v(1);
+            "sig app v(1);
 v(1) {
   nonbreaking {
     add {
-      module api {
+      mod api {
         type { Token: . { pub mk; pub get; }; };
         host fn consume(x: Token) -> .;
       }
@@ -3955,13 +3902,12 @@ v(1) {
     #[test]
     fn compact_rejects_cut_past_header_before_staged_state_becomes_break() {
         let file = parse(
-            "\
-signature app v(2);
+            "sig app v(2);
 
 v(1) {
   breaking {
     add {
-      module api {
+      mod api {
         host fn need() -> .;
       }
     }
@@ -3971,7 +3917,7 @@ v(1) {
 v(2) {
   nonbreaking {
     add {
-      module api {
+      mod api {
         pub fn provide() -> .;
       }
     }
@@ -4039,13 +3985,12 @@ v(2) {
     #[test]
     fn compact_rejects_pre_cut_modify_and_remove() {
         let modified = parse(
-            "\
-signature app v(3);
+            "sig app v(3);
 
 v(1) {
   nonbreaking {
     add {
-      module api {
+      mod api {
         pub fn provide(x: .) -> .;
       }
     }
@@ -4055,7 +4000,7 @@ v(1) {
 v(2) {
   breaking {
     modify {
-      module api {
+      mod api {
         pub fn provide(x: ., y: .) -> .;
       }
     }
@@ -4074,13 +4019,12 @@ v(2) {
         );
 
         let removed = parse(
-            "\
-signature app v(3);
+            "sig app v(3);
 
 v(1) {
   nonbreaking {
     add {
-      module api {
+      mod api {
         pub fn provide() -> .;
       }
     }
@@ -4090,9 +4034,9 @@ v(1) {
 v(2) {
   breaking {
     remove {
-      module api {
-        provide;
-      }
+
+        api.provide;
+
     }
   }
 }
@@ -4116,13 +4060,12 @@ v(2) {
     #[test]
     fn compact_rejects_pre_cut_re_add() {
         let file = parse(
-            "\
-signature app v(3);
+            "sig app v(3);
 
 v(1) {
   nonbreaking {
     add {
-      module api {
+      mod api {
         pub fn provide() -> .;
       }
     }
@@ -4132,7 +4075,7 @@ v(1) {
 v(2) {
   nonbreaking {
     add {
-      module api {
+      mod api {
         pub fn provide(x: .) -> .;
       }
     }

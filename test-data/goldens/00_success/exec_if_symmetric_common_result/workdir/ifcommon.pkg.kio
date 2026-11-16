@@ -1,4 +1,4 @@
-package ifcommon;
+pkg ifcommon;
 
 build {
   cache "out/.kio-cache/";

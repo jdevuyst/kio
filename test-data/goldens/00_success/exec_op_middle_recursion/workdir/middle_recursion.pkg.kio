@@ -1,4 +1,4 @@
-package middle_recursion;
+pkg middle_recursion;
 
 build {
   cache "out/.kio-cache/";

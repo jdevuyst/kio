@@ -1,4 +1,4 @@
-package wle;
+pkg wle;
 
 build {
   cache "out/.kio-cache/";

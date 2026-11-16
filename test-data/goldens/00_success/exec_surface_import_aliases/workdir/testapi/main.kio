@@ -1,17 +1,18 @@
-module testapi/main;
+mod testapi/main;
 
-import syntax(
-, macro identity as keep
-, macro identity as retain
-, op + _ as ++ _
-, op + _ as -- _
-, varop [* *] as [% %]
-, word as message
-, word as other
-);
+import syntax as syntax;
+import syntax {
+  lit word as message;
+  lit word as other;
+  macro identity as keep;
+  macro identity as retain;
+  op + _ as ++ _;
+  op + _ as -- _;
+  op_var [* *] as [% %]
+}
 import testapi as host;
-import testapi(String as A);
-import testapi/io(print);
+import testapi { type String as A }
+import testapi/io { fn print }
 
 fn shadow[A](_value: A) -> host.String { keep("surface\n") }
 
@@ -19,6 +20,6 @@ pub fn main() {
   print(keep(++ message));
   print(retain(-- other));
   print([% message %]);
-  print(keep(other));
+  print(syntax.id(keep(other)));
   print(shadow[.](()))
 }

@@ -29,14 +29,14 @@ bridge {
   kiodoc;
 }
 
-module kiodoc;
+mod kiodoc;
 
 __INSERT_CODE_HERE__
 -->
 
 ```kio {@row}
-import macros/row_macros(macro record, macro record_, macro select, macro with, macro with_);
-import macros/spine_macros(macro reorder_prod);
+import macros/row_macros { macro record; macro record_; macro select; macro with; macro with_ }
+import macros/spine_macros { macro reorder_prod }
 
 host type String role(str);
 
@@ -153,7 +153,7 @@ mutates the original record; the returned product contains the updated values.
 To export a bundle from a module named `people`, declare
 `pub type Person = { Name: String; Age: Int; };` there. With no entry body, the
 field types and their `mk` and `get` members inherit that public visibility.
-A consumer writes `import people(Person, Name, Age);` to name the bundle and
+A consumer writes `import people {type Person; type Name; type Age}` to name the bundle and
 use the field members. Importing `Person` alone does not also introduce `Name`
 and `Age` as local names. A qualified import, `import people as p;`, provides
 `p.Person`, `p.Name.mk` and `p.Name.get` instead.

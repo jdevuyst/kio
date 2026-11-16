@@ -1,9 +1,9 @@
 #!/bin/sh
 # A dependency's local name must not equal the first path segment of any
-# of the consumer package's own modules, so that `use <local>/…;` resolves
+# of the consumer package's own modules, so that `import <local>/… { fn name }` resolves
 # unambiguously to the dependency. Here the dependency local name `widget`
 # collides with the consumer's own root module `widget` (workdir/widget.kio,
-# `module widget;`), which sits beside the dependency's materialization
+# `mod widget;`), which sits beside the dependency's materialization
 # directory — a dependency error (exit 30 per specs/exit-codes.md;
 # specs/package.md § Dependency files, Open-world collision rule).
 #

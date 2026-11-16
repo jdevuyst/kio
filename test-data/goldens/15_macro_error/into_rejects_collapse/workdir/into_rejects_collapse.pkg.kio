@@ -1,4 +1,4 @@
-package into_rejects_collapse;
+pkg into_rejects_collapse;
 
 build {
   cache "out/.kio-cache/";

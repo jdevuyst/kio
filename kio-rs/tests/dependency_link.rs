@@ -78,23 +78,23 @@ fn kio(dir: &Path, args: &[&str]) -> (i32, String, String) {
     (code, stdout, stderr)
 }
 
-/// Write a host-free library package at `<root>/lib`: `package lib;`
+/// Write a host-free library package at `<root>/lib`: `pkg lib;`
 /// with a single module `lib` exporting a polymorphic `helper`.
 fn write_library(root: &Path) {
     write(
         &root.join("lib/lib.pkg.kio"),
-        "package lib;\n\nbridge {\n  lib;\n}\n",
+        "pkg lib;\n\nbridge {\n  lib;\n}\n",
     );
     write(
         &root.join("lib/lib.kio"),
-        "module lib;\n\npub fn helper[A](x: A) -> A { x }\n",
+        "mod lib;\n\npub fn helper[A](x: A) -> A { x }\n",
     );
 }
 
 /// A consumer package that declares a `lib` dependency by relative
 /// `path` and imports `helper` across the re-rooted edge typechecks
 /// clean: the dependency's `lib` module re-roots to `lib/lib`, and
-/// `import lib/lib(helper);` resolves to its `pub fn helper`.
+/// `import lib/lib { fn helper }` resolves to its `pub fn helper`.
 #[test]
 fn consumer_depending_on_local_library_typechecks() {
     let tmp = TempDir::new();
@@ -103,15 +103,15 @@ fn consumer_depending_on_local_library_typechecks() {
 
     write(
         &root.join("consumer/consumer.pkg.kio"),
-        "package consumer;\n\nbridge {\n  main;\n}\n",
+        "pkg consumer;\n\nbridge {\n  main;\n}\n",
     );
     write(
         &root.join("consumer/lib.dep.kio"),
-        "dependency lib;\n\nsource {\n  path \"../lib/lib.pkg.kio\";\n}\n",
+        "dep lib;\n\nsource {\n  path \"../lib/lib.pkg.kio\";\n}\n",
     );
     write(
         &root.join("consumer/main.kio"),
-        "module main;\n\nimport lib/lib(helper);\n\npub fn run[A](x: A) -> A { helper(x) }\n",
+        "mod main;\n\nimport lib/lib { fn helper }\n\npub fn run[A](x: A) -> A { helper(x) }\n",
     );
 
     let consumer = root.join("consumer");
@@ -132,7 +132,7 @@ fn consumer_depending_on_local_library_typechecks() {
 
 /// A dependency whose own modules cross-reference each other (module
 /// `core` imports `helper`) keeps resolving after the dependency is
-/// re-rooted: re-rooting must rewrite the intra-dependency `import helper(h);`
+/// re-rooted: re-rooting must rewrite the intra-dependency `import helper { fn h }`
 /// to `import <local>/helper(h);`, not only the `module`
 /// declarations. Without that, `helper` resolves to a non-existent root
 /// module of the merged package and the consumer's `check` fails with
@@ -146,28 +146,28 @@ fn intra_dependency_import_resolves_after_rerooting() {
     // `helper` and re-exports it through `run`.
     write(
         &root.join("dep/dep.pkg.kio"),
-        "package dep;\n\nbridge {\n  core;\n  helper;\n}\n",
+        "pkg dep;\n\nbridge {\n  core;\n  helper;\n}\n",
     );
     write(
         &root.join("dep/core.kio"),
-        "module core;\n\nimport helper(h);\n\npub fn run[A](x: A) -> A { h(x) }\n",
+        "mod core;\n\nimport helper { fn h }\n\npub fn run[A](x: A) -> A { h(x) }\n",
     );
     write(
         &root.join("dep/helper.kio"),
-        "module helper;\n\npub fn h[A](x: A) -> A { x }\n",
+        "mod helper;\n\npub fn h[A](x: A) -> A { x }\n",
     );
 
     write(
         &root.join("consumer/consumer.pkg.kio"),
-        "package consumer;\n\nbridge {\n  main;\n}\n",
+        "pkg consumer;\n\nbridge {\n  main;\n}\n",
     );
     write(
         &root.join("consumer/dep.dep.kio"),
-        "dependency dep;\n\nsource {\n  path \"../dep/dep.pkg.kio\";\n}\n",
+        "dep dep;\n\nsource {\n  path \"../dep/dep.pkg.kio\";\n}\n",
     );
     write(
         &root.join("consumer/main.kio"),
-        "module main;\n\nimport dep/core(run);\n\npub fn use_it[A](x: A) -> A { run(x) }\n",
+        "mod main;\n\nimport dep/core { fn run }\n\npub fn use_it[A](x: A) -> A { run(x) }\n",
     );
 
     let consumer = root.join("consumer");
@@ -198,21 +198,21 @@ fn dependency_name_colliding_with_local_module_is_a_dep_error() {
 
     write(
         &root.join("consumer/consumer.pkg.kio"),
-        "package consumer;\n\nbridge {\n  main;\n  lib;\n}\n",
+        "pkg consumer;\n\nbridge {\n  main;\n  lib;\n}\n",
     );
     write(
         &root.join("consumer/lib.dep.kio"),
-        "dependency lib;\n\nsource {\n  path \"../lib/lib.pkg.kio\";\n}\n",
+        "dep lib;\n\nsource {\n  path \"../lib/lib.pkg.kio\";\n}\n",
     );
     write(
         &root.join("consumer/main.kio"),
-        "module main;\n\npub fn run[A](x: A) -> A { x }\n",
+        "mod main;\n\npub fn run[A](x: A) -> A { x }\n",
     );
     // A local module `lib` whose first segment collides with the
     // dependency's local name.
     write(
         &root.join("consumer/lib.kio"),
-        "module lib;\n\npub fn local_thing[A](x: A) -> A { x }\n",
+        "mod lib;\n\npub fn local_thing[A](x: A) -> A { x }\n",
     );
 
     // The collision is detected during materialization, so it surfaces at
@@ -238,15 +238,15 @@ fn dependency_path_that_does_not_resolve_is_a_dep_error() {
 
     write(
         &root.join("consumer/consumer.pkg.kio"),
-        "package consumer;\n\nbridge {\n  main;\n}\n",
+        "pkg consumer;\n\nbridge {\n  main;\n}\n",
     );
     write(
         &root.join("consumer/lib.dep.kio"),
-        "dependency lib;\n\nsource {\n  path \"../nonexistent/lib.pkg.kio\";\n}\n",
+        "dep lib;\n\nsource {\n  path \"../nonexistent/lib.pkg.kio\";\n}\n",
     );
     write(
         &root.join("consumer/main.kio"),
-        "module main;\n\npub fn run[A](x: A) -> A { x }\n",
+        "mod main;\n\npub fn run[A](x: A) -> A { x }\n",
     );
 
     // Path resolution happens during materialization, so an unresolvable
@@ -274,42 +274,42 @@ fn materialized_nested_dependency_re_roots_with_dependency() {
     // A leaf library `deeplib`.
     write(
         &root.join("deeplib/deeplib.pkg.kio"),
-        "package deeplib;\n\nbridge {\n  deeplib;\n}\n",
+        "pkg deeplib;\n\nbridge {\n  deeplib;\n}\n",
     );
     write(
         &root.join("deeplib/deeplib.kio"),
-        "module deeplib;\n\npub fn deep[A](x: A) -> A { x }\n",
+        "mod deeplib;\n\npub fn deep[A](x: A) -> A { x }\n",
     );
     // `lib` depends on `deeplib`; its local materialized tree mirrors
     // what `kio dep fetch` in `lib` would have written.
     write(
         &root.join("lib/lib.pkg.kio"),
-        "package lib;\n\nbridge {\n  lib;\n}\n",
+        "pkg lib;\n\nbridge {\n  lib;\n}\n",
     );
     write(
         &root.join("lib/lib.kio"),
-        "module lib;\n\nimport deeplib/deeplib(deep);\n\npub fn helper[A](x: A) -> A { deep(x) }\n",
+        "mod lib;\n\nimport deeplib/deeplib { fn deep }\n\npub fn helper[A](x: A) -> A { deep(x) }\n",
     );
     write(
         &root.join("lib/deeplib.dep.kio"),
-        "dependency deeplib;\n\nsource {\n  path \"../deeplib/deeplib.pkg.kio\";\n}\n",
+        "dep deeplib;\n\nsource {\n  path \"../deeplib/deeplib.pkg.kio\";\n}\n",
     );
     write(
         &root.join("lib/deeplib/deeplib.kio"),
-        "module deeplib/deeplib;\n\npub fn deep[A](x: A) -> A { x }\n",
+        "mod deeplib/deeplib;\n\npub fn deep[A](x: A) -> A { x }\n",
     );
     // The consumer depends on `lib`.
     write(
         &root.join("consumer/consumer.pkg.kio"),
-        "package consumer;\n\nbridge {\n  main;\n}\n",
+        "pkg consumer;\n\nbridge {\n  main;\n}\n",
     );
     write(
         &root.join("consumer/lib.dep.kio"),
-        "dependency lib;\n\nsource {\n  path \"../lib/lib.pkg.kio\";\n}\n",
+        "dep lib;\n\nsource {\n  path \"../lib/lib.pkg.kio\";\n}\n",
     );
     write(
         &root.join("consumer/main.kio"),
-        "module main;\n\nimport lib/lib(helper);\n\npub fn run[A](x: A) -> A { helper(x) }\n",
+        "mod main;\n\nimport lib/lib { fn helper }\n\npub fn run[A](x: A) -> A { helper(x) }\n",
     );
 
     let consumer = root.join("consumer");

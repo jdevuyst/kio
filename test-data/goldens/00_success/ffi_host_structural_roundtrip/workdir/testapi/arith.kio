@@ -1,5 +1,5 @@
-module testapi/arith;
+mod testapi/arith;
 
-import testapi(I32, String);
+import testapi { type I32; type String }
 
 host fn make_pair(n: I32, s: String) -> I32 & String;

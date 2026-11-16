@@ -1,14 +1,14 @@
-module signal/input;
+mod signal/input;
 
 import list/core as lists;
 import list/list as traversal;
-import macros/match(macro match);
-import macros/spine_macros(macro widen_sum);
+import macros/match { macro match }
+import macros/spine_macros { macro widen_sum }
 import signal/codec as codec;
-import testapi(I32, String);
+import testapi { type I32; type String }
 import testapi/fmt as fmt;
 import testapi/io as io;
-import testapi/iter(loop);
+import testapi/iter { fn loop }
 
 pub type Read_result = (codec.Encoder & lists.List[I32]) | String;
 

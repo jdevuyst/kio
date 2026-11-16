@@ -1,4 +1,4 @@
-package macro_nested_type_fuel_fixed_tuple;
+pkg macro_nested_type_fuel_fixed_tuple;
 
 build {
   cache "out/.kio-cache/";

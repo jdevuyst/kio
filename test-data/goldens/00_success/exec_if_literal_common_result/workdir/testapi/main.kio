@@ -1,4 +1,4 @@
-module testapi/main;
+mod testapi/main;
 
 import cases/additional_role as additional;
 import cases/anchored as anchored;
@@ -7,8 +7,8 @@ import cases/plain as plain;
 import cases/related_imports as related_imports;
 import cases/related_plain as related_plain;
 import cases/structural as structural;
-import testapi(Bool, String);
-import testapi/io(print);
+import testapi { type Bool; type String }
+import testapi/io { fn print }
 
 pub fn main() {
   print(plain.literal_first(.t, "known"));

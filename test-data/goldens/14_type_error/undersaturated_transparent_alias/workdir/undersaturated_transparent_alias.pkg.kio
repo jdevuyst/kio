@@ -1,4 +1,4 @@
-package undersaturated_transparent_alias;
+pkg undersaturated_transparent_alias;
 
 build {
   cache "out/.kio-cache/";

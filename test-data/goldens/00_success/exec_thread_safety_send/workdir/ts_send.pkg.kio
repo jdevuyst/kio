@@ -1,4 +1,4 @@
-package ts_send;
+pkg ts_send;
 
 build {
   cache "out/.kio-cache/";

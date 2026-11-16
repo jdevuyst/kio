@@ -582,7 +582,6 @@ pub(super) trait LoweredToPrePrime {
             name: h.name.clone(),
             type_params: h.type_params.clone(),
             role: h.role,
-            owned: h.owned,
             meta: convert_meta(&h.meta),
             doc: h.doc.clone(),
         })

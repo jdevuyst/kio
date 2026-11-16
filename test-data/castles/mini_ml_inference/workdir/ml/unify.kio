@@ -1,13 +1,13 @@
-module ml/unify;
+mod ml/unify;
 
 import list/core as lists;
 import list_host as number;
-import macros/control(macro if);
-import macros/match(macro match);
-import macros/spine_macros(macro widen_sum);
+import macros/control { macro if }
+import macros/match { macro match }
+import macros/spine_macros { macro widen_sum }
 import ml/types as types;
-import testapi(Bool, I32, String);
-import testapi/iter(loop);
+import testapi { type Bool; type I32; type String }
+import testapi/iter { fn loop }
 
 type Equations = lists.List[types.Ty & types.Ty];
 

@@ -1,9 +1,9 @@
-module testapi/main;
+mod testapi/main;
 
-import lib(identity);
-import lib/combine(keep_first);
-import testapi(String);
-import testapi/io(print);
+import lib { fn identity }
+import lib/combine { fn keep_first }
+import testapi { type String }
+import testapi/io { fn print }
 
 pub fn main() {
   let a = identity[String]("submodule under kio-prime: ok\n"[String]);

@@ -1,4 +1,4 @@
-package exec_read_ascii_line_stdin;
+pkg exec_read_ascii_line_stdin;
 
 build {
   cache "out/.kio-cache/";

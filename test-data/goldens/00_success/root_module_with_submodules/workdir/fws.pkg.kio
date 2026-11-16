@@ -1,4 +1,4 @@
-package fws;
+pkg fws;
 
 build {
   cache "out/.kio-cache/";

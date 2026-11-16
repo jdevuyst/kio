@@ -1,4 +1,4 @@
-package ffi_returned_forall_host_failure;
+pkg ffi_returned_forall_host_failure;
 
 build {
   cache "out/.kio-cache/";

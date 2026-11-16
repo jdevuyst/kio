@@ -1,4 +1,4 @@
-package exec_factorial;
+pkg exec_factorial;
 
 build {
   cache "out/.kio-cache/";

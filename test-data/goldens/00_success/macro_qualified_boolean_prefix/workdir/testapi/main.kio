@@ -1,8 +1,8 @@
-module testapi/main;
+mod testapi/main;
 
 import helpers as a;
-import helpers(macro choose);
-import testapi/io(print);
+import helpers { macro choose }
+import testapi/io { fn print }
 
 fn combine(_first: ., last: .) { last }
 

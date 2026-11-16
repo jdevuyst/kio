@@ -1,4 +1,4 @@
-package role_host_type_parameters;
+pkg role_host_type_parameters;
 
 build {
   cache "out/.kio-cache/";

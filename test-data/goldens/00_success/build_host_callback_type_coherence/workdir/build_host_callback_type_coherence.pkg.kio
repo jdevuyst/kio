@@ -1,4 +1,4 @@
-package build_host_callback_type_coherence;
+pkg build_host_callback_type_coherence;
 
 build {
   cache "out/.kio-cache/";

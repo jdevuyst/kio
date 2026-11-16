@@ -726,8 +726,7 @@ fn classify_fence(
     if variant != KioFileKind::Module && p.harness_ref.is_some() {
         return Err(DocError {
             span: fence.span,
-            message: "`variant=` is exclusive with `@NAME` — non-module variant \
-                      snippets are always standalone, not harness members"
+            message: "`variant=` is exclusive with `@NAME` — non-module variant snippets are always standalone, not harness members"
                 .to_owned(),
         });
     }
@@ -831,18 +830,18 @@ fn infer_document_file_header(body: &str, span: Span) -> Result<DocumentFileHead
 
     let kind = match tokens.first().map(|t| &t.kind) {
         Some(TokenKind::Ident(first)) => {
-            KioFileKind::from_variant_name(first).ok_or_else(|| DocError {
+            KioFileKind::from_header_keyword(first).ok_or_else(|| DocError {
                 span,
-                message: "`{file}` fence body must start with `module`, `package`, \
-                          `signature`, `dependency`, or `lock`"
+                message: "`{file}` fence body must start with `mod`, `pkg`, \
+                          `sig`, `dep`, or `lock`"
                     .to_owned(),
             })?
         }
         _ => {
             return Err(DocError {
                 span,
-                message: "`{file}` fence body must start with `module`, `package`, \
-                          `signature`, `dependency`, or `lock`"
+                message: "`{file}` fence body must start with `mod`, `pkg`, \
+                          `sig`, `dep`, or `lock`"
                     .to_owned(),
             });
         }
@@ -862,8 +861,7 @@ fn infer_document_file_header(body: &str, span: Span) -> Result<DocumentFileHead
     if !kind.accepts_module_path() && segments.len() != 1 {
         return Err(DocError {
             span,
-            message: "non-module file headers must name a root-level stem, \
-                      not a slash-qualified module path"
+            message: "non-module file headers must name a root-level stem, not a slash-qualified module path"
                 .to_owned(),
         });
     }
@@ -999,8 +997,7 @@ fn parse_non_module_header_stem(
     ) {
         return Err(DocError {
             span,
-            message: "non-module file headers must name a root-level stem, \
-                      not a slash-qualified module path"
+            message: "non-module file headers must name a root-level stem, not a slash-qualified module path"
                 .to_owned(),
         });
     }
@@ -1229,7 +1226,7 @@ mod tests {
     #[test]
     fn custom_harness_placeholder_records_position() {
         let src =
-            "```kio {harness=main placeholder=\"__SNIPPET__\"}\nmodule x/main;\n__SNIPPET__\n```\n";
+            "```kio {harness=main placeholder=\"__SNIPPET__\"}\nmod x/main;\n__SNIPPET__\n```\n";
         let d = build_from(src).unwrap();
         let h = d.harnesses.get("main").unwrap();
         assert_eq!(h.placeholder, "__SNIPPET__");
@@ -1291,7 +1288,7 @@ mod tests {
 
     #[test]
     fn ignore_may_combine_with_variant() {
-        let src = "```kio {variant=package ignore}\npackage pkg;\n```\n";
+        let src = "```kio {variant=package ignore}\npkg pkg;\n```\n";
         let d = build_from(src).unwrap();
         let snip: Vec<_> = d.snippets().collect();
         assert_eq!(snip.len(), 1);
@@ -1308,7 +1305,7 @@ mod tests {
 
     #[test]
     fn file_fence_infers_path_from_header() {
-        let src = "```kio {file}\nmodule core;\nfn id[A](x: A) -> A { x }\n```\n";
+        let src = "```kio {file}\nmod core;\nfn id[A](x: A) -> A { x }\n```\n";
         let d = build_from(src).unwrap();
         let file = d.files.get("core.kio").unwrap();
         assert_eq!(file.header.kind, KioFileKind::Module);
@@ -1319,8 +1316,9 @@ mod tests {
     #[test]
     fn file_fence_infers_paths_from_non_module_headers() {
         for (header, path, kind) in [
-            ("signature pkg v(1);", "pkg.sig.kio", KioFileKind::Signature),
-            ("dependency dep;", "dep.dep.kio", KioFileKind::Dependency),
+            ("pkg pkg;", "pkg.pkg.kio", KioFileKind::Package),
+            ("sig pkg v(1);", "pkg.sig.kio", KioFileKind::Signature),
+            ("dep dep;", "dep.dep.kio", KioFileKind::Dependency),
             ("lock dep;", "dep.lock.kio", KioFileKind::Lock),
         ] {
             let src = format!("```kio {{file}}\n{header}\n```\n");
@@ -1332,8 +1330,7 @@ mod tests {
 
     #[test]
     fn file_fence_infers_path_after_leading_comments() {
-        let src =
-            "```kio {file}\n// ; not a header\n/// also ; not a header\nsignature pkg v(1);\n```\n";
+        let src = "```kio {file}\n// ; not a header\n/// also ; not a header\nsig pkg v(1);\n```\n";
         let d = build_from(src).unwrap();
         let file = d.files.get("pkg.sig.kio").unwrap();
         assert_eq!(file.header.kind, KioFileKind::Signature);
@@ -1341,7 +1338,7 @@ mod tests {
 
     #[test]
     fn file_fence_infers_non_module_path_without_parsing_header_tail() {
-        let src = "```kio {file}\nsignature pkg not_the_real_sig_header;\n```\n";
+        let src = "```kio {file}\nsig pkg not_the_real_sig_header;\n```\n";
         let d = build_from(src).unwrap();
         let file = d.files.get("pkg.sig.kio").unwrap();
         assert_eq!(file.header.kind, KioFileKind::Signature);
@@ -1349,7 +1346,7 @@ mod tests {
 
     #[test]
     fn file_backed_harness_infers_insertion_path() {
-        let src = "```kio {harness=m file placeholder=\"__SNIPPET__\"}\nmodule pkg/main;\n__SNIPPET__\n```\n\n```kio {@m}\nfn f() -> . { () }\n```\n";
+        let src = "```kio {harness=m file placeholder=\"__SNIPPET__\"}\nmod pkg/main;\n__SNIPPET__\n```\n\n```kio {@m}\nfn f() -> . { () }\n```\n";
         let d = build_from(src).unwrap();
         let h = d.harnesses.get("m").unwrap();
         assert_eq!(h.file.as_ref().unwrap().path, "pkg/main.kio");
@@ -1401,7 +1398,7 @@ mod tests {
 
     #[test]
     fn classify_top_level_marker() {
-        let body = "module kio/main;\nhost type S role(str);\n\n__INSERT_CODE_HERE__\n";
+        let body = "mod kio/main;\nhost type S role(str);\n\n__INSERT_CODE_HERE__\n";
         assert_eq!(
             classify_marker_position(body, "__INSERT_CODE_HERE__"),
             MarkerPosition::TopLevel
@@ -1410,7 +1407,7 @@ mod tests {
 
     #[test]
     fn classify_block_marker_inside_fn() {
-        let body = "module kio/main;\n\npub fn main() -> . { __INSERT_CODE_HERE__ }\n";
+        let body = "mod kio/main;\n\npub fn main() -> . { __INSERT_CODE_HERE__ }\n";
         assert_eq!(
             classify_marker_position(body, "__INSERT_CODE_HERE__"),
             MarkerPosition::Block
@@ -1420,7 +1417,7 @@ mod tests {
     #[test]
     fn classify_block_marker_nested_groups() {
         let body =
-            "module kio/main;\nfn outer() -> . { let inner = .() { __INSERT_CODE_HERE__ }; () }\n";
+            "mod kio/main;\nfn outer() -> . { let inner = .() { __INSERT_CODE_HERE__ }; () }\n";
         assert_eq!(
             classify_marker_position(body, "__INSERT_CODE_HERE__"),
             MarkerPosition::Block
@@ -1430,7 +1427,7 @@ mod tests {
     #[test]
     fn classify_top_level_ignores_brace_in_line_comment() {
         // A `{` inside a `//` comment must not start a block.
-        let body = "// note { not a real brace\nmodule x/main;\n\n__INSERT_CODE_HERE__\n";
+        let body = "// note { not a real brace\nmod x/main;\n\n__INSERT_CODE_HERE__\n";
         assert_eq!(
             classify_marker_position(body, "__INSERT_CODE_HERE__"),
             MarkerPosition::TopLevel
@@ -1448,7 +1445,7 @@ mod tests {
 
     #[test]
     fn classify_top_level_ignores_brace_in_block_comment() {
-        let body = "/* { not a real brace */\nmodule x/main;\n\n__INSERT_CODE_HERE__\n";
+        let body = "/* { not a real brace */\nmod x/main;\n\n__INSERT_CODE_HERE__\n";
         assert_eq!(
             classify_marker_position(body, "__INSERT_CODE_HERE__"),
             MarkerPosition::TopLevel
@@ -1457,7 +1454,7 @@ mod tests {
 
     #[test]
     fn harness_records_top_level_position_by_default() {
-        let src = "```kio {harness=m placeholder=\"__INSERT_CODE_HERE__\"}\nmodule x/main;\n__INSERT_CODE_HERE__\n```\n";
+        let src = "```kio {harness=m placeholder=\"__INSERT_CODE_HERE__\"}\nmod x/main;\n__INSERT_CODE_HERE__\n```\n";
         let d = build_from(src).unwrap();
         let h = d.harnesses.get("m").unwrap();
         assert_eq!(h.marker_position, MarkerPosition::TopLevel);
@@ -1466,7 +1463,7 @@ mod tests {
 
     #[test]
     fn harness_records_block_position_when_wrapped() {
-        let src = "```kio {harness=m placeholder=\"__INSERT_CODE_HERE__\"}\nmodule x/main;\npub fn main() -> . { __INSERT_CODE_HERE__ }\n```\n";
+        let src = "```kio {harness=m placeholder=\"__INSERT_CODE_HERE__\"}\nmod x/main;\npub fn main() -> . { __INSERT_CODE_HERE__ }\n```\n";
         let d = build_from(src).unwrap();
         let h = d.harnesses.get("m").unwrap();
         assert_eq!(h.marker_position, MarkerPosition::Block);
@@ -1476,7 +1473,7 @@ mod tests {
 
     #[test]
     fn harness_records_accumulate_flag() {
-        let src = "```kio {harness=m placeholder=\"__INSERT_CODE_HERE__\" accumulate}\nmodule x/main;\n__INSERT_CODE_HERE__\n```\n";
+        let src = "```kio {harness=m placeholder=\"__INSERT_CODE_HERE__\" accumulate}\nmod x/main;\n__INSERT_CODE_HERE__\n```\n";
         let d = build_from(src).unwrap();
         let h = d.harnesses.get("m").unwrap();
         assert!(h.accumulate);
@@ -1484,14 +1481,14 @@ mod tests {
 
     #[test]
     fn harness_rejects_unknown_bare_flag() {
-        let src = "```kio {harness=m placeholder=\"__INSERT_CODE_HERE__\" weird}\nmodule x/main;\n__INSERT_CODE_HERE__\n```\n";
+        let src = "```kio {harness=m placeholder=\"__INSERT_CODE_HERE__\" weird}\nmod x/main;\n__INSERT_CODE_HERE__\n```\n";
         let err = build_from(src).unwrap_err();
         assert!(err.message.contains("bare attribute `weird`"));
     }
 
     #[test]
     fn accumulating_member_with_check_exit_code_errors() {
-        let src = "```kio {harness=m placeholder=\"__INSERT_CODE_HERE__\" accumulate}\nmodule x/main;\n__INSERT_CODE_HERE__\n```\n\n```kio {@m check_exit_code=14}\nfn f() -> . { () }\n```\n";
+        let src = "```kio {harness=m placeholder=\"__INSERT_CODE_HERE__\" accumulate}\nmod x/main;\n__INSERT_CODE_HERE__\n```\n\n```kio {@m check_exit_code=14}\nfn f() -> . { () }\n```\n";
         let err = build_from(src).unwrap_err();
         assert!(err.message.contains("check_exit_code"));
         assert!(err.message.contains("accumulating harness"));
@@ -1499,7 +1496,7 @@ mod tests {
 
     #[test]
     fn accumulating_member_with_stdout_errors() {
-        let src = "```kio {harness=m placeholder=\"__INSERT_CODE_HERE__\" accumulate}\nmodule x/main;\n__INSERT_CODE_HERE__\n```\n\n```kio {@m stdout}\nfn f() -> . { () }\n```\n";
+        let src = "```kio {harness=m placeholder=\"__INSERT_CODE_HERE__\" accumulate}\nmod x/main;\n__INSERT_CODE_HERE__\n```\n\n```kio {@m stdout}\nfn f() -> . { () }\n```\n";
         let err = build_from(src).unwrap_err();
         assert!(err.message.contains("run-trigger"));
         assert!(err.message.contains("accumulating harness"));
@@ -1509,7 +1506,7 @@ mod tests {
 
     #[test]
     fn variant_default_module() {
-        let src = "```kio {}\nmodule x/main;\nfn f() -> . { () }\n```\n";
+        let src = "```kio {}\nmod x/main;\nfn f() -> . { () }\n```\n";
         let d = build_from(src).unwrap();
         let s = d.snippets().next().unwrap();
         assert_eq!(s.variant, KioFileKind::Module);
@@ -1517,7 +1514,7 @@ mod tests {
 
     #[test]
     fn variant_package_recognized() {
-        let src = "```kio {variant=package}\npackage pkg;\n```\n";
+        let src = "```kio {variant=package}\npkg pkg;\n```\n";
         let d = build_from(src).unwrap();
         let s = d.snippets().next().unwrap();
         assert_eq!(s.variant, KioFileKind::Package);
@@ -1546,7 +1543,7 @@ mod tests {
 
     #[test]
     fn variant_with_harness_ref_errors() {
-        let src = "```kio {harness=m placeholder=\"__INSERT_CODE_HERE__\"}\n__INSERT_CODE_HERE__\n```\n\n```kio {@m variant=package}\npackage pkg;\n```\n";
+        let src = "```kio {harness=m placeholder=\"__INSERT_CODE_HERE__\"}\n__INSERT_CODE_HERE__\n```\n\n```kio {@m variant=package}\npkg pkg;\n```\n";
         let err = build_from(src).unwrap_err();
         assert!(err.message.contains("variant="));
         assert!(err.message.contains("standalone"));

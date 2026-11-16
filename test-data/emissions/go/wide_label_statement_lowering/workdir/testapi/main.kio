@@ -1,7 +1,7 @@
-module testapi/main;
+mod testapi/main;
 
-import macros/row_macros(macro select, macro with);
-import testapi(I32);
+import macros/row_macros { macro select; macro with }
+import testapi { type I32 }
 
 pub type {
   A: I32;

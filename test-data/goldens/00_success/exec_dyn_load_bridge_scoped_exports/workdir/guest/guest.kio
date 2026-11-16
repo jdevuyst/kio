@@ -1,6 +1,6 @@
-module guest;
+mod guest;
 
-import hostapi(I32);
-import internal(hidden_helper);
+import hostapi { type I32 }
+import internal { fn hidden_helper }
 
 pub fn visible(x: I32) -> I32 { hidden_helper(x) }

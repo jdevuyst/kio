@@ -1,4 +1,4 @@
-module mathlib/combinator;
+mod mathlib/combinator;
 
 pub fn id[A](x: A) -> A { x }
 

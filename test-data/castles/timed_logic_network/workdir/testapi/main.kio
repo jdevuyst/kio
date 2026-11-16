@@ -1,13 +1,13 @@
-module testapi/main;
+mod testapi/main;
 
 import list/list as traversal;
 import logic/input as input;
 import logic/model as model;
 import logic/report as report;
 import logic/simulate as simulate;
-import macros/match(macro match);
-import macros/row_macros(macro select);
-import testapi(String);
+import macros/match { macro match }
+import macros/row_macros { macro select }
+import testapi { type String }
 import testapi/io as io;
 import testapi/text as text;
 

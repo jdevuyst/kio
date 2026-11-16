@@ -1,8 +1,8 @@
-module cases/anchored;
+mod cases/anchored;
 
-import common(macro keep);
-import macros/control(macro if);
-import testapi(Bool, String);
+import common { macro keep }
+import macros/control { macro if }
+import testapi { type Bool; type String }
 
 pub fn literals(flag: Bool) -> String {
   let result = if(flag) { "left"[String] } else { "right" };

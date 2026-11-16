@@ -1,4 +1,4 @@
-package rec_unrelated_match_macro_lambda;
+pkg rec_unrelated_match_macro_lambda;
 
 build {
   cache "out/.kio-cache/";

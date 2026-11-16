@@ -1,8 +1,8 @@
-module testapi/main;
+mod testapi/main;
 
-import macros/spine_macros(macro narrow_prod);
-import testapi(I32, String);
-import testapi/io(print);
+import macros/spine_macros { macro narrow_prod }
+import testapi { type I32; type String }
+import testapi/io { fn print }
 
 // UFCS form `(x.>narrow_prod)[T]` — the receiver `x` is the source,
 // the trailing type-arg gives the target. Reads as "take p, then

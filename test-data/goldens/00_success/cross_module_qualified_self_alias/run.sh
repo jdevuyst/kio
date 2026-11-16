@@ -2,7 +2,7 @@
 # Regression: a cross-module transparent type alias whose body is the
 # QUALIFIED, same-named type (`cmqsa/n` declares `pub type A = m.A`,
 # where `m.A` is the root module's `A`; the alias `A` shadows the leaf
-# name). A consumer that imports the alias (`import cmqsa/n(A)`) and
+# name). A consumer that imports the alias (`import cmqsa/n {type A}`) and
 # uses it would send the typer into an infinite loop: alias unfolding
 # looked the alias up by its bare leaf name, so the qualified body `m.A`
 # collapsed back to leaf `A`, re-matched the same alias, and never

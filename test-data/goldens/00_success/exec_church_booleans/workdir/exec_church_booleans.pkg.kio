@@ -1,4 +1,4 @@
-package exec_church_booleans;
+pkg exec_church_booleans;
 
 build {
   cache "out/.kio-cache/";

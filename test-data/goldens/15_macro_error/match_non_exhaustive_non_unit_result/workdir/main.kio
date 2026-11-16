@@ -1,8 +1,8 @@
-module main;
+mod main;
 
-import macros/match(macro match);
-import testapi(Int);
-import testapi(String);
+import macros/match { macro match }
+import testapi { type Int }
+import testapi { type String }
 
 fn incomplete(v: String | Int) -> String {
   match(v) {

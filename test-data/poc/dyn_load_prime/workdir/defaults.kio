@@ -1,20 +1,26 @@
 /// Default entry points using the exact standard `Host_adapter` inventory and `hostrec.kio`'s `testapi/*` capabilities.
-module defaults;
+mod defaults;
 
-import eval(prime_apply, prime_eval);
-import host_descriptor(Host_type, Host_types, Role);
-import host_descriptor(bool_role, f64_role, host_types_cons, host_types_nil, i32_role);
-import host_descriptor(mk_host_fn, mk_host_id, mk_role_host_type, str_role);
-import hostrec(make_lit_default, serve_default, test_bool_default);
-import loader(Contract, Diag, Host_adapter, Image, Loaded);
-import loader(Host_fn_binding, Host_fn_bindings);
-import loader(host_fn_bindings_cons, host_fn_bindings_nil);
-import loader(instantiate, instantiate_checked);
-import loader(mk_host_adapter, mk_host_fn_binding);
-import prime(Term, group_slots_cons, group_slots_nil);
-import result(Call_result, Eval_result);
-import testapi(I32, String);
-import value(Value);
+import eval { fn prime_apply; fn prime_eval }
+import host_descriptor {
+  fn bool_role;
+  fn f64_role;
+  fn host_types_cons;
+  fn host_types_nil;
+  fn i32_role
+}
+import host_descriptor { fn mk_host_fn; fn mk_host_id; fn mk_role_host_type; fn str_role }
+import host_descriptor { type Host_type; type Host_types; type Role }
+import hostrec { fn make_lit_default; fn serve_default; fn test_bool_default }
+import loader { fn host_fn_bindings_cons; fn host_fn_bindings_nil }
+import loader { fn instantiate; fn instantiate_checked }
+import loader { fn mk_host_adapter; fn mk_host_fn_binding }
+import loader { type Contract; type Diag; type Host_adapter; type Image; type Loaded }
+import loader { type Host_fn_binding; type Host_fn_bindings }
+import prime { type Term; fn group_slots_cons; fn group_slots_nil }
+import result { type Call_result; type Eval_result }
+import testapi { type I32; type String }
+import value { type Value }
 
 // `defaults.kio` — the convenience entry points that run the loader /
 // evaluator against the **standard host capabilities** (`hostrec.kio`'s

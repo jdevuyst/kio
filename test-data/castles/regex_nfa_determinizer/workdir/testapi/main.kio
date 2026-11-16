@@ -13,7 +13,7 @@
 /// the *minimized* automaton: the twenty-four accept/reject cells are fixed
 /// by what the patterns mean, and they are what pins the rewrites to the
 /// language they started from.
-module testapi/main;
+mod testapi/main;
 
 import automata/dfa as dfa;
 import automata/minimize as minimize;
@@ -21,14 +21,14 @@ import automata/nfa as nfa;
 import automata/pattern as pattern;
 import automata/report as report;
 import automata/seq as seq;
-import automata/seq(List, fold, len, nth_or);
+import automata/seq { type List; fn fold; fn len; fn nth_or }
 import automata/subset as subset;
 import automata/suite as suite;
-import macros/control(macro if);
-import macros/match(macro match);
-import testapi(Bool, I32, String);
-import testapi/arith(add_i32, leq_i32, sub_i32);
-import testapi/iter(loop);
+import macros/control { macro if }
+import macros/match { macro match }
+import testapi { type Bool; type I32; type String }
+import testapi/arith { fn add_i32; fn leq_i32; fn sub_i32 }
+import testapi/iter { fn loop }
 
 fn stat(label: String, value: I32) {
   report.line(report.cat3("  ", label, report.cat(": ", report.num(value))))

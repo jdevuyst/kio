@@ -1,4 +1,4 @@
-package expression_slash_operator_dotted_rhs;
+pkg expression_slash_operator_dotted_rhs;
 
 build {
   cache "out/.kio-cache/";

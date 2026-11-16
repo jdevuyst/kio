@@ -1,4 +1,4 @@
-package build_comptime_type_alias_sum_elimination;
+pkg build_comptime_type_alias_sum_elimination;
 
 build {
   cache "out/.kio-cache/";

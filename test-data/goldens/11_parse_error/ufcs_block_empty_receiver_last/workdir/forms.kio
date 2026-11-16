@@ -1,4 +1,4 @@
-module forms;
+mod forms;
 
 import __comptime__;
 

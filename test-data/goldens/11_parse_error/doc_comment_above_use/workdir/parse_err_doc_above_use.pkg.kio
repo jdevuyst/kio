@@ -1,4 +1,4 @@
-package parse_err_doc_above_use;
+pkg parse_err_doc_above_use;
 
 build {
   cache "out/.kio-cache/";

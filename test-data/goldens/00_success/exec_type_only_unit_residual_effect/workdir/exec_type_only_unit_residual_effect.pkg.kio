@@ -1,4 +1,4 @@
-package exec_type_only_unit_residual_effect;
+pkg exec_type_only_unit_residual_effect;
 
 build {
   cache "out/.kio-cache/";

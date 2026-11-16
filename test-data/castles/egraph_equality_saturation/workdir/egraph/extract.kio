@@ -1,20 +1,20 @@
-module egraph/extract;
+mod egraph/extract;
 
 import egraph/graph as graph;
 import egraph/numbers as n;
-import macros/control(macro if);
-import macros/match(macro match);
-import macros/row_macros(macro select as row_select);
-import testapi(Array, Bool, I32, String);
+import macros/control { macro if }
+import macros/match { macro match }
+import macros/row_macros { macro select as row_select }
+import testapi { type Array; type Bool; type I32; type String }
 import testapi/arith as num;
 import testapi/array as arr;
 import testapi/fmt as fmt;
-import testapi/iter(loop);
+import testapi/iter { fn loop }
 import testapi/text as text;
 
 pub type { Selection: Array[I32] & Array[I32] { mk; get } }
 
-literal infinity = 100000;
+lit infinity = 100000;
 
 fn costs(s: Selection) -> Array[I32] { let .(values, _) = Selection.get(s); values }
 

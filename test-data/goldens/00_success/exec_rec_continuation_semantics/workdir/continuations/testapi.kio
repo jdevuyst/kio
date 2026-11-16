@@ -1,4 +1,4 @@
-module continuations/testapi;
+mod continuations/testapi;
 
 import testapi as _rehost_hegfhdhegbhagj;
 

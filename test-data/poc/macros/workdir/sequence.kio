@@ -1,5 +1,5 @@
 /// Sequencing through an explicitly supplied bind function.
-module sequence;
+mod sequence;
 
 import __comptime__;
 

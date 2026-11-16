@@ -45,7 +45,7 @@ expect_exit 0 "$KIO_BIN" sig status
 
 # Break: drop `serve`; force-record it into the OPEN v(2) draft (do NOT
 # seal). Status is 82 (recorded break, pending).
-printf 'module api;\n\npub fn other() -> . { () }\n' > api.kio
+printf 'mod api;\n\npub fn other() -> . { () }\n' > api.kio
 expect_exit 0 "$KIO_BIN" sig stage --force
 expect_exit 82 "$KIO_BIN" sig status
 grep -Eq 'v\(2\) \{' app.sig.kio || {
@@ -56,7 +56,7 @@ grep -Eq 'v\(2\) \{' app.sig.kio || {
 
 # RESTORE the sealed v(1) shape: re-add `pub fn serve`, drop `other`. The
 # break no longer exists vs the sealed contract.
-printf 'module api;\n\npub fn serve() -> . { () }\n' > api.kio
+printf 'mod api;\n\npub fn serve() -> . { () }\n' > api.kio
 
 # Re-stage reconciles the stale draft. The recompute (diff(v(1), live))
 # is empty, so the forced break self-retracts.
@@ -66,7 +66,7 @@ expect_exit 0 "$KIO_BIN" sig stage
 expect_exit 0 "$KIO_BIN" sig status
 
 # The open draft no longer carries a `v(2)` block — and therefore no
-# `breaking { }` section. (The header line `signature app v(2);` is not a
+# `breaking { }` section. (The header line `sig app v(2);` is not a
 # block; `v(2) {` is.)
 if grep -Eq 'v\(2\) \{' app.sig.kio; then
   printf 'the open draft must no longer carry a v(2) breaking block after retraction\n' >&2

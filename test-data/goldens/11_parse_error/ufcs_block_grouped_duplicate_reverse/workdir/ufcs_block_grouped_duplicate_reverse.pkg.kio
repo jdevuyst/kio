@@ -1,4 +1,4 @@
-package ufcs_block_grouped_duplicate_reverse;
+pkg ufcs_block_grouped_duplicate_reverse;
 
 build {
   cache "out/.kio-cache/";

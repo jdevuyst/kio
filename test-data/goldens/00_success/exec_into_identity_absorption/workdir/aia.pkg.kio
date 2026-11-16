@@ -1,4 +1,4 @@
-package aia;
+pkg aia;
 
 build {
   cache "out/.kio-cache/";

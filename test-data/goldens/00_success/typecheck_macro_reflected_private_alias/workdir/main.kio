@@ -1,6 +1,6 @@
-module main;
+mod main;
 
-import generated(macro captured_type_app);
+import generated { macro captured_type_app }
 import types as real;
 
 fn generated_alias_type_app(value: real.Actual) -> real.Actual {

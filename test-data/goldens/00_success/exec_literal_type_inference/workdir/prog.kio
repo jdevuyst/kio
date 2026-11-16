@@ -1,10 +1,10 @@
-module prog;
+mod prog;
 
 import __intrinsics__;
 
 import testapi as provider;
-import testapi(Bool as Same_truth);
-import testapi(Bool as Truth, Int, String as Text, flag, integer, text);
+import testapi { type Bool as Same_truth }
+import testapi { type Bool as Truth; type Int; type String as Text; fn flag; fn integer; fn text }
 
 host type I8 role(i8);
 

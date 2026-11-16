@@ -1,5 +1,5 @@
 /// Module-level doc-comment.
-module fmt_doc_comments/main;
+mod fmt_doc_comments/main;
 
 /// Docs for fn.
 fn hello(s: String) { print(s) }

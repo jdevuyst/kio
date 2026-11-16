@@ -1,10 +1,10 @@
 /// Ready-to-use right-biased Result library with constructors, folds, mapping, binding, recovery, and operators.
-module result/result;
+mod result/result;
 
 import __comptime__;
-import result/macros/control(Bool as Control_bool, checked_sum_dispatch, macro if);
-import result/macros/match(macro match);
-import result/macros/spine_macros(macro widen_sum);
+import result/macros/control { type Bool as Control_bool; fn checked_sum_dispatch; macro if }
+import result/macros/match { macro match }
+import result/macros/spine_macros { macro widen_sum }
 
 // `Result[T][E]` is exactly the structural sum `T | E` — success on the
 // left, error on the right (Rust's convention). There is no nominal

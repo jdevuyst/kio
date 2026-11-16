@@ -1,4 +1,4 @@
-package exec_dyn_load_identity_alias_stages;
+pkg exec_dyn_load_identity_alias_stages;
 
 build {
   cache "out/.kio-cache/";

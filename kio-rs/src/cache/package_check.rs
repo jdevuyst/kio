@@ -453,16 +453,16 @@ mod tests {
     #[test]
     fn source_hash_changes_with_content_and_path() {
         let mut base = BTreeMap::new();
-        base.insert(PathBuf::from("a.kio"), "module a;".to_owned());
+        base.insert(PathBuf::from("a.kio"), "mod a;".to_owned());
         let h_base = source_hash(&base);
         let mut renamed = BTreeMap::new();
-        renamed.insert(PathBuf::from("b.kio"), "module a;".to_owned());
+        renamed.insert(PathBuf::from("b.kio"), "mod a;".to_owned());
         assert_ne!(h_base, source_hash(&renamed));
         let mut edited = BTreeMap::new();
-        edited.insert(PathBuf::from("a.kio"), "module a; ".to_owned());
+        edited.insert(PathBuf::from("a.kio"), "mod a; ".to_owned());
         assert_ne!(h_base, source_hash(&edited));
         let mut same = BTreeMap::new();
-        same.insert(PathBuf::from("a.kio"), "module a;".to_owned());
+        same.insert(PathBuf::from("a.kio"), "mod a;".to_owned());
         assert_eq!(h_base, source_hash(&same));
     }
 

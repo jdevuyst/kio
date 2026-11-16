@@ -1,6 +1,6 @@
-module grid_firebreak_search/model;
+mod grid_firebreak_search/model;
 
-import testapi(Array, I32);
+import testapi { type Array; type I32 }
 
 pub type Plan = {
   Selected: Array[I32];

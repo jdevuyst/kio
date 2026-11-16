@@ -1,4 +1,4 @@
-package exec_rec_deferred_call_packets;
+pkg exec_rec_deferred_call_packets;
 
 build {
   cache "out/.kio-cache/";

@@ -1,4 +1,4 @@
-package abi_name_collisions;
+pkg abi_name_collisions;
 
 build {
   cache "out/.kio-cache/";

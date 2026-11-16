@@ -1,4 +1,4 @@
-package exec_dyn_load_binding_origins;
+pkg exec_dyn_load_binding_origins;
 
 build {
   cache "out/.kio-cache/";

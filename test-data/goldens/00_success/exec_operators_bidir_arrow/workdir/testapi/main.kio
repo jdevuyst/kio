@@ -1,9 +1,9 @@
-module testapi/main;
+mod testapi/main;
 
-import testapi(Int, String);
-import testapi/arith(add);
-import testapi/fmt(int_to_string);
-import testapi/io(print);
+import testapi { type Int; type String }
+import testapi/arith { fn add }
+import testapi/fmt { fn int_to_string }
+import testapi/io { fn print }
 
 // `<->` lexes as one greedy `SymbolRun("<->")` — the `->` is no
 // longer carved out of the surrounding run, so the pattern

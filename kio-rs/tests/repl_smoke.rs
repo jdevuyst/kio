@@ -59,13 +59,13 @@ impl TempPackage {
     fn write_demo_package(&self) {
         self.write(
             "demo.kio",
-            "module demo;\n\n\
+            "mod demo;\n\n\
              host type Str role(str);\n\n\
              host fn print(p0: Str) -> .;\n",
         );
         self.write(
             "demo.pkg.kio",
-            "package demo;\n\n\
+            "pkg demo;\n\n\
              bridge {\n\
                demo;\n\
                demo/**;\n\
@@ -175,7 +175,7 @@ fn repl_literal_inference_keeps_categories_and_ordinary_default_names() {
 fn repl_numbered_bindings_normalize_through_ordinary_patterns() {
     let pkg = TempPackage::new("numbered-bindings");
     pkg.write_demo_package();
-    pkg.write("demo/main.kio", "module demo/main;\npub fn unit() { () }\n");
+    pkg.write("demo/main.kio", "mod demo/main;\npub fn unit() { () }\n");
     let out = run_repl(
         pkg.path(),
         &[
@@ -324,18 +324,18 @@ fn repl_declaration_selectors_and_operator_listing() {
             ":load demo/main",
             ":ls demo/ops",
             ":sig arithmetic.(op _ + _)",
-            ":sig arithmetic.(varop [* *])",
+            ":sig arithmetic.(op_var [* *])",
             ":refs arithmetic.(op _ + _)",
             ":quit",
         ],
     );
     assert!(
-        output.contains("  pub op _ + _\n") && output.contains("  pub varop [* *]\n"),
+        output.contains("  pub op _ + _\n") && output.contains("  pub op_var [* *]\n"),
         "{output}"
     );
     assert!(
         output.contains("pub op _ + _ { impl choose }")
-            && output.contains("pub varop [* *] { foldr choose empty }"),
+            && output.contains("pub op_var [* *] { foldr choose empty }"),
         "{output}"
     );
     assert!(
@@ -348,7 +348,7 @@ fn repl_declaration_selectors_and_operator_listing() {
 #[test]
 fn repl_block_ufcs_types_and_normalizes_all_four_directions() {
     let package = TempPackage::new("block-ufcs");
-    package.write("app.pkg.kio", "package app; bridge { app; provider; }");
+    package.write("app.pkg.kio", "pkg app; bridge { app; provider; }");
     package.write(
         "provider.kio",
         &format!(
@@ -356,7 +356,7 @@ fn repl_block_ufcs_types_and_normalizes_all_four_directions() {
             include_str!("fixtures/trailing-blocks/provider.kio")
         ),
     );
-    package.write("app.kio", "module app; import provider(macro prefixed);\n");
+    package.write("app.kio", "mod app; import provider {macro prefixed}\n");
     let calls = [
         "().>prefixed(()) { () } fallback { () }",
         "().>>prefixed(()) { () } fallback { () }",
@@ -387,7 +387,7 @@ fn repl_block_ufcs_types_and_normalizes_all_four_directions() {
 #[test]
 fn repl_types_and_normalizes_all_three_trailing_block_exposures() {
     let package = TempPackage::new("trailing-blocks");
-    package.write("app.pkg.kio", "package app; bridge { app; provider; }");
+    package.write("app.pkg.kio", "pkg app; bridge { app; provider; }");
     package.write(
         "provider.kio",
         include_str!("fixtures/trailing-blocks/provider.kio"),
@@ -498,7 +498,7 @@ fn minimal_package(tag: &str) -> TempPackage {
     pkg.write_demo_package();
     pkg.write(
         "demo/main.kio",
-        "module demo/main;\n\n\
+        "mod demo/main;\n\n\
          /// The package entry point.\n\
          pub fn run() -> . { () }\n",
     );
@@ -513,7 +513,7 @@ fn loose_module_tree(tag: &str) -> TempPackage {
     let dir = TempPackage::new(tag);
     dir.write(
         "demo/main.kio",
-        "module demo/main;\n\n\
+        "mod demo/main;\n\n\
          /// The package entry point.\n\
          pub fn run() -> . { () }\n",
     );
@@ -582,7 +582,7 @@ fn repl_nested_fqn_module_loads_by_slash_path() {
     let dir = TempPackage::new("nestedfqn");
     dir.write(
         "app/sub/deep.kio",
-        "module app/sub/deep;\n\npub fn here() -> . { () }\n",
+        "mod app/sub/deep;\n\npub fn here() -> . { () }\n",
     );
     let out = run_repl(dir.path(), &[":load app/sub/deep", ":t here", ":quit"]);
     assert!(out.contains("loaded app/sub/deep"), "got:\n{out}");
@@ -787,12 +787,12 @@ fn repl_history_persists_with_reedline() {
 fn repl_startup_is_blank_slate_with_no_selectors() {
     // With no selectors, opening `kio repl` loads NOTHING — it is a
     // blank slate. The banner advertises what's available and how to
-    // bring a module in; `:mods` reports nothing loaded until the user
+    // bring a mod in; `:mods` reports nothing loaded until the user
     // `:load`s.
     let pkg = TempPackage::new("startupblank");
     pkg.write_demo_package();
-    pkg.write("demo/a.kio", "module demo/a;\npub fn fa() -> . { () }\n");
-    pkg.write("demo/b.kio", "module demo/b;\npub fn fb() -> . { () }\n");
+    pkg.write("demo/a.kio", "mod demo/a;\npub fn fa() -> . { () }\n");
+    pkg.write("demo/b.kio", "mod demo/b;\npub fn fb() -> . { () }\n");
     let out = run_repl(pkg.path(), &[":mods", ":quit"]);
     // The banner advertises the available count and how to `:load`,
     // and does NOT claim anything is loaded.
@@ -823,8 +823,8 @@ fn repl_startup_selector_filters_to_a_subset() {
     // filename, or stem.
     let pkg = TempPackage::new("startupsel");
     pkg.write_demo_package();
-    pkg.write("demo/a.kio", "module demo/a;\npub fn fa() -> . { () }\n");
-    pkg.write("demo/b.kio", "module demo/b;\npub fn fb() -> . { () }\n");
+    pkg.write("demo/a.kio", "mod demo/a;\npub fn fa() -> . { () }\n");
+    pkg.write("demo/b.kio", "mod demo/b;\npub fn fb() -> . { () }\n");
     // Selector by module path: only `demo/a` should be loaded.
     let out = run_repl_with_args(pkg.path(), &["demo/a"], &[":mods", ":quit"]);
     assert!(
@@ -847,11 +847,11 @@ fn repl_startup_selector_by_filename() {
     pkg.write_demo_package();
     pkg.write(
         "demo/main.kio",
-        "module demo/main;\npub fn run() -> . { () }\n",
+        "mod demo/main;\npub fn run() -> . { () }\n",
     );
     pkg.write(
         "demo/util.kio",
-        "module demo/util;\npub fn helper() -> . { () }\n",
+        "mod demo/util;\npub fn helper() -> . { () }\n",
     );
     // `main.kio` (with extension) selects `demo/main`.
     let out = run_repl_with_args(pkg.path(), &["main.kio"], &[":mods", ":quit"]);
@@ -882,7 +882,7 @@ fn repl_startup_selector_mismatch_exits_usage() {
 fn repl_startup_selector_dotted_module_path_does_not_match_slash_module() {
     let pkg = TempPackage::new("startupdottedsel");
     pkg.write_demo_package();
-    pkg.write("demo/a.kio", "module demo/a;\npub fn fa() -> . { () }\n");
+    pkg.write("demo/a.kio", "mod demo/a;\npub fn fa() -> . { () }\n");
 
     let (code, combined) = run_repl_expect_failure(pkg.path(), &["demo.a"]);
     assert_ne!(code, 0, "dotted selector should exit non-zero");
@@ -913,8 +913,8 @@ fn repl_doc_renders_doc_comment() {
 #[test]
 fn repl_recursive_group_doc_preserves_context_and_selected_prose() {
     let pkg = TempPackage::new("recursive-group-doc");
-    pkg.write("demo.pkg.kio", "package demo; bridge { demo/**; }\n");
-    pkg.write("demo/main.kio", "module demo/main;\n\n/// Group prose.\nrec {\n  /// Alias prose.\n  type Chain = Node;\n  /// Nominal prose.\n  type { Node: . | Chain { mk; get; }; };\n}\n");
+    pkg.write("demo.pkg.kio", "pkg demo; bridge { demo/**; }\n");
+    pkg.write("demo/main.kio", "mod demo/main;\n\n/// Group prose.\nrec {\n  /// Alias prose.\n  type Chain = Node;\n  /// Nominal prose.\n  type { Node: . | Chain { mk; get; }; };\n}\n");
     for command in [
         ":doc Node",
         ":doc demo/main.Node",
@@ -936,8 +936,8 @@ fn repl_recursive_group_doc_preserves_context_and_selected_prose() {
 #[test]
 fn repl_recursive_nominal_docs_show_their_source_owner() {
     let pkg = TempPackage::new("recursive-label-doc");
-    pkg.write("demo.pkg.kio", "package demo; bridge { demo/**; }\n");
-    pkg.write("demo/main.kio", "module demo/main;\nrec {\n  type Tree = Twig;\n  /// Twig prose.\n  type { Twig: . | Tree; };\n}\n/// List prose.\nrec type { List: . | List; };\n");
+    pkg.write("demo.pkg.kio", "pkg demo; bridge { demo/**; }\n");
+    pkg.write("demo/main.kio", "mod demo/main;\nrec {\n  type Tree = Twig;\n  /// Twig prose.\n  type { Twig: . | Tree; };\n}\n/// List prose.\nrec type { List: . | List; };\n");
     for (name, context, prose) in [
         ("Twig", "rec {", "Twig prose."),
         ("List", "rec type", "List prose."),
@@ -958,7 +958,7 @@ fn repl_intrinsic_in_scope_resolves_via_which_doc_and_bare_input() {
     pkg.write_demo_package();
     pkg.write(
         "demo/main.kio",
-        "module demo/main;\nimport __intrinsics__;\n\
+        "mod demo/main;\nimport __intrinsics__;\n\
          pub fn run() -> . { () }\n",
     );
     let out = run_repl(
@@ -1008,7 +1008,7 @@ fn repl_comptime_in_scope_resolves_via_which_doc_and_bare_input() {
     pkg.write_demo_package();
     pkg.write(
         "demo/main.kio",
-        "module demo/main;\nimport __comptime__;\n\
+        "mod demo/main;\nimport __comptime__;\n\
          pub fn run() -> . { () }\n",
     );
     let out = run_repl(
@@ -1051,7 +1051,7 @@ fn repl_doc_on_a_module_renders_summary() {
     pkg.write_demo_package();
     pkg.write(
         "demo/main.kio",
-        "/// The main module of the demo package.\nmodule demo/main;\n\n\
+        "/// The main module of the demo package.\nmod demo/main;\n\n\
          pub fn run() -> . { () }\n\
          fn helper() -> . { () }\n",
     );
@@ -1060,7 +1060,7 @@ fn repl_doc_on_a_module_renders_summary() {
         out.contains("The main module of the demo package."),
         "module doc-comment should render, got:\n{out}"
     );
-    assert!(out.contains("module demo/main"), "got:\n{out}");
+    assert!(out.contains("mod demo/main"), "got:\n{out}");
     assert!(out.contains("2 declared items"), "got:\n{out}");
 }
 
@@ -1072,12 +1072,12 @@ fn repl_bare_module_name_routes_through_doc() {
     pkg.write_demo_package();
     pkg.write(
         "demo/main.kio",
-        "/// Greeting module.\nmodule demo/main;\n\
+        "/// Greeting module.\nmod demo/main;\n\
          pub fn run() -> . { () }\n",
     );
     let out = run_repl(pkg.path(), &[":load demo/main", "demo/main", ":quit"]);
     assert!(out.contains("Greeting module."), "got:\n{out}");
-    assert!(out.contains("module demo/main"), "got:\n{out}");
+    assert!(out.contains("mod demo/main"), "got:\n{out}");
 }
 
 #[test]
@@ -1086,11 +1086,11 @@ fn repl_implicit_loading_pulls_in_import_deps() {
     pkg.write_demo_package();
     pkg.write(
         "demo/util.kio",
-        "module demo/util;\npub fn helper() -> . { () }\n",
+        "mod demo/util;\npub fn helper() -> . { () }\n",
     );
     pkg.write(
         "demo/main.kio",
-        "module demo/main;\n\nimport demo/util(helper);\n\n\
+        "mod demo/main;\n\nimport demo/util {fn helper}\n\n\
          pub fn run() -> . { helper() }\n",
     );
     // Blank-slate startup loads nothing; `:load demo/main` brings the
@@ -1111,11 +1111,11 @@ fn repl_unload_cascades_implicit_dep() {
     pkg.write_demo_package();
     pkg.write(
         "demo/util.kio",
-        "module demo/util;\npub fn helper() -> . { () }\n",
+        "mod demo/util;\npub fn helper() -> . { () }\n",
     );
     pkg.write(
         "demo/main.kio",
-        "module demo/main;\n\nimport demo/util(helper);\n\n\
+        "mod demo/main;\n\nimport demo/util {fn helper}\n\n\
          pub fn run() -> . { helper() }\n",
     );
     let out = run_repl(
@@ -1198,7 +1198,7 @@ fn repl_which_and_refs() {
     pkg.write_demo_package();
     pkg.write(
         "demo/main.kio",
-        "module demo/main;\n\n\
+        "mod demo/main;\n\n\
          pub fn helper() -> . { () }\n\
          pub fn run() -> . { helper() }\n",
     );
@@ -1214,7 +1214,7 @@ fn repl_which_and_refs() {
 
 #[test]
 fn repl_packages_lists_and_views_a_package() {
-    // `:packages` with no argument lists the `*.pkg.kio` package files;
+    // `:packages` with no argument lists the `*.pkg.kio` pkg files;
     // `:packages <name>` views one's contract (its `bridge` glob). The
     // command is read-only and independent of the module load path.
     let pkg = minimal_package("packageslist");
@@ -1226,7 +1226,7 @@ fn repl_packages_lists_and_views_a_package() {
     );
     // The view renders the package contract.
     assert!(
-        out.contains("package demo"),
+        out.contains("pkg demo"),
         "`:packages demo` should render the package header, got:\n{out}"
     );
     assert!(
@@ -1256,14 +1256,14 @@ fn repl_scope_lists_each_section() {
     pkg.write_demo_package();
     pkg.write(
         "demo/util.kio",
-        "module demo/util;\npub fn helper() -> . { () }\n",
+        "mod demo/util;\npub fn helper() -> . { () }\n",
     );
     pkg.write(
         "demo/main.kio",
-        "module demo/main;\n\n\
+        "mod demo/main;\n\n\
          import __intrinsics__;\n\
          import __comptime__;\n\
-         import demo/util(helper);\n\
+         import demo/util {fn helper}\n\
          import demo/util as u;\n\
          pub fn run() -> . { helper() }\n\
          fn add(x: ., y: .) -> . { x }\n\
@@ -1302,7 +1302,7 @@ fn repl_refs_labels_with_enclosing_function() {
     pkg.write_demo_package();
     pkg.write(
         "demo/main.kio",
-        "module demo/main;\n\n\
+        "mod demo/main;\n\n\
          pub fn callee() -> . { () }\n\
          pub fn caller() -> . { callee() }\n",
     );
@@ -1325,15 +1325,15 @@ fn repl_refs_labels_import_clause_as_module() {
     pkg.write_demo_package();
     pkg.write(
         "demo/util.kio",
-        "module demo/util;\npub fn callee() -> . { () }\n",
+        "mod demo/util;\npub fn callee() -> . { () }\n",
     );
     pkg.write(
         "demo/main.kio",
-        "module demo/main;\n\nimport demo/util(callee);\n\n\
+        "mod demo/main;\n\nimport demo/util {fn callee}\n\n\
          pub fn run() -> . { callee() }\n",
     );
     let out = run_repl(pkg.path(), &[":load demo/main", ":refs callee", ":quit"]);
-    // The `import demo/util(callee);` line sits in demo/main outside
+    // The `import demo/util {fn callee}` line sits in demo/main outside
     // any item; the hit's label is the module fallback.
     assert!(
         out.contains("in module demo/main"),
@@ -1349,7 +1349,7 @@ fn repl_which_finds_private_item() {
     pkg.write_demo_package();
     pkg.write(
         "demo/main.kio",
-        "module demo/main;\n\n\
+        "mod demo/main;\n\n\
          fn priv_helper() -> . { () }\n\
          pub fn run() -> . { () }\n",
     );
@@ -1382,7 +1382,7 @@ fn repl_ls_does_not_leak_internal_nominal_braces() {
     pkg.write_demo_package();
     pkg.write(
         "demo/main.kio",
-        "module demo/main;\n\
+        "mod demo/main;\n\
          pub fn run() -> . { () }\n\
          type { Red: .; Green: .; };\n",
     );
@@ -1636,7 +1636,7 @@ fn repl_source_includes_preceding_doc_comment() {
     pkg.write_demo_package();
     pkg.write(
         "demo/main.kio",
-        "module demo/main;\n\n\
+        "mod demo/main;\n\n\
          /// First line of the doc.\n\
          /// Second line of the doc.\n\
          pub fn run() -> . { () }\n",
@@ -1664,7 +1664,7 @@ fn repl_source_includes_mixed_line_and_doc_comments() {
     pkg.write_demo_package();
     pkg.write(
         "demo/main.kio",
-        "module demo/main;\n\n\
+        "mod demo/main;\n\n\
          // implementation note (not Kiodoc)\n\
          /// public-facing doc\n\
          pub fn run() -> . { () }\n",
@@ -1688,7 +1688,7 @@ fn repl_source_skips_comment_separated_by_blank_line() {
     pkg.write_demo_package();
     pkg.write(
         "demo/main.kio",
-        "module demo/main;\n\n\
+        "mod demo/main;\n\n\
          // detached commentary — blank line below\n\
          \n\
          pub fn run() -> . { () }\n",
@@ -1723,7 +1723,7 @@ fn repl_type_on_type_level_name_is_kind_aware_error() {
     pkg.write_demo_package();
     pkg.write(
         "demo/main.kio",
-        "module demo/main;\n\ntype Same[A] = A;\n\n\
+        "mod demo/main;\n\ntype Same[A] = A;\n\n\
          pub fn run() -> . { () }\n",
     );
     let out = run_repl(pkg.path(), &[":load demo/main", ":t Same", ":quit"]);
@@ -1746,10 +1746,7 @@ fn repl_compound_expression_normalizes() {
 fn repl_type_only_named_and_anonymous_types() {
     let pkg = TempPackage::new("type-only-types");
     pkg.write_demo_package();
-    pkg.write(
-        "demo/main.kio",
-        "module demo/main;\npub fn mark[A] { () }\n",
-    );
+    pkg.write("demo/main.kio", "mod demo/main;\npub fn mark[A] { () }\n");
     let out = run_repl(
         pkg.path(),
         &[
@@ -1778,7 +1775,7 @@ fn repl_type_only_normalization_preserves_written_applications() {
     pkg.write_demo_package();
     pkg.write(
         "demo/main.kio",
-        "module demo/main;\n\
+        "mod demo/main;\n\
          pub fn mark[A] { () }\n\
          pub fn nested[A] -> [B] . { .[B] { () } }\n",
     );
@@ -1814,7 +1811,7 @@ fn repl_type_only_explicit_unit_residual_query() {
     pkg.write_demo_package();
     pkg.write(
         "demo/main.kio",
-        "module demo/main;\npub fn delayed[A]() { () }\n",
+        "mod demo/main;\npub fn delayed[A]() { () }\n",
     );
     let out = run_repl(
         pkg.path(),
@@ -1853,7 +1850,7 @@ fn repl_normalize_and_t_expression_commands() {
     pkg.write_demo_package();
     pkg.write(
         "demo/main.kio",
-        "module demo/main;\n\n\
+        "mod demo/main;\n\n\
          pub fn greeting() -> . & . { ((), ()) }\n",
     );
     let out = run_repl(
@@ -1880,10 +1877,10 @@ fn repl_normalize_and_t_expression_commands() {
 #[test]
 fn repl_pure_uses_declaration_contracts_and_pure_context_typechecking() {
     let pkg = TempPackage::new("pure-query");
-    pkg.write("demo.pkg.kio", "package demo;\n\nbridge { demo/main; }\n");
+    pkg.write("demo.pkg.kio", "pkg demo;\n\nbridge { demo/main; }\n");
     pkg.write(
         "demo/main.kio",
-        "module demo/main;\n\n\
+        "mod demo/main;\n\n\
          host type Text role(str);\n\
          host fn emit(value: Text) -> .;\n\n\
          pure fn _expr0(x: .) -> . { x }\n\
@@ -1935,8 +1932,8 @@ fn repl_pure_uses_declaration_contracts_and_pure_context_typechecking() {
 #[test]
 fn repl_query_wrapper_does_not_capture_unresolved_spelling() {
     let pkg = TempPackage::new("query-wrapper-capture");
-    pkg.write("demo.pkg.kio", "package demo;\n\nbridge { demo/main; }\n");
-    pkg.write("demo/main.kio", "module demo/main;\n");
+    pkg.write("demo.pkg.kio", "pkg demo;\n\nbridge { demo/main; }\n");
+    pkg.write("demo/main.kio", "mod demo/main;\n");
 
     let out = run_repl(
         pkg.path(),
@@ -1954,10 +1951,10 @@ fn repl_query_wrapper_does_not_capture_unresolved_spelling() {
 #[test]
 fn repl_query_wrapper_avoids_existing_name_for_type_query() {
     let pkg = TempPackage::new("type-query-wrapper-collision");
-    pkg.write("demo.pkg.kio", "package demo;\n\nbridge { demo/main; }\n");
+    pkg.write("demo.pkg.kio", "pkg demo;\n\nbridge { demo/main; }\n");
     pkg.write(
         "demo/main.kio",
-        "module demo/main;\n\npure fn _expr0(x: .) -> . { x }\n",
+        "mod demo/main;\n\npure fn _expr0(x: .) -> . { x }\n",
     );
 
     let out = run_repl(pkg.path(), &[":load demo/main", ":t ()", ":quit"]);
@@ -1973,11 +1970,11 @@ fn repl_query_wrapper_stays_distinct_from_macro_capture() {
     let pkg = TempPackage::new("query-wrapper-macro-capture");
     pkg.write(
         "demo.pkg.kio",
-        "package demo;\n\nbridge { demo/main; demo/macros; }\n",
+        "pkg demo;\n\nbridge { demo/main; demo/macros; }\n",
     );
     pkg.write(
         "demo/macros.kio",
-        "module demo/macros;\n\n\
+        "mod demo/macros;\n\n\
          import __comptime__;\n\n\
          pub pure fn _expr0() -> . { () }\n\n\
          pub pure fn captured_call_impl(\n\
@@ -1989,7 +1986,7 @@ fn repl_query_wrapper_stays_distinct_from_macro_capture() {
     );
     pkg.write(
         "demo/main.kio",
-        "module demo/main;\n\nimport demo/macros(macro captured_call);\n",
+        "mod demo/main;\n\nimport demo/macros {macro captured_call}\n",
     );
 
     let out = run_repl(
@@ -2024,7 +2021,7 @@ fn repl_multiline_normalize_match_block() {
     pkg.write_demo_package();
     pkg.write(
         "demo/main.kio",
-        "module demo/main;\n\n\
+        "mod demo/main;\n\n\
          pub fn greeting() -> . & . { ((), ()) }\n",
     );
     let out = run_repl(
@@ -2064,7 +2061,7 @@ fn repl_product_literal_normalizes() {
     pkg.write_demo_package();
     pkg.write(
         "demo/main.kio",
-        "module demo/main;\n\n\
+        "mod demo/main;\n\n\
          pub fn run() -> . { () }\n",
     );
     let out = run_repl(pkg.path(), &[":load demo/main", "((), ())", ":quit"]);
@@ -2085,12 +2082,12 @@ fn repl_normalize_reduces_compound_expression() {
     pkg.write_demo_package();
     pkg.write(
         "demo/util.kio",
-        "module demo/util;\n\n\
+        "mod demo/util;\n\n\
          pub fn shout() -> . & . { ((), ()) }\n",
     );
     pkg.write(
         "demo/main.kio",
-        "module demo/main;\n\nimport demo/util(shout);\n\n\
+        "mod demo/main;\n\nimport demo/util {fn shout}\n\n\
          pub fn pick() -> . & . { shout() }\n\
          pub fn run() -> . { () }\n",
     );
@@ -2142,7 +2139,7 @@ fn repl_auto_reload_picks_up_a_file_edit() {
     // Edit the file on disk — add a second function.
     rewrite_with_distinct_mtime(
         &pkg.path().join("demo/main.kio"),
-        "module demo/main;\n\n\
+        "mod demo/main;\n\n\
          /// The package entry point.\n\
          pub fn run() -> . { () }\n\
          pub fn added() -> . { () }\n",
@@ -2162,7 +2159,7 @@ fn repl_auto_reload_picks_up_a_file_edit() {
 #[test]
 fn repl_auto_reload_skips_content_unchanged_overwrite() {
     let pkg = minimal_package("noopreload");
-    pkg.write("demo/barrier.kio", "module demo/barrier;\n");
+    pkg.write("demo/barrier.kio", "mod demo/barrier;\n");
     let main_path = pkg.path().join("demo/main.kio");
     let main_contents = fs::read_to_string(&main_path).expect("read main.kio");
     let mut repl = AutoReloadRepl::start(pkg.path());
@@ -2172,7 +2169,7 @@ fn repl_auto_reload_skips_content_unchanged_overwrite() {
     // an absence-only observation window cannot establish this.
     rewrite_with_distinct_mtime(
         &pkg.path().join("demo/barrier.kio"),
-        "module demo/barrier;\npub fn added() -> . { () }\n",
+        "mod demo/barrier;\npub fn added() -> . { () }\n",
     );
     repl.wait_for("reloaded demo/barrier", true);
     let combined = repl.finish();
@@ -2202,7 +2199,7 @@ fn repl_auto_reload_fires_on_content_change() {
     // A genuine content change — body added.
     rewrite_with_distinct_mtime(
         &pkg.path().join("demo/main.kio"),
-        "module demo/main;\n\n\
+        "mod demo/main;\n\n\
          /// The package entry point.\n\
          pub fn run() -> . { () }\n\
          pub fn added() -> . { () }\n",

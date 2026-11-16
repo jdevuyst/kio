@@ -1,4 +1,4 @@
-package union_find_islands;
+pkg union_find_islands;
 
 build {
   cache "out/.kio-cache/";

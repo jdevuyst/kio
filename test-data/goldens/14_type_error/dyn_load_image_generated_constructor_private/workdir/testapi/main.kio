@@ -1,5 +1,5 @@
-module testapi/main;
+mod testapi/main;
 
-import loader(Image);
+import loader { type Image }
 
 pub fn main() { let constructor = Image.mk; () }

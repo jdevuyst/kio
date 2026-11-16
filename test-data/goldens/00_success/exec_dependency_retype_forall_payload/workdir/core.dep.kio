@@ -1,4 +1,4 @@
-dependency core;
+dep core;
 
 source {
   path "../library/idlib/idlib.pkg.kio"

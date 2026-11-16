@@ -1,4 +1,4 @@
-package fph;
+pkg fph;
 
 build {
   cache "out/.kio-cache/";

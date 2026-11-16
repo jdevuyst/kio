@@ -1,4 +1,4 @@
-package ffi_host_fn_value_structural_return;
+pkg ffi_host_fn_value_structural_return;
 
 build {
   cache "out/.kio-cache/";

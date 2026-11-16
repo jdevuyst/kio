@@ -1,4 +1,4 @@
-module docops/operators;
+mod docops/operators;
 
 pub fn pair(left: ., right: .) { left }
 

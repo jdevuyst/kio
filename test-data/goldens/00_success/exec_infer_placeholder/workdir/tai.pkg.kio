@@ -1,4 +1,4 @@
-package tai;
+pkg tai;
 
 build {
   cache "out/.kio-cache/";

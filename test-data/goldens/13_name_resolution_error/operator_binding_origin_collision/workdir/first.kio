@@ -1,4 +1,4 @@
-module first;
+mod first;
 
 pub fn first_value() { () }
 

@@ -1,4 +1,4 @@
-module lcl/main;
+mod lcl/main;
 
 host type I32 role(i32);
 

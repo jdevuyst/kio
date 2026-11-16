@@ -1,4 +1,4 @@
-package exec_spine_duals_truncate_extend;
+pkg exec_spine_duals_truncate_extend;
 
 build {
   cache "out/.kio-cache/";

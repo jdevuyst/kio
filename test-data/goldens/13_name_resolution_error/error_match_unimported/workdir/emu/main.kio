@@ -1,6 +1,6 @@
-module emu/main;
+mod emu/main;
 
-import emu(I32, String);
+import emu { type I32; type String }
 
 // The `match` macro is called without importing the root module
 // macro; an unimported call site is the standard unresolved-name error

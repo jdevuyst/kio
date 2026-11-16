@@ -1,5 +1,5 @@
-module m;
+mod m;
 
 pub type Box[A] = A & A;
 
-pub literal pi = 3.14;
+pub lit pi = 3.14;

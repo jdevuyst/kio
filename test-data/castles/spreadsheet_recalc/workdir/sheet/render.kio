@@ -4,21 +4,36 @@
 /// it is about to print. It computes each column's width from the value
 /// instead — the printed width of an integer is a fact about the integer —
 /// and pads to it.
-module sheet/render;
+mod sheet/render;
 
-import macros/control(macro if);
-import macros/match(macro match);
-import sheet/addr(Addr, addr_name, all_addrs, col_letter, cols, make_addr, rows);
-import sheet/cells(Content, Sheet, Value, Values, content_at, fold_content);
-import sheet/cells(fold_value, value_at);
-import sheet/formula(Expr, render_expr);
-import sheet/list(List, is_empty);
-import sheet/recalc(Edit, edit_addr, fold_edit);
-import testapi(Bool, I32, String);
-import testapi/arith(add_i32, leq_i32, lt_i32, mul_i32, sub_i32);
-import testapi/fmt(int_to_string);
-import testapi/iter(loop);
-import testapi/text(string_concat);
+import macros/control { macro if }
+import macros/match { macro match }
+import sheet/addr {
+  type Addr;
+  fn addr_name;
+  fn all_addrs;
+  fn col_letter;
+  fn cols;
+  fn make_addr;
+  fn rows
+}
+import sheet/cells {
+  type Content;
+  type Sheet;
+  type Value;
+  type Values;
+  fn content_at;
+  fn fold_content
+}
+import sheet/cells { fn fold_value; fn value_at }
+import sheet/formula { type Expr; fn render_expr }
+import sheet/list { type List; fn is_empty }
+import sheet/recalc { type Edit; fn edit_addr; fn fold_edit }
+import testapi { type Bool; type I32; type String }
+import testapi/arith { fn add_i32; fn leq_i32; fn lt_i32; fn mul_i32; fn sub_i32 }
+import testapi/fmt { fn int_to_string }
+import testapi/iter { fn loop }
+import testapi/text { fn string_concat }
 
 fn cat(a: String, b: String) -> String { string_concat(a, b) }
 

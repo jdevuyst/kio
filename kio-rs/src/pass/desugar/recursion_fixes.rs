@@ -175,7 +175,7 @@ mod tests {
 
     #[test]
     fn missing_marker_candidates_are_local_and_require_reanalysis() {
-        let source = "module main; rec(drive) fn again(x: .) -> . { again(x) }";
+        let source = "mod main; rec(drive) fn again(x: .) -> . { again(x) }";
         let module = crate::pass::parser::parse(source).unwrap();
         let error = super::super::desugar_module(module).unwrap_err();
         let start = source.rfind("again(x)").unwrap() as u32;

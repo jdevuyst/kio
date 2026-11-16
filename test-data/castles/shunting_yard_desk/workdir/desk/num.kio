@@ -2,12 +2,12 @@
 /// `leq_i32` and `lt_i32` but no equality and no exponentiation, so both
 /// are built here: equality from the antisymmetry of `<=`, and `pow` from
 /// repeated multiplication.
-module desk/num;
+mod desk/num;
 
-import macros/control(macro if);
-import testapi(Bool, I32);
-import testapi/arith(leq_i32, mul_i32, sub_i32);
-import testapi/iter(loop);
+import macros/control { macro if }
+import testapi { type Bool; type I32 }
+import testapi/arith { fn leq_i32; fn mul_i32; fn sub_i32 }
+import testapi/iter { fn loop }
 
 pub fn not(b: Bool) -> Bool {
   if(b) { .f } else { .t }

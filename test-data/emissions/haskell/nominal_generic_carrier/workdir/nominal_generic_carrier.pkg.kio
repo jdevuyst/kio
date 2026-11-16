@@ -1,4 +1,4 @@
-package nominal_generic_carrier;
+pkg nominal_generic_carrier;
 
 build {
   target haskell {

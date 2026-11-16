@@ -1,4 +1,4 @@
-module testapi/types;
+mod testapi/types;
 
 // The product payload makes each applied `Box(A)` structurally visible at
 // the host boundary while retaining one value-bearing slot.

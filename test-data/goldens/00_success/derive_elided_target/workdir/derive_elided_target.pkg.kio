@@ -1,4 +1,4 @@
-package derive_elided_target;
+pkg derive_elided_target;
 
 build {
   cache "out/.kio-cache/";

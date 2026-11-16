@@ -1,5 +1,5 @@
-module testapi/main;
+mod testapi/main;
 
-import minesweeper_frontier/report(run);
+import minesweeper_frontier/report { fn run }
 
 pub fn main() { run() }

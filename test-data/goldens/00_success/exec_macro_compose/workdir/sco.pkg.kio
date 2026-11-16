@@ -1,4 +1,4 @@
-package sco;
+pkg sco;
 
 build {
   cache "out/.kio-cache/";

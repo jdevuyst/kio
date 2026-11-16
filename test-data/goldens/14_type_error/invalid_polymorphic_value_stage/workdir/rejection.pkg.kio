@@ -1,4 +1,4 @@
-package rejection;
+pkg rejection;
 
 build {
   target js {

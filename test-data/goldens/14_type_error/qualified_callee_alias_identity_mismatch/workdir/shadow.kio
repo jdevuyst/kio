@@ -1,4 +1,4 @@
-module shadow;
+mod shadow;
 
 import other as other;
 

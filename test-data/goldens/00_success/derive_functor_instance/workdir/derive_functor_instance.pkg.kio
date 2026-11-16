@@ -1,4 +1,4 @@
-package derive_functor_instance;
+pkg derive_functor_instance;
 
 build {
   cache "out/.kio-cache/";

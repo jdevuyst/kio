@@ -1,4 +1,4 @@
-module provider;
+mod provider;
 
 pub fn choose(left: ., _right: . -> .) { left }
 

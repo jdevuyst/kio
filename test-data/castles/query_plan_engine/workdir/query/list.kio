@@ -5,14 +5,14 @@
 /// projection is a `List(Col)`, and a group accumulator is a
 /// `List(Group)` - so the walks below are written once, polymorphically,
 /// and reused at each of them.
-module query/list;
+mod query/list;
 
-import macros/control(macro if);
-import macros/match(macro match);
-import macros/spine_macros(macro widen_sum);
-import testapi(Bool, I32);
-import testapi/arith(add_i32, leq_i32, sub_i32);
-import testapi/iter(loop);
+import macros/control { macro if }
+import macros/match { macro match }
+import macros/spine_macros { macro widen_sum }
+import testapi { type Bool; type I32 }
+import testapi/arith { fn add_i32; fn leq_i32; fn sub_i32 }
+import testapi/iter { fn loop }
 
 /// The recursive knot: a list is either empty or a head paired with a
 /// tail. The nominal type grounds the recursion that an anonymous sum

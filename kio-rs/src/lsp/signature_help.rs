@@ -618,7 +618,7 @@ mod tests {
 
     #[test]
     fn nearest_call_prefers_inner_call() {
-        let source = "module pkg/main;\n\nfn run() -> . { outer(inner(())) }\n";
+        let source = "mod pkg/main;\n\nfn run() -> . { outer(inner(())) }\n";
         let parsed = parse_lazy(source).unwrap().force_all().unwrap();
         let offset = source.rfind("()").unwrap() as u32;
         let call = nearest_call(&parsed, offset).unwrap();
@@ -691,7 +691,7 @@ mod tests {
                     .join("..")
                     .join("signature-facts-fixture"),
             );
-            let mut source = String::from("module main; fn pair(value: . & .) { () }\n");
+            let mut source = String::from("mod main; fn pair(value: . & .) { () }\n");
             for index in 0..call_count {
                 source.push_str(&format!("pub fn run_n{index}() {{ pair((), ()) }}\n"));
             }
@@ -700,7 +700,7 @@ mod tests {
                 BTreeMap::from([
                     (
                         root.join("probe.pkg.kio"),
-                        "package probe; bridge { main; }".into(),
+                        "pkg probe; bridge { main; }".into(),
                     ),
                     (root.join("main.kio"), source.clone()),
                 ]),
@@ -743,7 +743,7 @@ mod tests {
                     std::hint::black_box(analysis.position_index.call_presentation("main", span));
                 }
                 eprintln!(
-                    "signature aggregate editor-facts={editor}: {call_count}-call analysis={elapsed:?}; 10000 indexed queries={:?}",
+                    "sig aggregate editor-facts={editor}: {call_count}-call analysis={elapsed:?}; 10000 indexed queries={:?}",
                     start.elapsed()
                 );
                 if editor {
@@ -783,7 +783,7 @@ mod tests {
                             std::hint::black_box(help);
                         }
                         eprintln!(
-                            "signature {call_count}-call document: 64 complete handlers offsets={offsets}: {:?}",
+                            "sig {call_count}-call document: 64 complete handlers offsets={offsets}: {:?}",
                             start.elapsed()
                         );
                     }
@@ -804,7 +804,7 @@ mod tests {
                 .join("..")
                 .join("signature-stages-fixture"),
         );
-        let source = "module main;
+        let source = "mod main;
 fn pair[A](left: A, right: A) -> A { left }
 fn staged[A](left: A)[B](right: B) -> B { right }
 fn factory() -> . -> . { .(value: .) { value } }
@@ -817,7 +817,7 @@ pub fn run() { factory()(()); pair[.]((), ()); staged[.](())[.](()); pair[.]((()
             BTreeMap::from([
                 (
                     root.join("probe.pkg.kio"),
-                    "package probe; bridge { main; }".into(),
+                    "pkg probe; bridge { main; }".into(),
                 ),
                 (root.join("main.kio"), source.to_owned()),
             ]),
@@ -854,7 +854,7 @@ pub fn run() { factory()(()); pair[.]((), ()); staged[.](())[.](()); pair[.]((()
                 position: lsp_types::Position::new(position.line, position.character),
             };
             let help = handle_signature_help(&params, source, &module, Some(&analysis), false)
-                .unwrap_or_else(|| panic!("signature help at {marker} + {delta}"));
+                .unwrap_or_else(|| panic!("sig help at {marker} + {delta}"));
             let active = help
                 .active_parameter
                 .expect("one source parameter is active") as usize;

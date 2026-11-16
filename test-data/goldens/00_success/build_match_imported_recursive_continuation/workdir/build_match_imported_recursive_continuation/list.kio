@@ -1,6 +1,6 @@
-module build_match_imported_recursive_continuation/list;
+mod build_match_imported_recursive_continuation/list;
 
-import macros/spine_macros(macro widen_sum);
+import macros/spine_macros { macro widen_sum }
 
 pub rec type { List[A]: . | (A & List[A]) { pub mk; pub get } }
 

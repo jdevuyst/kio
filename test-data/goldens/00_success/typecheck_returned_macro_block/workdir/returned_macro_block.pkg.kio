@@ -1,4 +1,4 @@
-package returned_macro_block;
+pkg returned_macro_block;
 
 build {
   cache "out/.kio-cache/";

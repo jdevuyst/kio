@@ -1,20 +1,20 @@
-module planner/render;
+mod planner/render;
 
-import planner/scheduler(
-, Plan_result
-, result_cycle_risk
-, result_peak_blocked
-, result_peak_ready
-, result_rounds
-, result_state
-, result_stop_blocked
-, result_stop_ready
-);
-import planner/state(completed, effort, order);
-import planner/tasks(total);
-import testapi(Bool, I32, String);
-import testapi/fmt(bool_to_string, int_to_string);
-import testapi/text(string_concat);
+import planner/scheduler {
+  type Plan_result;
+  fn result_cycle_risk;
+  fn result_peak_blocked;
+  fn result_peak_ready;
+  fn result_rounds;
+  fn result_state;
+  fn result_stop_blocked;
+  fn result_stop_ready
+}
+import planner/state { fn completed; fn effort; fn order }
+import planner/tasks { fn total }
+import testapi { type Bool; type I32; type String }
+import testapi/fmt { fn bool_to_string; fn int_to_string }
+import testapi/text { fn string_concat }
 
 fn line(label: String, value: String) -> String { label.>string_concat(value).>string_concat("\n") }
 

@@ -1,10 +1,10 @@
-module regex/result;
+mod regex/result;
 
-import macros/match(macro match);
-import macros/row_macros(macro select);
-import macros/spine_macros(macro widen_sum);
-import regex/format(join4);
-import testapi(String);
+import macros/match { macro match }
+import macros/row_macros { macro select }
+import macros/spine_macros { macro widen_sum }
+import regex/format { fn join4 }
+import testapi { type String }
 
 pub type Verdict = { Span: String } | { Miss: String };
 

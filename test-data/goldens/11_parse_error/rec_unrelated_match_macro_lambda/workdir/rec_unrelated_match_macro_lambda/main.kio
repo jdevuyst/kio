@@ -1,6 +1,6 @@
-module rec_unrelated_match_macro_lambda/main;
+mod rec_unrelated_match_macro_lambda/main;
 
-import rec_unrelated_match_macro_lambda/macros(macro match);
+import rec_unrelated_match_macro_lambda/macros { macro match }
 
 host fn loop[S][R](step: S -> (S | R), state: S) -> R;
 

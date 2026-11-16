@@ -1,4 +1,4 @@
-dependency textdep;
+dep textdep;
 
 source {
   path "../depsrc/workdir/textdep.pkg.kio"

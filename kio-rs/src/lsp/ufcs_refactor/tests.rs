@@ -9,10 +9,10 @@ fn fixture(
 ) -> (tempfile::TempDir, Module<Surface>, LspAnalysis) {
     let dir = tempfile::tempdir().unwrap();
     std::fs::create_dir(dir.path().join("pkg")).unwrap();
-    std::fs::write(dir.path().join("pkg.kio"), "module pkg;\n").unwrap();
+    std::fs::write(dir.path().join("pkg.kio"), "mod pkg;\n").unwrap();
     std::fs::write(
         dir.path().join("pkg.pkg.kio"),
-        "package pkg; bridge { pkg; pkg/**; }\n",
+        "pkg pkg; bridge { pkg; pkg/**; }\n",
     )
     .unwrap();
     std::fs::write(dir.path().join("pkg/main.kio"), source).unwrap();
@@ -66,7 +66,7 @@ fn ufcs_refactor_first_last_mixed_and_written_type_arguments() {
         } else {
             "fn f(a: ., b: .) -> . { a }"
         };
-        let source = format!("module pkg/main; {definition} pub fn run() -> . {{ {body} }}");
+        let source = format!("mod pkg/main; {definition} pub fn run() -> . {{ {body} }}");
         let (_, parsed, analysis) = fixture(&source, None);
         let replacement = edit(
             &source,
@@ -84,10 +84,10 @@ fn ufcs_refactor_first_last_mixed_and_written_type_arguments() {
 
 #[test]
 fn ufcs_refactor_imported_host_identity_matches_qualified_and_selective_sites() {
-    let provider = "module pkg/provider; host type Text role(str); host fn string_concat(a: Text, b: Text) -> Text;";
+    let provider = "mod pkg/provider; host type Text role(str); host fn string_concat(a: Text, b: Text) -> Text;";
     let body = "p.string_concat(\"a\", string_concat(\"b\", p.string_concat(\"c\", \"d\")))";
     let source = format!(
-        "module pkg/main; import pkg/provider(Text, string_concat); import pkg/provider as p; pub fn run() -> Text {{ {body} }}"
+        "mod pkg/main; import pkg/provider {{type Text; fn string_concat}} import pkg/provider as p; pub fn run() -> Text {{ {body} }}"
     );
     let (_, parsed, analysis) = fixture(&source, Some(provider));
     let replacement = edit(
@@ -118,7 +118,7 @@ fn ufcs_refactor_unary_and_grouped_comment_ownership() {
             "((// owned\n()).>f(())).>f(())",
         ),
     ] {
-        let source = format!("module pkg/main; {definition} pub fn run() -> . {{ {body} }}");
+        let source = format!("mod pkg/main; {definition} pub fn run() -> . {{ {body} }}");
         let (_, parsed, analysis) = fixture(&source, None);
         let replacement = edit(
             &source,
@@ -140,9 +140,8 @@ fn ufcs_refactor_withholds_branch_single_call_and_delimiter_comment() {
         "f((), ())",
         "f( // unclear\n f((), ()), ())",
     ] {
-        let source = format!(
-            "module pkg/main; fn f(a: ., b: .) -> . {{ a }} pub fn run() -> . {{ {body} }}"
-        );
+        let source =
+            format!("mod pkg/main; fn f(a: ., b: .) -> . {{ a }} pub fn run() -> . {{ {body} }}");
         let (_, parsed, analysis) = fixture(&source, None);
         assert!(
             edit(
@@ -169,7 +168,7 @@ fn ufcs_refactor_arbitrary_chain_carets_and_explicit_inner_branch() {
         };
     }
     let source =
-        format!("module pkg/main; fn f(a: ., b: .) -> . {{ a }} pub fn run() -> . {{ {body} }}");
+        format!("mod pkg/main; fn f(a: ., b: .) -> . {{ a }} pub fn run() -> . {{ {body} }}");
     let (_, parsed, analysis) = fixture(&source, None);
     let whole = edit(
         &source,
@@ -201,7 +200,7 @@ fn ufcs_refactor_arbitrary_chain_carets_and_explicit_inner_branch() {
     let branch = "f(f((), ()), ())";
     let body = format!("f({branch}, f((), ()))");
     let source =
-        format!("module pkg/main; fn f(a: ., b: .) -> . {{ a }} pub fn run() -> . {{ {body} }}");
+        format!("mod pkg/main; fn f(a: ., b: .) -> . {{ a }} pub fn run() -> . {{ {body} }}");
     let (_, parsed, analysis) = fixture(&source, None);
     assert!(
         edit(
@@ -228,12 +227,12 @@ fn ufcs_refactor_arbitrary_chain_carets_and_explicit_inner_branch() {
 fn ufcs_refactor_local_generic_and_written_type_stages() {
     for (source, body, expected) in [
         (
-            "module pkg/main; pub fn run[A](f: (A & A) -> A, a: A, b: A, c: A, d: A) -> A { f(f(a, f(b, c)), d) }",
+            "mod pkg/main; pub fn run[A](f: (A & A) -> A, a: A, b: A, c: A, d: A) -> A { f(f(a, f(b, c)), d) }",
             "f(f(a, f(b, c)), d)",
             "c.>>f(b).>>f(a).>f(d)",
         ),
         (
-            "module pkg/main; fn f[A][B](a: A, b: B) -> A { a } pub fn run() -> . { f[.][.](f[.][.]((), ()), ()) }",
+            "mod pkg/main; fn f[A][B](a: A, b: B) -> A { a } pub fn run() -> . { f[.][.](f[.][.]((), ()), ()) }",
             "f[.][.](f[.][.]((), ()), ())",
             "().>f[.][.](()).>f[.][.](())",
         ),
@@ -256,7 +255,7 @@ fn ufcs_refactor_local_generic_and_written_type_stages() {
 fn ufcs_refactor_does_not_treat_computed_results_as_the_named_callable() {
     let body = "make(())(make(())((), ()), ())";
     let source =
-        format!("module pkg/main; host fn make(x: .) -> ((. & .) -> .); pub fn run() {{ {body} }}");
+        format!("mod pkg/main; host fn make(x: .) -> ((. & .) -> .); pub fn run() {{ {body} }}");
     let (_, parsed, analysis) = fixture(&source, None);
     assert!(
         edit(
@@ -273,9 +272,9 @@ fn ufcs_refactor_does_not_treat_computed_results_as_the_named_callable() {
 #[test]
 fn ufcs_refactor_finds_calls_inside_stages_and_reverse_computed_callees() {
     for source in [
-        "module m; fn run() { factory(f(f(a, b), c))(d).<r }",
-        "module m; macro wrap : . -> . { impl implementation } fn run() { wrap(f(f(a, b), c))(d) }",
-        "module m; macro wrap : . -> . { trailing product; impl implementation } fn run() { wrap(f(f(a, b), c))(d) { () } }",
+        "mod m; fn run() { factory(f(f(a, b), c))(d).<r }",
+        "mod m; macro wrap : . -> . { impl implementation } fn run() { wrap(f(f(a, b), c))(d) }",
+        "mod m; macro wrap : . -> . { trailing product; impl implementation } fn run() { wrap(f(f(a, b), c))(d) { () } }",
     ] {
         let parsed = crate::pass::parser::parse(source).unwrap();
         let written = calls(&parsed);
@@ -294,7 +293,7 @@ fn ufcs_refactor_finds_calls_inside_stages_and_reverse_computed_callees() {
 fn ufcs_refactor_conflict_and_incomplete_never_return_shorter_prefix() {
     let body = "f(f(f((), ()), ()), ())";
     let source =
-        format!("module pkg/main; fn f(a: ., b: .) -> . {{ a }} pub fn run() -> . {{ {body} }}");
+        format!("mod pkg/main; fn f(a: ., b: .) -> . {{ a }} pub fn run() -> . {{ {body} }}");
     let (_, parsed, mut analysis) = fixture(&source, None);
     let pristine = analysis.position_index.clone();
     let original = selected(&source, body);
@@ -338,7 +337,7 @@ fn ufcs_refactor_conflict_and_incomplete_never_return_shorter_prefix() {
 fn ufcs_refactor_multiline_separators_unicode_and_opaque_operands() {
     let body = "f(\r\n, f(\r\n, (// 🦀 owned\r\n())\r\n, (())\r\n)\r\n, ()\r\n)";
     let source =
-        format!("module pkg/main; fn f(a: ., b: .) -> . {{ a }} pub fn run() -> . {{ {body} }}");
+        format!("mod pkg/main; fn f(a: ., b: .) -> . {{ a }} pub fn run() -> . {{ {body} }}");
     let (_, parsed, analysis) = fixture(&source, None);
     let action = edit(
         &source,
@@ -364,9 +363,8 @@ fn ufcs_refactor_request_scaling() {
                 format!("f((), {body})")
             };
         }
-        let mut source = format!(
-            "module pkg/main; fn f(a: ., _b: .) -> . {{ a }} pub fn run() -> . {{ {body} }}"
-        );
+        let mut source =
+            format!("mod pkg/main; fn f(a: ., _b: .) -> . {{ a }} pub fn run() -> . {{ {body} }}");
         for i in 0..background {
             source.push_str(&format!(" pub fn extra{i}() -> . {{ f(f((), ()), ()) }}"));
         }
@@ -458,7 +456,7 @@ fn ufcs_refactor_preserves_enclosing_tight_ufcs_context() {
     for operator in [".<", ".<<"] {
         let body = "f(f((), ()), ())";
         let source = format!(
-            "module pkg/main; fn f(a: ., _b: .) -> . {{ a }} fn g(a: .) -> . {{ a }} pub fn run() -> . {{ g{operator}{body} }}"
+            "mod pkg/main; fn f(a: ., _b: .) -> . {{ a }} fn g(a: .) -> . {{ a }} pub fn run() -> . {{ g{operator}{body} }}"
         );
         let (_, module, analysis) = fixture(&source, None);
         let action = edit(
@@ -508,11 +506,11 @@ fn ufcs_refactor_preserves_enclosing_tight_ufcs_context() {
 
 #[test]
 fn ufcs_refactor_distinct_same_spelled_identity_full_and_focused() {
-    let provider = "module pkg/provider; pub fn f(a: ., _b: .) -> . { a }";
+    let provider = "mod pkg/provider; pub fn f(a: ., _b: .) -> . { a }";
     let different = "f(p.f((), ()), ())";
     let same = "p.f(p.f((), ()), ())";
     let source = format!(
-        "module pkg/main; import pkg/provider as p; fn f(a: ., _b: .) -> . {{ a }} pub fn run() -> . {{ {different} }} pub fn matching() -> . {{ {same} }}"
+        "mod pkg/main; import pkg/provider as p; fn f(a: ., _b: .) -> . {{ a }} pub fn run() -> . {{ {different} }} pub fn matching() -> . {{ {same} }}"
     );
     let (dir, module, full) = fixture(&source, Some(provider));
     let focused = crate::cmd::check::analyze_module_at_with_overlay_lsp_cancellable_with_memos(
@@ -552,7 +550,7 @@ fn ufcs_refactor_uncertain_sibling_cannot_truncate_caret_chain() {
     let inner = "f(f((), ()), ())";
     let whole = format!("f(g((), ()), {inner})");
     let source = format!(
-        "module pkg/main; fn f(a: ., _b: .) -> . {{ a }} fn g(a: ., _b: .) -> . {{ a }} pub fn run() -> . {{ {whole} }}"
+        "mod pkg/main; fn f(a: ., _b: .) -> . {{ a }} fn g(a: ., _b: .) -> . {{ a }} pub fn run() -> . {{ {whole} }}"
     );
     let (_, module, mut analysis) = fixture(&source, None);
     let point = selected(&source, inner).start;

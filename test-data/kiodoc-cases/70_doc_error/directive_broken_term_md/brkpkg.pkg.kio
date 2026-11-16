@@ -1,4 +1,4 @@
-package brkpkg;
+pkg brkpkg;
 
 build {
   docs {

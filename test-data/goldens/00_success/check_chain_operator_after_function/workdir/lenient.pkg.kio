@@ -1,4 +1,4 @@
-package lenient;
+pkg lenient;
 
 build {
   target js {

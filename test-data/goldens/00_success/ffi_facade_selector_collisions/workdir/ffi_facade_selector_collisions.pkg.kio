@@ -1,4 +1,4 @@
-package ffi_facade_selector_collisions;
+pkg ffi_facade_selector_collisions;
 
 build {
   cache "out/.kio-cache/";

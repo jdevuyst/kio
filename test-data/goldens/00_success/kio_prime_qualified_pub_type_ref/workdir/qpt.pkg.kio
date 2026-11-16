@@ -1,4 +1,4 @@
-package qpt;
+pkg qpt;
 
 build {
   cache "out/.kio-cache/";

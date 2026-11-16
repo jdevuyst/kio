@@ -1,4 +1,4 @@
-package parse_op_amp_pipe_join;
+pkg parse_op_amp_pipe_join;
 
 build {
   cache "out/.kio-cache/";

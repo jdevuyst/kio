@@ -21,7 +21,7 @@ make_case() {
   mkdir -p "$mc_case/workdir"
   printf 'build {\n  target %s {\n    out "out/%s/";\n  }\n}\n' \
     "$mc_backend" "$mc_backend" >"$mc_case/workdir/case.pkg.kio"
-  printf 'module main;\n' >"$mc_case/workdir/main.kio"
+  printf 'mod main;\n' >"$mc_case/workdir/main.kio"
   printf '%s\n' \
     '#!/bin/sh' \
     'set -eu' \

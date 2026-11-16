@@ -1,4 +1,4 @@
-module provider;
+mod provider;
 
 host type I32 role(i32);
 

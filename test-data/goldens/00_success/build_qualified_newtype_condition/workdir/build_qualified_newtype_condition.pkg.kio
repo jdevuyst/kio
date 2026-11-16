@@ -1,4 +1,4 @@
-package build_qualified_newtype_condition;
+pkg build_qualified_newtype_condition;
 
 build {
   cache "out/.kio-cache/";

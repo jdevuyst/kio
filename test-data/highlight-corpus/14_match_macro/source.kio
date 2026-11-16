@@ -1,5 +1,5 @@
-module m;
+mod m;
 
-import match(macro match);
+import match {macro match}
 
 fn handle(r: T) -> T { match(r)((.(v: A) { v }, .(_e: B) { _e })) }

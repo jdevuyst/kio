@@ -1,4 +1,4 @@
-package ufcs_call_splice_grouping;
+pkg ufcs_call_splice_grouping;
 
 build {
   cache "out/.kio-cache/";

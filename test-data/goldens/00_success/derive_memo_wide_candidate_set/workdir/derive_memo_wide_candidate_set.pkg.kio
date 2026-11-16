@@ -1,4 +1,4 @@
-package derive_memo_wide_candidate_set;
+pkg derive_memo_wide_candidate_set;
 
 build {
   cache "out/.kio-cache/";

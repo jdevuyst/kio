@@ -1,6 +1,6 @@
-module seclib/calc;
+mod seclib/calc;
 
-import seclib/iter(loop);
+import seclib/iter { fn loop }
 
 // `spin` is a `pub(calc)`-scoped recursive member: importable only within
 // the `calc` module subtree, sealed everywhere else. When this dependency

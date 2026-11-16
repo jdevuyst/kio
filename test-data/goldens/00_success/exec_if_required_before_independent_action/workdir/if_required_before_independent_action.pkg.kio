@@ -1,4 +1,4 @@
-package if_required_before_independent_action;
+pkg if_required_before_independent_action;
 
 build {
   target js {

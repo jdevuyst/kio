@@ -1,4 +1,4 @@
-package uc;
+pkg uc;
 
 build {
   cache "out/.kio-cache/";

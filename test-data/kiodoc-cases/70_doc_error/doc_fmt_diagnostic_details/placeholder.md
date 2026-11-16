@@ -1,6 +1,6 @@
 # Substituted snippet
 
 ```kio {placeholder={"INVALID":"()"}}
-module sample;
+mod sample;
 fn value(x: INVALID) { x }
 ```

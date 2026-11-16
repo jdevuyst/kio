@@ -499,7 +499,9 @@ fn hint_for(diagnostic: String, canonical_command: &str, arg: &str) -> String {
     ) {
         match crate::pass::parser::parse_declaration_query(arg) {
             Ok(_) => return diagnostic,
-            Err(error) if arg.contains(".(") || arg.contains(".op ") || arg.contains(".varop ") => {
+            Err(error)
+                if arg.contains(".(") || arg.contains(".op ") || arg.contains(".op_var ") =>
+            {
                 return format!(
                     "invalid declaration selector `{arg}`: {}",
                     error.diagnostic().message
@@ -888,7 +890,7 @@ fn plan_load(session: &Session, module_path: &str) -> Result<Vec<StagedModule>, 
 /// reports its function type. A nominal type or type alias is a
 /// type-level name — it binds no value — and is a kind-aware error
 /// (the same message shape `kio doc check` produces for `@type`). A
-/// `literal` gets its concrete type from each use site, so the query must
+/// `lit` gets its concrete type from each use site, so the query must
 /// include an annotation.
 /// Any other expression is type-checked and its synthesized type is
 /// printed. A path-shaped bare-name token sequence can belong to either
@@ -1400,9 +1402,9 @@ fn expr_parse_result(session: &Session, input: &str) -> Result<String, Option<Pr
             }
             // The current module is loaded but its source isn't in
             // the analysis cache — fall through to a vanilla wrap.
-            None => "module _repl_dispatch_;\nfn _repl_parse_check_() {\n  let _v_ = ".to_owned(),
+            None => "mod _repl_dispatch_;\nfn _repl_parse_check_() {\n  let _v_ = ".to_owned(),
         },
-        None => "module _repl_dispatch_;\nfn _repl_parse_check_() {\n  let _v_ = ".to_owned(),
+        None => "mod _repl_dispatch_;\nfn _repl_parse_check_() {\n  let _v_ = ".to_owned(),
     };
     let wrapped = format!("{prefix}{trimmed};\n  ()\n}}\n");
     match crate::pass::parser::parse(&wrapped) {
@@ -1419,7 +1421,7 @@ fn expr_parse_result(session: &Session, input: &str) -> Result<String, Option<Pr
 /// The header is the item's declaration line with no body — the same
 /// artifact Kiodoc's `` [`@signature term`] `` directive embeds. For
 /// a `fn` this is `fn name[type-params](value-params) -> Ret`; for a
-/// `type` / `literal` / `op` the declaration is itself
+/// `type` / `lit` / `op` the declaration is itself
 /// header-shaped.
 fn cmd_signature(session: &Session, name: &str, palette: Palette) -> String {
     signature_of(session, name, palette)
@@ -1629,7 +1631,7 @@ fn doc_for_module(session: &Session, module_path: &str, palette: Palette) -> Str
         out,
         "{}",
         highlight(
-            &format!("module {}", surface_module_path(module_path)),
+            &format!("mod {}", surface_module_path(module_path)),
             palette
         )
     );
@@ -1961,10 +1963,10 @@ fn cmd_ls(session: &Session, arg: Option<&str>, verbose: bool, palette: Palette)
     };
     let surface = surface_module_path(&module_path);
     let Some(entry) = session.module(&module_path) else {
-        return format!("module `{surface}` is not loaded — `:load {surface}` first");
+        return format!("mod `{surface}` is not loaded — `:load {surface}` first");
     };
     if entry.module.items.is_empty() {
-        return format!("module `{surface}` declares no items");
+        return format!("mod `{surface}` declares no items");
     }
     let mut out = format!("{}:", highlight(&surface, palette));
     for item in &entry.module.items {
@@ -2080,7 +2082,7 @@ fn ls_item_lines(item: &Item<Surface>, verbose: bool) -> Vec<String> {
             vec![format!("{vis} {}", n.name)]
         }
         Item::TypeAlias(a) => vec![format!("type {}", a.name)],
-        Item::LiteralAlias(l, _) => vec![format!("literal {}", l.name)],
+        Item::LiteralAlias(l, _) => vec![format!("lit {}", l.name)],
         Item::Labels(_, _) => unreachable!("compact declarations handled before the verbose split"),
 
         Item::Equiv(e, _) => vec![format!("equiv {}", e.name)],
@@ -2319,7 +2321,7 @@ fn view_package(
         Ok(p) => p,
         Err(e) => {
             let (_, msg) = e.diag();
-            return format!("package `{name}` failed to parse: {msg}");
+            return format!("pkg `{name}` failed to parse: {msg}");
         }
     };
     render_package(&package_file, palette)
@@ -2332,7 +2334,7 @@ fn view_package(
 fn render_package(package: &crate::ast::PackageFile<Surface>, palette: Palette) -> String {
     use crate::ast::BridgeGlobSegment;
 
-    let mut out = highlight(&format!("package {}", package.name), palette);
+    let mut out = highlight(&format!("pkg {}", package.name), palette);
 
     if let Some(bridge) = &package.bridge {
         let _ = write!(out, "\n{}", section_header("bridge", palette));
@@ -2365,10 +2367,10 @@ fn section_header(label: &str, palette: Palette) -> String {
 ///
 /// Six sections, in order, each suppressed when empty:
 ///
-/// 1. **declared items** — `fn` / `type` / `literal` / `op` /
+/// 1. **declared items** — `fn` / `type` / `lit` / `op` /
 ///    `equiv` declarations the current module body contains.
 /// 2. **imported names** — names brought in via `import` clauses, grouped
-///    by source module. Both selective (`import m(a, b);`) and
+///    by source module. Both selective (`import m {fn a; fn b}`) and
 ///    qualified (`import m as alias;`) clauses contribute.
 /// 3. **operator bindings** — module-local `op` declarations expressed
 ///    by their complete tagged grammar (`op _ + _`, `op _ ? _ : __`).
@@ -2388,7 +2390,7 @@ fn cmd_scope(session: &Session, verbose: bool, palette: Palette) -> String {
         return "no current module — `:load <module-path>` loads one".to_owned();
     };
     let Some(entry) = session.module(current) else {
-        return format!("module `{}` is not loaded", surface_module_path(current));
+        return format!("mod `{}` is not loaded", surface_module_path(current));
     };
     let module = &entry.module;
     let mut out = format!(
@@ -2396,7 +2398,7 @@ fn cmd_scope(session: &Session, verbose: bool, palette: Palette) -> String {
         highlight(&surface_module_path(current), palette)
     );
 
-    // (1) Declared items — `fn` / `type` / `literal` / `op` /
+    // (1) Declared items — `fn` / `type` / `lit` / `op` /
     // `equiv` declarations the module body contains.
     let mut declared_lines: Vec<String> = Vec::new();
     for item in &module.items {
@@ -2412,7 +2414,7 @@ fn cmd_scope(session: &Session, verbose: bool, palette: Palette) -> String {
     // (2) Imported names, grouped by source module. A selective `import`
     // contributes one entry per imported name (operator-pattern
     // imports surface under "operator bindings" below); a qualified
-    // `import` contributes the alias (covered under "module aliases").
+    // `import` contributes the alias (covered under "mod aliases").
     let mut selective_by_source: std::collections::BTreeMap<String, Vec<String>> =
         std::collections::BTreeMap::new();
     for u in &module.imports {
@@ -2526,7 +2528,7 @@ fn cmd_unload(session: &mut Session, arg: &str) -> String {
     };
     let surface = surface_module_path(&module_path);
     let Some(entry) = session.module(&module_path) else {
-        return format!("module `{surface}` is not loaded");
+        return format!("mod `{surface}` is not loaded");
     };
     if !entry.is_explicit() {
         let via = match &entry.kind {
@@ -2887,7 +2889,7 @@ struct RefHit {
 /// Label for `:refs`: name the top-level item whose declaration span
 /// contains `offset`, formatted as `in <kind> <name>` — e.g.
 /// `in fn parse_op`, `in type Token`, `in op _ + _`, `in equiv id_eq`. A reference outside every item — an
-/// `import` clause's name, the `module ...;` header — gets
+/// `import` clause's name, the `mod ...;` header — gets
 /// `in module <module-path>`. Each item's `meta.span` covers the
 /// whole declaration (header + body), so the first item whose span
 /// contains `offset` is the enclosing one.
@@ -3105,7 +3107,7 @@ pub(super) fn selector_name(selector: &ImportItem) -> String {
 }
 
 pub(crate) fn qualified_selector(module: &str, name: &str) -> String {
-    if name.starts_with("op ") || name.starts_with("varop ") {
+    if name.starts_with("op ") || name.starts_with("op_var ") || name.starts_with("op_macro ") {
         format!("{module}.({name})")
     } else {
         format!("{module}.{name}")
@@ -3536,9 +3538,7 @@ fn line_col(source: &str, offset: u32) -> (usize, usize) {
 fn unresolved(session: &Session, name: &str) -> String {
     if session.current().is_none() {
         format!(
-            "`{name}` did not resolve — no current module is set, so only \
-             fully-qualified names (`X/a/b.name`) resolve. `:load <module-path>` \
-             loads a module."
+            "`{name}` did not resolve — no current module is set, so only fully-qualified names (`X/a/b.name`) resolve. `:load <module-path>` loads a module."
         )
     } else {
         format!(
@@ -3645,7 +3645,7 @@ path (X/a/b.name). `:scope` lists everything in scope.
 Declaration selectors (:signature, :source, :doc, :which, :refs):
   :sig name                 :sig X/a/b.name
   :sig op _ + _             :sig X/a/b.(op _ + _)
-  :sig Field                :sig X/a/b.(varop [* *])
+  :sig Field                :sig X/a/b.(op_var [* *])
 Qualified operators require the outer parentheses; inner pattern
 parentheses such as (=) keep their import meaning. Module aliases work too.
 These selectors are not expression syntax.",
@@ -3748,9 +3748,9 @@ mod tests {
         let mut files = std::collections::BTreeMap::new();
         files.insert(
             root.join("demo.pkg.kio"),
-            "package demo;\n\nbridge { main; }\n".to_owned(),
+            "pkg demo;\n\nbridge { main; }\n".to_owned(),
         );
-        files.insert(root.join("main.kio"), "module main;\n".to_owned());
+        files.insert(root.join("main.kio"), "mod main;\n".to_owned());
         let mut session = Session::new_in_memory(root, files);
 
         let list = Command::Packages(None).run(&mut session, Palette::plain());
@@ -3759,7 +3759,7 @@ mod tests {
         let contract =
             Command::Packages(Some("demo".to_owned())).run(&mut session, Palette::plain());
         assert!(
-            contract.output.contains("package demo"),
+            contract.output.contains("pkg demo"),
             "got:\n{}",
             contract.output
         );
@@ -3775,16 +3775,16 @@ mod tests {
         let mut files = std::collections::BTreeMap::new();
         files.insert(
             root.join("app.pkg.kio"),
-            "package app;\n\nbridge {\n  app/**;\n}\n".to_owned(),
+            "pkg app;\n\nbridge {\n  app/**;\n}\n".to_owned(),
         );
         files.insert(
             root.join("app/syntax.kio"),
-            "module app/syntax;\npub fn choose(left: ., right: .) -> . { left }\npub op ? _ : _ { impl choose }\n"
+            "mod app/syntax;\npub fn choose(left: ., right: .) -> . { left }\npub op ? _ : _ { impl choose }\n"
                 .to_owned(),
         );
         files.insert(
             root.join("app/main.kio"),
-            "module app/main;\nimport app/syntax(op ? _ : _);\nfn invoke() -> . { ? () : () }\n/// Runs [`@source invoke`].\npub fn run() -> . { invoke() }\n"
+            "mod app/main;\nimport app/syntax {op ? _ : _}\nfn invoke() -> . { ? () : () }\n/// Runs [`@source invoke`].\npub fn run() -> . { invoke() }\n"
                 .to_owned(),
         );
         Session::new_in_memory(root, files)
@@ -3823,9 +3823,9 @@ mod tests {
             "op _ ? __ : ___",
             "demo/ops.(op _ (=) _)",
             "demo/ops.(op _ ? __ : ___)",
-            "demo/ops.(varop [])",
-            "demo/ops.(varop [**])",
-            "demo/ops.(varop [* *])",
+            "demo/ops.(op_var [])",
+            "demo/ops.(op_var [**])",
+            "demo/ops.(op_var [* *])",
         ] {
             assert!(parse_declaration_query(query).is_ok(), "{query}");
         }
@@ -3837,7 +3837,7 @@ mod tests {
             "demo/ops.(op (_) ? __)",
             "demo/ops.(op _ .. _)",
             "demo/ops.op _ + _",
-            "demo/ops.varop [* *]",
+            "demo/ops.op_var [* *]",
             "demo/ops.(op)",
             "demo/ops.(choose)",
             "{field}",
@@ -3846,11 +3846,34 @@ mod tests {
             "demo/ops.(op _ + _, choose)",
             "demo/ops.(op _ + _",
             "choose as other",
-            "import demo/ops(macro choose)",
+            "import demo/ops {macro choose}",
             "choose, empty",
             "(op _ + _)",
         ] {
             assert!(parse_declaration_query(query).is_err(), "{query}");
+        }
+    }
+
+    #[test]
+    fn declaration_queries_keep_keyword_shaped_names() {
+        let root = PathBuf::from("/kio-repl-tests/contextual-names");
+        let source = "mod app; pub fn fn() -> . { () } pub fn type() -> . { () } pub fn lit() -> . { () } pub fn macro() -> . { () } pub fn op() -> . { () } pub fn op_macro() -> . { () } pub fn op_var() -> . { () }";
+        let mut session = Session::new_in_memory(
+            root.clone(),
+            [(root.join("app.kio"), source.to_owned())]
+                .into_iter()
+                .collect(),
+        );
+        let loaded = Command::Load("app".to_owned()).run(&mut session, Palette::plain());
+        assert!(loaded.output.starts_with("loaded app"), "{}", loaded.output);
+        for name in ["fn", "type", "lit", "macro", "op", "op_macro", "op_var"] {
+            for query in [name.to_owned(), format!("app.{name}")] {
+                assert!(
+                    cmd_signature(&session, &query, Palette::plain())
+                        .contains(&format!("fn {name}()")),
+                    "{query}"
+                );
+            }
         }
     }
 
@@ -3862,12 +3885,12 @@ mod tests {
             ("demo/ops.(op _ + _)", "pub op _ + _ { impl choose }"),
             ("arithmetic.(op _ (=) _)", "pub op _ (=) _ { impl choose }"),
             (
-                "arithmetic.(varop [* *])",
-                "pub varop [* *] { foldr choose empty }",
+                "arithmetic.(op_var [* *])",
+                "pub op_var [* *] { foldr choose empty }",
             ),
             (
-                "arithmetic.(varop [**])",
-                "pub varop [* *] { foldr choose empty }",
+                "arithmetic.(op_var [**])",
+                "pub op_var [* *] { foldr choose empty }",
             ),
             ("arithmetic.Field", "pub type Field = Original;"),
             ("arithmetic.field", "pub fn field()"),
@@ -3932,7 +3955,7 @@ mod tests {
         for command in ["sig", "src", "doc", "which", "refs"] {
             for (prefix, expected) in [
                 ("arithmetic.(op _", "arithmetic.(op _ + _)"),
-                ("demo/ops.(var", "demo/ops.(varop [* *])"),
+                ("demo/ops.(var", "demo/ops.(op_var [* *])"),
                 ("op _", "op _ + _"),
                 ("arithmetic.F", "arithmetic.Field"),
             ] {
@@ -4020,27 +4043,34 @@ mod tests {
         let mut files = std::collections::BTreeMap::new();
         files.insert(
             root.join("app.pkg.kio"),
-            "package app;\n\nbridge {\n  app/**;\n}\n".to_owned(),
+            "pkg app;\n\nbridge {\n  app/**;\n}\n".to_owned(),
         );
         files.insert(
             root.join("app/syntax.kio"),
-            "module app/syntax;\npub fn choose[A](left: A, right: A) -> A { right }\n\
-             pub op _ / _ { impl choose; };\n"
-                .to_owned(),
+            "mod app/syntax;
+pub fn choose[A](left: A, right: A) -> A { right }
+pub op _ / _ { impl choose; };
+"
+            .to_owned(),
         );
         files.insert(
             root.join("app/value.kio"),
-            "module app/value;\npub fn item() -> . { () }\n".to_owned(),
+            "mod app/value;\npub fn item() -> . { () }\n".to_owned(),
         );
         files.insert(
             root.join("left/value.kio"),
-            "module left/value;\npub fn item(left: ., right: .) -> . { left }\n".to_owned(),
+            "mod left/value;\npub fn item(left: ., right: .) -> . { left }\n".to_owned(),
         );
         files.insert(
             root.join("app/main.kio"),
-            "module app/main;\nimport app/syntax(op _ / _);\nimport app/value as value;\n\
-             import left/value as declared;\nfn left() -> . { () }\nfn other() -> . { () }\n"
-                .to_owned(),
+            "mod app/main;
+import app/syntax {op _ / _}
+import app/value as value;
+import left/value as declared;
+fn left() -> . { () }
+fn other() -> . { () }
+"
+            .to_owned(),
         );
         Session::new_in_memory(root, files)
     }
@@ -4050,11 +4080,11 @@ mod tests {
         let mut files = std::collections::BTreeMap::new();
         files.insert(
             root.join("totality.pkg.kio"),
-            "package totality;\n\nbridge {\n  app/**;\n  macros;\n}\n".to_owned(),
+            "pkg totality;\n\nbridge {\n  app/**;\n  macros;\n}\n".to_owned(),
         );
         files.insert(
             root.join("macros.kio"),
-            r#"module macros;
+            r#"mod macros;
 
 import __comptime__;
 
@@ -4093,7 +4123,7 @@ pub macro reentrant : [Source] Source -> [Target] Target { impl reentrant_checke
         );
         files.insert(
             root.join("app/main.kio"),
-            "module app/main;\n\nimport macros(macro reentrant);\n\nfn idle() -> . { () }\n"
+            "mod app/main;\n\nimport macros {macro reentrant}\n\nfn idle() -> . { () }\n"
                 .to_owned(),
         );
         Session::new_in_memory(root, files)
@@ -4142,7 +4172,7 @@ pub macro reentrant : [Source] Source -> [Target] Target { impl reentrant_checke
             "{}",
             result.output
         );
-        assert!(!result.output.contains("package does not type-check"));
+        assert!(!result.output.contains("pkg does not type-check"));
     }
 
     #[test]
@@ -4285,28 +4315,28 @@ pub macro reentrant : [Source] Source -> [Target] Target { impl reentrant_checke
         let root = tempfile::tempdir().expect("temporary package root");
         std::fs::write(
             root.path().join("app.pkg.kio"),
-            "package app;\n\nbridge {\n  app/**;\n}\n",
+            "pkg app;\n\nbridge {\n  app/**;\n}\n",
         )
-        .expect("package file");
+        .expect("pkg file");
         let module_dir = root.path().join("app");
-        std::fs::create_dir_all(&module_dir).expect("module directory");
+        std::fs::create_dir_all(&module_dir).expect("mod directory");
         let provider_path = module_dir.join("syntax.kio");
         std::fs::write(
             &provider_path,
-            "module app/syntax;\npub fn choose(left: ., right: .) -> . { left }\npub op ? _ : _ { impl choose }\n",
+            "mod app/syntax;\npub fn choose(left: ., right: .) -> . { left }\npub op ? _ : _ { impl choose }\n",
         )
         .expect("provider module");
         std::fs::write(
             module_dir.join("main.kio"),
-            "module app/main;\nimport app/syntax(op ? _ : _);\npub fn run() -> . { ? () : () }\n",
+            "mod app/main;\nimport app/syntax {op ? _ : _}\npub fn run() -> . { ? () : () }\n",
         )
         .expect("consumer module");
         let mut session = Session::new(root.path().to_path_buf());
-        session.refresh().expect("package analysis");
+        session.refresh().expect("pkg analysis");
 
         std::fs::write(
             provider_path,
-            "module app/syntax;\npub fn choose(left: ., right: .) -> . { left }\npub op ? _ ! _ { impl choose; };\n",
+            "mod app/syntax;\npub fn choose(left: ., right: .) -> . { left }\npub op ? _ ! _ { impl choose; };\n",
         )
         .expect("provider changed after analysis");
         let staged = plan_load(&session, "app/main").expect("snapshot-consistent load plan");
@@ -4595,7 +4625,7 @@ pub macro reentrant : [Source] Source -> [Target] Target { impl reentrant_checke
         );
         let rendered = render_expr_error(&error);
         assert!(rendered.starts_with("compile-time evaluation failed its Totality check:"));
-        assert!(!rendered.contains("package does not type-check"));
+        assert!(!rendered.contains("pkg does not type-check"));
     }
 
     #[test]
@@ -4630,16 +4660,15 @@ pub macro reentrant : [Source] Source -> [Target] Target { impl reentrant_checke
 
     fn session_with_analysis(path: &str, source: &str) -> (tempfile::TempDir, Session) {
         let root = tempfile::tempdir().expect("temporary package root");
-        let package = path.split('/').next().expect("package segment");
+        let package = path.split('/').next().expect("pkg segment");
         std::fs::write(
             root.path().join(format!("{package}.pkg.kio")),
-            format!("package {package};\n\nbridge {{\n  {package}/**;\n}}\n"),
+            format!("pkg {package};\n\nbridge {{\n  {package}/**;\n}}\n"),
         )
-        .expect("package file");
+        .expect("pkg file");
         let file_path = root.path().join(format!("{path}.kio"));
-        std::fs::create_dir_all(file_path.parent().expect("module parent"))
-            .expect("module directory");
-        std::fs::write(&file_path, source).expect("module source");
+        std::fs::create_dir_all(file_path.parent().expect("mod parent")).expect("mod directory");
+        std::fs::write(&file_path, source).expect("mod source");
 
         let module = crate::pass::parser::parse(source).expect("test module parses");
         let staged = StagedModule {
@@ -4649,16 +4678,13 @@ pub macro reentrant : [Source] Source -> [Target] Target { impl reentrant_checke
         };
         let mut session = Session::new(root.path().to_path_buf());
         session.commit_load(path, &[staged]);
-        session.refresh().expect("package analysis");
+        session.refresh().expect("pkg analysis");
         (root, session)
     }
 
     #[test]
     fn cmd_type_renders_fn_type() {
-        let s = session_with(&[(
-            "pkg/a",
-            "module pkg/a;\npub fn add(x: . , y: .) -> . { () }\n",
-        )]);
+        let s = session_with(&[("pkg/a", "mod pkg/a;\npub fn add(x: . , y: .) -> . { () }\n")]);
         let out = cmd_type_name(&s, "add", Palette::plain());
         assert!(out.contains("add :"), "got: {out}");
     }
@@ -4667,7 +4693,7 @@ pub macro reentrant : [Source] Source -> [Target] Target { impl reentrant_checke
     fn cmd_type_reports_type_level_name_with_kind_aware_error() {
         // `:t` on a `type` is a kind-aware error — the same message
         // shape `kio doc check` produces for `@type`.
-        let s = session_with(&[("pkg/a", "module pkg/a;\ntype Same[A] = A;\n")]);
+        let s = session_with(&[("pkg/a", "mod pkg/a;\ntype Same[A] = A;\n")]);
         let out = cmd_type_name(&s, "Same", Palette::plain());
         assert!(out.contains("type alias"), "got: {out}");
         assert!(out.contains("value binding"), "got: {out}");
@@ -4677,7 +4703,7 @@ pub macro reentrant : [Source] Source -> [Target] Target { impl reentrant_checke
     fn cmd_type_reports_compact_owner_as_type_alias() {
         let s = session_with(&[(
             "pkg/a",
-            "module pkg/a;\npub type Color = { Red: .; Green: .; };\n",
+            "mod pkg/a;\npub type Color = { Red: .; Green: .; };\n",
         )]);
         let out = cmd_type_name(&s, "Color", Palette::plain());
         assert!(out.contains("type alias"), "got: {out}");
@@ -4688,17 +4714,20 @@ pub macro reentrant : [Source] Source -> [Target] Target { impl reentrant_checke
     fn variadic_operator_queries_report_current_binding_kind() {
         let s = session_with(&[(
             "pkg/a",
-            "module pkg/a;\nfn seed() -> . { () }\nfn step(x: ., y: .) -> . { x }\n\
-             varop [* *] { foldr step seed; };\n",
+            "mod pkg/a;
+fn seed() -> . { () }
+fn step(x: ., y: .) -> . { x }
+op_var [* *] { foldr step seed; };
+",
         )]);
-        let grammar = "varop [* *]";
+        let grammar = "op_var [* *]";
         assert_eq!(
             cmd_type_name(&s, grammar, Palette::plain()),
-            "`varop [* *]` is a variadic operator binding — use `:source varop [* *]`"
+            "`op_var [* *]` is a variadic operator binding — use `:source op_var [* *]`"
         );
         assert_eq!(
             cmd_pure_name(&s, grammar),
-            "`varop [* *]` is a variadic operator binding; `:pure` expects an executable value binding (fn or host fn)"
+            "`op_var [* *]` is a variadic operator binding; `:pure` expects an executable value binding (fn or host fn)"
         );
     }
 
@@ -4706,12 +4735,13 @@ pub macro reentrant : [Source] Source -> [Target] Target { impl reentrant_checke
     fn cmd_pure_uses_declaration_metadata_and_compiler_pure_context() {
         let (_root, mut session) = session_with_analysis(
             "pkg/a",
-            "module pkg/a;\n\
-             host type Text role(str);\n\
-             host fn emit(value: Text) -> .;\n\
-             pure fn identity(x: .) -> . { x }\n\
-             fn unrestricted(x: .) -> . { x }\n\
-             type Alias = .;\n",
+            "mod pkg/a;
+host type Text role(str);
+host fn emit(value: Text) -> .;
+pure fn identity(x: .) -> . { x }
+fn unrestricted(x: .) -> . { x }
+type Alias = .;
+",
         );
 
         let cases = [
@@ -4744,10 +4774,8 @@ pub macro reentrant : [Source] Source -> [Target] Target { impl reentrant_checke
 
     #[test]
     fn cmd_pure_preserves_invalid_input_and_no_module_diagnostics() {
-        let (_root, mut session) = session_with_analysis(
-            "pkg/a",
-            "module pkg/a;\npure fn identity(x: .) -> . { x }\n",
-        );
+        let (_root, mut session) =
+            session_with_analysis("pkg/a", "mod pkg/a;\npure fn identity(x: .) -> . { x }\n");
         let invalid = cmd_pure(&mut session, "missing(())");
         assert_ne!(invalid, "pure");
         assert_ne!(invalid, "impure");
@@ -4770,7 +4798,7 @@ pub macro reentrant : [Source] Source -> [Target] Target { impl reentrant_checke
     #[test]
     fn alias_declaration_commands_keep_local_imported_and_qualified_selectors() {
         let provider = concat!(
-            "module pkg/api; pub fn field() -> . { () } pub type { Original: .; }\n",
+            "mod pkg/api; pub fn field() -> . { () } pub type { Original: .; }\n",
             "/// The field alias.\n",
             "pub type Field = Original;\n",
         );
@@ -4778,7 +4806,10 @@ pub macro reentrant : [Source] Source -> [Target] Target { impl reentrant_checke
             vec![("pkg/api", provider)],
             vec![
                 ("pkg/api", provider),
-                ("pkg/main", "module pkg/main; import pkg/api(field, Field);"),
+                (
+                    "pkg/main",
+                    "mod pkg/main; import pkg/api {fn field; type Field}",
+                ),
             ],
         ] {
             let mut session = session_with(&modules);
@@ -4812,7 +4843,7 @@ pub macro reentrant : [Source] Source -> [Target] Target { impl reentrant_checke
         let (_root, session) = session_with_analysis(
             "pkg/api",
             concat!(
-                "module pkg/api; type { Original: .; }\n",
+                "mod pkg/api; type { Original: .; }\n",
                 "fn field() -> . { () }\n",
                 "type Field = Original;\n",
             ),
@@ -4825,10 +4856,7 @@ pub macro reentrant : [Source] Source -> [Target] Target { impl reentrant_checke
 
     #[test]
     fn cmd_signature_prints_fn_header() {
-        let s = session_with(&[(
-            "pkg/a",
-            "module pkg/a;\npub fn add(x: ., y: .) -> . { x }\n",
-        )]);
+        let s = session_with(&[("pkg/a", "mod pkg/a;\npub fn add(x: ., y: .) -> . { x }\n")]);
         let out = cmd_signature(&s, "add", Palette::plain());
         // The declaration header — no body.
         assert!(out.contains("fn add"), "got: {out}");
@@ -4839,13 +4867,14 @@ pub macro reentrant : [Source] Source -> [Target] Target { impl reentrant_checke
     fn named_views_select_exact_rec_group_member() {
         let s = session_with(&[(
             "pkg/a",
-            "module pkg/a;\n\
-             rec(loop) {\n\
-               /// First member docs.\n\
-               fn first(value: First) -> First { value };\n\
-               /// Second member docs.\n\
-               fn second(value: Second) -> Second { value }\n\
-             }\n",
+            "mod pkg/a;
+rec(loop) {
+/// First member docs.
+fn first(value: First) -> First { value };
+/// Second member docs.
+fn second(value: Second) -> Second { value }
+}
+",
         )]);
 
         let signature = cmd_signature(&s, "second", Palette::plain());
@@ -4871,13 +4900,14 @@ pub macro reentrant : [Source] Source -> [Target] Target { impl reentrant_checke
     fn named_views_select_exact_type_rec_group_member_by_bare_name_and_fqn() {
         let mut s = session_with(&[(
             "pkg/a",
-            "module pkg/a;\n\
-             rec {\n\
-               /// First member docs.\n\
-               type First = Second;\n\
-               /// Second member docs.\n\
-               type { Second: First { mk; get; }; };\n\
-             }\n",
+            "mod pkg/a;
+rec {
+/// First member docs.
+type First = Second;
+/// Second member docs.
+type { Second: First { mk; get; }; };
+}
+",
         )]);
 
         for name in ["Second", "pkg/a.Second"] {
@@ -4908,14 +4938,14 @@ pub macro reentrant : [Source] Source -> [Target] Target { impl reentrant_checke
     fn cmd_signature_prints_type_level_header() {
         // `:signature` works on a type-level name too — it prints the
         // declaration header, no kind error (that is `:type`'s job).
-        let s = session_with(&[("pkg/a", "module pkg/a;\ntype Same[A] = A;\n")]);
+        let s = session_with(&[("pkg/a", "mod pkg/a;\ntype Same[A] = A;\n")]);
         let out = cmd_signature(&s, "Same", Palette::plain());
         assert!(out.contains("type Same"), "got: {out}");
     }
 
     #[test]
     fn cmd_source_prints_declaration() {
-        let s = session_with(&[("pkg/a", "module pkg/a;\npub fn run() -> . { () }\n")]);
+        let s = session_with(&[("pkg/a", "mod pkg/a;\npub fn run() -> . { () }\n")]);
         let out = cmd_source(&s, "run", Palette::plain());
         assert!(out.contains("fn run"));
         assert!(out.contains('{'));
@@ -4926,7 +4956,7 @@ pub macro reentrant : [Source] Source -> [Target] Target { impl reentrant_checke
         // Named-item queries resolve the same complete tagged grammar.
         let s = session_with(&[(
             "pkg/a",
-            "module pkg/a;\npub fn add(x: ., y: .) -> . { x }\nop _ + __ { impl add }\n",
+            "mod pkg/a;\npub fn add(x: ., y: .) -> . { x }\nop _ + __ { impl add }\n",
         )]);
         let out = cmd_source(&s, "op _ + __", Palette::plain());
         assert!(out.contains("op _ + __ { impl add"), "got: {out}");
@@ -4937,7 +4967,7 @@ pub macro reentrant : [Source] Source -> [Target] Target { impl reentrant_checke
     fn cmd_signature_resolves_operator_token() {
         let s = session_with(&[(
             "pkg/a",
-            "module pkg/a;\npub fn add(x: ., y: .) -> . { x }\nop _ + __ { impl add }\n",
+            "mod pkg/a;\npub fn add(x: ., y: .) -> . { x }\nop _ + __ { impl add }\n",
         )]);
         let out = cmd_signature(&s, "op _ + __", Palette::plain());
         assert!(out.contains("op _ + __ { impl add"), "got: {out}");
@@ -4947,10 +4977,11 @@ pub macro reentrant : [Source] Source -> [Target] Target { impl reentrant_checke
 
     #[test]
     fn preceding_comment_block_captures_line_comments() {
-        let src = "module pkg/a;\n\
-                   // a leading\n\
-                   // two-line note\n\
-                   pub fn run() -> . { () }\n";
+        let src = "mod pkg/a;
+// a leading
+// two-line note
+pub fn run() -> . { () }
+";
         let item_start = src.find("pub fn").expect("locate item");
         let prefix = preceding_comment_block(src, item_start);
         assert_eq!(prefix, "// a leading\n// two-line note");
@@ -4958,9 +4989,10 @@ pub macro reentrant : [Source] Source -> [Target] Target { impl reentrant_checke
 
     #[test]
     fn preceding_comment_block_captures_doc_comments() {
-        let src = "module pkg/a;\n\
-                   /// One-line doc-comment.\n\
-                   pub fn run() -> . { () }\n";
+        let src = "mod pkg/a;
+/// One-line doc-comment.
+pub fn run() -> . { () }
+";
         let item_start = src.find("pub fn").expect("locate item");
         let prefix = preceding_comment_block(src, item_start);
         assert_eq!(prefix, "/// One-line doc-comment.");
@@ -4969,11 +5001,12 @@ pub macro reentrant : [Source] Source -> [Target] Target { impl reentrant_checke
     #[test]
     fn preceding_comment_block_captures_mixed_runs() {
         // A run of mixed `//` and `///` lines is kept contiguous.
-        let src = "module pkg/a;\n\
-                   // note\n\
-                   /// doc\n\
-                   // more\n\
-                   pub fn run() -> . { () }\n";
+        let src = "mod pkg/a;
+// note
+/// doc
+// more
+pub fn run() -> . { () }
+";
         let item_start = src.find("pub fn").expect("locate item");
         let prefix = preceding_comment_block(src, item_start);
         assert_eq!(prefix, "// note\n/// doc\n// more");
@@ -4983,10 +5016,11 @@ pub macro reentrant : [Source] Source -> [Target] Target { impl reentrant_checke
     fn preceding_comment_block_stops_at_blank_line() {
         // A blank line above the comment block terminates the run —
         // the comment is NOT part of the item.
-        let src = "module pkg/a;\n\
-                   // far away, separated\n\
-                   \n\
-                   pub fn run() -> . { () }\n";
+        let src = "mod pkg/a;
+// far away, separated
+
+pub fn run() -> . { () }
+";
         let item_start = src.find("pub fn").expect("locate item");
         let prefix = preceding_comment_block(src, item_start);
         assert_eq!(prefix, "");
@@ -4995,10 +5029,11 @@ pub macro reentrant : [Source] Source -> [Target] Target { impl reentrant_checke
     #[test]
     fn preceding_comment_block_stops_at_previous_code() {
         // The previous item's closing brace terminates the run.
-        let src = "module pkg/a;\n\
-                   pub fn first() -> . { () }\n\
-                   // attached to second\n\
-                   pub fn second() -> . { () }\n";
+        let src = "mod pkg/a;
+pub fn first() -> . { () }
+// attached to second
+pub fn second() -> . { () }
+";
         let item_start = src.find("pub fn second").expect("locate item");
         let prefix = preceding_comment_block(src, item_start);
         assert_eq!(prefix, "// attached to second");
@@ -5006,7 +5041,7 @@ pub macro reentrant : [Source] Source -> [Target] Target { impl reentrant_checke
 
     #[test]
     fn preceding_comment_block_handles_no_preceding_comment() {
-        let src = "module pkg/a;\npub fn run() -> . { () }\n";
+        let src = "mod pkg/a;\npub fn run() -> . { () }\n";
         let item_start = src.find("pub fn").expect("locate item");
         assert_eq!(preceding_comment_block(src, item_start), "");
     }
@@ -5015,7 +5050,7 @@ pub macro reentrant : [Source] Source -> [Target] Target { impl reentrant_checke
     fn cmd_ls_lists_items() {
         let s = session_with(&[(
             "pkg/a",
-            "module pkg/a;\npub fn f() -> . { () }\ntype T[A] = A;\n",
+            "mod pkg/a;\npub fn f() -> . { () }\ntype T[A] = A;\n",
         )]);
         let out = cmd_ls(&s, Some("pkg/a"), false, Palette::plain());
         assert!(out.contains("pub fn f"));
@@ -5030,7 +5065,7 @@ pub macro reentrant : [Source] Source -> [Target] Target { impl reentrant_checke
 
     #[test]
     fn cmd_ls_verbose_renders_full_signatures() {
-        let s = session_with(&[("pkg/a", "module pkg/a;\npub fn f(x: ., y: .) -> . { x }\n")]);
+        let s = session_with(&[("pkg/a", "mod pkg/a;\npub fn f(x: ., y: .) -> . { x }\n")]);
         let terse = cmd_ls(&s, Some("pkg/a"), false, Palette::plain());
         // Terse: keyword + name only, no parameter list.
         assert!(terse.contains("pub fn f"), "got:\n{terse}");
@@ -5049,11 +5084,12 @@ pub macro reentrant : [Source] Source -> [Target] Target { impl reentrant_checke
     fn cmd_ls_flattens_recursive_members_in_both_modes() {
         let s = session_with(&[(
             "pkg/a",
-            "module pkg/a;\n\
-             rec(loop) {\n\
-               fn first(value: .) -> . { recur second(value) };\n\
-               pub fn second(value: .) -> . { recur first(value) }\n\
-             }\n",
+            "mod pkg/a;
+rec(loop) {
+fn first(value: .) -> . { recur second(value) };
+pub fn second(value: .) -> . { recur first(value) }
+}
+",
         )]);
 
         let terse = cmd_ls(&s, Some("pkg/a"), false, Palette::plain());
@@ -5085,11 +5121,11 @@ pub macro reentrant : [Source] Source -> [Target] Target { impl reentrant_checke
                 for declaration in [
                     "pub fn choose",
                     "pub op _ + _",
-                    "pub varop [* *]",
+                    "pub op_var [* *]",
                     "pub(demo) op _ ++ _",
-                    "pub(demo) varop [! !]",
+                    "pub(demo) op_var [! !]",
                     "op _ - _",
-                    "varop [% %]",
+                    "op_var [% %]",
                 ] {
                     assert!(output.contains(declaration), "{declaration}: {output}");
                 }
@@ -5100,9 +5136,9 @@ pub macro reentrant : [Source] Source -> [Target] Target { impl reentrant_checke
             ] {
                 for (prefix, grammar, keyword) in [
                     ("pub ", "op _ + _", "op"),
-                    ("pub ", "varop [* *]", "varop"),
+                    ("pub ", "op_var [* *]", "op_var"),
                     ("pub(demo) ", "op _ ++ _", "op"),
-                    ("pub(demo) ", "varop [! !]", "varop"),
+                    ("pub(demo) ", "op_var [! !]", "op_var"),
                 ] {
                     let expected = highlight(&format!("{prefix}{grammar}"), Palette::truecolor());
                     let line = output
@@ -5116,7 +5152,7 @@ pub macro reentrant : [Source] Source -> [Target] Target { impl reentrant_checke
                         );
                     }
                 }
-                assert!(!output.contains("pubop") && !output.contains("pubvarop"));
+                assert!(!output.contains("pubop") && !output.contains("pubop_var"));
             }
         }
     }
@@ -5127,7 +5163,7 @@ pub macro reentrant : [Source] Source -> [Target] Target { impl reentrant_checke
         // shows the callable clause.
         let s = session_with(&[(
             "pkg/a",
-            "module pkg/a;
+            "mod pkg/a;
              fn cond(c: ., a: ., b: .) -> . { a }
              op _ ? _ : __ { impl cond; };
 ",
@@ -5158,7 +5194,7 @@ pub macro reentrant : [Source] Source -> [Target] Target { impl reentrant_checke
 
     #[test]
     fn cmd_ls_no_footer_when_nothing_to_expand() {
-        let s = session_with(&[("pkg/a", "module pkg/a;\nequiv same { (); () }\n")]);
+        let s = session_with(&[("pkg/a", "mod pkg/a;\nequiv same { (); () }\n")]);
         let out = cmd_ls(&s, Some("pkg/a"), false, Palette::plain());
         assert!(
             !out.contains(":ls -v"),
@@ -5170,9 +5206,10 @@ pub macro reentrant : [Source] Source -> [Target] Target { impl reentrant_checke
     fn cmd_ls_lists_each_anonymous_nominal() {
         let s = session_with(&[(
             "pkg/a",
-            "module pkg/a;\n\
-             pub fn run() -> . { () }\n\
-             type { Red: .; Green: .; };\n",
+            "mod pkg/a;
+pub fn run() -> . { () }
+type { Red: .; Green: .; };
+",
         )]);
         let out = cmd_ls(&s, Some("pkg/a"), false, Palette::plain());
         // Terse output lists names without rendering the anonymous container.
@@ -5208,11 +5245,12 @@ pub macro reentrant : [Source] Source -> [Target] Target { impl reentrant_checke
     fn cmd_ls_preserves_anonymous_recursive_nominals_exactly_once_in_source_order() {
         let (_root, s) = session_with_analysis(
             "pkg/a",
-            "module pkg/a;\n\
-             rec {\n\
-               pub type { Left: Right; Right: Branch; };\n\
-               pub type { Branch: Left { pub mk; pub get; }; };\n\
-             }\n",
+            "mod pkg/a;
+rec {
+pub type { Left: Right; Right: Branch; };
+pub type { Branch: Left { pub mk; pub get; }; };
+}
+",
         );
 
         let terse = cmd_ls(&s, Some("pkg/a"), false, Palette::plain());
@@ -5230,11 +5268,12 @@ pub macro reentrant : [Source] Source -> [Target] Target { impl reentrant_checke
     fn cmd_ls_preserves_compact_names_inside_a_type_rec_group() {
         let (_root, s) = session_with_analysis(
             "pkg/a",
-            "module pkg/a;\n\
-             rec {\n\
-               pub type Node = { Next: Tree; };\n\
-               pub type { Tree: Node { pub mk; pub get; }; };\n\
-             }\n",
+            "mod pkg/a;
+rec {
+pub type Node = { Next: Tree; };
+pub type { Tree: Node { pub mk; pub get; }; };
+}
+",
         );
 
         let terse = cmd_ls(&s, Some("pkg/a"), false, Palette::plain());
@@ -5251,7 +5290,7 @@ pub macro reentrant : [Source] Source -> [Target] Target { impl reentrant_checke
     fn cmd_ls_lists_named_compact_owner_and_entries() {
         let s = session_with(&[(
             "pkg/a",
-            "module pkg/a;\ntype Unit = .;\npub type Color = { Red: Unit; Green: Unit; };\n",
+            "mod pkg/a;\ntype Unit = .;\npub type Color = { Red: Unit; Green: Unit; };\n",
         )]);
         let out = cmd_ls(&s, Some("pkg/a"), false, Palette::plain());
         assert_fragments_once_in_order(&out, &["pub type Color", "pub type Red", "pub type Green"]);
@@ -5261,7 +5300,7 @@ pub macro reentrant : [Source] Source -> [Target] Target { impl reentrant_checke
     fn cmd_ls_with_no_arg_lists_current_module() {
         // `:ls` with no argument lists the current module — pkg/a was
         // loaded last, so it is current.
-        let s = session_with(&[("pkg/a", "module pkg/a;\npub fn f() -> . { () }\n")]);
+        let s = session_with(&[("pkg/a", "mod pkg/a;\npub fn f() -> . { () }\n")]);
         let out = cmd_ls(&s, None, false, Palette::plain());
         assert!(out.contains("pkg/a"), "got: {out}");
         assert!(out.contains("pub fn f"), "got: {out}");
@@ -5278,7 +5317,7 @@ pub macro reentrant : [Source] Source -> [Target] Target { impl reentrant_checke
 
     #[test]
     fn cmd_mods_marks_current() {
-        let s = session_with(&[("pkg/a", "module pkg/a;\n"), ("pkg/b", "module pkg/b;\n")]);
+        let s = session_with(&[("pkg/a", "mod pkg/a;\n"), ("pkg/b", "mod pkg/b;\n")]);
         let out = cmd_mods(&s);
         // pkg/b was loaded last → current → starred.
         assert!(out.contains("* pkg/b"), "got: {out}");
@@ -5292,20 +5331,18 @@ pub macro reentrant : [Source] Source -> [Target] Target { impl reentrant_checke
         // __intrinsics__;`, and `import __comptime__;`. `:scope` lists
         // each under its section header.
         let s = session_with(&[
-            (
-                "pkg/other",
-                "module pkg/other;\npub fn callee() -> . { () }\n",
-            ),
+            ("pkg/other", "mod pkg/other;\npub fn callee() -> . { () }\n"),
             (
                 "pkg/a",
-                "module pkg/a;\n\
-                 import __intrinsics__;\n\
-                 import __comptime__;\n\
-                 import pkg/other(callee);\n\
-                 import pkg/other as o;\n\
-                 pub fn run() -> . { callee() }\n\
-                 fn add(x: ., y: .) -> . { x }\n\
-                 op _ + __ { impl add }\n",
+                "mod pkg/a;
+import __intrinsics__;
+import __comptime__;
+import pkg/other {fn callee}
+import pkg/other as o;
+pub fn run() -> . { callee() }
+fn add(x: ., y: .) -> . { x }
+op _ + __ { impl add }
+",
             ),
         ]);
         let out = cmd_scope(&s, false, Palette::plain());
@@ -5333,7 +5370,7 @@ pub macro reentrant : [Source] Source -> [Target] Target { impl reentrant_checke
         // A module with nothing imported and no builtin modules shows
         // only its declared section plus the builtin status lines in the
         // not-in-scope form.
-        let s = session_with(&[("pkg/a", "module pkg/a;\npub fn f() -> . { () }\n")]);
+        let s = session_with(&[("pkg/a", "mod pkg/a;\npub fn f() -> . { () }\n")]);
         let out = cmd_scope(&s, false, Palette::plain());
         assert!(out.contains("scope of pkg/a"), "got:\n{out}");
         assert!(out.contains("pub fn f"), "got:\n{out}");
@@ -5355,7 +5392,7 @@ pub macro reentrant : [Source] Source -> [Target] Target { impl reentrant_checke
 
     #[test]
     fn cmd_which_finds_declaring_module() {
-        let s = session_with(&[("pkg/a", "module pkg/a;\npub fn helper() -> . { () }\n")]);
+        let s = session_with(&[("pkg/a", "mod pkg/a;\npub fn helper() -> . { () }\n")]);
         assert_eq!(cmd_which(&s, "helper"), "pkg/a.helper");
     }
 
@@ -5365,8 +5402,10 @@ pub macro reentrant : [Source] Source -> [Target] Target { impl reentrant_checke
         // declarations are scanned, not exports.
         let s = session_with(&[(
             "pkg/a",
-            "module pkg/a;\nfn priv_helper() -> . { () }\n\
-             pub fn run() -> . { () }\n",
+            "mod pkg/a;
+fn priv_helper() -> . { () }
+pub fn run() -> . { () }
+",
         )]);
         assert_eq!(cmd_which(&s, "priv_helper"), "pkg/a.priv_helper");
         assert_eq!(cmd_which(&s, "run"), "pkg/a.run");
@@ -5374,7 +5413,7 @@ pub macro reentrant : [Source] Source -> [Target] Target { impl reentrant_checke
 
     #[test]
     fn cmd_which_reports_missing() {
-        let s = session_with(&[("pkg/a", "module pkg/a;\n")]);
+        let s = session_with(&[("pkg/a", "mod pkg/a;\n")]);
         assert!(cmd_which(&s, "nothere").contains("no loaded module"));
     }
 
@@ -5387,7 +5426,7 @@ pub macro reentrant : [Source] Source -> [Target] Target { impl reentrant_checke
         // diagnostic naming the providing module.
         let s = session_with(&[(
             "pkg/a",
-            "module pkg/a;\nimport __intrinsics__;\npub fn run() -> . { () }\n",
+            "mod pkg/a;\nimport __intrinsics__;\npub fn run() -> . { () }\n",
         )]);
         let out = cmd_which(&s, "__left__");
         assert!(
@@ -5407,7 +5446,7 @@ pub macro reentrant : [Source] Source -> [Target] Target { impl reentrant_checke
         // intrinsics are in scope.
         let s = session_with(&[(
             "pkg/a",
-            "module pkg/a;\nimport __intrinsics__;\npub fn run() -> . { () }\n",
+            "mod pkg/a;\nimport __intrinsics__;\npub fn run() -> . { () }\n",
         )]);
         let out = cmd_which(&s, "__not_an_intrinsic__");
         assert!(out.contains("no loaded module"), "got:\n{out}");
@@ -5420,7 +5459,7 @@ pub macro reentrant : [Source] Source -> [Target] Target { impl reentrant_checke
         // scheme.
         let s = session_with(&[(
             "pkg/a",
-            "module pkg/a;\nimport __intrinsics__;\npub fn run() -> . { () }\n",
+            "mod pkg/a;\nimport __intrinsics__;\npub fn run() -> . { () }\n",
         )]);
         let out = cmd_doc(&s, "__left__", Palette::plain());
         assert!(
@@ -5440,7 +5479,7 @@ pub macro reentrant : [Source] Source -> [Target] Target { impl reentrant_checke
     fn cmd_which_reports_comptime_in_scope() {
         let s = session_with(&[(
             "pkg/a",
-            "module pkg/a;\nimport __comptime__;\npub fn run() -> . { () }\n",
+            "mod pkg/a;\nimport __comptime__;\npub fn run() -> . { () }\n",
         )]);
         let out = cmd_which(&s, "__reflect_type__");
         assert!(
@@ -5457,7 +5496,7 @@ pub macro reentrant : [Source] Source -> [Target] Target { impl reentrant_checke
     fn cmd_doc_renders_comptime_type_and_value_docs() {
         let s = session_with(&[(
             "pkg/a",
-            "module pkg/a;\nimport __comptime__;\npub fn run() -> . { () }\n",
+            "mod pkg/a;\nimport __comptime__;\npub fn run() -> . { () }\n",
         )]);
         let type_out = cmd_doc(&s, "__Type__", Palette::plain());
         assert!(type_out.contains("type __Type__"), "got:\n{type_out}");
@@ -5480,7 +5519,7 @@ pub macro reentrant : [Source] Source -> [Target] Target { impl reentrant_checke
     fn resolve_builtin_returns_none_when_not_in_scope() {
         // No `import __intrinsics__;` anywhere — the intrinsic name is
         // not in scope and resolution returns `None`.
-        let s = session_with(&[("pkg/a", "module pkg/a;\npub fn run() -> . { () }\n")]);
+        let s = session_with(&[("pkg/a", "mod pkg/a;\npub fn run() -> . { () }\n")]);
         assert!(resolve_builtin(&s, "__left__").is_none());
         assert!(resolve_builtin(&s, "__reflect_type__").is_none());
     }
@@ -5491,10 +5530,10 @@ pub macro reentrant : [Source] Source -> [Target] Target { impl reentrant_checke
         // current pointing at it — `resolve_builtin` reports the
         // current module as the provenance source.
         let s = session_with(&[
-            ("pkg/other", "module pkg/other;\nimport __intrinsics__;\n"),
+            ("pkg/other", "mod pkg/other;\nimport __intrinsics__;\n"),
             (
                 "pkg/a",
-                "module pkg/a;\nimport __intrinsics__;\npub fn run() -> . { () }\n",
+                "mod pkg/a;\nimport __intrinsics__;\npub fn run() -> . { () }\n",
             ),
         ]);
         // `pkg/a` was loaded last → current.
@@ -5506,7 +5545,7 @@ pub macro reentrant : [Source] Source -> [Target] Target { impl reentrant_checke
     fn cmd_doc_renders_doc_comment_and_signature() {
         let s = session_with(&[(
             "pkg/a",
-            "module pkg/a;\n/// Adds the unit to itself.\npub fn f() -> . { () }\n",
+            "mod pkg/a;\n/// Adds the unit to itself.\npub fn f() -> . { () }\n",
         )]);
         let out = cmd_doc(&s, "f", Palette::plain());
         assert!(out.contains("Adds the unit"), "got: {out}");
@@ -5515,7 +5554,7 @@ pub macro reentrant : [Source] Source -> [Target] Target { impl reentrant_checke
 
     #[test]
     fn terminal_doc_source_directives_retain_exact_generated_fence_context() {
-        let module = crate::pass::parser::parse("module app; import provider(macro selected); fn early(selected: . -> .) { selected(()); later(()) } macro later : . -> . { impl implementation; }; fn after() { later(()); selected(()) }").unwrap();
+        let module = crate::pass::parser::parse("mod app; import provider {macro selected} fn early(selected: . -> .) { selected(()); later(()) } macro later : . -> . { impl implementation; }; fn after() { later(()); selected(()) }").unwrap();
         let prose = "Before [`@source early`]\nBetween [`@source after`]\n```kio\nfn after() { later(()); selected(()) }\n```";
         let rewritten = render_doc_prose(prose, &module);
         let rendered = render_doc_for_terminal(
@@ -5543,9 +5582,10 @@ pub macro reentrant : [Source] Source -> [Target] Target { impl reentrant_checke
     fn cmd_doc_renders_nominal_doc_comment() {
         let s = session_with(&[(
             "pkg/a",
-            "module pkg/a;\n\
-             /// Wraps a unit value.\n\
-             pub type { Wrapped: . { mk; get; }; };\n",
+            "mod pkg/a;
+/// Wraps a unit value.
+pub type { Wrapped: . { mk; get; }; };
+",
         )]);
         let out = cmd_doc(&s, "Wrapped", Palette::plain());
         assert!(out.contains("Wraps a unit value"), "got: {out}");
@@ -5556,7 +5596,7 @@ pub macro reentrant : [Source] Source -> [Target] Target { impl reentrant_checke
     fn ordinary_nominal_queries_keep_the_written_owner() {
         let s = session_with(&[(
             "pkg/a",
-            "module pkg/a;\n/// The field type.\npub type { Field: .; };\n",
+            "mod pkg/a;\n/// The field type.\npub type { Field: .; };\n",
         )]);
         let doc = cmd_doc(&s, "Field", Palette::plain());
         assert!(doc.contains("pub type { Field: . }"), "{doc}");
@@ -5581,7 +5621,7 @@ pub macro reentrant : [Source] Source -> [Target] Target { impl reentrant_checke
     fn compact_nominal_references_keep_entry_contexts() {
         let (_root, session) = session_with_analysis(
             "pkg/a",
-            "module pkg/a; type { Red: .; Green: Red; } fn use_red(value: Red) -> Red { value }",
+            "mod pkg/a; type { Red: .; Green: Red; } fn use_red(value: Red) -> Red { value }",
         );
         let references = cmd_refs(&session, "Red");
         assert!(references.contains("in type Red"), "{references}");
@@ -5596,10 +5636,7 @@ pub macro reentrant : [Source] Source -> [Target] Target { impl reentrant_checke
 
     #[test]
     fn recursive_nominal_queries_distinguish_the_named_alias() {
-        let s = session_with(&[(
-            "pkg/a",
-            "module pkg/a;\npub rec type Row = { Field: Row; };\n",
-        )]);
+        let s = session_with(&[("pkg/a", "mod pkg/a;\npub rec type Row = { Field: Row; };\n")]);
         for name in ["Field", "Row"] {
             let kind = if name == "Field" {
                 "a nominal type"
@@ -5615,7 +5652,7 @@ pub macro reentrant : [Source] Source -> [Target] Target { impl reentrant_checke
 
     #[test]
     fn cmd_doc_signature_only_without_doc_comment() {
-        let s = session_with(&[("pkg/a", "module pkg/a;\npub fn f() -> . { () }\n")]);
+        let s = session_with(&[("pkg/a", "mod pkg/a;\npub fn f() -> . { () }\n")]);
         let out = cmd_doc(&s, "f", Palette::plain());
         assert!(out.contains("fn f"));
     }
@@ -5625,7 +5662,7 @@ pub macro reentrant : [Source] Source -> [Target] Target { impl reentrant_checke
         // The complete tagged grammar identifies the operator's doc entry.
         let s = session_with(&[(
             "pkg/a",
-            "module pkg/a;\npub fn add(x: ., y: .) -> . { x }\nop _ + __ { impl add }\n",
+            "mod pkg/a;\npub fn add(x: ., y: .) -> . { x }\nop _ + __ { impl add }\n",
         )]);
         let out = cmd_doc(&s, "op _ + __", Palette::plain());
         assert!(out.contains("op _ + __ { impl add"), "got: {out}");
@@ -5639,28 +5676,28 @@ pub macro reentrant : [Source] Source -> [Target] Target { impl reentrant_checke
         let s = session_with(&[
             (
                 "pkg/a",
-                "/// Module-level doc for pkg/a.\nmodule pkg/a;\n\
-             import pkg/other(f);\n\
+                "/// Module-level doc for pkg/a.\nmod pkg/a;\n\
+             import pkg/other {fn f}\n\
              pub fn run() -> . { () }\n\
              fn helper() -> . { () }\n",
             ),
-            ("pkg/other", "module pkg/other;\npub fn f() -> . { () }\n"),
+            ("pkg/other", "mod pkg/other;\npub fn f() -> . { () }\n"),
         ]);
         let out = cmd_doc(&s, "pkg/a", Palette::plain());
         assert!(
             out.contains("Module-level doc for pkg/a."),
-            "module doc-comment should render, got:\n{out}"
+            "mod doc-comment should render, got:\n{out}"
         );
-        assert!(out.contains("module pkg/a"), "got:\n{out}");
+        assert!(out.contains("mod pkg/a"), "got:\n{out}");
         assert!(out.contains("2 declared items"), "got:\n{out}");
         assert!(out.contains("1 import"), "got:\n{out}");
     }
 
     #[test]
     fn cmd_doc_on_a_module_without_doc_comment_still_summarises() {
-        let s = session_with(&[("pkg/a", "module pkg/a;\npub fn run() -> . { () }\n")]);
+        let s = session_with(&[("pkg/a", "mod pkg/a;\npub fn run() -> . { () }\n")]);
         let out = cmd_doc(&s, "pkg/a", Palette::plain());
-        assert!(out.contains("module pkg/a"), "got:\n{out}");
+        assert!(out.contains("mod pkg/a"), "got:\n{out}");
         assert!(out.contains("1 declared item"), "got:\n{out}");
         assert!(out.contains("0 imports"), "got:\n{out}");
     }
@@ -5669,11 +5706,12 @@ pub macro reentrant : [Source] Source -> [Target] Target { impl reentrant_checke
     fn cmd_doc_counts_recursive_members_as_declarations() {
         let s = session_with(&[(
             "pkg/a",
-            "module pkg/a;\n\
-             rec(loop) {\n\
-               fn first(value: .) -> . { recur second(value) };\n\
-               fn second(value: .) -> . { recur first(value) }\n\
-             }\n",
+            "mod pkg/a;
+rec(loop) {
+fn first(value: .) -> . { recur second(value) };
+fn second(value: .) -> . { recur first(value) }
+}
+",
         )]);
         let out = cmd_doc(&s, "pkg/a", Palette::plain());
         assert!(out.contains("2 declared items"), "got:\n{out}");
@@ -5687,12 +5725,12 @@ pub macro reentrant : [Source] Source -> [Target] Target { impl reentrant_checke
             (root.join("provider.kio"), provider.to_owned()),
             (
                 root.join("other.kio"),
-                provider.replace("module provider;", "module other;"),
+                provider.replace("mod provider;", "mod other;"),
             ),
             (
                 root.join("main.kio"),
                 concat!(
-                    "module main; import provider(macro packet); import other as second;\n",
+                    "mod main; import provider {macro packet} import other as second;\n",
                     "fn nested() -> . { packet { packet { () } } }\n",
                     "fn shadow(packet: .) -> . { packet }\n",
                 )
@@ -5723,7 +5761,7 @@ pub macro reentrant : [Source] Source -> [Target] Target { impl reentrant_checke
         let (_root, session) = session_with_analysis(
             "pkg/api",
             concat!(
-                "module pkg/api;\n",
+                "mod pkg/api;\n",
                 "type { Original: .; }\n",
                 "type First = Original;\n",
                 "type Second = First;\n",
@@ -5807,7 +5845,7 @@ pub macro reentrant : [Source] Source -> [Target] Target { impl reentrant_checke
             "{original}"
         );
         let main = root.path().join("demo/main.kio");
-        let edited = files[2].1.replace("import demo/a(", "import demo/b(");
+        let edited = files[2].1.replace("import demo/a {", "import demo/b {");
         std::fs::write(&main, &edited).unwrap();
         session.refresh().unwrap();
         for query in ["truth", "build", "Field"] {
@@ -5816,7 +5854,7 @@ pub macro reentrant : [Source] Source -> [Target] Target { impl reentrant_checke
             assert!(!refs.contains("demo/a:"), "{query}: {refs}");
         }
         let retained = cmd_refs(&session, "truth");
-        std::fs::write(&main, "module demo/main; fn incomplete(").unwrap();
+        std::fs::write(&main, "mod demo/main; fn incomplete(").unwrap();
         assert!(session.refresh().is_err());
         assert_eq!(cmd_refs(&session, "truth"), retained);
         std::fs::write(&main, files[2].1).unwrap();
@@ -5828,9 +5866,9 @@ pub macro reentrant : [Source] Source -> [Target] Target { impl reentrant_checke
     fn declaration_refs_follow_all_selective_aliases_but_not_other_providers() {
         let root = PathBuf::from("/kio-repl-tests/selective-aliases");
         let files = [
-            (root.join("provider.kio"), "module provider; pub fn foo() { () }".to_owned()),
-            (root.join("other.kio"), "module other; pub fn foo() { () }".to_owned()),
-            (root.join("main.kio"), "module main; import provider(foo as first, foo as foo); import other(foo as unrelated); fn run() { first(); foo() } fn other_use() { unrelated() }".to_owned()),
+            (root.join("provider.kio"), "mod provider; pub fn foo() { () }".to_owned()),
+            (root.join("other.kio"), "mod other; pub fn foo() { () }".to_owned()),
+            (root.join("main.kio"), "mod main; import provider {fn foo as first; fn foo as foo} import other {fn foo as unrelated} fn run() { first(); foo() } fn other_use() { unrelated() }".to_owned()),
         ].into_iter().collect();
         let mut session = Session::new_in_memory(root, files);
         let loaded = Command::Load("main".to_owned()).run(&mut session, Palette::plain());
@@ -5854,8 +5892,10 @@ pub macro reentrant : [Source] Source -> [Target] Target { impl reentrant_checke
     fn cmd_refs_finds_call_site() {
         let (_root, s) = session_with_analysis(
             "pkg/a",
-            "module pkg/a;\npub fn helper() -> . { () }\n\
-             pub fn run() -> . { helper() }\n",
+            "mod pkg/a;
+pub fn helper() -> . { () }
+pub fn run() -> . { helper() }
+",
         );
         let out = cmd_refs(&s, "helper");
         assert_eq!(out.matches("pkg/a:").count(), 2, "got: {out}");
@@ -5865,7 +5905,7 @@ pub macro reentrant : [Source] Source -> [Target] Target { impl reentrant_checke
     fn cmd_refs_includes_ordinary_nominal_rhs_references() {
         let (_root, s) = session_with_analysis(
             "pkg/a",
-            "module pkg/a;\ntype { Field: .; };\ntype Row = Field;\n",
+            "mod pkg/a;\ntype { Field: .; };\ntype Row = Field;\n",
         );
         let out = cmd_refs(&s, "Field");
         assert_eq!(out.matches("pkg/a:").count(), 2, "got: {out}");
@@ -5877,24 +5917,26 @@ pub macro reentrant : [Source] Source -> [Target] Target { impl reentrant_checke
         // offset inside the item's span returns the matching label,
         // offset outside falls back to the module label.
         let m = crate::pass::parser::parse(
-            "module pkg/a;\n\
-             pub fn run() -> . { () }\n\
-             type Foo = .;\n\
-             type { Box[A]: A { mk; get; }; };\n\
-             type Color = { Red: .; Green: .; };\n\
-             equiv e { (); () }\n\
-             op _ + __ { impl run; };\n",
+            "mod pkg/a;
+pub fn run() -> . { () }
+type Foo = .;
+type { Box[A]: A { mk; get; }; };
+type Color = { Red: .; Green: .; };
+equiv e { (); () }
+op _ + __ { impl run; };
+",
         )
         .expect("parses");
         let pick = |needle: &str| {
             // Pick an offset inside the named item's declaration.
-            let src = "module pkg/a;\n\
-                       pub fn run() -> . { () }\n\
-                       type Foo = .;\n\
-                       type { Box[A]: A { mk; get; }; };\n\
-                       type Color = { Red: .; Green: .; };\n\
-                       equiv e { (); () }\n\
-                       op _ + __ { impl run; };\n";
+            let src = "mod pkg/a;
+pub fn run() -> . { () }
+type Foo = .;
+type { Box[A]: A { mk; get; }; };
+type Color = { Red: .; Green: .; };
+equiv e { (); () }
+op _ + __ { impl run; };
+";
             src.find(needle).expect("needle present") as u32
         };
         assert_eq!(
@@ -5921,7 +5963,7 @@ pub macro reentrant : [Source] Source -> [Target] Target { impl reentrant_checke
             enclosing_item_label(&m, "pkg/a", pick("op _")),
             "in op _ + __"
         );
-        // Offset at byte 0 — before any item, inside the `module` header.
+        // Offset at byte 0 — before any item, inside the `mod` header.
         assert_eq!(
             enclosing_item_label(&m, "pkg/a", 0),
             "in module pkg/a",
@@ -5931,11 +5973,12 @@ pub macro reentrant : [Source] Source -> [Target] Target { impl reentrant_checke
 
     #[test]
     fn enclosing_item_label_picks_recursive_member() {
-        let source = "module pkg/a;\n\
-                      rec(loop) {\n\
-                        fn first(value: .) -> . { recur second(value) };\n\
-                        fn second(value: .) -> . { recur first(value) }\n\
-                      }\n";
+        let source = "mod pkg/a;
+rec(loop) {
+fn first(value: .) -> . { recur second(value) };
+fn second(value: .) -> . { recur first(value) }
+}
+";
         let module = crate::pass::parser::parse(source).expect("parses");
         let first_call = source.find("recur second").expect("first body") as u32;
         let second_call = source.find("recur first").expect("second body") as u32;
@@ -5959,8 +6002,8 @@ pub macro reentrant : [Source] Source -> [Target] Target { impl reentrant_checke
     #[test]
     fn fqn_resolution_across_loaded_modules() {
         let s = session_with(&[
-            ("pkg/a", "module pkg/a;\npub fn fa() -> . { () }\n"),
-            ("pkg/b", "module pkg/b;\npub fn fb() -> . { () }\n"),
+            ("pkg/a", "mod pkg/a;\npub fn fa() -> . { () }\n"),
+            ("pkg/b", "mod pkg/b;\npub fn fb() -> . { () }\n"),
         ]);
         // Current is pkg/b; resolve pkg/a.fa by FQN.
         let out = cmd_source(&s, "pkg/a.fa", Palette::plain());
@@ -5972,15 +6015,15 @@ pub macro reentrant : [Source] Source -> [Target] Target { impl reentrant_checke
         let files = [
             (
                 "list.kio",
-                "module list;\n/// Root item.\npub pure fn item(value: .) -> . { value }\n",
+                "mod list;\n/// Root item.\npub pure fn item(value: .) -> . { value }\n",
             ),
             (
                 "other.kio",
-                "module other;\npub fn item(left: ., right: .) -> . { left }\npub fn alias_only() -> . { () }\n",
+                "mod other;\npub fn item(left: ., right: .) -> . { left }\npub fn alias_only() -> . { () }\n",
             ),
             (
                 "app.kio",
-                "module app;\nimport list as declared;\nimport other as list;\nfn item() -> . { () }\nfn use_root() -> . { declared.item(()) }\n",
+                "mod app;\nimport list as declared;\nimport other as list;\nfn item() -> . { () }\nfn use_root() -> . { declared.item(()) }\n",
             ),
         ]
         .into_iter()
@@ -6182,7 +6225,7 @@ pub macro reentrant : [Source] Source -> [Target] Target { impl reentrant_checke
 
     #[test]
     fn invalid_prompt_reports_parser_cause_in_every_expression_view() {
-        let (_root, mut session) = session_with_analysis("demo/main", "module demo/main;\n");
+        let (_root, mut session) = session_with_analysis("demo/main", "mod demo/main;\n");
         for input in ["index(x., 0)", "index(\r\n\t\"é\", x.)"] {
             for prefix in ["", ":t ", ":pure ", ":normalize "] {
                 let command = parse_command(&format!("{prefix}{input}")).expect("command parses");
@@ -6207,7 +6250,7 @@ pub macro reentrant : [Source] Source -> [Target] Target { impl reentrant_checke
 
     #[test]
     fn invalid_prompt_retains_lexer_cause_and_end_of_input() {
-        let (_root, mut session) = session_with_analysis("demo/main", "module demo/main;\n");
+        let (_root, mut session) = session_with_analysis("demo/main", "mod demo/main;\n");
         for prefix in ["", ":t ", ":pure ", ":normalize "] {
             let lexical = parse_command(&format!("{prefix}\"\\q\""))
                 .expect("command parses")
@@ -6248,7 +6291,7 @@ pub macro reentrant : [Source] Source -> [Target] Target { impl reentrant_checke
 
     #[test]
     fn invalid_prompt_hides_wrapper_let_framing_without_guessing_operator_scope() {
-        let (_root, mut session) = session_with_analysis("demo/main", "module demo/main;\n");
+        let (_root, mut session) = session_with_analysis("demo/main", "mod demo/main;\n");
         for prefix in ["", ":t ", ":pure ", ":normalize "] {
             let output = parse_command(&format!("{prefix}() + ()"))
                 .expect("command parses")
@@ -6265,7 +6308,7 @@ pub macro reentrant : [Source] Source -> [Target] Target { impl reentrant_checke
         }
         let (_root, mut session) = session_with_analysis(
             "demo/main",
-            "module demo/main;\npure fn choose(a: ., b: .) -> . { a }\nop _ + _ { impl choose }\n",
+            "mod demo/main;\npure fn choose(a: ., b: .) -> . { a }\nop _ + _ { impl choose }\n",
         );
         for prefix in ["", ":t ", ":pure ", ":normalize "] {
             let output = parse_command(&format!("{prefix}() + ()"))
@@ -6421,8 +6464,10 @@ pub macro reentrant : [Source] Source -> [Target] Target { impl reentrant_checke
     fn operator_query_identity_preserves_slots_and_tail() {
         use crate::ast::{Op, OpBody};
         let m = crate::pass::parser::parse(
-            "module pkg/a;\npub fn cond(x: ., y: ., z: .) -> . { x }\n\
-             op _ ? _ : __ { impl cond; };\n",
+            "mod pkg/a;
+pub fn cond(x: ., y: ., z: .) -> . { x }
+op _ ? _ : __ { impl cond; };
+",
         )
         .expect("parses");
         let op = m.items.iter().find_map(|it| match it {
@@ -6444,8 +6489,10 @@ pub macro reentrant : [Source] Source -> [Target] Target { impl reentrant_checke
         // the canonical form is the comparison key.
         use crate::ast::{Item, OpBody};
         let m = crate::pass::parser::parse(
-            "module pkg/a;\npub fn cond(x: ., y: ., z: .) -> . { x }\n\
-             op _ ? _ : __ { impl cond; };\n",
+            "mod pkg/a;
+pub fn cond(x: ., y: ., z: .) -> . { x }
+op _ ? _ : __ { impl cond; };
+",
         )
         .expect("parses");
         let body = m
@@ -6576,10 +6623,7 @@ pub macro reentrant : [Source] Source -> [Target] Target { impl reentrant_checke
         // The hint never overrides a command that *succeeds* in its own
         // mode: `:signature add` resolves, so its output carries no
         // sibling suggestion even though `add` is a bare name.
-        let s = session_with(&[(
-            "pkg/a",
-            "module pkg/a;\npub fn add(x: ., y: .) -> . { x }\n",
-        )]);
+        let s = session_with(&[("pkg/a", "mod pkg/a;\npub fn add(x: ., y: .) -> . { x }\n")]);
         let out = cmd_signature(&s, "add", Palette::plain());
         assert!(out.contains("fn add"), "got: {out}");
         assert!(!out.contains(":type"), "no sibling hint on success: {out}");
@@ -6590,7 +6634,7 @@ pub macro reentrant : [Source] Source -> [Target] Target { impl reentrant_checke
         // `:signature 1 + 2` fails to resolve (a compound expression is
         // not a declared entity); the failure diagnostic carries the
         // `:type` / `:normalize` suggestion.
-        let s = session_with(&[("pkg/a", "module pkg/a;\npub fn run() -> . { () }\n")]);
+        let s = session_with(&[("pkg/a", "mod pkg/a;\npub fn run() -> . { () }\n")]);
         let out = cmd_signature(&s, "1 + 2", Palette::plain());
         assert!(out.contains("did not resolve"), "own-mode failure: {out}");
         assert!(out.contains(":type 1 + 2"), "sibling hint present: {out}");
@@ -6601,7 +6645,7 @@ pub macro reentrant : [Source] Source -> [Target] Target { impl reentrant_checke
         // `:t` deliberately accepts FQNs as names. If one does not resolve,
         // and no `/` operator makes the tokens an expression, report that
         // failure without pretending it was a mode mismatch.
-        let mut s = session_with(&[("pkg/a", "module pkg/a;\npub fn run() -> . { () }\n")]);
+        let mut s = session_with(&[("pkg/a", "mod pkg/a;\npub fn run() -> . { () }\n")]);
         let out = Command::Type("pkg/b.Thing".to_owned())
             .run(&mut s, Palette::plain())
             .output;
@@ -6617,7 +6661,7 @@ pub macro reentrant : [Source] Source -> [Target] Target { impl reentrant_checke
         // `:which 1 + 2` finds nothing; the locator failure suggests the
         // value views. `:which` stays a pure locator — the hint is the
         // only thing it adds, never a kind report.
-        let s = session_with(&[("pkg/a", "module pkg/a;\npub fn run() -> . { () }\n")]);
+        let s = session_with(&[("pkg/a", "mod pkg/a;\npub fn run() -> . { () }\n")]);
         let out = cmd_which(&s, "1 + 2");
         assert!(out.contains("no loaded module declares"), "own-mode: {out}");
         assert!(out.contains(":type 1 + 2"), "sibling hint: {out}");

@@ -1,4 +1,4 @@
-package exec_pure_curried_partial;
+pkg exec_pure_curried_partial;
 
 build {
   cache "out/.kio-cache/";

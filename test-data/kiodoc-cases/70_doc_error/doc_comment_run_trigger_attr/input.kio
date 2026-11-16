@@ -8,7 +8,7 @@
 /// ```kio {@ stdout}
 /// ()
 /// ```
-module doctest/run_trigger;
+mod doctest/run_trigger;
 
 /// The key-value run-trigger attribute is rejected the same way.
 ///

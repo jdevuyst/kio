@@ -2,7 +2,7 @@
 set -eu
 
 formatted=$("$KIO_BIN" fmt - <<'KIO'
-module fmt_operator_operand_comments;
+mod fmt_operator_operand_comments;
 op _ + _ { impl add; }
 op _ :: __ { impl cons; }
 fn final_operand() { left + (right // final operand

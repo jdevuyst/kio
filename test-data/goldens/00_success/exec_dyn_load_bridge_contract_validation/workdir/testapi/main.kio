@@ -1,15 +1,15 @@
 /// Revalidates package bridge globs and transitive host-module completeness.
-module testapi/main;
+mod testapi/main;
 
-import loader(Export_info, Export_infos);
-import loader(Lr_diag, Lr_image);
-import loader(diag_message, un_load_outcome);
-import loader(export_info_name, image_exports, un_export_infos);
-import loader/scan(load_package);
-import macros/match(macro match);
-import testapi(String);
-import testapi/io(print);
-import testapi/text(string_concat);
+import loader { fn diag_message; fn un_load_outcome }
+import loader { fn export_info_name; fn image_exports; fn un_export_infos }
+import loader { type Export_info; type Export_infos }
+import loader { type Lr_diag; type Lr_image }
+import loader/scan { fn load_package }
+import macros/match { macro match }
+import testapi { type String }
+import testapi/io { fn print }
+import testapi/text { fn string_concat }
 
 fn describe(source: String) -> String {
   match(un_load_outcome(load_package(source))) {
@@ -47,34 +47,34 @@ fn export_line(label: String, source: String) -> String {
 pub fn main() {
   print(result_line(
   , "dead glob: "[String]
-  , "module present;\npub fn entry() -> . { () }\npackage guest;\nbridge { "
+  , "mod present;\npub fn entry() -> . { () }\npkg guest;\nbridge { "
     "missing/first/**; missing/second/**; }\n"[String]
   ));
   print(result_line(
   , "transitive hidden host: "[String]
-  , "module host;\nhost type Number role(i32);\nmodule mid;\nimport host as h;\n"
-    "pub fn helper() -> . { () }\nmodule main;\nimport mid(helper);\npub fn "
-    "entry() -> . { helper() }\npackage guest;\nbridge { main; }\n"[String]
+  , "mod host;\nhost type Number role(i32);\nmod mid;\nimport host as h;\npub fn "
+    "helper() -> . { () }\nmod main;\nimport mid {fn helper}\npub fn entry() -> "
+    ". { helper() }\npkg guest;\nbridge { main; }\n"[String]
   ));
   print(result_line(
   , "stable hidden host: "[String]
-  , "module alpha;\nhost type Early role(i32);\nmodule zeta;\nhost type Later "
-    "role(i32);\nmodule main;\nimport zeta(Later);\nimport alpha as a;\npub fn "
-    "entry() -> . { () }\npackage guest;\nbridge { main; }\n"[String]
+  , "mod alpha;\nhost type Early role(i32);\nmod zeta;\nhost type Later "
+    "role(i32);\nmod main;\nimport zeta {type Later}\nimport alpha as a;\npub fn "
+    "entry() -> . { () }\npkg guest;\nbridge { main; }\n"[String]
   ));
   print(result_line(
   , "accepted control: "[String]
-  , "module host;\nhost type Number role(i32);\nmodule mid;\nimport host as h;\n"
-    "pub fn helper() -> . { () }\nmodule main;\nimport mid(helper);\npub fn "
-    "entry() -> . { helper() }\npackage guest;\nbridge { main; host; }\n"[String]
+  , "mod host;\nhost type Number role(i32);\nmod mid;\nimport host as h;\npub fn "
+    "helper() -> . { () }\nmod main;\nimport mid {fn helper}\npub fn entry() -> "
+    ". { helper() }\npkg guest;\nbridge { main; host; }\n"[String]
   ));
   print(export_line(
   , "manifest without bridge: "[String]
-  , "module main;\npub fn entry() -> . { () }\npackage guest;\n"[String]
+  , "mod main;\npub fn entry() -> . { () }\npkg guest;\n"[String]
   ));
   print(export_line(
   , "empty bridge: "[String]
-  , "module main;\npub fn entry() -> . { () }\npackage guest;\nbridge {}\n"[String]
+  , "mod main;\npub fn entry() -> . { () }\npkg guest;\nbridge {}\n"[String]
   ));
-  print(export_line("no manifest: "[String], "module main;\npub fn entry() -> . { () }\n"[String]))
+  print(export_line("no manifest: "[String], "mod main;\npub fn entry() -> . { () }\n"[String]))
 }

@@ -1,4 +1,4 @@
-module fmt_doc_comments;
+mod fmt_doc_comments;
 
 /// Docs for host type.
 host type String role(str);

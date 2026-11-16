@@ -1,5 +1,5 @@
 // package file-header comment — preserved by `kio fmt`.
-package fcfh;
+pkg fcfh;
 
 build {
   cache "out/.kio-cache/";

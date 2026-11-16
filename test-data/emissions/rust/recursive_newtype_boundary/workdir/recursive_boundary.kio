@@ -1,4 +1,4 @@
-module recursive_boundary;
+mod recursive_boundary;
 
 import __intrinsics__;
 

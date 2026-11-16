@@ -1,4 +1,4 @@
-module api;
+mod api;
 
 host fn exchange[X][Y](pair: X & Y) -> Y | X;
 

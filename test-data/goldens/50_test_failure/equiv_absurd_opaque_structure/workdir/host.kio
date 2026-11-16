@@ -1,4 +1,4 @@
-module host;
+mod host;
 
 host type Input;
 

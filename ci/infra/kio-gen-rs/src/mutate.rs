@@ -214,19 +214,19 @@ fn corrupt_macro(files: &mut Vec<(String, String)>) {
     // other macro modules carry no host items and need no glob.
     admit_root_module(files, "testapi");
     let source = prog_kio_mut(files);
-    if !source.contains("import algebraic_macros(macro ") {
+    if !source.contains("import algebraic_macros { macro ") {
         // Insert the import right after the `import __intrinsics__;` line.
         let anchor = "import __intrinsics__;\n";
         if let Some(pos) = source.find(anchor) {
             let at = pos + anchor.len();
-            source.insert_str(at, "import algebraic_macros(macro into);\n");
+            source.insert_str(at, "import algebraic_macros { macro into }\n");
         } else {
             // No intrinsics line (shouldn't happen for the generated
             // header, but stay robust): prepend after the module line.
-            let mlead = "module prog;\n";
+            let mlead = "mod prog;\n";
             if let Some(pos) = source.find(mlead) {
                 let at = pos + mlead.len();
-                source.insert_str(at, "\nimport algebraic_macros(macro into);\n");
+                source.insert_str(at, "\nimport algebraic_macros { macro into }\n");
             }
         }
     }
@@ -256,12 +256,12 @@ fn corrupt_import(files: &mut Vec<(String, String)>) {
     {
         files.push((
             "workdir/kio_gen_empty.kio".to_string(),
-            "module kio_gen_empty;\n".to_string(),
+            "mod kio_gen_empty;\n".to_string(),
         ));
     }
     admit_bridge(files, "kio_gen_empty");
     let source = prog_kio_mut(files);
-    let inject = "import kio_gen_empty(kio_gen_unexported_item);\n";
+    let inject = "import kio_gen_empty { fn kio_gen_unexported_item }\n";
     // Anchor on `import __intrinsics__;`, always the module's first import
     // clause; insert immediately after it, keeping the new import inside
     // the leading import-clause run.
@@ -350,13 +350,13 @@ mod tests {
                 assert_eq!((exit, category), (12, "12_import_error"));
                 assert!(Mutation::Import.preserves_kio_prime_grammar());
                 let source = root(&files);
-                let import = "import kio_gen_empty(kio_gen_unexported_item);";
+                let import = "import kio_gen_empty { fn kio_gen_unexported_item }";
                 assert_eq!(source.matches(import).count(), 1);
                 let position = source.find(import).unwrap();
                 assert!(source.find("import __intrinsics__;").unwrap() < position);
                 assert!(position < source.find("host type I8").unwrap());
                 assert!(files.iter().any(|(path, source)| {
-                    path == "workdir/kio_gen_empty.kio" && source == "module kio_gen_empty;\n"
+                    path == "workdir/kio_gen_empty.kio" && source == "mod kio_gen_empty;\n"
                 }));
             }
         }
@@ -370,10 +370,14 @@ mod tests {
             assert_eq!((exit, category), (15, "15_macro_error"));
             assert!(!Mutation::Macro.preserves_kio_prime_grammar());
             let source = root(&files);
-            assert_eq!(source.matches("import algebraic_macros(macro ").count(), 1);
+            assert_eq!(
+                source.matches("import algebraic_macros { macro ").count(),
+                1
+            );
             if !surface_mode {
                 assert!(
-                    source.contains("import __intrinsics__;\nimport algebraic_macros(macro into);")
+                    source
+                        .contains("import __intrinsics__;\nimport algebraic_macros { macro into }")
                 );
             }
             assert!(source.contains("into(\"kio_gen_macro_bug\"[String])"));

@@ -1,5 +1,5 @@
-module main;
+mod main;
 
-literal max = 100;
+lit max = 100;
 
-literal max = 200;
+lit max = 200;

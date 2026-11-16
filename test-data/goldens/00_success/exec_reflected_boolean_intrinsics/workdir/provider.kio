@@ -1,7 +1,7 @@
-module provider;
+mod provider;
 
 import __comptime__;
-import testapi(Bool);
+import testapi { type Bool }
 
 pure fn invoke(ct: __Comptime__, thunk: __Checked_term__) -> __Checked_term__ {
   __term_call__(ct, __term_type__(ct, thunk), thunk, __term_unit__(ct))

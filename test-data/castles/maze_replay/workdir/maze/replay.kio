@@ -6,14 +6,14 @@
 /// bump that leaves the position unchanged. All of this is pure —
 /// `testapi/main` owns the stdin read loop and threads the player
 /// through `step`.
-module maze/replay;
+mod maze/replay;
 
-import macros/control(macro if);
-import macros/match(macro match);
-import maze/world(and, in_bounds, int_eq, is_item, is_wall);
-import testapi(Bool, I32, String);
-import testapi/arith(add_i32, sub_i32);
-import testapi/text(string_eq);
+import macros/control { macro if }
+import macros/match { macro match }
+import maze/world { fn and; fn in_bounds; fn int_eq; fn is_item; fn is_wall }
+import testapi { type Bool; type I32; type String }
+import testapi/arith { fn add_i32; fn sub_i32 }
+import testapi/text { fn string_eq }
 
 /// The player ledger: position `(px, py)`, collected `score`, blocked
 /// `bumps`, and accepted `moves`.

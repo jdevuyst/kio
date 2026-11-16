@@ -1,4 +1,4 @@
-package ffi_export_poly_callback;
+pkg ffi_export_poly_callback;
 
 build {
   cache "out/.kio-cache/";

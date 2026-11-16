@@ -1,4 +1,4 @@
-package gate_text_scanner;
+pkg gate_text_scanner;
 
 build {
   cache "out/.kio-cache/";

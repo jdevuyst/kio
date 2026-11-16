@@ -1,8 +1,15 @@
-module main;
+mod main;
 
-import build_rec_group_cloned_label_value_binders(Bool, I32, String, done, empty, loop);
-import macros/control(macro if);
-import macros/row_macros(macro record_);
+import build_rec_group_cloned_label_value_binders {
+  type Bool;
+  type I32;
+  type String;
+  fn done;
+  fn empty;
+  fn loop
+}
+import macros/control { macro if }
+import macros/row_macros { macro record_ }
 
 type { Text: String { mk; get } }
 

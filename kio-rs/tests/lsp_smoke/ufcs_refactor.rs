@@ -66,7 +66,7 @@ fn ufcs_refactor_applies_without_diagnostics_and_obeys_kind_filters() {
     let dir = TempDir::new("ufcs-refactor-kinds");
     let body = "f(f((), f((), ())), ())";
     let source =
-        format!("module pkg/main; fn f(a: ., _b: .) -> . {{ a }} pub fn run() -> . {{ {body} }}");
+        format!("mod pkg/main; fn f(a: ., _b: .) -> . {{ a }} pub fn run() -> . {{ {body} }}");
     let (mut lsp, uri) = open(&dir, &source);
     for kind in [None, Some("refactor"), Some("refactor.rewrite")] {
         let response = actions(&mut lsp, &uri, &source, body, kind);
@@ -100,12 +100,12 @@ fn ufcs_refactor_applies_without_diagnostics_and_obeys_kind_filters() {
 #[test]
 fn ufcs_refactor_imported_host_calls_require_current_provider_and_open_version() {
     let dir = TempDir::new("ufcs-refactor-provider");
-    let provider = "module pkg/provider; host type Text role(str); host fn string_concat(a: Text, b: Text) -> Text;";
+    let provider = "mod pkg/provider; host type Text role(str); host fn string_concat(a: Text, b: Text) -> Text;";
     let provider_file = dir.write("pkg/provider.kio", provider);
     let provider_uri = path_to_file_uri(&provider_file);
     let body = "p.string_concat(\"a\", string_concat(\"b\", p.string_concat(\"c\", \"d\")))";
     let source = format!(
-        "module pkg/main; import pkg/provider(Text, string_concat); import pkg/provider as p; pub fn run() -> Text {{ {body} }}"
+        "mod pkg/main; import pkg/provider {{type Text; fn string_concat}} import pkg/provider as p; pub fn run() -> Text {{ {body} }}"
     );
     let (mut lsp, uri) = open(&dir, &source);
     let response = actions(&mut lsp, &uri, &source, body, None);
@@ -156,9 +156,8 @@ fn ufcs_refactor_ambiguous_selection_and_gap_comments_withhold() {
         "f( // keep attachment\n f((), ()), ())",
     ] {
         let dir = TempDir::new("ufcs-refactor-negative");
-        let source = format!(
-            "module pkg/main; fn f(a: ., _b: .) -> . {{ a }} pub fn run() -> . {{ {body} }}"
-        );
+        let source =
+            format!("mod pkg/main; fn f(a: ., _b: .) -> . {{ a }} pub fn run() -> . {{ {body} }}");
         let (mut lsp, uri) = open(&dir, &source);
         let response = actions(&mut lsp, &uri, &source, body, None);
         assert_eq!(response["result"], json!([]), "{response}");

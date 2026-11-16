@@ -4,7 +4,7 @@ set -eu
 # Comments before an operator remain after its operand's internal comments.
 # This is a formatter-only source round trip, independent of host backends.
 formatted=$("$KIO_BIN" fmt - <<'KIO'
-module operator_comments;
+mod operator_comments;
 
 pure fn pick(x: ., y: .) -> . { x }
 op _ <+> _ { impl pick }

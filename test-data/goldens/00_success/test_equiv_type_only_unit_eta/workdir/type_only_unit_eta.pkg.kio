@@ -1,4 +1,4 @@
-package type_only_unit_eta;
+pkg type_only_unit_eta;
 
 build {
   cache "out/.kio-cache/";

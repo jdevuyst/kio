@@ -1,4 +1,4 @@
-module provider;
+mod provider;
 
 import __comptime__;
 
@@ -8,4 +8,4 @@ pure fn keep(_ct: __Comptime__, _ty: __Type__, value: __Checked_term__) -> __Che
 
 pub macro identity : [A] A -> A { impl keep }
 
-pub op macro # _ { impl identity }
+pub op_macro # _ { impl identity }

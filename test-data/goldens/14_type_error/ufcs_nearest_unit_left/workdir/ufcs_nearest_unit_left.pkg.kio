@@ -1,4 +1,4 @@
-package ufcs_nearest_unit_left;
+pkg ufcs_nearest_unit_left;
 
 build {
   target js {

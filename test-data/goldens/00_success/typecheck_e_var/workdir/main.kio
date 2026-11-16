@@ -1,4 +1,4 @@
-module main;
+mod main;
 
 // Value-param reference: `x` is bound by the fn header at type
 // `()`; the body is the bare `x`, which E-Var synthesizes as `()`.

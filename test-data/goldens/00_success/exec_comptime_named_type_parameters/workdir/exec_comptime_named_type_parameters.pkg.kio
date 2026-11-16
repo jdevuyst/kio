@@ -1,4 +1,4 @@
-package exec_comptime_named_type_parameters;
+pkg exec_comptime_named_type_parameters;
 
 build {
   cache "out/.kio-cache/";

@@ -1,8 +1,8 @@
-module robot/model;
+mod robot/model;
 
 import list/core as lists;
-import macros/spine_macros(macro widen_sum);
-import testapi(Bool, I32, String);
+import macros/spine_macros { macro widen_sum }
+import testapi { type Bool; type I32; type String }
 
 pub type Status = { Running: . } | { Success: . } | { Failure: . };
 

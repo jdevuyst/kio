@@ -1,6 +1,6 @@
-module testapi/main;
+mod testapi/main;
 
-import testapi(String);
+import testapi { type String }
 import testapi/array as array;
 import testapi/fmt as fmt;
 import testapi/io as io;

@@ -1,4 +1,4 @@
-package snds;
+pkg snds;
 
 build {
   cache "out/.kio-cache/";

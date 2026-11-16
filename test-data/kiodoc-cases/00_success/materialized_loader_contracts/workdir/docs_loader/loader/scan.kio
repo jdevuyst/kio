@@ -1,106 +1,129 @@
 /// The module-header scanner: an image's raw emitted Kio' text → the loader's module records, then `resolve_package`.
-module docs_loader/loader/scan;
+mod docs_loader/loader/scan;
 
-import docs_loader/chars(
-, c_colon
-, c_comma
-, c_eq
-, c_gt
-, c_lbrace
-, c_lbrack
-, c_lparen
-, c_lt
-, c_rbrace
-, c_rbrack
-);
-import docs_loader/chars(c_rparen, c_semi, c_slash, c_star, c_under, is_digit, is_lower, is_upper);
-import docs_loader/lex(Lex_err, lex, lex_err_message, lex_err_pos);
-import docs_loader/list/core(List, cons, nil);
-import docs_loader/list/list(append, reverse);
-import docs_loader/loader(
-, Alias_decl
-, Binder_info
-, Binders
-, Tyaliases
-, binders_cons
-, binders_nil
-, binders_reverse
-, mk_alias_decl
-, tyaliases_cons
-, tyaliases_nil
-, tyaliases_reverse
-);
-import docs_loader/loader(
-, Aliases
-, Bridge
-, Decl
-, Decls
-, Diag
-, Import
-, Imports
-, Load_outcome
-, Mod_alias
-);
-import docs_loader/loader(
-, Host_header
-, Host_headers
-, host_headers_cons
-, host_headers_nil
-, host_headers_reverse
-);
-import docs_loader/loader(
-, Member_decl
-, Members
-, member_info
-, member_name
-, mk_member_decl
-, module_members
-, module_tyaliases
-);
-import docs_loader/loader(
-, imports_cons
-, imports_nil
-, mk_import_as
-, mk_module
-, modules_cons
-, modules_nil
-);
-import docs_loader/loader(
-, module_aliases
-, module_decls
-, module_imports
-, module_name
-, module_newtypes
-);
-import docs_loader/loader(Lr_diag, Lr_image);
-import docs_loader/loader(Module, Modules, Pgroups, Pnames);
-import docs_loader/loader(Recursive_type_scope, no_recursive_type_scope, recursive_type_scope);
-import docs_loader/loader(Visibility, private_visibility, public_visibility, scoped_visibility);
-import docs_loader/loader(aliases_cons, aliases_nil, mk_alias);
-import docs_loader/loader(decl_name, decls_cons, decls_nil, mk_decl, mk_diag);
-import docs_loader/loader(diag_bare_message, diag_pos);
-import docs_loader/loader(lr_diag, resolve_package, un_load_outcome);
-import docs_loader/loader(members_cons, members_nil, members_reverse);
-import docs_loader/loader(mk_diag_at);
-import docs_loader/loader(mk_host_header);
-import docs_loader/loader(pgroups_cons, pgroups_nil);
-import docs_loader/loader(pnames_cons, pnames_has, pnames_nil);
-import docs_loader/loader(pnames_len, un_pgroups, un_pnames);
-import docs_loader/loader(un_decls, un_imports, un_modules);
-import docs_loader/loader(visibility_is_scoped, visibility_valid_for_owner);
-import docs_loader/macros/control(macro if);
-import docs_loader/macros/match(macro match);
-import docs_loader/macros/spine_macros(macro widen_sum);
-import docs_loader/parse(Nt_info, Ntab);
-import docs_loader/parse(mk_nt_info, ntab_cons, ntab_nil);
-import docs_loader/testapi(Bool, I32, String);
-import docs_loader/testapi/arith(add_i32, eq_i32, leq_i32, lt_i32, sub_i32);
-import docs_loader/testapi/fmt(int_to_string);
-import docs_loader/testapi/iter(loop);
-import docs_loader/testapi/text(string_code_at, string_concat, string_eq, string_slice);
-import docs_loader/token(Tk_num, Tk_punct, Tk_str, Tk_word);
-import docs_loader/token(Token, Token_shape, Toks);
-import docs_loader/token(toks_cons, toks_nil, un_token, un_toks);
+import docs_loader/chars {
+  fn c_colon;
+  fn c_comma;
+  fn c_eq;
+  fn c_gt;
+  fn c_lbrace;
+  fn c_lbrack;
+  fn c_lparen;
+  fn c_lt;
+  fn c_rbrace;
+  fn c_rbrack
+}
+import docs_loader/chars {
+  fn c_rparen;
+  fn c_semi;
+  fn c_slash;
+  fn c_star;
+  fn c_under;
+  fn is_digit;
+  fn is_lower;
+  fn is_upper
+}
+import docs_loader/lex { type Lex_err; fn lex; fn lex_err_message; fn lex_err_pos }
+import docs_loader/list/core { type List; fn cons; fn nil }
+import docs_loader/list/list { fn append; fn reverse }
+import docs_loader/loader {
+  fn imports_cons;
+  fn imports_nil;
+  fn mk_import_as;
+  fn mk_module;
+  fn modules_cons;
+  fn modules_nil
+}
+import docs_loader/loader {
+  fn module_aliases;
+  fn module_decls;
+  fn module_imports;
+  fn module_name;
+  fn module_newtypes
+}
+import docs_loader/loader {
+  type Alias_decl;
+  type Binder_info;
+  type Binders;
+  type Tyaliases;
+  fn binders_cons;
+  fn binders_nil;
+  fn binders_reverse;
+  fn mk_alias_decl;
+  fn tyaliases_cons;
+  fn tyaliases_nil;
+  fn tyaliases_reverse
+}
+import docs_loader/loader {
+  type Aliases;
+  type Bridge;
+  type Decl;
+  type Decls;
+  type Diag;
+  type Import;
+  type Imports;
+  type Load_outcome;
+  type Mod_alias
+}
+import docs_loader/loader {
+  type Host_header;
+  type Host_headers;
+  fn host_headers_cons;
+  fn host_headers_nil;
+  fn host_headers_reverse
+}
+import docs_loader/loader {
+  type Member_decl;
+  type Members;
+  fn member_info;
+  fn member_name;
+  fn mk_member_decl;
+  fn module_members;
+  fn module_tyaliases
+}
+import docs_loader/loader {
+  type Recursive_type_scope;
+  fn no_recursive_type_scope;
+  fn recursive_type_scope
+}
+import docs_loader/loader {
+  type Visibility;
+  fn private_visibility;
+  fn public_visibility;
+  fn scoped_visibility
+}
+import docs_loader/loader { fn aliases_cons; fn aliases_nil; fn mk_alias }
+import docs_loader/loader { fn decl_name; fn decls_cons; fn decls_nil; fn mk_decl; fn mk_diag }
+import docs_loader/loader { fn diag_bare_message; fn diag_pos }
+import docs_loader/loader { fn lr_diag; fn resolve_package; fn un_load_outcome }
+import docs_loader/loader { fn members_cons; fn members_nil; fn members_reverse }
+import docs_loader/loader { fn mk_diag_at }
+import docs_loader/loader { fn mk_host_header }
+import docs_loader/loader { fn pgroups_cons; fn pgroups_nil }
+import docs_loader/loader { fn pnames_cons; fn pnames_has; fn pnames_nil }
+import docs_loader/loader { fn pnames_len; fn un_pgroups; fn un_pnames }
+import docs_loader/loader { fn un_decls; fn un_imports; fn un_modules }
+import docs_loader/loader { fn visibility_is_scoped; fn visibility_valid_for_owner }
+import docs_loader/loader { type Lr_diag; type Lr_image }
+import docs_loader/loader { type Module; type Modules; type Pgroups; type Pnames }
+import docs_loader/macros/control { macro if }
+import docs_loader/macros/match { macro match }
+import docs_loader/macros/spine_macros { macro widen_sum }
+import docs_loader/parse { fn mk_nt_info; fn ntab_cons; fn ntab_nil }
+import docs_loader/parse { type Nt_info; type Ntab }
+import docs_loader/testapi { type Bool; type I32; type String }
+import docs_loader/testapi/arith { fn add_i32; fn eq_i32; fn leq_i32; fn lt_i32; fn sub_i32 }
+import docs_loader/testapi/fmt { fn int_to_string }
+import docs_loader/testapi/iter { fn loop }
+import docs_loader/testapi/text {
+  fn string_code_at;
+  fn string_concat;
+  fn string_eq;
+  fn string_slice
+}
+import docs_loader/token { fn toks_cons; fn toks_nil; fn un_token; fn un_toks }
+import docs_loader/token { type Tk_num; type Tk_punct; type Tk_str; type Tk_word }
+import docs_loader/token { type Token; type Token_shape; type Toks }
 
 // `scan.kio` — the bridge from an image's raw emitted Kio' **text** to the
 // loader's module records.
@@ -124,7 +147,7 @@ import docs_loader/token(toks_cons, toks_nil, un_token, un_toks);
 //
 //   /// doc                        (line comments — the lexer skips these)
 //   module a/b/c;
-//   import m(a, b);               (selective imports)
+//   import m { fn a; type B }      (selective imports)
 //   import path/to/m as p;        (module aliases)
 //   import __intrinsics__;
 //   [pub[(a/b)]] [pure] fn NAME [A]… ( p: T, … )… [-> R] { body }
@@ -148,7 +171,7 @@ import docs_loader/token(toks_cons, toks_nil, un_token, un_toks);
 // `parse.kio` use.
 //
 // **Malformed text is a diagnostic.** Every malformed shape — a lexical
-// error, a truncated declaration, a declaration before the first `module`
+// error, a truncated declaration, a declaration before the first `mod`
 // header, a malformed `import` header, a newtype body without its two members,
 // or a malformed recursive type group — yields a `Diag` naming the construct,
 // carrying the byte offset it points at where one exists. The source-text
@@ -235,7 +258,7 @@ fn head_word_is(ts: Toks, kw: String) -> Bool {
 // A module path — `word (/ word)*` — read as a single slash-joined string
 // plus the tokens after it, or `()` when the head is not a word. A module
 // name (`module testapi/main;`), an import source module
-// (`import testapi/fmt(…);`), and an alias target (`import testapi/fmt as
+// (`import testapi/fmt { fn f }`), and an alias target (`import testapi/fmt as
 // f;`) are slash-separated paths the lexer splits into `word / word` runs;
 // reading the whole path keeps the recorded name intact, so cross-module
 // dependency matching and per-module visibility see the real module
@@ -1481,10 +1504,10 @@ fn import_provider_name(name: String) -> Bool {
   )
 }
 
-fn skip_import_commas(ts: Toks) -> Toks {
+fn skip_import_semicolons(ts: Toks) -> Toks {
   Toks_done.get(loop(
   , .(cur: Toks) {
-      if(head_is(cur, c_comma())) {
+      if(head_is(cur, c_semi())) {
         widen_sum(rest(cur))[Toks | Toks_done]
       } else {
         widen_sum(Toks_done.mk(cur))[Toks | Toks_done]
@@ -1494,11 +1517,17 @@ fn skip_import_commas(ts: Toks) -> Toks {
   ))
 }
 
-fn scan_import_item(ts: Toks, provider: String) -> (Import & Toks) | Diag {
+fn scan_import_item(ts: Toks, provider: String, is_fn: Bool) -> (Import & Toks) | Diag {
   match(head_word(ts)) {
     (
     , .(original: String) {
-        if(import_item_name(original)) {
+        if(if(is_fn) {
+          import_value_name(original)
+        } else if(import_value_name(original)) {
+          .f[Bool]
+        } else {
+          import_item_name(original)
+        }) {
           let after = rest(ts);
           if(head_word_is(after, "as"[String])) {
             let destination = rest(after);
@@ -1557,8 +1586,8 @@ fn scan_import_names(ts: Toks, provider: String) -> Names_scan | Diag {
   , .(state: Toks & Imports) {
       match(state) {
         .(remaining: Toks, names: Imports) {
-          let cur = skip_import_commas(remaining);
-          if(head_is(cur, c_rparen())) {
+          let cur = skip_import_semicolons(remaining);
+          if(head_is(cur, c_rbrace())) {
             match(un_imports(names)) {
               (
               , .(_entry: Import, _tail: Imports) {
@@ -1572,38 +1601,38 @@ fn scan_import_names(ts: Toks, provider: String) -> Names_scan | Diag {
                 }
               )
             }
-          } else match(scan_import_item(cur, provider)) {
-            (
-            , .(entry: Import, after: Toks) {
-                let operator_item =
-                  if(head_word_is(rest(cur), "as"[String])) {
-                    .f[Bool]
+          } else if(if(head_word_is(cur, "fn"[String])) {
+            .t[Bool]
+          } else {
+            head_word_is(cur, "type"[String])
+          }) {
+            match(scan_import_item(rest(cur), provider, head_word_is(cur, "fn"[String]))) {
+              (
+              , .(entry: Import, after: Toks) {
+                  if(head_is(after, c_rbrace())) {
+                    widen_sum(Names_scan.mk((imports_cons(entry, names), rest(after))))[| (& Toks
+                    & Imports)
+                    | Names_scan
+                    | Diag]
+                  } else if(head_is(after, c_semi())) {
+                    widen_sum((rest(after), imports_cons(entry, names)))[| (Toks & Imports)
+                    | Names_scan
+                    | Diag]
                   } else {
-                    head_word_is(cur, "op"[String])
-                  };
-                if(head_is(after, c_rparen())) {
-                  widen_sum(Names_scan.mk((imports_cons(entry, names), rest(after))))[| (& Toks
-                  & Imports)
-                  | Names_scan
-                  | Diag]
-                } else if(head_is(after, c_comma())) {
-                  widen_sum((after, imports_cons(entry, names)))[| (Toks & Imports)
-                  | Names_scan
-                  | Diag]
-                } else if(operator_item) {
-                  widen_sum(import_diag(cur, "operator imports are not in Kio'"[String]))[| (& Toks
-                  & Imports)
-                  | Names_scan
-                  | Diag]
-                } else {
-                  widen_sum(import_diag(
-                  , after
-                  , "expected comma or closing parenthesis in import list"[String]
-                  ))[(Toks & Imports) | Names_scan | Diag]
+                    widen_sum(import_diag(
+                    , after
+                    , "expected semicolon or closing brace in import list"[String]
+                    ))[(Toks & Imports) | Names_scan | Diag]
+                  }
                 }
-              }
-            , .(diag: Diag) { widen_sum(diag)[(Toks & Imports) | Names_scan | Diag] }
-            )
+              , .(diag: Diag) { widen_sum(diag)[(Toks & Imports) | Names_scan | Diag] }
+              )
+            }
+          } else {
+            widen_sum(import_diag(cur, "expected fn or type import selector"[String]))[| (& Toks
+            & Imports)
+            | Names_scan
+            | Diag]
           }
         }
       }
@@ -1675,20 +1704,16 @@ fn scan_import(ts: Toks, imports: Imports, aliases: Aliases) -> Import_outcome {
             if(import_provider_name(provider)) {
               if(head_word_is(after_path, "as"[String])) {
                 scan_import_alias(rest(after_path), provider, imports, aliases)
-              } else if(head_is(after_path, c_lparen())) {
+              } else if(head_is(after_path, c_lbrace())) {
                 match(scan_import_names(rest(after_path), provider)) {
                   (
                   , .(selected: Names_scan) {
                       match(Names_scan.get(selected)) {
                         .(names: Imports, after: Toks) {
-                          if(head_is(after, c_semi())) {
-                            widen_sum(Import_scan.mk((
-                            , prepend_imports(names, imports)
-                            , (aliases, rest(after))
-                            )))[Import_scan | Import_err]
-                          } else {
-                            import_error(after, "expected semicolon after import list"[String])
-                          }
+                          widen_sum(Import_scan.mk((
+                          , prepend_imports(names, imports)
+                          , (aliases, drop(after, c_semi()))
+                          )))[Import_scan | Import_err]
                         }
                       }
                     }
@@ -1698,7 +1723,7 @@ fn scan_import(ts: Toks, imports: Imports, aliases: Aliases) -> Import_outcome {
                   )
                 }
               } else {
-                import_error(after_path, "expected `(` or `as` after import provider"[String])
+                import_error(after_path, "expected `{` or `as` after import provider"[String])
               }
             } else {
               import_error(after_import, "expected a value-shaped import provider path"[String])
@@ -1864,7 +1889,7 @@ fn un_host_scan(r: Host_scan) -> Host_decl | Hs_err { r }
 // =====================================================================
 //
 // The scanners thread the module being assembled as one record, flushed
-// into a `Module` at the next `module` header (or end-of-input).
+// into a `Module` at the next `mod` header (or end-of-input).
 /// The in-progress module: name, reversed imports, reversed aliases, its
 /// newtype table, reversed decls, reversed host-fn names, reversed type
 /// names, and reversed retained host declaration headers.
@@ -2767,7 +2792,7 @@ fn is_decl_head(ts: Toks) -> Bool {
 //
 // `module NAME;` flushes the in-progress module and starts a new one;
 // declarations before the
-// first `module` header are malformed (the emitted tree always opens each
+// first `mod` header are malformed (the emitted tree always opens each
 // file with its header); and the manifest's `package NAME;` header,
 // `build { … }` block (skipped), and `bridge { … }` block (parsed into the
 // contract surface) are recognized at the top level.
@@ -2896,11 +2921,11 @@ type Pscan_state = Toks & Wip & Modules & Bridge_scan;
 type Pscan_step = Pscan_state | Pscan_outcome;
 
 // The declaration-before-header diagnostic (a whole-package image opens
-// every module file with its `module` header).
+// every module file with its `mod` header).
 fn pre_module_diag(ts: Toks) -> Pscan_step {
   widen_sum(pscan_err(mk_diag_at(
   , "dyn_load_prime: malformed image — a declaration appears before the first "
-    "`module` header"[String]
+    "`mod` header"[String]
   , head_pos(ts)
   )))[Pscan_state | Pscan_outcome]
 }
@@ -3125,7 +3150,7 @@ fn pscan_step(st: Pscan_state) -> Pscan_step {
       match(peek(ts)) {
         (
         , .(_t: Token) {
-            if(head_word_is(ts, "module"[String])) {
+            if(head_word_is(ts, "mod"[String])) {
               match(un_mod_path(read_module_path(rest(ts)))) {
                 (
                 , .(p: Mod_path) {
@@ -3150,13 +3175,13 @@ fn pscan_step(st: Pscan_state) -> Pscan_step {
                   }
                 , .(_noname: .) {
                     widen_sum(pscan_err(mk_diag_at(
-                    , "dyn_load_prime: malformed image — `module` names no module"[String]
+                    , "dyn_load_prime: malformed image — `mod` names no module"[String]
                     , head_pos(ts)
                     )))[Pscan_state | Pscan_outcome]
                   }
                 )
               }
-            } else if(head_word_is(ts, "package"[String])) {
+            } else if(head_word_is(ts, "pkg"[String])) {
               match(head_word(rest(ts))) {
                 (
                 , .(_pkgname: String) {
@@ -3165,7 +3190,7 @@ fn pscan_step(st: Pscan_state) -> Pscan_step {
                   }
                 , .(_noname: .) {
                     widen_sum(pscan_err(mk_diag_at(
-                    , "dyn_load_prime: malformed image — `package` names no package"[String]
+                    , "dyn_load_prime: malformed image — `pkg` names no package"[String]
                     , head_pos(ts)
                     )))[Pscan_state | Pscan_outcome]
                   }

@@ -1,4 +1,4 @@
-package mgrps;
+pkg mgrps;
 
 build {
   cache "out/.kio-cache/";

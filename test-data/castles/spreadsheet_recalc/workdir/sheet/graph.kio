@@ -1,18 +1,18 @@
 /// The dependency graph, and the two questions asked of it: which cells sit
 /// on a reference cycle, and in what order may the rest be evaluated.
-module sheet/graph;
+mod sheet/graph;
 
-import macros/control(macro if);
-import macros/match(macro match);
-import sheet/addr(Addr, addr_eq, all_addrs, in_grid, mem);
-import sheet/cells(Sheet, content_at, fold_content);
-import sheet/formula(Expr);
-import sheet/formula(precedents);
-import sheet/list(List, append, cons, filter, len, nil, reverse);
-import sheet/table(Table, empty, get_or, put);
-import testapi(Bool, I32);
-import testapi/arith(eq_i32, sub_i32);
-import testapi/iter(loop);
+import macros/control { macro if }
+import macros/match { macro match }
+import sheet/addr { type Addr; fn addr_eq; fn all_addrs; fn in_grid; fn mem }
+import sheet/cells { type Sheet; fn content_at; fn fold_content }
+import sheet/formula { fn precedents }
+import sheet/formula { type Expr }
+import sheet/list { type List; fn append; fn cons; fn filter; fn len; fn nil; fn reverse }
+import sheet/table { type Table; fn empty; fn get_or; fn put }
+import testapi { type Bool; type I32 }
+import testapi/arith { fn eq_i32; fn sub_i32 }
+import testapi/iter { fn loop }
 
 /// Address -> the cells that read it.
 pub type Deps = Table[List[Addr]];

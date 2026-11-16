@@ -27,7 +27,7 @@ Each generated case is a directory mirroring the case-directory shape `ci/run-te
 <batch>/<NN_category>/prog_<n>/
   workdir/                     # directory where the case commands run
     prog.pkg.kio               # five targets; invoked control probes declare all eight
-    prog.kio                   # module prog; generated host mirror + helpers + fn gen(...)
+    prog.kio                   # mod prog; generated host mirror + helpers + fn gen(...)
     *.kio         # macro support files in surface-mode cases
   run.args                     # exact generated core, surface, control, or recursion protocol
   run.sh                       # valid I32 results: capture execution, then kio test
@@ -201,8 +201,8 @@ cells; fixed support declarations supply their explicitly described helpers:
   right fold whose `foldr1 kio_gen_fold_step kio_gen_fold_seed;` consumes the terminal
   element. Separate fixed `equiv` claims prove that a singleton is not
   stepped and that the remaining element of a two-element fold is stepped.
-- Literal aliases — `pub literal zero_i32 = 0;` and
-  `pub literal hello_str = "hello";` in `prog.kio`, with
+- Literal aliases — `pub lit zero_i32 = 0;` and
+  `pub lit hello_str = "hello";` in `prog.kio`, with
   use-site references appearing in surface mode as the annotated
   alias call and in Kio' fallback as the bound literal (the
   desugaring substitution).

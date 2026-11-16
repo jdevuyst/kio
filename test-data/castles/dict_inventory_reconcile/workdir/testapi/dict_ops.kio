@@ -1,9 +1,9 @@
-module testapi/dict_ops;
+mod testapi/dict_ops;
 
 import dict/dict as dict;
-import macros/control(macro if);
-import testapi(Bool, I32, String);
-import testapi/arith(eq_i32, lt_i32);
+import macros/control { macro if }
+import testapi { type Bool; type I32; type String }
+import testapi/arith { fn eq_i32; fn lt_i32 }
 
 fn compare_i32(target: I32, key: I32) -> dict.Ordering {
   if(lt_i32(target, key)) {

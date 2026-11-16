@@ -6,10 +6,10 @@
 /// `dep_string` — which wants the dependency's — must therefore be a type
 /// error. The old bare-last-segment typer wrongly conflated the two and
 /// accepted this.
-module main;
+mod main;
 
 import textdep/text as dtext;
-import textdep/text(dep_string);
+import textdep/text { fn dep_string }
 
 host type String role(str);
 

@@ -1,28 +1,28 @@
-module circuit_netlist_eval/gates;
+mod circuit_netlist_eval/gates;
 
 import circuit_netlist_eval/bool_logic as logic;
-import circuit_netlist_eval/domain(
-, Checksum
-, Enable
-, Fanout_ok
-, Fanout_probe
-, Gate_ab_and
-, Gate_bc_or
-, Gate_enable_a
-, Gate_mask
-, Gate_xor
-, Pin_a
-, Pin_b
-, Pin_c
-, Probe_alarm
-, Probe_carry
-, Stage
-, State
-, Truth_ok
-, Warning_count
-);
-import macros/row_macros(macro select, macro with);
-import testapi(Bool, I32);
+import circuit_netlist_eval/domain {
+  type Checksum;
+  type Enable;
+  type Fanout_ok;
+  type Fanout_probe;
+  type Gate_ab_and;
+  type Gate_bc_or;
+  type Gate_enable_a;
+  type Gate_mask;
+  type Gate_xor;
+  type Pin_a;
+  type Pin_b;
+  type Pin_c;
+  type Probe_alarm;
+  type Probe_carry;
+  type Stage;
+  type State;
+  type Truth_ok;
+  type Warning_count
+}
+import macros/row_macros { macro select; macro with }
+import testapi { type Bool; type I32 }
 import testapi/arith as arith;
 
 pub fn and_gate(a: Bool, b: Bool) -> Bool { logic.b_and(a, b) }

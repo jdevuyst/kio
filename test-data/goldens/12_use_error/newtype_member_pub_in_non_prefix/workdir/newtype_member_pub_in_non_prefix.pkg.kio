@@ -1,4 +1,4 @@
-package newtype_member_pub_in_non_prefix;
+pkg newtype_member_pub_in_non_prefix;
 
 build {
   cache "out/.kio-cache/";

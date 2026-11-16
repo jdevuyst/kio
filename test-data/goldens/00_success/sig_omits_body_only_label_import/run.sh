@@ -14,7 +14,7 @@ if printf '%s\n' "$output" | grep -Fq 'import labels'; then
   printf '%s\n' "$output" >&2
   exit 1
 fi
-for required in 'import types(A);' 'import types(Kept);' 'import types as t;'; do
+for required in 'import types { type A }' 'import types { type Kept }' 'import types as t;'; do
   if ! printf '%s\n' "$output" | grep -Fq "$required"; then
     printf 'recorded signatures dropped required import: %s\n' "$required" >&2
     printf '%s\n' "$output" >&2

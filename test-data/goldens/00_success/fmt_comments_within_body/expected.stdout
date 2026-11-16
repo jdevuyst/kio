@@ -1,7 +1,7 @@
-module main;
+mod main;
 
-import macros/match(macro match);
-import macros/row_macros(macro record_);
+import macros/match { macro match }
+import macros/row_macros { macro record_ }
 
 fn f(x: I32) -> I32 {
   // before let
@@ -82,10 +82,10 @@ type Sigil =
     & G
     )
   ;
-module main;
+mod main;
 
-import macros/match(macro match);
-import macros/row_macros(macro record_);
+import macros/match { macro match }
+import macros/row_macros { macro record_ }
 
 fn f(x: I32) -> I32 {
   // before let

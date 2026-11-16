@@ -1,7 +1,7 @@
-module cases/related_plain;
+mod cases/related_plain;
 
-import common(macro common, macro from_number);
-import testapi(I32, String);
+import common { macro common; macro from_number }
+import testapi { type I32; type String }
 
 type Alias[A] = A;
 

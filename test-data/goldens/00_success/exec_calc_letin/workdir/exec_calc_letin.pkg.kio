@@ -1,4 +1,4 @@
-package exec_calc_letin;
+pkg exec_calc_letin;
 
 build {
   cache "out/.kio-cache/";

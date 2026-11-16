@@ -1,4 +1,4 @@
-module main;
+mod main;
 
 // A regular module at the package root may declare a single-segment
 // name (`main`) that differs from the package name (`pkg`). The

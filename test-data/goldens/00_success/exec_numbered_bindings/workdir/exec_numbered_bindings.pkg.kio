@@ -1,4 +1,4 @@
-package exec_numbered_bindings;
+pkg exec_numbered_bindings;
 
 build {
   target js {

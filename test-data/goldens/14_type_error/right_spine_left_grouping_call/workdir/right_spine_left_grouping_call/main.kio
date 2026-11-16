@@ -1,6 +1,6 @@
-module right_spine_left_grouping_call/main;
+mod right_spine_left_grouping_call/main;
 
-import right_spine_left_grouping_call(String);
+import right_spine_left_grouping_call { type String }
 
 fn join3(a: String, b: String, c: String) -> String { a }
 

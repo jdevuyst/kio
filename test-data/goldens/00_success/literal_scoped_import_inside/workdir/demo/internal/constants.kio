@@ -1,5 +1,5 @@
-module demo/internal/constants;
+mod demo/internal/constants;
 
-import demo/api(String);
+import demo/api { type String }
 
-pub(demo/internal) literal greeting = "hello";
+pub(demo/internal) lit greeting = "hello";

@@ -1,4 +1,4 @@
-package build_comptime_literal_erasure;
+pkg build_comptime_literal_erasure;
 
 build {
   cache "out/.kio-cache/";

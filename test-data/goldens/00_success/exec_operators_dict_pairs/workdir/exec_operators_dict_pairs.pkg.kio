@@ -1,4 +1,4 @@
-package exec_operators_dict_pairs;
+pkg exec_operators_dict_pairs;
 
 build {
   cache "out/.kio-cache/";

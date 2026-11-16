@@ -1,4 +1,4 @@
-package boolean_and_unspecialized;
+pkg boolean_and_unspecialized;
 
 build {
   cache "out/.kio-cache/";

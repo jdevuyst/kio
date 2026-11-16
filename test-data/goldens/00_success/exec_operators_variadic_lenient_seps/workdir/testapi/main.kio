@@ -1,7 +1,7 @@
-module testapi/main;
+mod testapi/main;
 
-import testapi(String);
-import testapi/io(print);
+import testapi { type String }
+import testapi/io { fn print }
 
 // Cons-list scaffolding. `cat` returns its first arg so the fold
 // result is the leftmost element of each literal.
@@ -9,7 +9,7 @@ fn nil() -> String { "[]" }
 
 fn cat(head: String, tail: String) -> String { head }
 
-varop [* *] { foldr cat nil }
+op_var [* *] { foldr cat nil }
 
 // Mirrors the A1 chain rule: leading, trailing, and repeated
 // separators inside a variadic literal collapse to the same

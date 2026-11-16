@@ -1,4 +1,4 @@
-package if_match_captured_payload;
+pkg if_match_captured_payload;
 
 build {
   target js {

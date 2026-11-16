@@ -1,4 +1,4 @@
-package exec_expr_eval;
+pkg exec_expr_eval;
 
 build {
   cache "out/.kio-cache/";

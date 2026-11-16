@@ -1,9 +1,9 @@
-module testapi/main;
+mod testapi/main;
 
-import testapi(Array, I32);
-import testapi/array(array_get, array_make_empty, array_push);
-import testapi/fmt(int_to_string);
-import testapi/io(print);
+import testapi { type Array; type I32 }
+import testapi/array { fn array_get; fn array_make_empty; fn array_push }
+import testapi/fmt { fn int_to_string }
+import testapi/io { fn print }
 
 fn make(make_empty: [A] . -> Array[A]) -> Array[I32] { make_empty[I32](()) }
 

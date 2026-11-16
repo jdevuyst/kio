@@ -1,4 +1,4 @@
-module main;
+mod main;
 
 type Unit = .;
 
@@ -11,7 +11,7 @@ type Func = (A & B) -> C;
 type Func_zero = . -> A;
 
 pub type Pair[A][B] = A & B;
-module main;
+mod main;
 
 type Unit = .;
 

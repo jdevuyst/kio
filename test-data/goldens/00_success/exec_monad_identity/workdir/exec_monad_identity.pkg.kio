@@ -1,4 +1,4 @@
-package exec_monad_identity;
+pkg exec_monad_identity;
 
 build {
   cache "out/.kio-cache/";

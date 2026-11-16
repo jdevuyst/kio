@@ -1,8 +1,8 @@
-module float_weather_index/daily;
+mod float_weather_index/daily;
 
 import float_weather_index/model as model;
 import float_weather_index/readings as readings;
-import testapi(F64);
+import testapi { type F64 }
 import testapi/arith as arith;
 
 pub fn morning_raw() -> F64 {

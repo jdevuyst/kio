@@ -1,4 +1,4 @@
-package derive_specialization_diagnostic_exists;
+pkg derive_specialization_diagnostic_exists;
 
 build {
   cache "out/.kio-cache/";

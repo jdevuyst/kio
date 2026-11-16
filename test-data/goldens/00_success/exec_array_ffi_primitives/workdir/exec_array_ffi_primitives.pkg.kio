@@ -1,4 +1,4 @@
-package exec_array_ffi_primitives;
+pkg exec_array_ffi_primitives;
 
 build {
   cache "out/.kio-cache/";

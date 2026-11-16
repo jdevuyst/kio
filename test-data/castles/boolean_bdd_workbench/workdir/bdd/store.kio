@@ -1,13 +1,13 @@
-module bdd/store;
+mod bdd/store;
 
 import bdd/logic as logic;
 import list/core as lists;
 import list/list as walk;
-import macros/control(macro if);
-import macros/match(macro match);
-import macros/row_macros(macro select);
-import macros/spine_macros(macro widen_sum);
-import testapi(Bool, I32);
+import macros/control { macro if }
+import macros/match { macro match }
+import macros/row_macros { macro select }
+import macros/spine_macros { macro widen_sum }
+import testapi { type Bool; type I32 }
 import testapi/arith as arith;
 
 pub type { Node_id: I32 { pub mk; pub get } }

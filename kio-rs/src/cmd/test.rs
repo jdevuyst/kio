@@ -55,8 +55,7 @@ use crate::pass::typecheck_full::check_normalized_package_collect_errors;
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
 
-const HELP_TEMPLATE: &str = "\
-Usage: kio test [<module>...]
+const HELP_TEMPLATE: &str = "Usage: kio test [<module>...]
 
 Discharge every `equiv` declaration in the current package by
 partial-evaluating each `term` body and reporting whether they all
@@ -369,8 +368,7 @@ fn eprint_dependency_skip_note(skipped_dep_equiv_blocks: usize) {
         return;
     }
     eprintln!(
-        "note: {skipped_dep_equiv_blocks} equiv block{plural} in dependency modules \
-         skipped; pass --include-deps to include",
+        "note: {skipped_dep_equiv_blocks} equiv block{plural} in dependency modules skipped; pass --include-deps to include",
         plural = if skipped_dep_equiv_blocks == 1 {
             ""
         } else {
@@ -828,15 +826,15 @@ mod tests {
         let mut modules = std::collections::BTreeMap::new();
         modules.insert(
             std::path::PathBuf::from("/pkg/main.kio"),
-            lazy("module main;\n\nequiv a() { (); () }\n"),
+            lazy("mod main;\n\nequiv a() { (); () }\n"),
         );
         modules.insert(
             std::path::PathBuf::from("/pkg/util.kio"),
-            lazy("module util;\n\npub fn f() -> . { () }\n"),
+            lazy("mod util;\n\npub fn f() -> . { () }\n"),
         );
         modules.insert(
             std::path::PathBuf::from("/pkg/macros/law.kio"),
-            lazy("module macros/law;\n\nequiv b() { (); () }\n"),
+            lazy("mod macros/law;\n\nequiv b() { (); () }\n"),
         );
 
         // Default scoping: `main` is the one in-scope block, `util` has

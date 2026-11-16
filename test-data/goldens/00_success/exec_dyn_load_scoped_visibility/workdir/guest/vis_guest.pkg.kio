@@ -1,4 +1,4 @@
-package vis_guest;
+pkg vis_guest;
 
 build {
   cache "out/.kio-cache/";

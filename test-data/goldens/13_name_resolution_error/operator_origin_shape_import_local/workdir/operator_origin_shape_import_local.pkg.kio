@@ -1,4 +1,4 @@
-package operator_origin_shape_import_local;
+pkg operator_origin_shape_import_local;
 
 build {
   target js {

@@ -1,12 +1,12 @@
-module regex/matcher;
+mod regex/matcher;
 
-import macros/control(macro if);
-import regex/bytes(byte_is, byte_text_at, has_byte_at);
-import regex/format(join3, join4);
-import regex/result(Verdict, fail, hit);
-import testapi(Bool, I32, String);
-import testapi/fmt(i32_to_string);
-import testapi/text(string_eq, string_len, string_slice);
+import macros/control { macro if }
+import regex/bytes { fn byte_is; fn byte_text_at; fn has_byte_at }
+import regex/format { fn join3; fn join4 }
+import regex/result { type Verdict; fn fail; fn hit }
+import testapi { type Bool; type I32; type String }
+import testapi/fmt { fn i32_to_string }
+import testapi/text { fn string_eq; fn string_len; fn string_slice }
 
 fn len_text(text: String) -> String { i32_to_string(string_len(text)) }
 

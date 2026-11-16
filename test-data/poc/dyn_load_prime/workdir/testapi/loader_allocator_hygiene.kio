@@ -1,43 +1,49 @@
-module testapi/loader_allocator_hygiene;
+mod testapi/loader_allocator_hygiene;
 
-import loader(Export_info, Export_infos, export_info_name, export_info_sig);
-import loader(Lr_diag, Lr_image, diag_bare_message, diag_message, image_exports);
-import loader(un_export_infos, un_load_outcome);
-import loader/scan(load_package);
-import macros/control(macro if);
-import macros/match(macro match);
-import testapi(Bool, String);
-import testapi/text(string_concat, string_eq);
+import loader {
+  type Lr_diag;
+  type Lr_image;
+  fn diag_bare_message;
+  fn diag_message;
+  fn image_exports
+}
+import loader { fn un_export_infos; fn un_load_outcome }
+import loader { type Export_info; type Export_infos; fn export_info_name; fn export_info_sig }
+import loader/scan { fn load_package }
+import macros/control { macro if }
+import macros/match { macro match }
+import testapi { type Bool; type String }
+import testapi/text { fn string_concat; fn string_eq }
 
 fn probe_image() -> String {
-  "module allocator_probe;\n\nimport hostapi(Zzcps_r);\n\npub type { "
+  "mod allocator_probe;\n\nimport hostapi {type Zzcps_r}\n\npub type { "
   "Outer[Zzcps_r][Zzcps_rx] <U> : (Zzcps_r & Zzcps_rx) & U {\n  mk;\n  pub "
   "get;\n  }; };\n\npub type { Free <U> : Zzcps_r & U {\n  mk;\n  pub get;\n  }; "
-  "};\n\npackage allocator_probe_pkg;\n\nbridge { allocator_probe; hostapi; }\n\n"
-  "module hostapi;\n\nhost type Zzcps_r;\n"[String]
+  "};\n\npkg allocator_probe_pkg;\n\nbridge { allocator_probe; hostapi; }\n\nmod "
+  "hostapi;\n\nhost type Zzcps_r;\n"[String]
 }
 
 // An unused private alias whose target cannot be resolved is outside the
 // loader's documented validation boundary. The valid identity alias beside it
 // exercises the same discovery pass through a qualified provider import.
 fn unused_malformed_alias_image() -> String {
-  "module alias_probe;\n\nimport provider as p;\n\ntype Bad = missing.Missing;\n"
-  "type Good = p.Good;\n\npub fn ok() -> . { () }\n\npackage alias_probe_pkg;\n\n"
-  "bridge { alias_probe; provider; }\n\nmodule provider;\n\npub type { Good : . "
-  "{ pub mk; pub get; }; };\n"[String]
+  "mod alias_probe;\n\nimport provider as p;\n\ntype Bad = missing.Missing;\n"
+  "type Good = p.Good;\n\npub fn ok() -> . { () }\n\npkg alias_probe_pkg;\n\n"
+  "bridge { alias_probe; provider; }\n\nmod provider;\n\npub type { Good : . { "
+  "pub mk; pub get; }; };\n"[String]
 }
 
 // Selecting the malformed alias as a callable member head is different: body
 // parsing needs a concrete terminal nominal and must reject the image.
 fn used_malformed_alias_image() -> String {
-  "module alias_probe;\n\ntype Bad = missing.Missing;\n\npub fn broken() -> . { "
-  "Bad.mk(()) }\n\npackage alias_probe_pkg;\n\nbridge { alias_probe; }\n"[String]
+  "mod alias_probe;\n\ntype Bad = missing.Missing;\n\npub fn broken() -> . { "
+  "Bad.mk(()) }\n\npkg alias_probe_pkg;\n\nbridge { alias_probe; }\n"[String]
 }
 
 // The declarations are written in legal lexical order. Resolving the final
 // alias still crosses every preceding identity-only edge.
 fn long_identity_alias_chain_image() -> String {
-  "module alias_chain;\n\nimport provider as p;\n\ntype Forward0 = p.Terminal;\n"
+  "mod alias_chain;\n\nimport provider as p;\n\ntype Forward0 = p.Terminal;\n"
   "type Forward1 = Forward0;\ntype Forward2 = Forward1;\ntype Forward3 = "
   "Forward2;\ntype Forward4 = Forward3;\ntype Forward5 = Forward4;\ntype "
   "Forward6 = Forward5;\ntype Forward7 = Forward6;\ntype Forward8 = Forward7;\n"
@@ -63,392 +69,387 @@ fn long_identity_alias_chain_image() -> String {
   "Forward55;\ntype Forward57 = Forward56;\ntype Forward58 = Forward57;\ntype "
   "Forward59 = Forward58;\ntype Forward60 = Forward59;\ntype Forward61 = "
   "Forward60;\ntype Forward62 = Forward61;\ntype Forward63 = Forward62;\n\npub "
-  "fn run() -> . { Forward63.mk(()) }\n\npackage alias_chain_pkg;\n\nbridge { "
-  "alias_chain; provider; }\n\nmodule provider;\n\npub type { Terminal : . { "
-  "pub mk; pub get; }; };\n"[String]
+  "fn run() -> . { Forward63.mk(()) }\n\npkg alias_chain_pkg;\n\nbridge { "
+  "alias_chain; provider; }\n\nmod provider;\n\npub type { Terminal : . { pub "
+  "mk; pub get; }; };\n"[String]
 }
 
 fn unused_identity_alias_cycle_image() -> String {
-  "module alias_cycle;\n\nrec { type Left = Right; type Right = Left; }\n\npub "
-  "fn ok() -> . { () }\n\npackage alias_cycle_pkg;\n\nbridge { alias_cycle; }\n"[String]
+  "mod alias_cycle;\n\nrec { type Left = Right; type Right = Left; }\n\npub fn "
+  "ok() -> . { () }\n\npkg alias_cycle_pkg;\n\nbridge { alias_cycle; }\n"[String]
 }
 
 fn used_identity_alias_cycle_image() -> String {
-  "module alias_cycle;\n\nrec { type Left = Right; type Right = Left; }\n\npub "
-  "fn broken() -> . { Left.mk(()) }\n\npackage alias_cycle_pkg;\n\nbridge { "
+  "mod alias_cycle;\n\nrec { type Left = Right; type Right = Left; }\n\npub fn "
+  "broken() -> . { Left.mk(()) }\n\npkg alias_cycle_pkg;\n\nbridge { "
   "alias_cycle; }\n"[String]
 }
 
 fn parenthesized_identity_alias_image() -> String {
-  "module alias_grouped;\n\nimport provider as p;\n\ntype Wrapped[A] = "
+  "mod alias_grouped;\n\nimport provider as p;\n\ntype Wrapped[A] = "
   "((p.Terminal[((A))]));\n\npub fn run() -> . { "
-  "Wrapped.get[.](Wrapped.mk[.](())) }\n\npackage alias_grouped_pkg;\n\nbridge "
-  "{ alias_grouped; provider; }\n\nmodule provider;\n\npub type { Terminal[A] : "
-  "A { pub mk; pub get; }; };\n"[String]
+  "Wrapped.get[.](Wrapped.mk[.](())) }\n\npkg alias_grouped_pkg;\n\nbridge { "
+  "alias_grouped; provider; }\n\nmod provider;\n\npub type { Terminal[A] : A { "
+  "pub mk; pub get; }; };\n"[String]
 }
 
 fn grouped_structural_alias_image() -> String {
-  "module alias_grouped_bad;\n\nimport provider as p;\n\ntype Wrapped = "
-  "((p.Terminal & .));\n\npub fn broken() -> . { Wrapped.mk(()) }\n\npackage "
-  "alias_grouped_bad_pkg;\n\nbridge { alias_grouped_bad; provider; }\n\nmodule "
+  "mod alias_grouped_bad;\n\nimport provider as p;\n\ntype Wrapped = "
+  "((p.Terminal & .));\n\npub fn broken() -> . { Wrapped.mk(()) }\n\npkg "
+  "alias_grouped_bad_pkg;\n\nbridge { alias_grouped_bad; provider; }\n\nmod "
   "provider;\n\npub type { Terminal : . { pub mk; pub get; }; };\n"[String]
 }
 
 fn grouped_partial_alias_image() -> String {
-  "module alias_grouped_partial;\n\nimport provider as p;\n\ntype Wrapped[A][B] "
-  "= ((p.Terminal[A]));\n\npub fn broken() -> . { Wrapped.mk[.][.](()) }\n\n"
-  "package alias_grouped_partial_pkg;\n\nbridge { alias_grouped_partial; "
-  "provider; }\n\nmodule provider;\n\npub type { Terminal[A][B] : . { pub mk; "
-  "pub get; }; };\n"[String]
+  "mod alias_grouped_partial;\n\nimport provider as p;\n\ntype Wrapped[A][B] = "
+  "((p.Terminal[A]));\n\npub fn broken() -> . { Wrapped.mk[.][.](()) }\n\npkg "
+  "alias_grouped_partial_pkg;\n\nbridge { alias_grouped_partial; provider; }\n\n"
+  "mod provider;\n\npub type { Terminal[A][B] : . { pub mk; pub get; }; };\n"[String]
 }
 
 fn grouped_reordered_alias_image() -> String {
-  "module alias_grouped_reordered;\n\nimport provider as p;\n\ntype "
-  "Wrapped[A][B] = ((p.Terminal[B][A]));\n\npub fn broken() -> . { "
-  "Wrapped.mk[.][.](()) }\n\npackage alias_grouped_reordered_pkg;\n\nbridge { "
-  "alias_grouped_reordered; provider; }\n\nmodule provider;\n\npub type { "
-  "Terminal[A][B] : . { pub mk; pub get; }; };\n"[String]
+  "mod alias_grouped_reordered;\n\nimport provider as p;\n\ntype Wrapped[A][B] "
+  "= ((p.Terminal[B][A]));\n\npub fn broken() -> . { Wrapped.mk[.][.](()) }\n\n"
+  "pkg alias_grouped_reordered_pkg;\n\nbridge { alias_grouped_reordered; "
+  "provider; }\n\nmod provider;\n\npub type { Terminal[A][B] : . { pub mk; pub "
+  "get; }; };\n"[String]
 }
 
 fn higher_kind_identity_alias_image() -> String {
-  "module alias_higher; import provider as p; type Wrapped[*F] = "
+  "mod alias_higher; import provider as p; type Wrapped[*F] = "
   "p.Terminal[F]; fn run[*G]() -> . { Wrapped.get[G](Wrapped.mk[G](())) } "
-  "package alias_higher_pkg; bridge { alias_higher; provider; } module "
-  "provider; pub type { Terminal[*F] : . { pub mk; pub get; }; };"[String]
+  "pkg alias_higher_pkg; bridge { alias_higher; provider; } mod provider; "
+  "pub type { Terminal[*F] : . { pub mk; pub get; }; };"[String]
 }
 
 fn mismatched_kind_identity_alias_image() -> String {
-  "module alias_wrong_kind; import provider as p; type Wrapped[F] = "
-  "p.Terminal[F]; fn run() -> . { Wrapped.mk[.](()) } package "
-  "alias_wrong_kind_pkg; bridge { alias_wrong_kind; provider; } module "
+  "mod alias_wrong_kind; import provider as p; type Wrapped[F] = "
+  "p.Terminal[F]; fn run() -> . { Wrapped.mk[.](()) } pkg "
+  "alias_wrong_kind_pkg; bridge { alias_wrong_kind; provider; } mod "
   "provider; pub type { Terminal[*F] : . { pub mk; pub get; }; };"[String]
 }
 
 fn extra_identity_alias_argument_image() -> String {
-  "module alias_extra; import provider as p; type Wrapped[A] = "
-  "p.Terminal[A][A]; fn run() -> . { Wrapped.mk[.](()) } package "
-  "alias_extra_pkg; bridge { alias_extra; provider; } module provider; pub "
+  "mod alias_extra; import provider as p; type Wrapped[A] = "
+  "p.Terminal[A][A]; fn run() -> . { Wrapped.mk[.](()) } pkg "
+  "alias_extra_pkg; bridge { alias_extra; provider; } mod provider; pub "
   "type { Terminal[A] : . { pub mk; pub get; }; };"[String]
 }
 
 fn empty_identity_alias_argument_image() -> String {
-  "module alias_empty; import provider as p; type Wrapped[A] = "
-  "p.Terminal[]; fn run() -> . { Wrapped.mk[.](()) } package "
-  "alias_empty_pkg; bridge { alias_empty; provider; } module provider; pub "
-  "type { Terminal[A] : . { pub mk; pub get; }; };"[String]
+  "mod alias_empty; import provider as p; type Wrapped[A] = p.Terminal[]; "
+  "fn run() -> . { Wrapped.mk[.](()) } pkg alias_empty_pkg; bridge { "
+  "alias_empty; provider; } mod provider; pub type { Terminal[A] : . { pub "
+  "mk; pub get; }; };"[String]
 }
 
 fn multiple_identity_alias_arguments_image() -> String {
-  "module alias_multiple; import provider as p; type Wrapped[A][B] = "
-  "p.Terminal[A, B]; fn run() -> . { Wrapped.mk[.][.](()) } package "
-  "alias_multiple_pkg; bridge { alias_multiple; provider; } module "
-  "provider; pub type { Terminal[A][B] : . { pub mk; pub get; }; };"[String]
+  "mod alias_multiple; import provider as p; type Wrapped[A][B] = "
+  "p.Terminal[A, B]; fn run() -> . { Wrapped.mk[.][.](()) } pkg "
+  "alias_multiple_pkg; bridge { alias_multiple; provider; } mod provider; "
+  "pub type { Terminal[A][B] : . { pub mk; pub get; }; };"[String]
 }
 
 fn private_source_alias_image() -> String {
-  "module alias_private_source;\n\nimport provider as p;\n\npub fn broken() -> "
-  ". { p.Wrapped.mk(()) }\n\npackage alias_private_source_pkg;\n\nbridge { "
-  "alias_private_source; provider; }\n\nmodule provider;\n\npub type { Terminal "
-  ": . { pub mk; pub get; }; };\ntype Wrapped = Terminal;\n"[String]
+  "mod alias_private_source;\n\nimport provider as p;\n\npub fn broken() -> . { "
+  "p.Wrapped.mk(()) }\n\npkg alias_private_source_pkg;\n\nbridge { "
+  "alias_private_source; provider; }\n\nmod provider;\n\npub type { Terminal : "
+  ". { pub mk; pub get; }; };\ntype Wrapped = Terminal;\n"[String]
 }
 
 fn private_terminal_constructor_image() -> String {
-  "module alias_private_constructor;\n\nimport provider as p;\n\npub fn "
-  "broken() -> . { p.Wrapped.mk(()) }\n\npackage "
-  "alias_private_constructor_pkg;\n\nbridge { alias_private_constructor; "
-  "provider; }\n\nmodule provider;\n\npub type { Terminal : . { mk; pub get; }; "
-  "};\npub type Wrapped = Terminal;\n"[String]
+  "mod alias_private_constructor;\n\nimport provider as p;\n\npub fn broken() "
+  "-> . { p.Wrapped.mk(()) }\n\npkg alias_private_constructor_pkg;\n\nbridge { "
+  "alias_private_constructor; provider; }\n\nmod provider;\n\npub type { "
+  "Terminal : . { mk; pub get; }; };\npub type Wrapped = Terminal;\n"[String]
 }
 
 fn public_terminal_projector_image() -> String {
-  "module alias_public_projector;\n\nimport provider as p;\n\npub fn run() -> . "
-  "{ p.Wrapped.get(p.seed()) }\n\npackage alias_public_projector_pkg;\n\nbridge "
-  "{ alias_public_projector; provider; }\n\nmodule provider;\n\npub type { "
-  "Terminal : . { mk; pub get; }; };\npub type Wrapped = Terminal;\npub fn "
-  "seed() -> Terminal { Terminal.mk(()) }\n"[String]
+  "mod alias_public_projector;\n\nimport provider as p;\n\npub fn run() -> . { "
+  "p.Wrapped.get(p.seed()) }\n\npkg alias_public_projector_pkg;\n\nbridge { "
+  "alias_public_projector; provider; }\n\nmod provider;\n\npub type { Terminal "
+  ": . { mk; pub get; }; };\npub type Wrapped = Terminal;\npub fn seed() -> "
+  "Terminal { Terminal.mk(()) }\n"[String]
 }
 
 fn structural_alias_collision_image() -> String {
-  "module structural_alias_collision;\n\nimport provider(T);\n\ntype T = . & .;\n\n"
-  "pub fn broken() -> . { T.mk(()) }\n\npackage "
+  "mod structural_alias_collision;\n\nimport provider {type T}\n\ntype T = . & "
+  ".;\n\npub fn broken() -> . { T.mk(()) }\n\npkg "
   "structural_alias_collision_pkg;\n\nbridge { structural_alias_collision; "
-  "provider; }\n\nmodule provider;\n\npub type { Remote : . { pub mk; pub get; "
-  "}; };\npub type T = Remote;\n"[String]
+  "provider; }\n\nmod provider;\n\npub type { Remote : . { pub mk; pub get; }; "
+  "};\npub type T = Remote;\n"[String]
 }
 
 fn partial_alias_collision_image() -> String {
-  "module partial_alias_collision;\n\nimport provider(T);\nimport local as l;\n\n"
-  "type T[A][B] = l.Local[A];\n\npub fn broken() -> . { T.mk[.][.](()) }\n\n"
-  "package partial_alias_collision_pkg;\n\nbridge { partial_alias_collision; "
-  "provider; local; }\n\nmodule provider;\n\npub type { Remote[A][B] : . { pub "
-  "mk; pub get; }; };\npub type T[A][B] = Remote[A][B];\n\nmodule local;\n\npub "
-  "type { Local[A][B] : . { pub mk; pub get; }; };\n"[String]
+  "mod partial_alias_collision;\n\nimport provider {type T}\nimport local as "
+  "l;\n\ntype T[A][B] = l.Local[A];\n\npub fn broken() -> . { T.mk[.][.](()) }\n\n"
+  "pkg partial_alias_collision_pkg;\n\nbridge { partial_alias_collision; "
+  "provider; local; }\n\nmod provider;\n\npub type { Remote[A][B] : . { pub mk; "
+  "pub get; }; };\npub type T[A][B] = Remote[A][B];\n\nmod local;\n\npub type { "
+  "Local[A][B] : . { pub mk; pub get; }; };\n"[String]
 }
 
 fn reordered_alias_collision_image() -> String {
-  "module reordered_alias_collision;\n\nimport provider(T);\nimport local as "
+  "mod reordered_alias_collision;\n\nimport provider {type T}\nimport local as "
   "l;\n\ntype T[A][B] = l.Local[B][A];\n\npub fn broken() -> . { T.mk[.][.](()) "
-  "}\n\npackage reordered_alias_collision_pkg;\n\nbridge { "
-  "reordered_alias_collision; provider; local; }\n\nmodule provider;\n\npub "
-  "type { Remote[A][B] : . { pub mk; pub get; }; };\npub type T[A][B] = "
-  "Remote[A][B];\n\nmodule local;\n\npub type { Local[A][B] : . { pub mk; pub "
-  "get; }; };\n"[String]
+  "}\n\npkg reordered_alias_collision_pkg;\n\nbridge { "
+  "reordered_alias_collision; provider; local; }\n\nmod provider;\n\npub type { "
+  "Remote[A][B] : . { pub mk; pub get; }; };\npub type T[A][B] = "
+  "Remote[A][B];\n\nmod local;\n\npub type { Local[A][B] : . { pub mk; pub get; "
+  "}; };\n"[String]
 }
 
 fn host_type_collision_image() -> String {
-  "module host_type_collision;\n\nimport provider(T);\n\nhost type T;\n\npub fn "
-  "broken() -> . { T.mk(()) }\n\npackage host_type_collision_pkg;\n\nbridge { "
-  "host_type_collision; provider; }\n\nmodule provider;\n\npub type { Remote : "
-  ". { pub mk; pub get; }; };\npub type T = Remote;\n"[String]
+  "mod host_type_collision;\n\nimport provider {type T}\n\nhost type T;\n\npub fn "
+  "broken() -> . { T.mk(()) }\n\npkg host_type_collision_pkg;\n\nbridge { "
+  "host_type_collision; provider; }\n\nmod provider;\n\npub type { Remote : . { "
+  "pub mk; pub get; }; };\npub type T = Remote;\n"[String]
 }
 
 fn selective_literal_newtype_conflict_image() -> String {
-  "module literal_conflict;\n\nimport p1(T);\nimport p2(T);\n\npub fn broken() "
-  "-> . { T.mk(()) }\n\npackage literal_conflict_pkg;\n\nbridge { "
-  "literal_conflict; p1; p2; }\n\nmodule p1;\n\npub type { T : . { pub mk; pub "
-  "get; }; };\n\nmodule p2;\n\npub type { T : . { pub mk; pub get; }; };\n"[String]
+  "mod literal_conflict;\n\nimport p1 {type T}\nimport p2 {type T}\n\npub fn "
+  "broken() -> . { T.mk(()) }\n\npkg literal_conflict_pkg;\n\nbridge { "
+  "literal_conflict; p1; p2; }\n\nmod p1;\n\npub type { T : . { pub mk; pub "
+  "get; }; };\n\nmod p2;\n\npub type { T : . { pub mk; pub get; }; };\n"[String]
 }
 
 fn repeated_literal_newtype_origin_image() -> String {
-  "module repeated_literal;\n\nimport provider(T);\nimport provider(T);\n\npub "
-  "fn run() -> . { T.get(T.mk(())) }\n\npackage repeated_literal_pkg;\n\nbridge "
-  "{ repeated_literal; provider; }\n\nmodule provider;\n\npub type { T : . { "
-  "pub mk; pub get; }; };\n"[String]
+  "mod repeated_literal;\n\nimport provider {type T}\nimport provider {type T}\n\n"
+  "pub fn run() -> . { T.get(T.mk(())) }\n\npkg repeated_literal_pkg;\n\nbridge "
+  "{ repeated_literal; provider; }\n\nmod provider;\n\npub type { T : . { pub "
+  "mk; pub get; }; };\n"[String]
 }
 
 fn local_import_literal_newtype_conflict_image() -> String {
-  "module local_literal_conflict;\n\nimport provider(T);\n\ntype { T : . { mk; "
-  "get; }; };\n\npub fn broken() -> . { T.mk(()) }\n\npackage "
+  "mod local_literal_conflict;\n\nimport provider {type T}\n\ntype { T : . { "
+  "mk; get; }; };\n\npub fn broken() -> . { T.mk(()) }\n\npkg "
   "local_literal_conflict_pkg;\n\nbridge { local_literal_conflict; provider; "
-  "}\n\nmodule provider;\n\npub type { T : . { pub mk; pub get; }; };\n"[String]
+  "}\n\nmod provider;\n\npub type { T : . { pub mk; pub get; }; };\n"[String]
 }
 
 fn duplicate_local_literal_newtype_image() -> String {
-  "module duplicate_local_literal;\n\ntype { T : . { mk; get; }; };\ntype { T "
-  ": . { mk; get; }; };\n\npub fn broken() -> . { T.mk(()) }\n\npackage "
+  "mod duplicate_local_literal;\n\ntype { T : . { mk; get; }; };\ntype { T : . "
+  "{ mk; get; }; };\n\npub fn broken() -> . { T.mk(()) }\n\npkg "
   "duplicate_local_literal_pkg;\n\nbridge { duplicate_local_literal; }\n"[String]
 }
 
 fn distinct_local_literal_newtypes_image() -> String {
-  "module distinct_local_literals;\n\ntype { Left : . { mk; get; }; };\ntype { "
+  "mod distinct_local_literals;\n\ntype { Left : . { mk; get; }; };\ntype { "
   "Right : . { mk; get; }; };\n\npub fn run() -> . { Left.get(Left.mk(())); "
-  "Right.get(Right.mk(())); () }\n\npackage distinct_local_literals_pkg;\n\n"
-  "bridge { distinct_local_literals; }\n"[String]
+  "Right.get(Right.mk(())); () }\n\npkg distinct_local_literals_pkg;\n\nbridge "
+  "{ distinct_local_literals; }\n"[String]
 }
 
 fn structural_local_import_literal_collision_image() -> String {
-  "module structural_local_literal_import;\n\nimport provider(T);\n\ntype T = . "
-  "& .;\n\npub fn broken() -> . { T.mk(()) }\n\npackage "
+  "mod structural_local_literal_import;\n\nimport provider {type T}\n\ntype T = "
+  ". & .;\n\npub fn broken() -> . { T.mk(()) }\n\npkg "
   "structural_local_literal_import_pkg;\n\nbridge { "
-  "structural_local_literal_import; provider; }\n\nmodule provider;\n\npub type "
-  "{ T : . { pub mk; pub get; }; };\n"[String]
+  "structural_local_literal_import; provider; }\n\nmod provider;\n\npub type { "
+  "T : . { pub mk; pub get; }; };\n"[String]
 }
 
 fn literal_local_import_structural_collision_image() -> String {
-  "module literal_local_structural_import;\n\nimport provider(T);\n\ntype { T : "
-  ". { mk; get; }; };\n\npub fn broken() -> . { T.mk(()) }\n\npackage "
+  "mod literal_local_structural_import;\n\nimport provider {type T}\n\ntype { T "
+  ": . { mk; get; }; };\n\npub fn broken() -> . { T.mk(()) }\n\npkg "
   "literal_local_structural_import_pkg;\n\nbridge { "
-  "literal_local_structural_import; provider; }\n\nmodule provider;\n\npub type "
-  "T = . & .;\n"[String]
+  "literal_local_structural_import; provider; }\n\nmod provider;\n\npub type T "
+  "= . & .;\n"[String]
 }
 
 fn host_local_import_literal_collision_image() -> String {
-  "module host_local_literal_import;\n\nimport provider(T);\n\nhost type T;\n\n"
-  "pub fn broken() -> . { T.mk(()) }\n\npackage "
-  "host_local_literal_import_pkg;\n\nbridge { host_local_literal_import; "
-  "provider; }\n\nmodule provider;\n\npub type { T : . { pub mk; pub get; }; };\n"[String]
+  "mod host_local_literal_import;\n\nimport provider {type T}\n\nhost type T;\n\n"
+  "pub fn broken() -> . { T.mk(()) }\n\npkg host_local_literal_import_pkg;\n\n"
+  "bridge { host_local_literal_import; provider; }\n\nmod provider;\n\npub type "
+  "{ T : . { pub mk; pub get; }; };\n"[String]
 }
 
 fn literal_local_import_host_collision_image() -> String {
-  "module literal_local_host_import;\n\nimport provider(T);\n\ntype { T : . { "
-  "mk; get; }; };\n\npub fn broken() -> . { T.mk(()) }\n\npackage "
+  "mod literal_local_host_import;\n\nimport provider {type T}\n\ntype { T : . { "
+  "mk; get; }; };\n\npub fn broken() -> . { T.mk(()) }\n\npkg "
   "literal_local_host_import_pkg;\n\nbridge { literal_local_host_import; "
-  "provider; }\n\nmodule provider;\n\npub host type T;\n"[String]
+  "provider; }\n\nmod provider;\n\npub host type T;\n"[String]
 }
 
 fn imported_literal_host_collision_image() -> String {
-  "module imported_literal_host;\n\nimport literal_provider(T);\nimport "
-  "host_provider(T);\n\npub fn broken() -> . { T.mk(()) }\n\npackage "
+  "mod imported_literal_host;\n\nimport literal_provider {type T}\nimport "
+  "host_provider {type T}\n\npub fn broken() -> . { T.mk(()) }\n\npkg "
   "imported_literal_host_pkg;\n\nbridge { imported_literal_host; "
-  "host_provider; }\n\nmodule literal_provider;\n\npub type { T : . { pub mk; "
-  "pub get; }; };\n\nmodule host_provider;\n\npub host type T;\n"[String]
+  "host_provider; }\n\nmod literal_provider;\n\npub type { T : . { pub mk; pub "
+  "get; }; };\n\nmod host_provider;\n\npub host type T;\n"[String]
 }
 
 fn imported_literal_structural_collision_image() -> String {
-  "module imported_literal_structural;\n\nimport literal_provider(T);\nimport "
-  "structural_provider(T);\n\npub fn broken() -> . { T.mk(()) }\n\npackage "
-  "imported_literal_structural_pkg;\n\nbridge { imported_literal_structural; "
-  "}\n\nmodule literal_provider;\n\npub type { T : . { pub mk; pub get; }; };\n\n"
-  "module structural_provider;\n\npub type T = . & .;\n"[String]
+  "mod imported_literal_structural;\n\nimport literal_provider {type T}\n"
+  "import structural_provider {type T}\n\npub fn broken() -> . { T.mk(()) }\n\n"
+  "pkg imported_literal_structural_pkg;\n\nbridge { "
+  "imported_literal_structural; }\n\nmod literal_provider;\n\npub type { T : . "
+  "{ pub mk; pub get; }; };\n\nmod structural_provider;\n\npub type T = . & .;\n"[String]
 }
 
 fn nonconflicting_structural_and_host_imports_image() -> String {
-  "module nonconflicting_types;\n\nimport structural_provider(Structural);\n"
-  "import host_provider(Hosted);\n\ntype Local = . | .;\n\npub fn run() -> . { "
-  "() }\n\npackage nonconflicting_types_pkg;\n\nbridge { nonconflicting_types; "
-  "host_provider; }\n\nmodule structural_provider;\n\npub type Structural = . & "
-  ".;\n\nmodule host_provider;\n\npub host type Hosted;\n"[String]
+  "mod nonconflicting_types;\n\nimport structural_provider {type Structural}\n"
+  "import host_provider {type Hosted}\n\ntype Local = . | .;\n\npub fn run() -> "
+  ". { () }\n\npkg nonconflicting_types_pkg;\n\nbridge { nonconflicting_types; "
+  "host_provider; }\n\nmod structural_provider;\n\npub type Structural = . & .;\n\n"
+  "mod host_provider;\n\npub host type Hosted;\n"[String]
 }
 
 fn selective_alias_conflict_image() -> String {
-  "module alias_conflict;\n\nimport p1(T);\nimport p2(T);\n\npub fn broken() -> "
-  ". { T.mk(()) }\n\npackage alias_conflict_pkg;\n\nbridge { alias_conflict; "
-  "p1; p2; }\n\nmodule p1;\n\npub type { Base1 : . { pub mk; pub get; }; };\npub "
-  "type T = Base1;\n\nmodule p2;\n\npub type { Base2 : . { pub mk; pub get; }; "
-  "};\npub type T = Base2;\n"[String]
+  "mod alias_conflict;\n\nimport p1 {type T}\nimport p2 {type T}\n\npub fn "
+  "broken() -> . { T.mk(()) }\n\npkg alias_conflict_pkg;\n\nbridge { "
+  "alias_conflict; p1; p2; }\n\nmod p1;\n\npub type { Base1 : . { pub mk; pub "
+  "get; }; };\npub type T = Base1;\n\nmod p2;\n\npub type { Base2 : . { pub mk; "
+  "pub get; }; };\npub type T = Base2;\n"[String]
 }
 
 fn selective_alias_literal_conflict_image() -> String {
-  "module alias_literal_conflict;\n\nimport p1(T);\nimport p2(T);\n\npub fn "
-  "broken() -> . { T.mk(()) }\n\npackage alias_literal_conflict_pkg;\n\nbridge "
-  "{ alias_literal_conflict; p1; p2; }\n\nmodule p1;\n\npub type { Base1 : . { "
-  "pub mk; pub get; }; };\npub type T = Base1;\n\nmodule p2;\n\npub type { T : . "
-  "{ pub mk; pub get; }; };\n"[String]
+  "mod alias_literal_conflict;\n\nimport p1 {type T}\nimport p2 {type T}\n\npub "
+  "fn broken() -> . { T.mk(()) }\n\npkg alias_literal_conflict_pkg;\n\nbridge { "
+  "alias_literal_conflict; p1; p2; }\n\nmod p1;\n\npub type { Base1 : . { pub "
+  "mk; pub get; }; };\npub type T = Base1;\n\nmod p2;\n\npub type { T : . { pub "
+  "mk; pub get; }; };\n"[String]
 }
 
 fn three_way_alias_literal_conflict_image() -> String {
-  "module three_way_alias_literal_conflict;\n\nimport p1(T);\nimport p2(T);\n"
-  "import p3(T);\n\npub fn broken() -> . { T.mk(()) }\n\npackage "
+  "mod three_way_alias_literal_conflict;\n\nimport p1 {type T}\nimport p2 "
+  "{type T}\nimport p3 {type T}\n\npub fn broken() -> . { T.mk(()) }\n\npkg "
   "three_way_alias_literal_conflict_pkg;\n\nbridge { "
-  "three_way_alias_literal_conflict; p1; p2; p3; }\n\nmodule p1;\n\npub type { "
-  "T : . { pub mk; pub get; }; };\n\nmodule p2;\n\npub type { T : . { pub mk; "
-  "pub get; }; };\n\nmodule p3;\n\nimport p2 as origin;\npub type T = origin.T;\n"[String]
+  "three_way_alias_literal_conflict; p1; p2; p3; }\n\nmod p1;\n\npub type { T : "
+  ". { pub mk; pub get; }; };\n\nmod p2;\n\npub type { T : . { pub mk; pub get; "
+  "}; };\n\nmod p3;\n\nimport p2 as origin;\npub type T = origin.T;\n"[String]
 }
 
 fn three_way_alias_literal_conflict_reversed_image() -> String {
-  "module three_way_alias_literal_conflict_reversed;\n\nimport p2(T);\nimport "
-  "p1(T);\nimport p3(T);\n\npub fn broken() -> . { T.mk(()) }\n\npackage "
-  "three_way_alias_literal_conflict_reversed_pkg;\n\nbridge { "
-  "three_way_alias_literal_conflict_reversed; p1; p2; p3; }\n\nmodule p1;\n\n"
-  "pub type { T : . { pub mk; pub get; }; };\n\nmodule p2;\n\npub type { T : . "
-  "{ pub mk; pub get; }; };\n\nmodule p3;\n\nimport p2 as origin;\npub type T = "
-  "origin.T;\n"[String]
+  "mod three_way_alias_literal_conflict_reversed;\n\nimport p2 {type T}\n"
+  "import p1 {type T}\nimport p3 {type T}\n\npub fn broken() -> . { T.mk(()) }\n\n"
+  "pkg three_way_alias_literal_conflict_reversed_pkg;\n\nbridge { "
+  "three_way_alias_literal_conflict_reversed; p1; p2; p3; }\n\nmod p1;\n\npub "
+  "type { T : . { pub mk; pub get; }; };\n\nmod p2;\n\npub type { T : . { pub "
+  "mk; pub get; }; };\n\nmod p3;\n\nimport p2 as origin;\npub type T = origin.T;\n"[String]
 }
 
 fn qualified_alias_conflict_image() -> String {
-  "module qualified_alias_conflict;\n\nimport p1 as q;\nimport p2 as q;\n\npub "
-  "fn broken() -> . { q.T.mk(()) }\n\npackage qualified_alias_conflict_pkg;\n\n"
-  "bridge { qualified_alias_conflict; p1; p2; shared; }\n\nmodule p1;\n\nimport "
-  "shared as origin;\npub type T = origin.Base;\n\nmodule p2;\n\nimport shared "
-  "as origin;\npub type T = origin.Base;\n\nmodule shared;\n\npub type { Base : "
-  ". { pub mk; pub get; }; };\n"[String]
+  "mod qualified_alias_conflict;\n\nimport p1 as q;\nimport p2 as q;\n\npub fn "
+  "broken() -> . { q.T.mk(()) }\n\npkg qualified_alias_conflict_pkg;\n\nbridge "
+  "{ qualified_alias_conflict; p1; p2; shared; }\n\nmod p1;\n\nimport shared as "
+  "origin;\npub type T = origin.Base;\n\nmod p2;\n\nimport shared as origin;\npub "
+  "type T = origin.Base;\n\nmod shared;\n\npub type { Base : . { pub mk; pub "
+  "get; }; };\n"[String]
 }
 
 fn repeated_alias_origin_image() -> String {
-  "module repeated_alias_origin;\n\nimport p1(T);\nimport p2(T);\n\npub fn run() "
-  "-> . { T.get(T.mk(())) }\n\npackage repeated_alias_origin_pkg;\n\nbridge { "
-  "repeated_alias_origin; p1; p2; }\n\nmodule p1;\n\npub type { Base : . { pub "
-  "mk; pub get; }; };\npub type T = Base;\n\nmodule p2;\n\nimport p1 as source;\n"
-  "pub type T = source.Base;\n"[String]
+  "mod repeated_alias_origin;\n\nimport p1 {type T}\nimport p2 {type T}\n\npub "
+  "fn run() -> . { T.get(T.mk(())) }\n\npkg repeated_alias_origin_pkg;\n\n"
+  "bridge { repeated_alias_origin; p1; p2; }\n\nmod p1;\n\npub type { Base : . "
+  "{ pub mk; pub get; }; };\npub type T = Base;\n\nmod p2;\n\nimport p1 as "
+  "source;\npub type T = source.Base;\n"[String]
 }
 
 fn repeated_alias_literal_origin_image() -> String {
-  "module repeated_alias_literal;\n\nimport p1(T);\nimport p2(T);\n\npub fn "
-  "run() -> . { T.get(T.mk(())) }\n\npackage repeated_alias_literal_pkg;\n\n"
-  "bridge { repeated_alias_literal; p1; p2; }\n\nmodule p1;\n\nimport p2 as "
-  "source;\npub type T = source.T;\n\nmodule p2;\n\npub type { T : . { pub mk; "
-  "pub get; }; };\n"[String]
+  "mod repeated_alias_literal;\n\nimport p1 {type T}\nimport p2 {type T}\n\npub "
+  "fn run() -> . { T.get(T.mk(())) }\n\npkg repeated_alias_literal_pkg;\n\n"
+  "bridge { repeated_alias_literal; p1; p2; }\n\nmod p1;\n\nimport p2 as "
+  "source;\npub type T = source.T;\n\nmod p2;\n\npub type { T : . { pub mk; pub "
+  "get; }; };\n"[String]
 }
 
 fn repeated_qualified_alias_image() -> String {
-  "module repeated_qualified_alias;\n\nimport p1 as q;\nimport p1 as q;\n\npub "
-  "fn run() -> . { q.T.get(q.T.mk(())) }\n\npackage "
-  "repeated_qualified_alias_pkg;\n\nbridge { repeated_qualified_alias; p1; }\n\n"
-  "module p1;\n\npub type { Base : . { pub mk; pub get; }; };\npub type T = "
-  "Base;\n"[String]
+  "mod repeated_qualified_alias;\n\nimport p1 as q;\nimport p1 as q;\n\npub fn "
+  "run() -> . { q.T.get(q.T.mk(())) }\n\npkg repeated_qualified_alias_pkg;\n\n"
+  "bridge { repeated_qualified_alias; p1; }\n\nmod p1;\n\npub type { Base : . { "
+  "pub mk; pub get; }; };\npub type T = Base;\n"[String]
 }
 
 fn local_import_alias_conflict_image() -> String {
-  "module local_import_alias_conflict;\n\nimport p2(T);\nimport p1 as source;\n\n"
-  "type T = source.Base1;\n\npub fn broken() -> . { T.mk(()) }\n\npackage "
+  "mod local_import_alias_conflict;\n\nimport p2 {type T}\nimport p1 as "
+  "source;\n\ntype T = source.Base1;\n\npub fn broken() -> . { T.mk(()) }\n\npkg "
   "local_import_alias_conflict_pkg;\n\nbridge { local_import_alias_conflict; "
-  "p1; p2; }\n\nmodule p1;\n\npub type { Base1 : . { pub mk; pub get; }; };\n\n"
-  "module p2;\n\npub type { Base2 : . { pub mk; pub get; }; };\npub type T = "
-  "Base2;\n"[String]
+  "p1; p2; }\n\nmod p1;\n\npub type { Base1 : . { pub mk; pub get; }; };\n\nmod "
+  "p2;\n\npub type { Base2 : . { pub mk; pub get; }; };\npub type T = Base2;\n"[String]
 }
 
 fn repeated_local_import_alias_origin_image() -> String {
-  "module repeated_local_import_alias;\n\nimport p1(T);\nimport p1 as source;\n\n"
-  "type T = source.Base;\n\npub fn run() -> . { T.get(T.mk(())) }\n\npackage "
-  "repeated_local_import_alias_pkg;\n\nbridge { repeated_local_import_alias; "
-  "p1; }\n\nmodule p1;\n\npub type { Base : . { pub mk; pub get; }; };\npub type "
-  "T = Base;\n"[String]
+  "mod repeated_local_import_alias;\n\nimport p1 {type T}\nimport p1 as "
+  "source;\n\ntype T = source.Base;\n\npub fn run() -> . { T.get(T.mk(())) }\n\n"
+  "pkg repeated_local_import_alias_pkg;\n\nbridge { "
+  "repeated_local_import_alias; p1; }\n\nmod p1;\n\npub type { Base : . { pub "
+  "mk; pub get; }; };\npub type T = Base;\n"[String]
 }
 
 fn local_literal_import_alias_conflict_image() -> String {
-  "module local_literal_import_alias_conflict;\n\nimport p2(T);\n\ntype { T : . "
-  "{ mk; get; }; };\n\npub fn broken() -> . { T.mk(()) }\n\npackage "
+  "mod local_literal_import_alias_conflict;\n\nimport p2 {type T}\n\ntype { T : "
+  ". { mk; get; }; };\n\npub fn broken() -> . { T.mk(()) }\n\npkg "
   "local_literal_import_alias_conflict_pkg;\n\nbridge { "
-  "local_literal_import_alias_conflict; p2; }\n\nmodule p2;\n\npub type { Base2 "
-  ": . { pub mk; pub get; }; };\npub type T = Base2;\n"[String]
+  "local_literal_import_alias_conflict; p2; }\n\nmod p2;\n\npub type { Base2 : "
+  ". { pub mk; pub get; }; };\npub type T = Base2;\n"[String]
 }
 
 fn distinct_ordinary_import_origins_image() -> String {
-  "module value_import_conflict;\n\nimport p1(f);\nimport p2(f);\n\npub fn "
-  "broken() -> . { missing() }\n\npackage value_import_conflict_pkg;\n\nbridge "
-  "{ value_import_conflict; }\n\nmodule p1;\n\npub fn f() -> . { () }\n\nmodule "
-  "p2;\n\npub fn f() -> . { () }\n"[String]
+  "mod value_import_conflict;\n\nimport p1 {fn f}\nimport p2 {fn f}\n\npub fn "
+  "broken() -> . { missing() }\n\npkg value_import_conflict_pkg;\n\nbridge { "
+  "value_import_conflict; }\n\nmod p1;\n\npub fn f() -> . { () }\n\nmod p2;\n\npub "
+  "fn f() -> . { () }\n"[String]
 }
 
 fn repeated_ordinary_import_origin_image() -> String {
-  "module repeated_value_import;\n\nimport provider(f);\nimport provider(f);\n\n"
-  "pub fn ok() -> . { () }\n\npackage repeated_value_import_pkg;\n\nbridge { "
-  "repeated_value_import; }\n\nmodule provider;\n\npub fn f() -> . { () }\n"[String]
+  "mod repeated_value_import;\n\nimport provider {fn f}\nimport provider {fn "
+  "f}\n\npub fn ok() -> . { () }\n\npkg repeated_value_import_pkg;\n\nbridge { "
+  "repeated_value_import; }\n\nmod provider;\n\npub fn f() -> . { () }\n"[String]
 }
 
 fn local_ordinary_import_conflict_image() -> String {
-  "module local_value_import_conflict;\n\nimport provider(f);\n\nfn f() -> . { "
-  "() }\n\npub fn broken() -> . { missing() }\n\npackage "
+  "mod local_value_import_conflict;\n\nimport provider {fn f}\n\nfn f() -> . { "
+  "() }\n\npub fn broken() -> . { missing() }\n\npkg "
   "local_value_import_conflict_pkg;\n\nbridge { local_value_import_conflict; "
-  "}\n\nmodule provider;\n\npub fn f() -> . { () }\n"[String]
+  "}\n\nmod provider;\n\npub fn f() -> . { () }\n"[String]
 }
 
 fn distinct_host_import_origins_image() -> String {
-  "module host_import_conflict;\n\nimport p1(f);\nimport p2(f);\n\npub fn "
-  "broken() -> . { missing() }\n\npackage host_import_conflict_pkg;\n\nbridge { "
-  "host_import_conflict; p1; p2; }\n\nmodule p1;\n\nhost fn f() -> .;\n\nmodule "
-  "p2;\n\nhost fn f() -> .;\n"[String]
+  "mod host_import_conflict;\n\nimport p1 {fn f}\nimport p2 {fn f}\n\npub fn "
+  "broken() -> . { missing() }\n\npkg host_import_conflict_pkg;\n\nbridge { "
+  "host_import_conflict; p1; p2; }\n\nmod p1;\n\nhost fn f() -> .;\n\nmod p2;\n\n"
+  "host fn f() -> .;\n"[String]
 }
 
 fn repeated_host_import_origin_image() -> String {
-  "module repeated_host_import;\n\nimport provider(f);\nimport provider(f);\n\n"
-  "pub fn ok() -> . { () }\n\npackage repeated_host_import_pkg;\n\nbridge { "
-  "repeated_host_import; provider; }\n\nmodule provider;\n\nhost fn f() -> .;\n"[String]
+  "mod repeated_host_import;\n\nimport provider {fn f}\nimport provider {fn f}\n\n"
+  "pub fn ok() -> . { () }\n\npkg repeated_host_import_pkg;\n\nbridge { "
+  "repeated_host_import; provider; }\n\nmod provider;\n\nhost fn f() -> .;\n"[String]
 }
 
 fn local_host_import_conflict_image() -> String {
-  "module local_host_import_conflict;\n\nimport provider(f);\n\nhost fn f() -> "
-  ".;\n\npub fn broken() -> . { missing() }\n\npackage "
+  "mod local_host_import_conflict;\n\nimport provider {fn f}\n\nhost fn f() -> "
+  ".;\n\npub fn broken() -> . { missing() }\n\npkg "
   "local_host_import_conflict_pkg;\n\nbridge { local_host_import_conflict; }\n\n"
-  "module provider;\n\npub fn f() -> . { () }\n"[String]
+  "mod provider;\n\npub fn f() -> . { () }\n"[String]
 }
 
 fn distinct_module_alias_origins_image() -> String {
-  "module module_alias_conflict;\n\nimport p1 as q;\nimport p2 as q;\n\npub fn "
-  "broken() -> . { missing() }\n\npackage module_alias_conflict_pkg;\n\nbridge "
-  "{ module_alias_conflict; }\n\nmodule p1;\n\npub fn first() -> . { () }\n\n"
-  "module p2;\n\npub fn second() -> . { () }\n"[String]
+  "mod module_alias_conflict;\n\nimport p1 as q;\nimport p2 as q;\n\npub fn "
+  "broken() -> . { missing() }\n\npkg module_alias_conflict_pkg;\n\nbridge { "
+  "module_alias_conflict; }\n\nmod p1;\n\npub fn first() -> . { () }\n\nmod p2;\n\n"
+  "pub fn second() -> . { () }\n"[String]
 }
 
 fn repeated_module_alias_origin_image() -> String {
-  "module repeated_module_alias;\n\nimport provider as q;\nimport provider as "
-  "q;\n\npub fn ok() -> . { () }\n\npackage repeated_module_alias_pkg;\n\nbridge "
-  "{ repeated_module_alias; }\n\nmodule provider;\n\npub fn value() -> . { () }\n"[String]
+  "mod repeated_module_alias;\n\nimport provider as q;\nimport provider as q;\n\n"
+  "pub fn ok() -> . { () }\n\npkg repeated_module_alias_pkg;\n\nbridge { "
+  "repeated_module_alias; }\n\nmod provider;\n\npub fn value() -> . { () }\n"[String]
 }
 
 fn local_ordinary_module_alias_conflict_image() -> String {
-  "module local_value_alias_conflict;\n\nimport provider as f;\n\nfn f() -> . { "
-  "() }\n\npub fn broken() -> . { missing() }\n\npackage "
+  "mod local_value_alias_conflict;\n\nimport provider as f;\n\nfn f() -> . { () "
+  "}\n\npub fn broken() -> . { missing() }\n\npkg "
   "local_value_alias_conflict_pkg;\n\nbridge { local_value_alias_conflict; }\n\n"
-  "module provider;\n\npub fn value() -> . { () }\n"[String]
+  "mod provider;\n\npub fn value() -> . { () }\n"[String]
 }
 
 fn separate_value_type_namespaces_image() -> String {
-  "module separate_value_type_namespaces;\n\nimport values(f);\nimport "
-  "types(F);\n\npub fn ok() -> . { () }\n\npackage "
+  "mod separate_value_type_namespaces;\n\nimport values {fn f}\nimport types "
+  "{type F}\n\npub fn ok() -> . { () }\n\npkg "
   "separate_value_type_namespaces_pkg;\n\nbridge { "
-  "separate_value_type_namespaces; }\n\nmodule values;\n\npub fn f() -> . { () "
-  "}\n\nmodule types;\n\npub type F = .;\n"[String]
+  "separate_value_type_namespaces; }\n\nmod values;\n\npub fn f() -> . { () }\n\n"
+  "mod types;\n\npub type F = .;\n"[String]
 }
 
 fn expect_loaded(image: String, failure: String) -> String {
@@ -1076,24 +1077,24 @@ fn inspect_exports(exports: Export_infos) -> String {
 
 fn macro_import_image(selector: String) -> String {
   string_concat(
-  , "module macro_import_probe;\n\nimport provider("[String]
+  , "mod macro_import_probe;\n\nimport provider { "[String]
   , string_concat(
     , selector
-    , ");\n\npub fn run() -> . { call() }\n\npackage macro_import_probe_pkg;\n\n"
-      "bridge { macro_import_probe; provider; }\n\nmodule provider;\n\npub fn "
-      "macro() -> . { () }\npub fn choose() -> . { () }\n"[String]
+    , " }\n\npub fn run() -> . { call() }\n\npkg macro_import_probe_pkg;\n\nbridge { "
+      "macro_import_probe; provider; }\n\nmod provider;\n\npub fn macro() -> . { () "
+      "}\npub fn choose() -> . { () }\n"[String]
     )
   )
 }
 
 fn ordinary_import_image(selector: String) -> String {
   string_concat(
-  , "module ordinary_import_probe;\nimport provider("[String]
+  , "mod ordinary_import_probe;\nimport provider { "[String]
   , string_concat(
     , selector
-    , ");\npub fn run() -> . { () }\npackage ordinary_import_probe_pkg;\nbridge { "
-      "ordinary_import_probe; provider; }\nmodule provider;\npub fn choose() -> . "
-      "{ () }\n"[String]
+    , " }\npub fn run() -> . { () }\npkg ordinary_import_probe_pkg;\nbridge { "
+      "ordinary_import_probe; provider; }\nmod provider;\npub fn choose() -> . { "
+      "() }\n"[String]
     )
   )
 }
@@ -1101,12 +1102,12 @@ fn ordinary_import_image(selector: String) -> String {
 fn ordinary_import_boundary_report() -> String {
   string_concat(
   , expect_loaded(
-    , ordinary_import_image("choose"[String])
+    , ordinary_import_image("fn choose"[String])
     , "loader rejected an ordinary identifier import"[String]
     )
   , expect_rejected(
-    , ordinary_import_image("{choose}"[String])
-    , "loader accepted a braced import selector"[String]
+    , ordinary_import_image("choose"[String])
+    , "loader accepted an untagged import selector"[String]
     )
   )
 }
@@ -1114,7 +1115,7 @@ fn ordinary_import_boundary_report() -> String {
 fn macro_import_boundary_report() -> String {
   let ordinary =
     expect_loaded(
-    , macro_import_image("macro as call"[String])
+    , macro_import_image("fn macro as call"[String])
     , "loader rejected an ordinary import whose name is macro"[String]
     );
   if(string_eq(ordinary, ""[String])) {
@@ -1125,8 +1126,8 @@ fn macro_import_boundary_report() -> String {
           let actual = diag_bare_message(Lr_diag.get(diagnostic));
           if(string_eq(
           , actual
-          , "dyn_load_prime: malformed image — expected comma or closing parenthesis "
-            "in import list at line 3, column 23"[String]
+          , "dyn_load_prime: malformed image — expected fn or type import selector at "
+            "line 3, column 19"[String]
           )) {
             ""[String]
           } else {
@@ -1198,10 +1199,10 @@ fn existing_loader_hygiene_report() -> String {
 // Exercise the emitted nominal grammar through the public loading boundary.
 fn nominal_grammar_image(declarations: String) -> String {
   string_concat(
-  , "module nominal_grammar;\n"[String]
+  , "mod nominal_grammar;\n"[String]
   , string_concat(
     , declarations
-    , "\npub fn run() -> . { () }\npackage nominal_grammar_probe;\nbridge { "
+    , "\npub fn run() -> . { () }\npkg nominal_grammar_probe;\nbridge { "
       "nominal_grammar; }\n"[String]
     )
   )

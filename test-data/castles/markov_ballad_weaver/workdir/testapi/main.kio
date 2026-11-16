@@ -1,21 +1,21 @@
 /// Learn a weighted bigram chain from the fixture, weave deterministic verses,
 /// and print the corpus, model, generated text, first-verse draw trace, and
 /// summary statistics.
-module testapi/main;
+mod testapi/main;
 
-import ballad/fixture(read_int, read_phrases);
-import ballad/model(empty_model, learn);
-import ballad/report(
-, print_corpus
-, print_first_verse_draws
-, print_header
-, print_model
-, print_stats
-, print_verses
-);
-import ballad/weave(weave);
-import testapi(I32);
-import testapi/arith(mul_i32);
+import ballad/fixture { fn read_int; fn read_phrases }
+import ballad/model { fn empty_model; fn learn }
+import ballad/report {
+  fn print_corpus;
+  fn print_first_verse_draws;
+  fn print_header;
+  fn print_model;
+  fn print_stats;
+  fn print_verses
+}
+import ballad/weave { fn weave }
+import testapi { type I32 }
+import testapi/arith { fn mul_i32 }
 
 pub fn main() {
   let seed = read_int(0);

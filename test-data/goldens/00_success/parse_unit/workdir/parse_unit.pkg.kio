@@ -1,4 +1,4 @@
-package parse_unit;
+pkg parse_unit;
 
 build {
   cache "out/.kio-cache/";

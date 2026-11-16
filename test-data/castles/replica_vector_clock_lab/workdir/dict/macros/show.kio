@@ -1,10 +1,10 @@
 /// Show macro that turns supported reflected values into host `String` rendering functions.
-module dict/macros/show;
+mod dict/macros/show;
 
 import __intrinsics__;
 
 import __comptime__;
-import dict/macros/testapi(String);
+import dict/macros/testapi { type String }
 
 /// Renders the unit value.
 pub fn show_unit_text() -> String { "()"[String] }

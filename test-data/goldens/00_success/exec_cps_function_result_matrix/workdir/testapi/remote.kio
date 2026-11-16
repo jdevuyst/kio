@@ -1,4 +1,4 @@
-module testapi/remote;
+mod testapi/remote;
 
 pub type { Pack <U>: U { pub mk; pub get } }
 

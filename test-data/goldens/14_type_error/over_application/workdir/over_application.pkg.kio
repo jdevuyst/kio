@@ -1,4 +1,4 @@
-package over_application;
+pkg over_application;
 
 build {
   cache "out/.kio-cache/";

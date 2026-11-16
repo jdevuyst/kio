@@ -6,14 +6,14 @@
 /// the caller's fallback instead of failing, which keeps the dynamic
 /// program's border conditions (`L(i, m)` and `L(n, j)`) free of special
 /// cases.
-module diff3/list;
+mod diff3/list;
 
-import macros/control(macro if);
-import macros/match(macro match);
-import macros/spine_macros(macro widen_sum);
-import testapi(Bool, I32);
-import testapi/arith(add_i32, leq_i32, sub_i32);
-import testapi/iter(loop);
+import macros/control { macro if }
+import macros/match { macro match }
+import macros/spine_macros { macro widen_sum }
+import testapi { type Bool; type I32 }
+import testapi/arith { fn add_i32; fn leq_i32; fn sub_i32 }
+import testapi/iter { fn loop }
 
 pub rec type { List[A]: . | (A & List[A]) { pub mk; pub get } }
 

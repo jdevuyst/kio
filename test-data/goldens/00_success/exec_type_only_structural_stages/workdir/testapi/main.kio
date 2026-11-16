@@ -1,5 +1,5 @@
 /// A polymorphic value remains staged inside an actively constructed record.
-module testapi/main;
+mod testapi/main;
 
 import __intrinsics__;
 

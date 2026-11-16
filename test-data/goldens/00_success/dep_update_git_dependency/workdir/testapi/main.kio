@@ -1,8 +1,8 @@
-module testapi/main;
+mod testapi/main;
 
-import greetlib/greet(marker);
-import testapi(String);
-import testapi/io(print);
+import greetlib/greet { fn marker }
+import testapi { type String }
+import testapi/io { fn print }
 
 // `marker` is a re-rooted generic export from the git dependency whose
 // *behavior differs between commit A and commit B*: at A it returns its

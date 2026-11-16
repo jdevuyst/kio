@@ -1,4 +1,4 @@
-package mnpc;
+pkg mnpc;
 
 build {
   cache "out/.kio-cache/";

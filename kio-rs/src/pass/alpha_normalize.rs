@@ -492,7 +492,7 @@ mod tests {
     use std::path::{Path, PathBuf};
 
     fn retained_type_argument_package() -> Package<crate::ast::Prime> {
-        let source = r#"module main;
+        let source = r#"mod main;
 
 fn outer[*F][A](value: F[A]) -> F[A] {
     let occupied = identity[A_n2](());
@@ -645,7 +645,7 @@ fn outer[*F][A](value: F[A]) -> F[A] {
                 crate::pass::visit_mut::walk_expr(self, expr);
             }
         }
-        let module = parse("module main; import __comptime__; pure fn implementation(_ct: __Comptime__, _ty: __Type__, value: __Checked_term__) -> __Checked_term__ { value } macro identity : [A] A -> A { impl implementation; }; fn run(f: . -> .) -> . { identity(f)(()) }").unwrap();
+        let module = parse("mod main; import __comptime__; pure fn implementation(_ct: __Comptime__, _ty: __Type__, value: __Checked_term__) -> __Checked_term__ { value } macro identity : [A] A -> A { impl implementation; }; fn run(f: . -> .) -> . { identity(f)(()) }").unwrap();
         let (modules, _) =
             FullPipeline::lower_package(vec![(PathBuf::from("main.kio"), module)], None).unwrap();
         let raw = Package::build(Path::new(""), modules, None).unwrap();
@@ -732,7 +732,7 @@ fn outer[*F][A](value: F[A]) -> F[A] {
     #[cfg(feature = "surface")]
     #[test]
     fn freshening_and_exact_name_presentation_are_declaration_local() {
-        let source = r#"module main;
+        let source = r#"mod main;
 
 fn first[A](seed: A) -> . {
     let f = .[A](value: A) { value };
@@ -782,7 +782,7 @@ fn second[A_n2](value: A_n2) -> A_n2 { value }
     #[cfg(feature = "surface")]
     #[test]
     fn generated_operator_call_keeps_its_declaration_target_under_a_local_shadow() {
-        let source = r#"module main;
+        let source = r#"mod main;
 
 fn apply(_left: ., _right: .) -> . { () }
 
@@ -838,7 +838,7 @@ fn shadow(apply: .) -> . {
 
     #[test]
     fn renormalization_treats_transformed_same_span_calls_as_ordinary_lexical_calls() {
-        let source = r#"module main;
+        let source = r#"mod main;
 
 fn run() -> . {
     let _kg0 = .(value: .) { value };
@@ -885,7 +885,7 @@ fn run() -> . {
 
     #[test]
     fn renormalization_repairs_arbitrary_transform_output_and_is_idempotent() {
-        let source = r#"module main;
+        let source = r#"mod main;
 
 fn outer[A](seed: A) -> . {
     let inner = .[A](value: A) { value };

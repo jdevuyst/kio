@@ -1,4 +1,4 @@
-package parse_leading_commas;
+pkg parse_leading_commas;
 
 build {
   cache "out/.kio-cache/";

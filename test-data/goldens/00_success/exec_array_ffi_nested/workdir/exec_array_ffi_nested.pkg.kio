@@ -1,4 +1,4 @@
-package exec_array_ffi_nested;
+pkg exec_array_ffi_nested;
 
 build {
   cache "out/.kio-cache/";

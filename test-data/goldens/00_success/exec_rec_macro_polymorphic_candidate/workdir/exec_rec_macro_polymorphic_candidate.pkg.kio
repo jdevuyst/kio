@@ -1,4 +1,4 @@
-package exec_rec_macro_polymorphic_candidate;
+pkg exec_rec_macro_polymorphic_candidate;
 
 build {
   cache "out/.kio-cache/";

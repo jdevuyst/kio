@@ -1,9 +1,9 @@
-module elaborators;
+mod elaborators;
 
 import __intrinsics__;
 
 import __comptime__;
-import testapi(Bool);
+import testapi { type Bool }
 
 pure fn choose_callbacks_impl(
 , ct: __Comptime__

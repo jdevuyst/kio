@@ -1248,8 +1248,8 @@ mod tests {
     #[test]
     fn key_is_deterministic() {
         let inputs = empty_inputs();
-        let k1 = key("module a;", &inputs);
-        let k2 = key("module a;", &inputs);
+        let k1 = key("mod a;", &inputs);
+        let k2 = key("mod a;", &inputs);
         assert_eq!(k1, k2);
         assert_eq!(k1.hex().len(), 64);
     }
@@ -1257,30 +1257,30 @@ mod tests {
     #[test]
     fn key_changes_on_module_text() {
         let inputs = empty_inputs();
-        let k1 = key("module a;", &inputs);
-        let k2 = key("module b;", &inputs);
+        let k1 = key("mod a;", &inputs);
+        let k2 = key("mod b;", &inputs);
         assert_ne!(k1, k2);
     }
 
     #[test]
     fn key_changes_on_newtype_fields() {
-        let k_empty = key("module a;", &empty_inputs());
+        let k_empty = key("mod a;", &empty_inputs());
         let mut populated = empty_inputs();
         populated
             .newtype_fields
             .insert(nt("a", "Foo"), field_input("Foo", "mk"));
-        let k_populated = key("module a;", &populated);
+        let k_populated = key("mod a;", &populated);
         assert_ne!(k_empty, k_populated);
     }
 
     #[test]
     fn key_changes_on_newtype_members() {
-        let k_empty = key("module a;", &empty_inputs());
+        let k_empty = key("mod a;", &empty_inputs());
         let mut populated = empty_inputs();
         populated
             .newtype_members
             .insert(nt("a", "Bar"), member("mk_bar", "un_bar"));
-        let k_populated = key("module a;", &populated);
+        let k_populated = key("mod a;", &populated);
         assert_ne!(k_empty, k_populated);
     }
 
@@ -1296,13 +1296,13 @@ mod tests {
             ntq("main", "p", "Box"),
             member_for("decoy", "Box", "wrap", "unwrap"),
         );
-        assert_ne!(key("module main;", &provider), key("module main;", &decoy));
+        assert_ne!(key("mod main;", &provider), key("mod main;", &decoy));
     }
 
     #[test]
     #[cfg(all(feature = "surface", feature = "prime"))]
     fn typed_module_key_ignores_other_consumers_side_tables() {
-        let package = prime_package("module main;");
+        let package = prime_package("mod main;");
         let module = package.module("main").expect("main module").module();
         let base = empty_inputs();
         let base_key = EnrichedCacheKey::from_module(module, &base);
@@ -1323,10 +1323,7 @@ mod tests {
     #[cfg(all(feature = "surface", feature = "prime"))]
     fn package_inputs_include_recursive_group_newtype_members() {
         let package = prime_package(
-            "module main; rec { \
-               type { Left: Right { mk; get; }; }; \
-               type { Right: Left { mk; get; }; }; \
-             }",
+            "mod main; rec { type { Left: Right { mk; get; }; }; type { Right: Left { mk; get; }; }; }",
         );
         let inputs = PackageKeyInputs::from_package(package.package());
         assert_eq!(
@@ -1343,8 +1340,8 @@ mod tests {
     #[cfg(all(feature = "surface", feature = "prime"))]
     fn package_inputs_keep_same_named_newtypes_scoped_per_consumer() {
         let package = prime_package_many(&[
-            ("a.kio", "module a; type { Foo: . { mk; get; }; };"),
-            ("b.kio", "module b; type { Foo: . { mk; get; }; };"),
+            ("a.kio", "mod a; type { Foo: . { mk; get; }; };"),
+            ("b.kio", "mod b; type { Foo: . { mk; get; }; };"),
         ]);
         let inputs = PackageKeyInputs::from_package(package.package());
 
@@ -1364,16 +1361,14 @@ mod tests {
         let package = prime_package_many(&[
             (
                 "provider.kio",
-                "module provider; \
-                 pub type { Box: . { pub mk; pub get; }; };",
+                "mod provider; pub type { Box: . { pub mk; pub get; }; };",
             ),
             (
                 "decoy.kio",
-                "module decoy; \
-                 pub type { Box: . { pub mk; pub get; }; };",
+                "mod decoy; pub type { Box: . { pub mk; pub get; }; };",
             ),
-            ("consumer.kio", "module consumer; import provider as p;"),
-            ("unrelated.kio", "module unrelated;"),
+            ("consumer.kio", "mod consumer; import provider as p;"),
+            ("unrelated.kio", "mod unrelated;"),
         ]);
         let inputs = PackageKeyInputs::from_package(package.package());
 
@@ -1393,18 +1388,18 @@ mod tests {
     #[test]
     #[cfg(all(feature = "surface", feature = "prime"))]
     fn recovery_preparation_keeps_each_owners_module_and_catalogue_together() {
-        let consumer = ("consumer.kio", "module consumer; import provider as p;");
+        let consumer = ("consumer.kio", "mod consumer; import provider as p;");
         let first = prime_package_many(&[
             (
                 "provider.kio",
-                "module provider; pub type { Box: . { pub mk; pub get; }; };",
+                "mod provider; pub type { Box: . { pub mk; pub get; }; };",
             ),
             consumer,
         ]);
         let second = prime_package_many(&[
             (
                 "provider.kio",
-                "module provider; pub type { Box: . { pub mk; pub get; }; }; pub type { Extra: . { pub mk; pub get; }; };",
+                "mod provider; pub type { Box: . { pub mk; pub get; }; }; pub type { Extra: . { pub mk; pub get; }; };",
             ),
             consumer,
         ]);
@@ -1455,7 +1450,7 @@ mod tests {
     #[should_panic(expected = "enriched package inputs select one exact nominal per lexical head")]
     fn recovery_rejects_inconsistent_nominal_inputs() {
         let package =
-            prime_package_many(&[("main.kio", "module main; type { Box: . { mk; get; }; };")]);
+            prime_package_many(&[("main.kio", "mod main; type { Box: . { mk; get; }; };")]);
         let mut prepared = RecoveryPreparation::new(&package);
         prepared
             .inputs
@@ -1476,14 +1471,11 @@ mod tests {
         let sources = [
             (
                 "provider.kio",
-                "module provider; pub pure fn factory() -> . -> . { .() { () } }",
+                "mod provider; pub pure fn factory() -> . -> . { .() { () } }",
             ),
             (
                 "consumer.kio",
-                "module consumer; import __intrinsics__; import provider as p; import provider(factory); \
-                host type Bool role(bool); \
-                fn conditional(c: Bool) { __if_then_else__[Bool][.](c, p.factory(), factory()) } \
-                fn either(s: . | .) { __either__[.][.][.](s, p.factory(), factory()) }",
+                "mod consumer; import __intrinsics__; import provider as p; import provider {fn factory} host type Bool role(bool); fn conditional(c: Bool) { __if_then_else__[Bool][.](c, p.factory(), factory()) } fn either(s: . | .) { __either__[.][.][.](s, p.factory(), factory()) }",
             ),
         ];
         let package = prime_package_many(&sources);
@@ -1493,7 +1485,7 @@ mod tests {
         let unrestricted = prime_package_many(&[
             (
                 sources[0].0,
-                "module provider; pub fn factory() -> . -> . { .() { () } }",
+                "mod provider; pub fn factory() -> . -> . { .() { () } }",
             ),
             sources[1],
         ]);
@@ -1537,15 +1529,7 @@ mod tests {
     #[cfg(all(feature = "surface", feature = "prime"))]
     fn recursive_group_newtypes_are_identical_across_direct_and_cached_enrichment() {
         let package = prime_package(
-            "module main; import __intrinsics__; \
-             rec { \
-               type Node = { Head: .; Next: Link; }; \
-               type { Link: Node { \
-                 pub mk; pub get; \
-               }; }; \
-             } \
-             fn read(r: (Head & Next)) -> Link { Next.get(__snd__(r)) } \
-             fn round(x: Node) -> Node { Link.get(Link.mk(x)) }",
+            "mod main; import __intrinsics__; rec { type Node = { Head: .; Next: Link; }; type { Link: Node { pub mk; pub get; }; }; } fn read(r: (Head & Next)) -> Link { Next.get(__snd__(r)) } fn round(x: Node) -> Node { Link.get(Link.mk(x)) }",
         );
 
         let direct = crate::pass::optimize::optimize_package(
@@ -1589,16 +1573,11 @@ mod tests {
         let package = prime_package_many(&[
             (
                 "provider.kio",
-                "module provider; \
-                 pub type { Hed: . { pub mk; pub get; }; }; \
-                 pub type { Tal: . { pub mk; pub get; }; }; \
-                 pub type { Box: . { pub mk; pub get; }; };",
+                "mod provider; pub type { Hed: . { pub mk; pub get; }; }; pub type { Tal: . { pub mk; pub get; }; }; pub type { Box: . { pub mk; pub get; }; };",
             ),
             (
                 "consumer.kio",
-                "module consumer; import __intrinsics__; import provider as p; \
-                 fn read(r: (p.Hed & p.Tal)) -> . { p.Hed.get(__fst__(r)) } \
-                 fn round(value: .) -> . { p.Box.get(p.Box.mk(value)) }",
+                "mod consumer; import __intrinsics__; import provider as p; fn read(r: (p.Hed & p.Tal)) -> . { p.Hed.get(__fst__(r)) } fn round(value: .) -> . { p.Box.get(p.Box.mk(value)) }",
             ),
         ]);
 
@@ -1644,7 +1623,7 @@ mod tests {
     fn disabled_cache_always_misses() {
         let c = EnrichedCache::disabled();
         assert!(!c.is_enabled());
-        let k = key("module a;", &empty_inputs());
+        let k = key("mod a;", &empty_inputs());
         assert!(c.lookup(&k).is_none());
         let m = Module::<Enriched> {
             path: crate::ast::ModulePath {
@@ -1669,7 +1648,7 @@ mod tests {
         let dir = tempdir();
         let c = EnrichedCache::open(dir.clone()).unwrap();
         assert!(c.is_enabled());
-        let k = key("module a;", &empty_inputs());
+        let k = key("mod a;", &empty_inputs());
         assert!(c.lookup(&k).is_none());
         let m = Module::<Enriched> {
             path: crate::ast::ModulePath {
@@ -1706,7 +1685,7 @@ mod tests {
     fn malformed_file_misses_without_panic() {
         let dir = tempdir();
         let c = EnrichedCache::open(dir.clone()).unwrap();
-        let k = key("module a;", &empty_inputs());
+        let k = key("mod a;", &empty_inputs());
         let cache_dir = dir.join("enriched-ir");
         let path = cache_dir.join(format!("{}.bin", k.hex()));
         fs::write(&path, "this is not a valid cache file\n").unwrap();
@@ -1719,8 +1698,8 @@ mod tests {
     fn exact_key_rejects_a_swapped_valid_entry() {
         let dir = tempdir();
         let c = EnrichedCache::open(dir.clone()).unwrap();
-        let first_key = key("module first;", &empty_inputs());
-        let second_key = key("module second;", &empty_inputs());
+        let first_key = key("mod first;", &empty_inputs());
+        let second_key = key("mod second;", &empty_inputs());
         let first_module = module_named("first");
         let second_module = module_named("second");
         c.store(&first_key, &first_module);
@@ -1740,8 +1719,8 @@ mod tests {
     fn body_digest_rejects_a_different_valid_module() {
         let dir = tempdir();
         let c = EnrichedCache::open(dir.clone()).unwrap();
-        let first_key = key("module first;", &empty_inputs());
-        let second_key = key("module second;", &empty_inputs());
+        let first_key = key("mod first;", &empty_inputs());
+        let second_key = key("mod second;", &empty_inputs());
         let first_module = module_named("first");
         let second_module = module_named("second");
         c.store(&first_key, &first_module);
@@ -1766,7 +1745,7 @@ mod tests {
     fn truncated_body_misses_without_panic() {
         let dir = tempdir();
         let c = EnrichedCache::open(dir.clone()).unwrap();
-        let k = key("module a;", &empty_inputs());
+        let k = key("mod a;", &empty_inputs());
         let cache_dir = dir.join("enriched-ir");
         let path = cache_dir.join(format!("{}.bin", k.hex()));
         // Valid header, garbage body (postcard rejects).
@@ -1782,7 +1761,7 @@ mod tests {
     fn wrong_compiler_cache_id_misses() {
         let dir = tempdir();
         let c = EnrichedCache::open(dir.clone()).unwrap();
-        let k = key("module a;", &empty_inputs());
+        let k = key("mod a;", &empty_inputs());
         let cache_dir = dir.join("enriched-ir");
         let path = cache_dir.join(format!("{}.bin", k.hex()));
         let bad = format!(
@@ -1800,7 +1779,7 @@ mod tests {
     fn second_write_overwrites_atomically() {
         let dir = tempdir();
         let c = EnrichedCache::open(dir.clone()).unwrap();
-        let k = key("module a;", &empty_inputs());
+        let k = key("mod a;", &empty_inputs());
         let m1 = Module::<Enriched> {
             path: crate::ast::ModulePath {
                 segments: vec![crate::ast::PathSegment::new(
@@ -1893,7 +1872,7 @@ mod tests {
             .insert(nt("main", "A"), field_input("A", "mk"));
         b.newtype_fields
             .insert(nt("main", "Z"), field_input("Z", "mk"));
-        assert_eq!(key("module a;", &a), key("module a;", &b));
+        assert_eq!(key("mod a;", &a), key("mod a;", &b));
     }
 
     #[test]

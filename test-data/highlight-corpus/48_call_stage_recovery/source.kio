@@ -1,6 +1,6 @@
-module call_stage_recovery;
+mod call_stage_recovery;
 
-import macros(macro form);
+import macros {macro form}
 
 // Each bracket is deliberately malformed; following declarations stay recoverable.
 fn comma_binders[A, B](value: A) -> A { value }

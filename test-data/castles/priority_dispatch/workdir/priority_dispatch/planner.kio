@@ -1,49 +1,49 @@
-module priority_dispatch/planner;
+mod priority_dispatch/planner;
 
-import macros/control(macro if);
-import macros/row_macros(macro select);
-import priority_dispatch/model(
-, Choice
-, Choice_cpu
-, Choice_deadline
-, Choice_duration
-, Choice_eligible
-, Choice_id
-, Choice_io
-, Choice_name
-, Choice_rank
-, Dispatch_state
-, Slot
-, Slot_cpu
-, Slot_io
-, Slot_tick
-, State_alert_done
-, State_audit_done
-, State_backup_done
-, State_blocked
-, State_cpu
-, State_dispatched
-, State_duration
-, State_ingress_done
-, State_io
-, State_reconcile_done
-, State_slack
-, State_tick
-, alert_job
-, audit_job
-, backup_job
-, dispatch_state
-, ingress_job
-, initial_state
-, reconcile_job
-, slot
-);
-import priority_dispatch/scoring(all_done, better, blocked_for, choose_job);
+import macros/control { macro if }
+import macros/row_macros { macro select }
+import priority_dispatch/model {
+  type Choice;
+  type Choice_cpu;
+  type Choice_deadline;
+  type Choice_duration;
+  type Choice_eligible;
+  type Choice_id;
+  type Choice_io;
+  type Choice_name;
+  type Choice_rank;
+  type Dispatch_state;
+  type Slot;
+  type Slot_cpu;
+  type Slot_io;
+  type Slot_tick;
+  type State_alert_done;
+  type State_audit_done;
+  type State_backup_done;
+  type State_blocked;
+  type State_cpu;
+  type State_dispatched;
+  type State_duration;
+  type State_ingress_done;
+  type State_io;
+  type State_reconcile_done;
+  type State_slack;
+  type State_tick;
+  fn alert_job;
+  fn audit_job;
+  fn backup_job;
+  fn dispatch_state;
+  fn ingress_job;
+  fn initial_state;
+  fn reconcile_job;
+  fn slot
+}
+import priority_dispatch/scoring { fn all_done; fn better; fn blocked_for; fn choose_job }
 import priority_dispatch/text as text;
-import testapi(Bool, I32, String);
-import testapi/arith(add_i32, eq_i32, lt_i32, sub_i32);
-import testapi/io(print);
-import testapi/iter(loop);
+import testapi { type Bool; type I32; type String }
+import testapi/arith { fn add_i32; fn eq_i32; fn lt_i32; fn sub_i32 }
+import testapi/io { fn print }
+import testapi/iter { fn loop }
 
 fn slot_for(tick: I32) -> Slot {
   if(eq_i32(tick, 0)) {

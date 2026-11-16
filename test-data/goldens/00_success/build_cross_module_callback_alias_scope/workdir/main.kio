@@ -1,7 +1,7 @@
-module main;
+mod main;
 
 import helper as h;
-import testapi(Bool, String);
+import testapi { type Bool; type String }
 
 fn same(_left: String, _right: String) -> Bool { .t }
 

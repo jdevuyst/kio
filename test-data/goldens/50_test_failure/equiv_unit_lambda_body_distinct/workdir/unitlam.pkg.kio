@@ -1,4 +1,4 @@
-package unitlam;
+pkg unitlam;
 
 build {
   cache "out/.kio-cache/";

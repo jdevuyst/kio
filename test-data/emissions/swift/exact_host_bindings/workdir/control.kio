@@ -1,5 +1,5 @@
 /// Lazy conditionals and immediate scoped expressions.
-module control;
+mod control;
 
 import __comptime__;
 

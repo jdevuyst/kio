@@ -1,17 +1,17 @@
-module testapi/main;
+mod testapi/main;
 
-import syntax(
-, op !! ._
-, op ._ ?? _
-, op @@ ._
-, op _ || ._
-, op macro # _
-, op macro $$ ._
-, op macro _ %% ._ as _ && ._
-);
-import testapi(Int);
-import testapi/fmt(int_to_string);
-import testapi/io(print);
+import syntax {
+  op !! ._;
+  op_macro # _;
+  op_macro $$ ._;
+  op ._ ?? _;
+  op @@ ._;
+  op_macro _ %% ._ as _ && ._;
+  op _ || ._
+}
+import testapi { type Int }
+import testapi/fmt { fn int_to_string }
+import testapi/io { fn print }
 
 fn show(value: Int) { print(int_to_string(value)); print("\n") }
 

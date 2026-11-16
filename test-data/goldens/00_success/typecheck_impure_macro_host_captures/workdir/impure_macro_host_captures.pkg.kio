@@ -1,4 +1,4 @@
-package impure_macro_host_captures;
+pkg impure_macro_host_captures;
 
 build {
   cache "out/.kio-cache/";

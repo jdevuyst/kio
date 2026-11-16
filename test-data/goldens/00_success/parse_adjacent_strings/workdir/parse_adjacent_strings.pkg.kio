@@ -1,4 +1,4 @@
-package parse_adjacent_strings;
+pkg parse_adjacent_strings;
 
 build {
   cache "out/.kio-cache/";

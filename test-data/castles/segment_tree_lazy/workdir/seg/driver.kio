@@ -5,21 +5,46 @@
 /// asserted against a table of hand-computed numbers -- they are asserted
 /// against a plain array doing the obvious thing. Drop a tag, apply one twice,
 /// or push one to the wrong child, and some query's two answers stop matching.
-module seg/driver;
+mod seg/driver;
 
-import macros/control(macro if);
-import macros/match(macro match);
-import macros/row_macros(macro select);
-import macros/spine_macros(macro widen_sum);
-import seg/brute(Brute, brute_min, brute_point_set, brute_range_add, brute_sum, touches);
-import seg/num(and, int_eq);
-import seg/ops(point_set, query_min, query_sum, range_add);
-import seg/report(cat, cat3, cost, index2, line, num, range, signed, yes_no);
-import seg/script(Add_range, Min_range, Op, Set_point, Sum_range, op_at, op_count);
-import seg/tree(Tree, tag_pushes, visits);
-import testapi(Array, Bool, I32, String);
-import testapi/arith(add_i32, leq_i32, sub_i32);
-import testapi/iter(loop);
+import macros/control { macro if }
+import macros/match { macro match }
+import macros/row_macros { macro select }
+import macros/spine_macros { macro widen_sum }
+import seg/brute {
+  type Brute;
+  fn brute_min;
+  fn brute_point_set;
+  fn brute_range_add;
+  fn brute_sum;
+  fn touches
+}
+import seg/num { fn and; fn int_eq }
+import seg/ops { fn point_set; fn query_min; fn query_sum; fn range_add }
+import seg/report {
+  fn cat;
+  fn cat3;
+  fn cost;
+  fn index2;
+  fn line;
+  fn num;
+  fn range;
+  fn signed;
+  fn yes_no
+}
+import seg/script {
+  type Add_range;
+  type Min_range;
+  type Op;
+  type Set_point;
+  type Sum_range;
+  fn op_at;
+  fn op_count
+}
+import seg/tree { type Tree; fn tag_pushes; fn visits }
+import testapi { type Array; type Bool; type I32; type String }
+import testapi/arith { fn add_i32; fn leq_i32; fn sub_i32 }
+import testapi/iter { fn loop }
 
 /// What one operation produced: either nothing to compare (an update), or
 /// the two answers a query drew from the two structures.

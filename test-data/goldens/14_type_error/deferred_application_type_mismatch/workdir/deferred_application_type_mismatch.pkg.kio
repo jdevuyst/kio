@@ -1,4 +1,4 @@
-package deferred_application_type_mismatch;
+pkg deferred_application_type_mismatch;
 
 build {
   cache "out/.kio-cache/";

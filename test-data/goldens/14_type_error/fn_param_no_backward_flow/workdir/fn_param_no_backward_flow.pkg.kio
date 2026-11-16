@@ -1,4 +1,4 @@
-package fn_param_no_backward_flow;
+pkg fn_param_no_backward_flow;
 
 build {
   cache "out/.kio-cache/";

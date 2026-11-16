@@ -1,17 +1,17 @@
 /// Long division with remainder, guarded by an explicit failure arm.
-module poly/division;
+mod poly/division;
 
-import macros/control(macro if);
-import macros/match(macro match);
-import macros/spine_macros(macro widen_sum);
+import macros/control { macro if }
+import macros/match { macro match }
+import macros/spine_macros { macro widen_sum }
 import poly/arith as arith;
 import poly/core as core;
 import poly/integers as integers;
-import testapi(Bool, I32, String);
-import testapi/arith(lt_i32, sub_i32);
-import testapi/fmt(int_to_string);
-import testapi/iter(loop);
-import testapi/text(string_concat);
+import testapi { type Bool; type I32; type String }
+import testapi/arith { fn lt_i32; fn sub_i32 }
+import testapi/fmt { fn int_to_string }
+import testapi/iter { fn loop }
+import testapi/text { fn string_concat }
 
 /// The outcome of one of the workbench's fixed division cases: either a quotient
 /// with its remainder, or the reason the division was refused.

@@ -1,4 +1,4 @@
-package comptime_literal_missing_import;
+pkg comptime_literal_missing_import;
 
 build {
   target js {

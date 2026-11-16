@@ -1,4 +1,4 @@
-module main;
+mod main;
 fn tuple(packet: . & .) { let . // tuple opener
 (first, second) = packet; first }
 fn singleton() { let . // singleton opener

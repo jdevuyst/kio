@@ -1,4 +1,4 @@
-package host_nullary_requirement_source;
+pkg host_nullary_requirement_source;
 
 build {
   target js {

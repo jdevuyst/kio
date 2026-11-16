@@ -1,4 +1,4 @@
-module a;
+mod a;
 
 pub fn ida(x: .) { x }
 

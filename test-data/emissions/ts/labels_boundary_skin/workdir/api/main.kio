@@ -1,11 +1,11 @@
-module api/main;
+mod api/main;
 
-import api(I32);
-import api(String);
-import api/labels(Choice);
-import api/labels(Counter);
-import api/labels(Name);
-import api/labels(Pair);
+import api { type I32 }
+import api { type String }
+import api/labels { type Choice }
+import api/labels { type Counter }
+import api/labels { type Name }
+import api/labels { type Pair }
 
 pub fn make(n: String, c: I32) -> Pair { (Name.mk(n), Counter.mk(c)) }
 

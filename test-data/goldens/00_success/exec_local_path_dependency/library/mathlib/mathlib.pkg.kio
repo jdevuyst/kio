@@ -1,4 +1,4 @@
-package mathlib;
+pkg mathlib;
 
 bridge {
   pair;

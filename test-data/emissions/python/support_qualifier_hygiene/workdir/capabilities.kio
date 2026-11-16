@@ -1,4 +1,4 @@
-module capabilities;
+mod capabilities;
 
 host fn typing();
 

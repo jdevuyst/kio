@@ -1,8 +1,8 @@
-module main;
+mod main;
 
-import captured(macro captured_keep, macro captured_pair, macro captured_type_app);
+import captured { macro captured_keep; macro captured_pair; macro captured_type_app }
 import dep as d;
-import macros/control(macro if);
+import macros/control { macro if }
 import other as types;
 import types as real;
 

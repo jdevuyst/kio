@@ -1,12 +1,12 @@
-module workbench;
+mod workbench;
 
-import macros/match(macro match);
+import macros/match { macro match }
 import substitutions as subst;
 import terms as term;
-import testapi(I32, String);
+import testapi { type I32; type String }
 import testapi/fmt as fmt;
-import testapi/io(print);
-import testapi/text(string_concat);
+import testapi/io { fn print }
+import testapi/text { fn string_concat }
 import unifier as solver;
 
 fn line(prefix: String, value: String) { print(value.>string_concat("\n").>>string_concat(prefix)) }

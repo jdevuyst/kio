@@ -11,10 +11,10 @@
 /// via the package, since this scope never imports it — back to
 /// `testapi.I32`. Without that unfold the two are spuriously distinct and
 /// the call is a type error; with it, the value flows and `main` prints 7.
-module testapi/main;
+mod testapi/main;
 
-import numlib/store(relay);
-import testapi(I32);
-import testapi/fmt(print_i32);
+import numlib/store { fn relay }
+import testapi { type I32 }
+import testapi/fmt { fn print_i32 }
 
 pub fn main() { let .(v: I32) = relay(7[I32]); print_i32(v) }

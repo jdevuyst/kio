@@ -1,13 +1,13 @@
-module literal_alias/main;
+mod literal_alias/main;
 
-import literal_alias(I32, Str);
+import literal_alias { type I32; type Str }
 
 // Literal aliases name bare literal tokens. Each reference is
 // replaced inline with the bound literal at the Surface → Desugared
 // boundary.
-literal greeting = "hi";
+lit greeting = "hi";
 
-literal max_size = 100;
+lit max_size = 100;
 
 fn get_greeting() -> Str { greeting[Str] }
 

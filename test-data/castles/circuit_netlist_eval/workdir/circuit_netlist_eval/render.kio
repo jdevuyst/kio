@@ -1,26 +1,26 @@
-module circuit_netlist_eval/render;
+mod circuit_netlist_eval/render;
 
-import circuit_netlist_eval/domain(
-, Checksum
-, Enable
-, Fanout_ok
-, Fanout_probe
-, Gate_ab_and
-, Gate_bc_or
-, Gate_enable_a
-, Gate_mask
-, Gate_xor
-, Pin_a
-, Pin_b
-, Pin_c
-, Probe_alarm
-, Probe_carry
-, State
-, Truth_ok
-, Warning_count
-);
-import macros/row_macros(macro select);
-import testapi(Bool, I32, String);
+import circuit_netlist_eval/domain {
+  type Checksum;
+  type Enable;
+  type Fanout_ok;
+  type Fanout_probe;
+  type Gate_ab_and;
+  type Gate_bc_or;
+  type Gate_enable_a;
+  type Gate_mask;
+  type Gate_xor;
+  type Pin_a;
+  type Pin_b;
+  type Pin_c;
+  type Probe_alarm;
+  type Probe_carry;
+  type State;
+  type Truth_ok;
+  type Warning_count
+}
+import macros/row_macros { macro select }
+import testapi { type Bool; type I32; type String }
 import testapi/fmt as fmt;
 import testapi/io as io;
 import testapi/text as text;

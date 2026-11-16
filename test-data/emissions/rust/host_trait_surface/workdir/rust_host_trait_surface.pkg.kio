@@ -1,4 +1,4 @@
-package rust_host_trait_surface;
+pkg rust_host_trait_surface;
 
 build {
   cache "out/.kio-cache/";

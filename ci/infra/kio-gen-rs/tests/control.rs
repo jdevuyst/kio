@@ -526,7 +526,7 @@ fn generated_control_calls_exercise_selective_and_qualified_imports() {
             .1;
         if matches!(types, TypeProbe::HigherRank { .. }) {
             selective = true;
-            assert!(source.contains("import kio_gen_types(transform as selected_transform);"));
+            assert!(source.contains("import kio_gen_types { fn transform as selected_transform }"));
             assert!(source.contains("selected_transform(value)"));
         } else {
             qualified = true;

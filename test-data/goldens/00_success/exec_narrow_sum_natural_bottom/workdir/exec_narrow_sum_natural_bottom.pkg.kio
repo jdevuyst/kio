@@ -1,4 +1,4 @@
-package exec_narrow_sum_natural_bottom;
+pkg exec_narrow_sum_natural_bottom;
 
 build {
   cache "out/.kio-cache/";

@@ -9,20 +9,20 @@
 /// The varop below folds over `forge/list`'s cons: `[* a, b, c *]` becomes
 /// `op_cons(a, op_cons(b, op_cons(c, no_ops())))`. It is module-local,
 /// which is why `forge/programs` declares its own for item lists.
-module forge/macros;
+mod forge/macros;
 
 import forge/isa as i;
-import forge/isa(Src);
+import forge/isa { type Src }
 import forge/list as l;
 import forge/program as p;
-import forge/program(Macro, Macros, Srcs);
-import testapi(String);
+import forge/program { type Macro; type Macros; type Srcs }
+import testapi { type String }
 
 fn no_ops() -> Srcs { l.nil[Src] }
 
 fn op_cons(x: Src, xs: Srcs) -> Srcs { l.cons(x, xs) }
 
-varop [* *] { foldr op_cons no_ops }
+op_var [* *] { foldr op_cons no_ops }
 
 /// `b <- a * a`.
 fn square_b() -> Srcs { [* i.mov(i.rb(), i.ra()), i.mul(i.rb(), i.ra()) *] }

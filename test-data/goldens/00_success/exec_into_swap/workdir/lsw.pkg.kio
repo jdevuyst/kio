@@ -1,4 +1,4 @@
-package lsw;
+pkg lsw;
 
 build {
   cache "out/.kio-cache/";

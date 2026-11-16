@@ -69,10 +69,10 @@ The surface forms that must not survive are:
 - Generic trailing block calls to imported macros (including `if`/`else`, `scope`, `do(<receiver>) { … }`, and `match`)
 - Macros (algebraic): `iso`, `into`, `onto`, `align`, `ease`, `atom`
 - Macros (spine): `fit`, `reorder_sum`, `reorder_prod`, `narrow_sum`, `narrow_prod`, `widen_sum`, `widen_prod`, `flatten_sum`, `flatten_prod`, `one_sum`, `one_prod`
-- Macro call with explicit target type (`convert(e, T)`)
-- UFCS (`r.>m`, `r.>m(T)`)
+- Macro call with explicit target type (`convert[T](e)`)
+- UFCS (`r.>m`, `r.>m[T]`)
 - `.stem. { ... }` placeholder lambdas
-- `literal` declarations
+- `lit` declarations
 - Compact nominal declarations expanded into ordinary nominal entries and aliases, including multiple entries, named mixed type expressions, and omitted member bodies
 - `op` user-operator bindings
 - `equiv` blocks
@@ -114,7 +114,6 @@ Walk every node type that survives into Prime (`Item::FnDef`, `Item::Alias`, `It
 
 Known examples in the current tree to use as exemplars (counterfactual-failures that motivated narrowing):
 
-- `Newtype.from_labels_label: Option<String>` (historical, now removed) — a former back-reference to a surface spelling, not part of ordinary nominal identity. Do not reconstruct a retired label namespace from a nominal type or its `ffi_key()`.
 - `FnDef.ret_elided: bool` — flag for "the return type was elided in the surface." At Prime, narrowed to `()` via `Phase::FnDefRetElided`: the value is uninhabited there, so the round-trip on the Prime AST is trivially preserved and the kio-prime emit writes the canonical `-> .` shape.
 - `Labels.type_alias_name: Option<String>` — the current Surface carrier also records the alias of a compact type declaration. It is consumed before Prime; its internal name does not admit retired label syntax or authorize provenance on a Prime-surviving node.
 
@@ -209,14 +208,14 @@ Read `kio-rs/src/pass/structural_recovery.rs`. The pass's input is `Module<Prime
 
 Recovery must **not** read:
 
-- `Newtype.from_labels_label` or any other surface-provenance back-reference. Recover ordinary nominal field structure from resolved identity, payload and member calls; `ffi_key()` does not create a separate field namespace.
+- Surface-provenance back-references. Recover ordinary nominal field structure from resolved identity, payload and member calls; `ffi_key()` does not create a separate field namespace.
 - `*.ret_elided` or other "was this elided in surface" flags.
 - Any field that encodes "the surface looked like X" rather than "the Kio' shape is Y."
 
 Mechanical check:
 
 ```
-grep -rn 'from_labels_label\|ret_elided\|type_alias_name' kio-rs/src/pass/structural_recovery.rs
+grep -rn 'ret_elided\|type_alias_name' kio-rs/src/pass/structural_recovery.rs
 ```
 
 Each hit is a finding: the pass is consulting surface provenance, which couples the recovery to the front-end's history rather than to the Kio' input it claims to accept. Generalize the grep with any provenance fields you identified in step 7.

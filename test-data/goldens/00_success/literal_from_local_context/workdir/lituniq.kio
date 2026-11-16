@@ -1,4 +1,4 @@
-module lituniq;
+mod lituniq;
 
 host type Int role(i32);
 

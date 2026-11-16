@@ -1,6 +1,6 @@
-module docops;
+mod docops;
 
-import docops/operators(op ! _, op _ + _);
+import docops/operators {op ! _; op _ + _}
 
 /// Imported operator references accept [`+`] and [`op _ + _`].
 /// Prefix spellings also resolve: [`!`] and [`op ! _`].

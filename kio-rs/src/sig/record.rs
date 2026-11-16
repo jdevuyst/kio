@@ -13,9 +13,7 @@
 //! module's own `import` clauses that its selected declarations reference —
 //! exactly the clauses [`super::replay`]'s section qualifier needs, without
 //! body-only lowering imports. A recorded section therefore round-trips to
-//! the identical normalized form the live snapshot produced. A `host type`'s
-//! source-compatible `{ owned }` annotation is dropped because it selects no
-//! contract surface and the sig is backend-independent.
+//! the identical normalized form the live snapshot produced.
 
 use super::{ContractSide, QualifiedName};
 use crate::ast::{
@@ -409,8 +407,7 @@ mod tests {
     #[test]
     fn recorded_imports_keep_only_referenced_names_and_aliases() {
         let module = crate::pass::parser::parse(
-            "module consumer; import numbers(Int as I, Text, Other); \
-             import extra as extra_api; pub type Result = I & extra_api.Value;",
+            "mod consumer; import numbers {type Int as I; type Text; type Other} import extra as extra_api; pub type Result = I & extra_api.Value;",
         )
         .expect("parse source module");
         let crate::ast::Item::TypeAlias(alias) = module.items.into_iter().next().unwrap() else {
@@ -420,12 +417,14 @@ mod tests {
         let rendered: Vec<_> = projected.iter().map(crate::pretty::pretty_import).collect();
         assert_eq!(
             rendered,
-            ["import numbers(Int as I);", "import extra as extra_api;"]
+            [
+                "import numbers { type Int as I }",
+                "import extra as extra_api;"
+            ]
         );
         let signature = format!(
-            "signature app v(1); v(1) {{ nonbreaking {{ add {{ module consumer {{ \
-             {} pub type Result = I & extra_api.Value; }} }} }} }}",
-            rendered.join(" "),
+            "sig app v(1); v(1) {{ nonbreaking {{ add {{ mod consumer {{ {}; {} pub type Result = I & extra_api.Value; }} }} }} }}",
+            rendered[0], rendered[1],
         );
         crate::pass::parser::parse_signature_file(&signature, Some("app"))
             .expect("recorded imports contain only contract metadata");

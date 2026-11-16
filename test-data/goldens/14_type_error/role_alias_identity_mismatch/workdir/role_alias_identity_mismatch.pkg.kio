@@ -1,4 +1,4 @@
-package role_alias_identity_mismatch;
+pkg role_alias_identity_mismatch;
 
 build {
   target js {

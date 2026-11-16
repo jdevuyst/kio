@@ -1,4 +1,4 @@
-package narrow_prod_rejects_widening;
+pkg narrow_prod_rejects_widening;
 
 build {
   cache "out/.kio-cache/";

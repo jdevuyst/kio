@@ -1,10 +1,10 @@
-module testapi/main;
+mod testapi/main;
 
 import dep/core as dep;
-import macros/match(macro match);
-import macros/spine_macros(macro widen_sum);
-import testapi(String);
-import testapi/io(print);
+import macros/match { macro match }
+import macros/spine_macros { macro widen_sum }
+import testapi { type String }
+import testapi/io { fn print }
 
 fn select(value: . | dep.Box[String]) -> String {
   let selected =

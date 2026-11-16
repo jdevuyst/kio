@@ -1,4 +1,4 @@
-module partial_expected_hkt;
+mod partial_expected_hkt;
 
 host type I32 role(i32);
 

@@ -28,7 +28,7 @@ fn assert_later_host_error(source: &str, name: &str) {
 #[test]
 fn host_source_order_prime_rejects_later_value() {
     assert_later_host_error(
-        "module x; fn before() -> . { later() } host fn later() -> .;",
+        "mod x; fn before() -> . { later() } host fn later() -> .;",
         "later",
     );
 }
@@ -36,7 +36,7 @@ fn host_source_order_prime_rejects_later_value() {
 #[test]
 fn host_source_order_prime_rejects_later_signature_type() {
     assert_later_host_error(
-        "module x; fn before(value: Later) -> Later { value } host type Later;",
+        "mod x; fn before(value: Later) -> Later { value } host type Later;",
         "Later",
     );
 }
@@ -44,7 +44,7 @@ fn host_source_order_prime_rejects_later_signature_type() {
 #[test]
 fn host_source_order_prime_rejects_later_host_signature_type() {
     assert_later_host_error(
-        "module x; host fn before(value: Later) -> Later; host type Later;",
+        "mod x; host fn before(value: Later) -> Later; host type Later;",
         "Later",
     );
 }
@@ -52,10 +52,10 @@ fn host_source_order_prime_rejects_later_host_signature_type() {
 #[test]
 fn host_source_order_prime_rejects_later_type_in_payloads_and_annotations() {
     for source in [
-        "module x; type Earlier = Later; host type Later;",
-        "module x; type { Earlier: Later { mk; get; }; }; host type Later;",
-        "module x; rec type { Node: . | (Node & Later) { mk; get; }; }; host type Later;",
-        "module x; fn before() -> . { let value = .(x: Later) -> Later { x }; () } host type Later;",
+        "mod x; type Earlier = Later; host type Later;",
+        "mod x; type { Earlier: Later { mk; get; }; }; host type Later;",
+        "mod x; rec type { Node: . | (Node & Later) { mk; get; }; }; host type Later;",
+        "mod x; fn before() -> . { let value = .(x: Later) -> Later { x }; () } host type Later;",
     ] {
         assert_later_host_error(source, "Later");
     }
@@ -64,10 +64,10 @@ fn host_source_order_prime_rejects_later_type_in_payloads_and_annotations() {
 #[test]
 fn host_source_order_prime_preserves_prior_hosts_and_written_recursion() {
     for source in [
-        "module x; host fn earlier() -> .; fn after() -> . { earlier() }",
-        "module x; host type Earlier; host fn identity(value: Earlier) -> Earlier; fn after(value: Earlier) -> Earlier { identity(value) }",
-        "module x; host type Earlier; rec type { Node: . | (Node & Earlier) { mk; get; }; };",
-        "module x; host type Earlier; rec { type { Node: Payload { mk; get; }; }; type Payload = . | (Node & Earlier); }",
+        "mod x; host fn earlier() -> .; fn after() -> . { earlier() }",
+        "mod x; host type Earlier; host fn identity(value: Earlier) -> Earlier; fn after(value: Earlier) -> Earlier { identity(value) }",
+        "mod x; host type Earlier; rec type { Node: . | (Node & Earlier) { mk; get; }; };",
+        "mod x; host type Earlier; rec { type { Node: Payload { mk; get; }; }; type Payload = . | (Node & Earlier); }",
     ] {
         Resolver::check_module(&prime_module(source)).expect("preceding hosts remain in scope");
     }
@@ -78,20 +78,18 @@ fn host_source_order_prime_preserves_explicit_external_imports() {
     let modules = [
         (
             PathBuf::from("provider.kio"),
-            prime_module(
-                "module provider; host type Value; host fn identity(value: Value) -> Value;",
-            ),
+            prime_module("mod provider; host type Value; host fn identity(value: Value) -> Value;"),
         ),
         (
             PathBuf::from("selective.kio"),
             prime_module(
-                "module selective; import provider(Value, identity); fn after(value: Value) -> Value { identity(value) }",
+                "mod selective; import provider {type Value; fn identity} fn after(value: Value) -> Value { identity(value) }",
             ),
         ),
         (
             PathBuf::from("qualified.kio"),
             prime_module(
-                "module qualified; import provider as p; fn after(value: p.Value) -> p.Value { p.identity(value) }",
+                "mod qualified; import provider as p; fn after(value: p.Value) -> p.Value { p.identity(value) }",
             ),
         ),
     ];
@@ -109,19 +107,19 @@ fn host_source_order_prime_preserves_explicit_external_imports() {
 fn host_source_order_lowered_rejects_later_value_and_type() {
     for (source, name) in [
         (
-            "module x; fn before() -> . { later() } host fn later() -> .;",
+            "mod x; fn before() -> . { later() } host fn later() -> .;",
             "later",
         ),
         (
-            "module x; fn before(value: Later) -> Later { value } host type Later;",
+            "mod x; fn before(value: Later) -> Later { value } host type Later;",
             "Later",
         ),
         (
-            "module x; equiv before() { later(); () } host fn later() -> .;",
+            "mod x; equiv before() { later(); () } host fn later() -> .;",
             "later",
         ),
         (
-            "module x; fn before() -> . { let .(value: Later -> Later) = .(x: Later) -> Later { x }; () } host type Later;",
+            "mod x; fn before() -> . { let .(value: Later -> Later) = .(x: Later) -> Later { x }; () } host type Later;",
             "Later",
         ),
     ] {

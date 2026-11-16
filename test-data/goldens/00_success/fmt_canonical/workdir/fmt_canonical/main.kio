@@ -1,10 +1,10 @@
-module fmt_canonical/main;
+mod fmt_canonical/main;
 
 import __intrinsics__;
 
 import a/b as q;
-import a/b(T);
-import g_pkg(g);
+import a/b {type T}
+import g_pkg {fn g}
 
 type { Box[A]: A { pub mk; pub get; }; };
 

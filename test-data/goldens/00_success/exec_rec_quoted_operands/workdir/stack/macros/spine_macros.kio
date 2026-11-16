@@ -1,66 +1,66 @@
 /// Spine-oriented product and sum macros for reorder, narrow, widen, flatten, fit, and one-arm extraction.
-module stack/macros/spine_macros;
+mod stack/macros/spine_macros;
 
 import __intrinsics__;
 
 import __comptime__;
-import stack/macros/macro_util(
-, Macro_result
-, Matched_slot
-, Matched_slot_tail
-, Maybe_matched_slot
-, Maybe_target_slot_take
-, Maybe_type_take
-, Route_list
-, Route_result
-, Slot
-, Slot_list
-, Target_slot
-, Target_slot_list
-, Target_slot_take
-, Term_list
-, Term_mapper
-, Type_list
-, Type_take
-, build_product_from_slots
-, build_sum_from_routes
-, build_widen_product_from_slots
-, err
-, finish_macro_result
-, first_product_type
-, flatten_product_to
-, flatten_sum_to
-, inject_at_suffix
-, ok
-, pick_first_slot
-, product_slots
-, product_spine
-, right_fold_product
-, right_fold_sum
-, right_fold_term_product_from_reversed
-, route_result_present
-, route_source_arms_collapse
-, route_source_arms_unique
-, slot_cons
-, slot_nil
-, slot_term
-, sum_spine
-, take_first_matching
-, take_first_target_matching
-, take_first_type_matching
-, target_slot_cons
-, target_slot_nil
-, target_slot_prepend_reverse
-, target_slot_suffix
-, target_slot_type
-, target_slots
-, term_cons
-, term_nil
-, type_cons
-, type_nil
-, type_prepend_reverse
-, type_reverse
-);
+import stack/macros/macro_util {
+  type Macro_result;
+  type Matched_slot;
+  type Matched_slot_tail;
+  type Maybe_matched_slot;
+  type Maybe_target_slot_take;
+  type Maybe_type_take;
+  type Route_list;
+  type Route_result;
+  type Slot;
+  type Slot_list;
+  type Target_slot;
+  type Target_slot_list;
+  type Target_slot_take;
+  type Term_list;
+  type Term_mapper;
+  type Type_list;
+  type Type_take;
+  fn build_product_from_slots;
+  fn build_sum_from_routes;
+  fn build_widen_product_from_slots;
+  fn err;
+  fn finish_macro_result;
+  fn first_product_type;
+  fn flatten_product_to;
+  fn flatten_sum_to;
+  fn inject_at_suffix;
+  fn ok;
+  fn pick_first_slot;
+  fn product_slots;
+  fn product_spine;
+  fn right_fold_product;
+  fn right_fold_sum;
+  fn right_fold_term_product_from_reversed;
+  fn route_result_present;
+  fn route_source_arms_collapse;
+  fn route_source_arms_unique;
+  fn slot_cons;
+  fn slot_nil;
+  fn slot_term;
+  fn sum_spine;
+  fn take_first_matching;
+  fn take_first_target_matching;
+  fn take_first_type_matching;
+  fn target_slot_cons;
+  fn target_slot_nil;
+  fn target_slot_prepend_reverse;
+  fn target_slot_suffix;
+  fn target_slot_type;
+  fn target_slots;
+  fn term_cons;
+  fn term_nil;
+  fn type_cons;
+  fn type_nil;
+  fn type_prepend_reverse;
+  fn type_reverse
+}
 
 type Type_pair = __Type__ & __Type__;
 

@@ -1,6 +1,6 @@
-module main;
+mod main;
 
-import macros(macro inspect_args);
+import macros { macro inspect_args }
 
 fn witness() {
   let _inspected = inspect_args(.() { () });

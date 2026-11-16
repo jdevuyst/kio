@@ -8,16 +8,27 @@
 /// Macros are deliberately *unhygienic* - a body may jump to a label the
 /// caller defined, which is how `drain_tail` closes the drain loop in the
 /// `series` fixture. Nothing renames a label on the way in.
-module forge/expand;
+mod forge/expand;
 
-import forge/isa(Src);
+import forge/isa { type Src }
 import forge/list as l;
 import forge/program as p;
-import forge/program(Call, Flat, Flats, Instr, Item, Items, Macros, Mark, Srcs, Unknown_macro);
-import macros/match(macro match);
-import macros/row_macros(macro select);
-import macros/spine_macros(macro widen_sum);
-import testapi/iter(loop);
+import forge/program {
+  type Call;
+  type Flat;
+  type Flats;
+  type Instr;
+  type Item;
+  type Items;
+  type Macros;
+  type Mark;
+  type Srcs;
+  type Unknown_macro
+}
+import macros/match { macro match }
+import macros/row_macros { macro select }
+import macros/spine_macros { macro widen_sum }
+import testapi/iter { fn loop }
 
 /// Expansion either finishes, or names the macro it could not find.
 pub type Expansion = Flats | Unknown_macro;

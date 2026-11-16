@@ -1,16 +1,24 @@
-module testapi/main;
+mod testapi/main;
 
-import testapi(Bool, I32, String);
-import testapi/arith(add_i32, eq_i32, leq_i32, lt_i32, mul_i32, sub_i32);
-import testapi/fmt(bool_to_string, int_to_string);
-import testapi/io(print);
-import testapi/iter(loop);
-import testapi/text(string_concat);
-import vec/core(Tree, branch, descend_step, dir_left, dir_right, leaf, leaf_value);
-import vec/macros/control(macro if);
-import vec/macros/match(macro match);
-import vec/macros/row_macros(macro record, macro select);
-import vec/macros/spine_macros(macro widen_sum);
+import testapi { type Bool; type I32; type String }
+import testapi/arith { fn add_i32; fn eq_i32; fn leq_i32; fn lt_i32; fn mul_i32; fn sub_i32 }
+import testapi/fmt { fn bool_to_string; fn int_to_string }
+import testapi/io { fn print }
+import testapi/iter { fn loop }
+import testapi/text { fn string_concat }
+import vec/core {
+  type Tree;
+  fn branch;
+  fn descend_step;
+  fn dir_left;
+  fn dir_right;
+  fn leaf;
+  fn leaf_value
+}
+import vec/macros/control { macro if }
+import vec/macros/match { macro match }
+import vec/macros/row_macros { macro record; macro select }
+import vec/macros/spine_macros { macro widen_sum }
 
 fn present[A](value: A) -> A | . { widen_sum(value)[A | .] }
 

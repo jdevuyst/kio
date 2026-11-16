@@ -1,4 +1,4 @@
-package exec_tuple_projection_effect_order;
+pkg exec_tuple_projection_effect_order;
 
 build {
   target js {

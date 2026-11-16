@@ -1,4 +1,4 @@
-package unbridged_public_surface;
+pkg unbridged_public_surface;
 
 build {
   cache "out/.kio-cache/";

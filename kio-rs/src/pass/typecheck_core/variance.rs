@@ -883,12 +883,10 @@ mod tests {
     #[test]
     fn imported_contravariant_alias_keeps_recursive_newtype_identity() {
         let package = package(&[
-            ("dep.kio", "module dep; pub type Contra[A] = A -> .;"),
+            ("dep.kio", "mod dep; pub type Contra[A] = A -> .;"),
             (
                 "consumer.kio",
-                "module consumer; import dep as dep; \
-                 type { Link: dep.Contra[Loop] { pub mk; pub get; }; }; \
-                 type { Loop: Link { pub mk; pub get; }; };",
+                "mod consumer; import dep as dep; type { Link: dep.Contra[Loop] { pub mk; pub get; }; }; type { Loop: Link { pub mk; pub get; }; };",
             ),
         ]);
         let consumer = &package.module("consumer").expect("consumer").module;
@@ -929,9 +927,7 @@ mod tests {
     fn applied_higher_kinded_binder_does_not_resolve_to_same_named_newtype() {
         let package = package(&[(
             "consumer.kio",
-            "module consumer; \
-             type { F[A]: A { pub mk; pub get; }; }; \
-             type { Wrapper[*F][A]: F[A] { pub mk; pub get; }; };",
+            "mod consumer; type { F[A]: A { pub mk; pub get; }; }; type { Wrapper[*F][A]: F[A] { pub mk; pub get; }; };",
         )]);
         let consumer = &package.module("consumer").expect("consumer").module;
         let env = super::super::ModuleEnv::build(consumer, None, None, Some(&package))
@@ -950,21 +946,15 @@ mod tests {
         let package = package(&[
             (
                 "positive.kio",
-                "module positive; \
-                 pub type { Wrap[A]: A { mk; get; }; };",
+                "mod positive; pub type { Wrap[A]: A { mk; get; }; };",
             ),
             (
                 "nonpositive.kio",
-                "module nonpositive; \
-                 pub type { Wrap[A]: A -> . { mk; get; }; }; \
-                 pub type { Invariant[A]: A & (A -> .) { mk; get; }; };",
+                "mod nonpositive; pub type { Wrap[A]: A -> . { mk; get; }; }; pub type { Invariant[A]: A & (A -> .) { mk; get; }; };",
             ),
             (
                 "consumer.kio",
-                "module consumer; import positive as positive; import nonpositive as nonpositive; \
-                 type { Good: positive.Wrap[Good] { mk; get; }; }; \
-                 type { Bad_contra: nonpositive.Wrap[Bad_contra] { mk; get; }; }; \
-                 type { Bad_invariant: nonpositive.Invariant[Bad_invariant] { mk; get; }; };",
+                "mod consumer; import positive as positive; import nonpositive as nonpositive; type { Good: positive.Wrap[Good] { mk; get; }; }; type { Bad_contra: nonpositive.Wrap[Bad_contra] { mk; get; }; }; type { Bad_invariant: nonpositive.Invariant[Bad_invariant] { mk; get; }; };",
             ),
         ]);
         let consumer = &package.module("consumer").expect("consumer").module;
@@ -1003,33 +993,27 @@ mod tests {
         let package = package(&[
             (
                 "p0.kio",
-                "module p0; \
-                 pub type { Wrap[A]: A -> . { mk; get; }; };",
+                "mod p0; pub type { Wrap[A]: A -> . { mk; get; }; };",
             ),
             (
                 "p1.kio",
-                "module p1; import p0 as previous; \
-                 pub type { Wrap[A]: previous.Wrap[A] & previous.Wrap[A] { mk; get; }; };",
+                "mod p1; import p0 as previous; pub type { Wrap[A]: previous.Wrap[A] & previous.Wrap[A] { mk; get; }; };",
             ),
             (
                 "p2.kio",
-                "module p2; import p1 as previous; \
-                 pub type { Wrap[A]: previous.Wrap[A] & previous.Wrap[A] { mk; get; }; };",
+                "mod p2; import p1 as previous; pub type { Wrap[A]: previous.Wrap[A] & previous.Wrap[A] { mk; get; }; };",
             ),
             (
                 "p3.kio",
-                "module p3; import p2 as previous; \
-                 pub type { Wrap[A]: previous.Wrap[A] & previous.Wrap[A] { mk; get; }; };",
+                "mod p3; import p2 as previous; pub type { Wrap[A]: previous.Wrap[A] & previous.Wrap[A] { mk; get; }; };",
             ),
             (
                 "p4.kio",
-                "module p4; import p3 as previous; \
-                 pub type { Wrap[A]: previous.Wrap[A] & previous.Wrap[A] { mk; get; }; };",
+                "mod p4; import p3 as previous; pub type { Wrap[A]: previous.Wrap[A] & previous.Wrap[A] { mk; get; }; };",
             ),
             (
                 "consumer.kio",
-                "module consumer; import p4 as outer; \
-                 type { Good: outer.Wrap[outer.Wrap[Good]] { mk; get; }; };",
+                "mod consumer; import p4 as outer; type { Good: outer.Wrap[outer.Wrap[Good]] { mk; get; }; };",
             ),
         ]);
         let consumer = &package.module("consumer").expect("consumer").module;

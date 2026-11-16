@@ -1,4 +1,4 @@
-package ffi_host_forall_stage_effects;
+pkg ffi_host_forall_stage_effects;
 
 build {
   cache "out/.kio-cache/";

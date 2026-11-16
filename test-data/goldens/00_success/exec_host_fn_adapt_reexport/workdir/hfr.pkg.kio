@@ -1,4 +1,4 @@
-package hfr;
+pkg hfr;
 
 build {
   cache "out/.kio-cache/";

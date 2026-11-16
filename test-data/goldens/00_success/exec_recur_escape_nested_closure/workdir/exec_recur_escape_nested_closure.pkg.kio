@@ -1,4 +1,4 @@
-package exec_recur_escape_nested_closure;
+pkg exec_recur_escape_nested_closure;
 
 build {
   cache "out/.kio-cache/";

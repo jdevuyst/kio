@@ -1,4 +1,4 @@
-package rich_typed_host;
+pkg rich_typed_host;
 
 build {
   target ts {

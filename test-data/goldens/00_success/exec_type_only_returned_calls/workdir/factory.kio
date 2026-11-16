@@ -1,4 +1,4 @@
-module factory;
+mod factory;
 
 pub type Identity[A] = A -> A;
 

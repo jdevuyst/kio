@@ -1,7 +1,7 @@
-module build_match_recursive_nested_projector/main;
+mod build_match_recursive_nested_projector/main;
 
-import build_match_recursive_nested_projector(Bool, loop);
-import macros/match(macro match);
+import build_match_recursive_nested_projector { type Bool; fn loop }
+import macros/match { macro match }
 
 pub rec type { List[A]: . | (A & List[A]) { mk; get } }
 

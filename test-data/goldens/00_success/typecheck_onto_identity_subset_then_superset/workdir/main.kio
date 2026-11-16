@@ -1,6 +1,6 @@
-module main;
+mod main;
 
-import macros/algebraic_macros(macro onto);
+import macros/algebraic_macros { macro onto }
 
 // Identity-`onto` where the target DNF has a branch whose
 // factor multi-set is a strict subset of a later branch —

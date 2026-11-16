@@ -1,4 +1,4 @@
-module m;
+mod m;
 
 equiv mismatched_arity() {
   .(x: .) { x };

@@ -1,9 +1,9 @@
-module testapi/main;
+mod testapi/main;
 
-import macros/algebraic_macros(macro ease, macro into);
-import macros/match(macro match);
-import testapi(I32, String);
-import testapi/io(print);
+import macros/algebraic_macros { macro ease; macro into }
+import macros/match { macro match }
+import testapi { type I32; type String }
+import testapi/io { fn print }
 
 // `ease` admits both sum widening and product projection in one
 // coercion. Source `String & I32` projects to its `String`

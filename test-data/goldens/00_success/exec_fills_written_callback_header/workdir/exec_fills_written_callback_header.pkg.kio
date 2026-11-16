@@ -1,4 +1,4 @@
-package exec_fills_written_callback_header;
+pkg exec_fills_written_callback_header;
 
 build {
   cache "out/.kio-cache/";

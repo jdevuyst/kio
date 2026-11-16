@@ -1,6 +1,6 @@
-module testapi/main;
+mod testapi/main;
 
-import testapi/reconcile(build_report);
-import testapi/render(render_report);
+import testapi/reconcile { fn build_report }
+import testapi/render { fn render_report }
 
 pub fn main() { render_report(build_report()) }

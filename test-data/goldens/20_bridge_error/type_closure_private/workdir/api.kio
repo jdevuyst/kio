@@ -1,4 +1,4 @@
-module api;
+mod api;
 
 type Hidden = .;
 

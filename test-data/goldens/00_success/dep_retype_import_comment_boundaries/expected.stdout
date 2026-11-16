@@ -1,16 +1,17 @@
-module widget/relay;
+mod widget/relay;
 
 // statement
-import core/a(
-// selection A
-, A
-);
-import core/b(
-// selection B
-, B
-);
-import widget/store(
-// selection C
-, C
-// closing boundary
-);
+import core/a {
+  // selection A
+  type A
+}
+import core/b {
+  // selection B
+  type B
+}
+import widget/store {
+  // selection C
+  type C
+
+  // closing boundary
+}

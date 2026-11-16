@@ -1,4 +1,4 @@
-module constructors;
+mod constructors;
 
 import __intrinsics__;
 

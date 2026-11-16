@@ -1,4 +1,4 @@
-module forwarding;
+mod forwarding;
 import origin as provider;
 
 type { Original: .; };

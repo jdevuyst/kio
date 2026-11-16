@@ -1,0 +1,5 @@
+mod main;
+
+import provider { fn answer }
+
+fn run() { answer() }

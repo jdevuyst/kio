@@ -1,4 +1,4 @@
-package nominal_singleton_group_help;
+pkg nominal_singleton_group_help;
 
 build {
   target js {

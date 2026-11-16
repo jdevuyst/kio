@@ -1,49 +1,49 @@
 /// Everything the run prints: the per-event transcript, the resting book
 /// by price level, the summary, and the closing invariant.
-module book/report;
+mod book/report;
 
-import book/book(
-, Book
-, asks_of
-, at
-, best_price
-, bids_of
-, cancel_count
-, cancelled_qty
-, depth
-, entered_qty
-, is_empty
-, reduced_qty
-, resting_qty
-, tape_len
-, trade_at
-, unfilled_qty
-);
-import book/num(int_eq);
-import book/order(
-, Order
-, Side
-, Trade
-, id_of
-, price_of
-, qty_of
-, remaining_of
-, seq_of
-, side_of
-, side_text
-, trade_maker
-, trade_price
-, trade_qty
-, trade_taker
-);
+import book/book {
+  type Book;
+  fn asks_of;
+  fn at;
+  fn best_price;
+  fn bids_of;
+  fn cancel_count;
+  fn cancelled_qty;
+  fn depth;
+  fn entered_qty;
+  fn is_empty;
+  fn reduced_qty;
+  fn resting_qty;
+  fn tape_len;
+  fn trade_at;
+  fn unfilled_qty
+}
+import book/num { fn int_eq }
+import book/order {
+  type Order;
+  type Side;
+  type Trade;
+  fn id_of;
+  fn price_of;
+  fn qty_of;
+  fn remaining_of;
+  fn seq_of;
+  fn side_of;
+  fn side_text;
+  fn trade_maker;
+  fn trade_price;
+  fn trade_qty;
+  fn trade_taker
+}
 import book/text as text;
-import macros/control(macro if);
-import macros/match(macro match);
-import testapi(Array, Bool, I32, String);
-import testapi/arith(add_i32, leq_i32, mul_i32, sub_i32);
-import testapi/fmt(bool_to_string);
-import testapi/io(print);
-import testapi/iter(loop);
+import macros/control { macro if }
+import macros/match { macro match }
+import testapi { type Array; type Bool; type I32; type String }
+import testapi/arith { fn add_i32; fn leq_i32; fn mul_i32; fn sub_i32 }
+import testapi/fmt { fn bool_to_string }
+import testapi/io { fn print }
+import testapi/iter { fn loop }
 
 pub fn limit_header(step: I32, side: Side, price: I32, qty: I32, id: I32) -> String {
   let head = text.cat5("event ", text.int_text(step), ": LIMIT ", side_text(side), " ");

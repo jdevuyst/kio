@@ -1,4 +1,4 @@
-package spreadsheet_recalc;
+pkg spreadsheet_recalc;
 
 build {
   cache "out/.kio-cache/";

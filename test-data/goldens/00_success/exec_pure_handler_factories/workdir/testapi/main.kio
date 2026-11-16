@@ -1,10 +1,10 @@
-module testapi/main;
+mod testapi/main;
 
 import __intrinsics__;
 
-import testapi(Bool, String);
+import testapi { type Bool; type String }
 import testapi/factories as factories;
-import testapi/factories(second);
+import testapi/factories { fn second }
 import testapi/io as io;
 
 fn condition(value: Bool) -> Bool { io.print("condition\n"[String]); value }

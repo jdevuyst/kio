@@ -125,7 +125,7 @@ async function check({ name, dir, followUp, rejected, library = false,
         async getBlob(args) {
           request(args);
           assert(['package', 'module'].includes(args.file_sha), 'unexpected blob request');
-          const text = args.file_sha === 'package' ? 'package app;\n' : `module main;\n${library ? 'equiv identity x = x;\n' : ''}`;
+          const text = args.file_sha === 'package' ? 'pkg app;\n' : `mod main;\n${library ? 'equiv identity x = x;\n' : ''}`;
           return { data: { encoding: 'base64', content: Buffer.from(text).toString('base64') } };
         }
       }

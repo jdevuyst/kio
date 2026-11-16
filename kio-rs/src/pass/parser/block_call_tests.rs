@@ -35,7 +35,7 @@ fn block_cursor_regions_survive_incomplete_bodies_without_descriptors() {
         ),
         ("outer { inner { val|", "inner", BlockCursorRegion::Body(0)),
     ] {
-        let marked = format!("module app; fn f(value: .) {{ {body}");
+        let marked = format!("mod app; fn f(value: .) {{ {body}");
         let offset = marked.find('|').unwrap() as u32;
         let source = marked.replace('|', "");
         let probe = super::probe_tooling(
@@ -209,7 +209,7 @@ fn block_reverse_splice_requires_its_own_final_label_braces() {
         for (open, close) in [("", ""), ("((", "))")] {
             for (before_child, before_arrow) in [(" ", ""), (" // child\n ", " // suffix\n ")] {
                 let source = format!(
-                    "module consumer; fn subject() {{ {open}outer (a) {{ b }} label{before_child}inner(c) {{ d }}{close}{before_arrow}{arrow}r }}"
+                    "mod consumer; fn subject() {{ {open}outer (a) {{ b }} label{before_child}inner(c) {{ d }}{close}{before_arrow}{arrow}r }}"
                 );
                 let error = parse(&source).expect_err("reverse splice requires label braces");
                 assert!(
@@ -302,7 +302,7 @@ fn block_splice_rejects_empty_lists_without_confusing_explicit_unit() {
         "f() { b }.<r",
         "((f() { b })).<<r",
     ] {
-        let source = format!("module consumer; fn subject() {{ {body} }}");
+        let source = format!("mod consumer; fn subject() {{ {body} }}");
         let error = parse(&source).expect_err(body);
         assert!(
             error.diag().1.contains("explicitly empty UFCS"),
@@ -340,7 +340,7 @@ fn block_splice_does_not_reopen_completed_or_already_spliced_calls() {
         "m.f a { b }.<r",
     ] {
         assert!(
-            parse(&format!("module consumer; fn subject() {{ {body} }}")).is_err(),
+            parse(&format!("mod consumer; fn subject() {{ {body} }}")).is_err(),
             "{body}"
         );
     }
@@ -378,7 +378,7 @@ fn block_splice_receivers_cannot_supply_type_arguments() {
         "(A[B]).>f { b }",
         "f { b }.<(A[B])",
     ] {
-        let source = format!("module consumer; fn subject() {{ {body} }}");
+        let source = format!("mod consumer; fn subject() {{ {body} }}");
         let error = parse(&source).expect_err("a block receiver is an ordinary value prefix");
         assert!(
             error
@@ -422,7 +422,7 @@ fn block_splice_formatting_preserves_comments_and_operator_boundaries() {
     ] {
         roundtrip(
             body,
-            "import absent(op _ + _, op ___ < _ >, op < _ >, varop [! !]);",
+            "import absent {op _ + _; op ___ < _ >; op < _ >; op_var [! !]}",
         );
     }
 }
@@ -487,7 +487,7 @@ fn comments(source: &str) -> Vec<String> {
 fn roundtrip(body: &str, operators: &str) -> Expr {
     // The provider is deliberately absent: both parses and rendering use
     // only this source's tokens and explicitly imported operator patterns.
-    let source = format!("module consumer; {operators} fn subject() {{ {body} }}");
+    let source = format!("mod consumer; {operators} fn subject() {{ {body} }}");
     let parsed = parse(&source).unwrap_or_else(|error| panic!("{body}: {error:?}"));
     let rendered = crate::pretty::pretty_module(&parsed);
     let reparsed = parse(&rendered).unwrap_or_else(|error| panic!("{rendered}: {error:?}"));
@@ -516,7 +516,7 @@ fn block_heads_and_labels_have_no_name_specific_grammar() {
         assert_eq!(parsed_head.name, head);
         assert_eq!(blocks.len(), 2);
     }
-    parse("module consumer; fn subject(if: ., do: ., else: .) { (if, do, else) }")
+    parse("mod consumer; fn subject(if: ., do: ., else: .) { (if, do, else) }")
         .expect("ordinary identifier roles");
     for body in [
         "if (condition) { yes() } else { no() }",
@@ -524,7 +524,7 @@ fn block_heads_and_labels_have_no_name_specific_grammar() {
         "do (receiver) { let value <- source(); value }",
     ] {
         assert!(
-            parse(&format!("module consumer; fn subject() {{ {body} }}")).is_ok(),
+            parse(&format!("mod consumer; fn subject() {{ {body} }}")).is_ok(),
             "{body}"
         );
     }
@@ -559,7 +559,7 @@ fn boolean_block_prefixes_use_the_existing_leading_dot_literal() {
         "outer inner .t { yes() } { body() }",
     ] {
         assert!(
-            parse(&format!("module consumer; fn subject() {{ {body} }}")).is_err(),
+            parse(&format!("mod consumer; fn subject() {{ {body} }}")).is_err(),
             "{body}"
         );
     }
@@ -582,12 +582,12 @@ fn block_prefix_layout_preserves_expression_boundaries() {
         ("outer({}) { b() }", "outer(()) {"),
     ] {
         roundtrip(body, "");
-        let parsed = parse(&format!("module consumer; fn subject() {{ {body} }}")).unwrap();
+        let parsed = parse(&format!("mod consumer; fn subject() {{ {body} }}")).unwrap();
         let rendered = crate::pretty::pretty_module(&parsed);
         assert!(rendered.contains(head), "{head}: {rendered}");
     }
     for slot in ["_", "__", "___"] {
-        let operators = format!("import absent(op _ + {slot}, op - _, op _ <| _ |>);");
+        let operators = format!("import absent {{op _ + {slot}; op - _; op _ <| _ |>}}");
         for body in [
             "outer(left + right) { b() }",
             "outer (left + (inner (value) { a() })) { b() }",
@@ -599,7 +599,7 @@ fn block_prefix_layout_preserves_expression_boundaries() {
             roundtrip(body, &operators);
         }
         let parsed = parse(&format!(
-            "module consumer; {operators} fn subject() {{ outer(left + right) {{ b() }} }}"
+            "mod consumer; {operators} fn subject() {{ outer(left + right) {{ b() }} }}"
         ))
         .unwrap();
         assert!(crate::pretty::pretty_module(&parsed).contains("outer(left + right) {"));
@@ -622,7 +622,7 @@ fn block_prefix_layout_preserves_expression_boundaries() {
 fn final_label_elision_is_structural_and_comment_preserving() {
     let body = "outer (value) { a() } fallback { inner (next) { b() } }";
     roundtrip(body, "");
-    let parsed = parse(&format!("module consumer; fn subject() {{ {body} }}")).unwrap();
+    let parsed = parse(&format!("mod consumer; fn subject() {{ {body} }}")).unwrap();
     let rendered = crate::pretty::pretty_module(&parsed);
     assert!(rendered.contains("} fallback inner(next) {"), "{rendered}");
     let reparsed = parse(&rendered).unwrap();
@@ -640,7 +640,7 @@ fn final_label_elision_is_structural_and_comment_preserving() {
         "outer (value) { a() } fallback // child\n inner (next) { b() }",
     ] {
         roundtrip(body, "");
-        let parsed = parse(&format!("module consumer; fn subject() {{ {body} }}")).unwrap();
+        let parsed = parse(&format!("mod consumer; fn subject() {{ {body} }}")).unwrap();
         let rendered = crate::pretty::pretty_module(&parsed);
         assert!(rendered.contains("fallback {"), "{rendered}");
     }
@@ -656,7 +656,7 @@ fn final_label_elision_is_structural_and_comment_preserving() {
 
 #[test]
 fn descriptors_keep_relative_order_in_eager_and_lazy_headers() {
-    let source = "module consumer; macro choose: . -> . { impl impl_choose; trailing thunk; captures captured; trailing thunk else; trailing product finally }";
+    let source = "mod consumer; macro choose: . -> . { impl impl_choose; trailing thunk; captures captured; trailing thunk else; trailing product finally }";
     let parsed = parse(source).unwrap();
     let lazy = parse_lazy(source).unwrap();
     let Item::Macro(eager, _) = &parsed.items[0] else {
@@ -731,7 +731,7 @@ fn blockless_prefix_and_grouped_child_have_distinct_ownership() {
 #[test]
 fn slot_chain_extent_does_not_steal_enclosing_body() {
     for slot in ["_", "__", "___"] {
-        let operators = format!("import absent(op _ + {slot}, op <| _ |>);");
+        let operators = format!("import absent {{op _ + {slot}; op <| _ |>}}");
         for body in [
             "outer (left + value) { b() }",
             "outer (left + (inner (value) { a() })) { b() }",
@@ -744,7 +744,7 @@ fn slot_chain_extent_does_not_steal_enclosing_body() {
             }
         }
         let source = format!(
-            "module consumer; {operators} fn subject() {{ outer left + inner (value) {{ a() }} {{ b() }} }}"
+            "mod consumer; {operators} fn subject() {{ outer left + inner (value) {{ a() }} {{ b() }} }}"
         );
         assert!(parse(&source).is_err(), "{slot}");
     }
@@ -753,15 +753,15 @@ fn slot_chain_extent_does_not_steal_enclosing_body() {
 #[test]
 fn block_prefix_role_follows_only_the_callee_spine() {
     for value in ["A", "A[B]", "A[B][C]"] {
-        let source = format!("module consumer; fn subject() {{ outer({value}) {{ b() }} }}");
+        let source = format!("mod consumer; fn subject() {{ outer({value}) {{ b() }} }}");
         assert!(parse(&source).is_err(), "{value}");
     }
     for value in ["f[A]", "f[A](value)", "A.member[B](value)", "-1", "-1.5"] {
         roundtrip(&format!("outer({value}) {{ b() }}"), "");
     }
-    roundtrip("outer(- value) { b() }", "import absent(op - _);");
+    roundtrip("outer(- value) { b() }", "import absent {op - _}");
     assert!(
-        parse("module consumer; import absent(op - _); fn subject() { outer - value { b() } }")
+        parse("mod consumer; import absent {op - _} fn subject() { outer - value { b() } }")
             .is_err()
     );
 }
@@ -827,7 +827,7 @@ fn neutral_final_separators_preserve_items_and_canonicalize() {
     ] {
         let expr = roundtrip(body, "");
         assert_eq!(final_separator(&expr).is_some(), has_separator, "{body}");
-        let source = format!("module consumer;  fn subject() {{ {body} }}");
+        let source = format!("mod consumer;  fn subject() {{ {body} }}");
         if let Some(span) = final_separator(&expr) {
             assert_eq!(&source[span.start as usize..span.end as usize], ";");
         }
@@ -851,7 +851,7 @@ fn malformed_block_buffers_reject_without_inventing_items() {
         "outer { a() } else",
     ] {
         assert!(
-            parse(&format!("module consumer; fn subject() {{ {body} }}")).is_err(),
+            parse(&format!("mod consumer; fn subject() {{ {body} }}")).is_err(),
             "{body}"
         );
     }
@@ -861,7 +861,7 @@ fn malformed_block_buffers_reject_without_inventing_items() {
 #[test]
 fn placeholder_ownership_includes_direct_heads_but_excludes_labels() {
     let source =
-        "module consumer; fn subject() { .x. { x9 (x3) { let .(x1: T) <- x2; x1 } x8 { x1 } } }";
+        "mod consumer; fn subject() { .x. { x9 (x3) { let .(x1: T) <- x2; x1 } x8 { x1 } } }";
     let mut parsed = parse(source).unwrap();
     let Item::FnDef(def) = parsed.items.last_mut().unwrap() else {
         panic!("function");
@@ -897,7 +897,7 @@ fn placeholder_ownership_includes_direct_heads_but_excludes_labels() {
 #[test]
 fn neutral_binder_completion_is_source_ordered_and_block_local() {
     let source =
-        "module consumer; fn subject() { outer { let local = source; local } next { other } }";
+        "mod consumer; fn subject() { outer { let local = source; local } next { other } }";
     let parsed = parse(source).unwrap();
     let after = source.find("; local").unwrap() as u32 + 3;
     let rhs = source.find("= source").unwrap() as u32 + 3;
@@ -916,7 +916,7 @@ fn neutral_binder_completion_is_source_ordered_and_block_local() {
 #[test]
 fn neutral_binding_and_prefix_errors_keep_source_spans() {
     for value in ["A", "A[B]", "A[B][C]"] {
-        let source = format!("module consumer; fn subject() {{ outer({value}) {{ b() }} }}");
+        let source = format!("mod consumer; fn subject() {{ outer({value}) {{ b() }} }}");
         let error = parse(&source).unwrap_err();
         assert!(matches!(error, crate::error::Error::Parse(_)));
         let diagnostic = error.diagnostic();
@@ -931,7 +931,7 @@ fn neutral_binding_and_prefix_errors_keep_source_spans() {
                 .contains("expected a value operand, found a type path")
         );
     }
-    let source = "module consumer; fn subject() { outer { let local = source; local } }";
+    let source = "mod consumer; fn subject() { outer { let local = source; local } }";
     let parsed = parse(source).unwrap();
     let Expr::BlockCall { head, blocks, .. } = function(&parsed) else {
         panic!("block call");

@@ -4,12 +4,12 @@ type `:help` for commands, `:quit` to leave
 pub op _ + _ { impl choose }
 pub op _ + _ { impl choose }
 pub op _ (=) _ { impl choose }
-pub varop [* *] { foldr choose empty }
+pub op_var [* *] { foldr choose empty }
 /// Select the left operand.
 pub op _ + _ { impl choose }
 Fold a bracketed sequence.
 
-pub varop [* *] { foldr choose empty }
+pub op_var [* *] { foldr choose empty }
 `op _ + _` is declared by several modules:
   demo/ops.(op _ + _)
   demo/other.(op _ + _)
@@ -18,18 +18,18 @@ demo/ops.(op _ + _)
   demo/ops.choose
   demo/other.choose
 references to `op _ + _`:
-  demo/main:4:51  in module demo/main
+  demo/main:4:64  in module demo/main
   demo/main:8:18  in fn use
   demo/ops:19:5  in op _ + _
   demo/ops:26:21  in fn local
-references to `varop [* *]`:
-  demo/main:4:61  in module demo/main
+references to `op_var [* *]`:
+  demo/main:4:74  in module demo/main
   demo/main:10:3  in fn use
-  demo/ops:24:5  in varop [* *]
+  demo/ops:24:5  in op_var [* *]
 pub type Field = Original;
 pub fn field()
 references to `Field`:
-  demo/main:4:17  in module demo/main
+  demo/main:4:24  in module demo/main
   demo/main:13:22  in fn alias_use
   demo/main:13:32  in fn alias_use
   demo/ops:16:10  in type Field
@@ -42,7 +42,7 @@ references to `pub`:
 pub fn op()
 pub fn varop()
 invalid declaration selector `demo/ops.op _ + _`: a qualified operator selector requires parentheses: module.(op _ + _)
-invalid declaration selector `demo/ops.(choose)`: a qualified selector's outer parentheses are only for `op` or `varop`
+invalid declaration selector `demo/ops.(choose)`: a qualified selector's outer parentheses are only for `op`, `op_macro`, or `op_var`
 invalid declaration selector `demo/ops.(op _ + _, choose)`: expected `)` after the operator selector
 `demo/ops.(op _ - _)` did not resolve in the current scope — `:scope` lists everything in scope
 bye

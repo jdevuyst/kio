@@ -12183,11 +12183,7 @@ mod tests {
                     }
                 }
                 let source = format!(
-                    "module p; import __comptime__; host fn value(); \
-                         pure fn implementation({implementation}) -> __Checked_term__ {{ \
-                         __macro_error__(ct, __\"macro body entered\"__(ct)) }} \
-                         macro staged : {signature} {{ impl implementation }} \
-                         fn witness() {{ {call} }}"
+                    "mod p; import __comptime__; host fn value(); pure fn implementation({implementation}) -> __Checked_term__ {{ __macro_error__(ct, __\"macro body entered\"__(ct)) }} macro staged : {signature} {{ impl implementation }} fn witness() {{ {call} }}"
                 );
                 let package = fixture(&source, "p");
                 let normalized = crate::pass::alpha_normalize::normalize_package(&package);
@@ -12332,14 +12328,7 @@ mod tests {
             ("forall", "[([T] .)]", "[T] .", false),
         ] {
             let source = format!(
-                "module p; import __comptime__; \
-                 fn produce[A](callback: . -> A) -> A {{ callback(()) }} \
-                 pure fn implementation(ct: __Comptime__, _source: __Type__, \
-                 _value: __Checked_term__, _selector: __Type__, \
-                 _selected: __Checked_term__, _target: __Type__) -> __Checked_term__ {{ \
-                 __macro_error__(ct, __\"macro body entered\"__(ct)) }} \
-                 macro staged : [Source] Source -> [Selector] Selector -> [Target] Target {{ impl implementation }} \
-                 fn witness() -> ({result}) {{ staged[.](produce(.() {{ () }}))[.](()){target} }}"
+                "mod p; import __comptime__; fn produce[A](callback: . -> A) -> A {{ callback(()) }} pure fn implementation(ct: __Comptime__, _source: __Type__, _value: __Checked_term__, _selector: __Type__, _selected: __Checked_term__, _target: __Type__) -> __Checked_term__ {{ __macro_error__(ct, __\"macro body entered\"__(ct)) }} macro staged : [Source] Source -> [Selector] Selector -> [Target] Target {{ impl implementation }} fn witness() -> ({result}) {{ staged[.](produce(.() {{ () }}))[.](()){target} }}"
             );
             let package = fixture(&source, "p");
             let normalized = crate::pass::alpha_normalize::normalize_package(&package);
@@ -12497,7 +12486,7 @@ mod tests {
 
     #[test]
     fn projected_explicit_polymorphic_target_rejects_before_macro_actions() {
-        let source = r#"module p; import __comptime__;
+        let source = r#"mod p; import __comptime__;
             fn produce[A](callback: . -> A) -> A { callback(()) }
             pure fn relay_impl(ct: __Comptime__, _source: __Type__,
                 _value: __Checked_term__, _selector: __Type__,
@@ -12531,7 +12520,7 @@ mod tests {
 
     #[test]
     fn projected_macro_source_keeps_all_written_public_stages() {
-        let declarations = r#"module p;
+        let declarations = r#"mod p;
             import __comptime__;
             host type N;
             host type Marker;
@@ -12629,7 +12618,7 @@ mod tests {
                     _ => ".".to_owned(),
                 };
                 let source = format!(
-                    "module p; import __comptime__; pure fn implementation({implementation}) -> __Checked_term__ {{ value }} macro staged : {signature} {{ impl implementation }} fn witness() -> ({result_type}) {{ {call} }}"
+                    "mod p; import __comptime__; pure fn implementation({implementation}) -> __Checked_term__ {{ value }} macro staged : {signature} {{ impl implementation }} fn witness() -> ({result_type}) {{ {call} }}"
                 );
                 let package = fixture(&source, "p");
                 let module = &package.module("p").unwrap().module;
@@ -13829,9 +13818,7 @@ mod tests {
     #[test]
     fn canonical_pair_certificate_is_unique_in_the_intrinsic_catalogue() {
         let package = fixture(
-            "module certificate_catalogue; \
-             import __intrinsics__; \
-             host type Bool role(bool);",
+            "mod certificate_catalogue; import __intrinsics__; host type Bool role(bool);",
             "certificate_catalogue",
         );
         let module = &package
@@ -13869,10 +13856,7 @@ mod tests {
     #[test]
     fn ordinary_functions_never_gain_pair_transparency_from_their_scheme_or_body() {
         let package = fixture(
-            "module ordinary_pair_controls; \
-             fn exact[A][B](left: A, right: B) -> A & B { (left, right) } \
-             fn reordered[A](left: A, right: A) -> A & A { (right, left) } \
-             fn duplicated[A](left: A, _right: A) -> A & A { (left, left) }",
+            "mod ordinary_pair_controls; fn exact[A][B](left: A, right: B) -> A & B { (left, right) } fn reordered[A](left: A, right: A) -> A & A { (right, left) } fn duplicated[A](left: A, _right: A) -> A & A { (left, left) }",
             "ordinary_pair_controls",
         );
         let module = &package
@@ -13916,7 +13900,7 @@ mod tests {
     #[test]
     fn projected_composition_uses_the_seal_and_exact_scope_not_creation_owner() {
         let package = fixture(
-            "module projected_creation_owner; fn witness() -> . { () }",
+            "mod projected_creation_owner; fn witness() -> . { () }",
             "projected_creation_owner",
         );
         let module = &package
@@ -14349,7 +14333,7 @@ mod tests {
     #[test]
     fn projected_either_closes_live_branch_goals_and_rejects_a_closed_mismatch() {
         let package = fixture(
-            "module projected_either_close; fn witness() -> . { () }",
+            "mod projected_either_close; fn witness() -> . { () }",
             "projected_either_close",
         );
         let module = &package
@@ -14475,7 +14459,7 @@ mod tests {
     #[test]
     fn projected_recipe_close_preserves_the_frozen_residual_type_binding() {
         let package = fixture(
-            "module projected_carrier_close; fn witness() -> . { () }",
+            "mod projected_carrier_close; fn witness() -> . { () }",
             "projected_carrier_close",
         );
         let module = &package.module("projected_carrier_close").unwrap().module;
@@ -14572,7 +14556,7 @@ mod tests {
     #[test]
     fn projected_recipe_close_visits_each_occurrence_once_preserves_type_fn_and_checks_kind() {
         let package = fixture(
-            "module projected_recipe_close; fn witness() -> . { () }",
+            "mod projected_recipe_close; fn witness() -> . { () }",
             "projected_recipe_close",
         );
         let module = &package
@@ -14785,8 +14769,7 @@ mod tests {
     #[test]
     fn direct_lambda_projection_seals_its_header_before_entering_the_body() {
         let package = fixture(
-            "module direct_lambda_projection; \
-             fn witness() -> . -> . { .(value: .) -> . { value } }",
+            "mod direct_lambda_projection; fn witness() -> . -> . { .(value: .) -> . { value } }",
             "direct_lambda_projection",
         );
         let module = &package
@@ -14893,19 +14876,15 @@ mod tests {
         let parsed = [
             (
                 "dep/core.kio",
-                "module dep/core; \
-                 pub type { Box[A]: A { pub mk; pub get; }; };",
+                "mod dep/core; pub type { Box[A]: A { pub mk; pub get; }; };",
             ),
             (
                 "dep/core/core.kio",
-                "module dep/core/core; \
-                 pub type { Box[A]: . { pub mk; pub get; }; };",
+                "mod dep/core/core; pub type { Box[A]: . { pub mk; pub get; }; };",
             ),
             (
                 "consumer.kio",
-                "module consumer; \
-                 import dep/core as dep; \
-                 fn witness() -> dep.Box[.] -> dep.Box[.] { .(boxed: dep.Box[.]) { boxed } }",
+                "mod consumer; import dep/core as dep; fn witness() -> dep.Box[.] -> dep.Box[.] { .(boxed: dep.Box[.]) { boxed } }",
             ),
         ]
         .into_iter()
@@ -15063,9 +15042,7 @@ mod tests {
     #[test]
     fn projected_source_eligibility_skips_a_collapsed_producerless_pair_subtree() {
         let package = fixture(
-            "module projected_source_eligibility_pair; \
-             host fn make[A]() -> A; \
-             fn witness() -> . { (((), ()), .(_unit: .) { make() }) }",
+            "mod projected_source_eligibility_pair; host fn make[A]() -> A; fn witness() -> . { (((), ()), .(_unit: .) { make() }) }",
             "projected_source_eligibility_pair",
         );
         let module = &package
@@ -15220,11 +15197,7 @@ mod tests {
     #[test]
     fn projected_header_replay_observes_only_during_reservation_before_install_and_link() {
         let package = fixture(
-            "module header_replay; \
-             host fn make[A]() -> A; \
-             host fn known() -> . -> .; \
-             fn opaque() -> . { make()(()) } \
-             fn observed() -> . -> . { known() }",
+            "mod header_replay; host fn make[A]() -> A; host fn known() -> . -> .; fn opaque() -> . { make()(()) } fn observed() -> . -> . { known() }",
             "header_replay",
         );
         let module = &package
@@ -15358,7 +15331,7 @@ mod tests {
     fn projected_written_type_tail_batches_a_sixty_four_binder_prefix_once() {
         const BINDERS: usize = 64;
 
-        let package = fixture("module header_batch;", "header_batch");
+        let package = fixture("mod header_batch;", "header_batch");
         let module = &package
             .module("header_batch")
             .expect("header batch module")
@@ -15454,10 +15427,7 @@ mod tests {
         let annotation = if typed { " -> ." } else { "" };
         let package = fixture(
             &format!(
-                "module producer_close_prefix; \
-             fn witness() -> ((. -> .) & .) & (. -> .) {{ \
-                 ((.(left: .){annotation} {{ left }}, ()), .(right: .){annotation} {{ right }}) \
-             }}"
+                "mod producer_close_prefix; fn witness() -> ((. -> .) & .) & (. -> .) {{ ((.(left: .){annotation} {{ left }}, ()), .(right: .){annotation} {{ right }}) }}"
             ),
             "producer_close_prefix",
         );
@@ -15924,8 +15894,7 @@ mod tests {
     #[test]
     fn independent_producer_headers_follow_the_fill_validation_schedule() {
         let package = fixture(
-            "module independent_result_header; \
-             fn witness() -> . -> . { .(_value: .) { () } }",
+            "mod independent_result_header; fn witness() -> . -> . { .(_value: .) { () } }",
             "independent_result_header",
         );
         let module = &package
@@ -16260,10 +16229,7 @@ mod tests {
     #[test]
     fn projected_contextual_lambda_checks_the_complete_interleaved_header_spine() {
         let package = fixture(
-            "module contextual_lambda_spine; \
-             fn witness() -> [T] (T & .) -> [U] U -> U { \
-                 .[T](first: T, token: .)[U](second: U) -> U { second } \
-             }",
+            "mod contextual_lambda_spine; fn witness() -> [T] (T & .) -> [U] U -> U { .[T](first: T, token: .)[U](second: U) -> U { second } }",
             "contextual_lambda_spine",
         );
         let module = &package
@@ -16364,9 +16330,7 @@ mod tests {
     #[test]
     fn projected_annotated_literal_closes_during_initial_header_staging() {
         let package = fixture(
-            "module projected_literal_header; \
-             host type String role(str); \
-             fn witness() -> String { \"ignored\"[String] }",
+            "mod projected_literal_header; host type String role(str); fn witness() -> String { \"ignored\"[String] }",
             "projected_literal_header",
         );
         let module = &package
@@ -16474,14 +16438,7 @@ mod tests {
     #[test]
     fn projected_fresh_path_call_completes_only_an_unresolved_header() {
         let package = fixture(
-            "module projected_path_unit_call_header; \
-             host type String role(str); \
-             fn identity[A](value: A) -> A { value } \
-             host fn fixed[A](value: A) -> String; \
-             host fn phantom[A][B](value: A) -> B; \
-             fn completed(value: String) -> String { identity(value) } \
-             fn producer_free_open(value: String) -> String { phantom(value) } \
-             fn closed(value: String) -> String { fixed(value) }",
+            "mod projected_path_unit_call_header; host type String role(str); fn identity[A](value: A) -> A { value } host fn fixed[A](value: A) -> String; host fn phantom[A][B](value: A) -> B; fn completed(value: String) -> String { identity(value) } fn producer_free_open(value: String) -> String { phantom(value) } fn closed(value: String) -> String { fixed(value) }",
             "projected_path_unit_call_header",
         );
         let module = &package
@@ -16708,17 +16665,7 @@ mod tests {
     #[test]
     fn projected_regular_ufcs_flavors_share_path_and_scalar_header_staging() {
         let package = fixture(
-            "module projected_regular_ufcs_header; \
-             host type String role(str); \
-             host fn same[A](first: A, second: A) -> A; \
-             fn path_receiver_first(value: String, known: String) -> String { value.>same(known) } \
-             fn path_receiver_last(value: String, known: String) -> String { value.>>same(known) } \
-             fn path_argument_first(value: String, known: String) -> String { same(known).<<value } \
-             fn path_argument_last(value: String, known: String) -> String { same(known).<value } \
-             fn scalar_receiver_first(known: String) -> String { \"value\"[String].>same(known) } \
-             fn scalar_receiver_last(known: String) -> String { \"value\"[String].>>same(known) } \
-             fn scalar_argument_first(known: String) -> String { same(known).<<\"value\"[String] } \
-             fn scalar_argument_last(known: String) -> String { same(known).<\"value\"[String] }",
+            "mod projected_regular_ufcs_header; host type String role(str); host fn same[A](first: A, second: A) -> A; fn path_receiver_first(value: String, known: String) -> String { value.>same(known) } fn path_receiver_last(value: String, known: String) -> String { value.>>same(known) } fn path_argument_first(value: String, known: String) -> String { same(known).<<value } fn path_argument_last(value: String, known: String) -> String { same(known).<value } fn scalar_receiver_first(known: String) -> String { \"value\"[String].>same(known) } fn scalar_receiver_last(known: String) -> String { \"value\"[String].>>same(known) } fn scalar_argument_first(known: String) -> String { same(known).<<\"value\"[String] } fn scalar_argument_last(known: String) -> String { same(known).<\"value\"[String] }",
             "projected_regular_ufcs_header",
         );
         let module = &package
@@ -16932,22 +16879,7 @@ mod tests {
     #[test]
     fn projected_regular_ufcs_certificate_preserves_call_shape_boundaries() {
         let package = fixture(
-            "module projected_regular_ufcs_controls; \
-             host type String role(str); \
-             host type Box[A]; \
-             type Drop[A] = .; \
-             host fn identity[A](value: A) -> A; \
-             host fn fixed[A](value: A) -> String; \
-             host fn lift[*F][A](value: F[A]) -> A; \
-             host fn dropped[A](value: Drop[A]) -> A; \
-             fn closed(value: String) -> String { value.>fixed } \
-             fn chained(value: String) -> String { value.>identity.>identity } \
-             fn nested(value: String) -> String { identity(value.>identity) } \
-             fn hkt(value: Box[String]) -> String { value.>lift[Box][_] } \
-             fn erased() -> . { ().>dropped } \
-             fn ambient_rec_order(value: Box[String]) -> String { value.>lift[Box][_] } \
-             fn dependent_rec_order(value: Box[String]) -> String { pending.>lift[Box][_] } \
-             fn rec_order(value: Box[String]) -> String { value.>lift[Box][_] }",
+            "mod projected_regular_ufcs_controls; host type String role(str); host type Box[A]; type Drop[A] = .; host fn identity[A](value: A) -> A; host fn fixed[A](value: A) -> String; host fn lift[*F][A](value: F[A]) -> A; host fn dropped[A](value: Drop[A]) -> A; fn closed(value: String) -> String { value.>fixed } fn chained(value: String) -> String { value.>identity.>identity } fn nested(value: String) -> String { identity(value.>identity) } fn hkt(value: Box[String]) -> String { value.>lift[Box][_] } fn erased() -> . { ().>dropped } fn ambient_rec_order(value: Box[String]) -> String { value.>lift[Box][_] } fn dependent_rec_order(value: Box[String]) -> String { pending.>lift[Box][_] } fn rec_order(value: Box[String]) -> String { value.>lift[Box][_] }",
             "projected_regular_ufcs_controls",
         );
         let module = &package
@@ -17115,7 +17047,7 @@ mod tests {
     #[test]
     fn scalar_packet_certificate_keeps_ordinary_product_helpers_opaque() {
         let package = fixture(
-            r#"module scalar_packets;
+            r#"mod scalar_packets;
                 host type String role(str);
                 host fn identity[A](value: A) -> A;
                 host fn opaque[A][B](left: A, right: B) -> A & B;
@@ -17159,28 +17091,7 @@ mod tests {
     #[test]
     fn projected_scalar_call_closes_only_when_selected_arguments_solve_result() {
         let package = fixture(
-            "module projected_scalar_call_header; \
-             host type String role(str); \
-             host type Box[A]; \
-             type Identity[A] = A; \
-             type Keep[A][B] = A; \
-             type F[A] = .; \
-             host fn identity[A](value: A) -> A; \
-             host fn boxed[A](value: A) -> Box[A]; \
-             host fn alias_boxed[A](value: Identity[A]) -> Box[A]; \
-             host fn phantom[A][B](value: A) -> B; \
-             host fn applied[*F][A](value: F[A]) -> A; \
-             host fn dropped[A][B](value: Keep[Box[A]][B]) -> B; \
-             host fn shadowed[*F][A][B](value: A) -> F[B]; \
-             host fn mixed[A](literal: A, known: A) -> Box[A]; \
-             fn identity_case() -> String { identity(\"value\"[String]) } \
-             fn boxed_case() -> Box[String] { boxed(\"value\"[String]) } \
-             fn alias_case() -> Box[String] { alias_boxed(\"value\"[String]) } \
-             fn shadowed_case[*F]() -> . { shadowed[F](\"value\"[String]) } \
-             fn phantom_case() -> . { phantom(\"value\"[String]) } \
-             fn applied_case() -> . { applied(\"value\"[String]) } \
-             fn dropped_case() -> . { dropped(\"value\"[String]) } \
-             fn mixed_case(value: String) -> Box[String] { mixed(\"value\"[String], value) }",
+            "mod projected_scalar_call_header; host type String role(str); host type Box[A]; type Identity[A] = A; type Keep[A][B] = A; type F[A] = .; host fn identity[A](value: A) -> A; host fn boxed[A](value: A) -> Box[A]; host fn alias_boxed[A](value: Identity[A]) -> Box[A]; host fn phantom[A][B](value: A) -> B; host fn applied[*F][A](value: F[A]) -> A; host fn dropped[A][B](value: Keep[Box[A]][B]) -> B; host fn shadowed[*F][A][B](value: A) -> F[B]; host fn mixed[A](literal: A, known: A) -> Box[A]; fn identity_case() -> String { identity(\"value\"[String]) } fn boxed_case() -> Box[String] { boxed(\"value\"[String]) } fn alias_case() -> Box[String] { alias_boxed(\"value\"[String]) } fn shadowed_case[*F]() -> . { shadowed[F](\"value\"[String]) } fn phantom_case() -> . { phantom(\"value\"[String]) } fn applied_case() -> . { applied(\"value\"[String]) } fn dropped_case() -> . { dropped(\"value\"[String]) } fn mixed_case(value: String) -> Box[String] { mixed(\"value\"[String], value) }",
             "projected_scalar_call_header",
         );
         let module = &package
@@ -17302,18 +17213,7 @@ mod tests {
     #[test]
     fn projected_path_unit_source_certificate_excludes_other_expression_families() {
         let package = fixture(
-            "module projected_path_unit_call_controls; \
-             host type String role(str); \
-             fn identity[A](value: A) -> A { value } \
-             fn unit_value() -> . { identity(()) } \
-             fn literal_value() -> String { identity(\"value\") } \
-             fn nested_value() -> . { identity(identity(())) } \
-             host fn make[A]() -> A; \
-             fn empty_value() -> . { make() } \
-             fn open_nested_value() -> . { identity(make()) } \
-             fn lambda_value() -> . -> . { identity(.(value: .) -> . { value }) } \
-             fn type_only_value() -> [A] A { identity[_] } \
-             fn concrete_type_only_value() -> . -> . { identity[.] }",
+            "mod projected_path_unit_call_controls; host type String role(str); fn identity[A](value: A) -> A { value } fn unit_value() -> . { identity(()) } fn literal_value() -> String { identity(\"value\") } fn nested_value() -> . { identity(identity(())) } host fn make[A]() -> A; fn empty_value() -> . { make() } fn open_nested_value() -> . { identity(make()) } fn lambda_value() -> . -> . { identity(.(value: .) -> . { value }) } fn type_only_value() -> [A] A { identity[_] } fn concrete_type_only_value() -> . -> . { identity[.] }",
             "projected_path_unit_call_controls",
         );
         let module = &package
@@ -17369,11 +17269,7 @@ mod tests {
     #[test]
     fn projected_path_unit_call_tree_uses_iterative_nested_work() {
         let package = fixture(
-            "module projected_nested_path_unit; \
-             fn identity[A](value: A) -> A { value } \
-             fn pair[A][B](left: A, right: B) -> A & B { (left, right) } \
-             fn chain() -> . { identity(()) } \
-             fn branch() -> . & . { pair(identity(()), identity(())) }",
+            "mod projected_nested_path_unit; fn identity[A](value: A) -> A { value } fn pair[A][B](left: A, right: B) -> A & B { (left, right) } fn chain() -> . { identity(()) } fn branch() -> . & . { pair(identity(()), identity(())) }",
             "projected_nested_path_unit",
         );
         let module = &package.module("projected_nested_path_unit").unwrap().module;
@@ -17417,10 +17313,7 @@ mod tests {
     #[test]
     fn projected_path_call_fast_path_does_not_complete_a_nested_pair_leaf() {
         let package = fixture(
-            "module projected_nested_path_call; \
-             host type String role(str); \
-             host fn phantom[A][B](value: A) -> B; \
-             fn witness(value: String) -> . & . { (value.>phantom, ()) }",
+            "mod projected_nested_path_call; host type String role(str); host fn phantom[A][B](value: A) -> B; fn witness(value: String) -> . & . { (value.>phantom, ()) }",
             "projected_nested_path_call",
         );
         let module = &package
@@ -17525,10 +17418,7 @@ mod tests {
     #[test]
     fn projected_nested_pair_scalar_call_closes_in_its_header_pass() {
         let package = fixture(
-            "module projected_nested_scalar_call; \
-             host type String role(str); \
-             host fn identity[A](value: A) -> A; \
-             fn witness() -> . & . { (\"value\"[String].>identity, ()) }",
+            "mod projected_nested_scalar_call; host type String role(str); host fn identity[A](value: A) -> A; fn witness() -> . & . { (\"value\"[String].>identity, ()) }",
             "projected_nested_scalar_call",
         );
         let module = &package
@@ -17642,7 +17532,7 @@ mod tests {
 
     #[test]
     fn projected_header_prepare_does_not_retry_a_deferred_leaf() {
-        let package = fixture("module projected_leaf_header;", "projected_leaf_header");
+        let package = fixture("mod projected_leaf_header;", "projected_leaf_header");
         let module = &package
             .module("projected_leaf_header")
             .expect("projected leaf module")
@@ -17813,8 +17703,7 @@ mod tests {
 
     fn canonical_pair_projection_capture(capture: bool) {
         let package = fixture(
-            "module pair_projection_order; \
-             fn witness() -> . & (. & .) { ((), ((), ())) }",
+            "mod pair_projection_order; fn witness() -> . & (. & .) { ((), ((), ())) }",
             "pair_projection_order",
         );
         let module = &package

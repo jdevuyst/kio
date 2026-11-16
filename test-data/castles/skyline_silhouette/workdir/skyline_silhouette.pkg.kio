@@ -1,4 +1,4 @@
-package skyline_silhouette;
+pkg skyline_silhouette;
 
 build {
   cache "out/.kio-cache/";

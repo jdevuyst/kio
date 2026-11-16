@@ -1,4 +1,4 @@
-package typecheck_lambda_expected_result_flow;
+pkg typecheck_lambda_expected_result_flow;
 
 build {
   cache "out/.kio-cache/";

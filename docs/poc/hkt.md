@@ -49,11 +49,11 @@ POC:
 - `macros/derive.kio` and `macros/macro_util.kio` — the imported `derive`
   macro and its shared compile-time utilities, brought in through the
   `macros` dependency (declared by `macros.dep.kio`, materialized under the
-  `macros/` prefix) and imported with `import macros/derive(macro derive);`. These
+  `macros/` prefix) and imported with `import macros/derive {macro derive}`. These
   are the subject of the separate [`macros` POC](../guides/using-libraries.md);
   here they are imported and used, not explained.
 - `macros/sequence.kio` supplies `do`, which runs a sequence using an explicit
-  bind function. The program imports it with `import macros/sequence(macro do);`.
+  bind function. The program imports it with `import macros/sequence {macro do}`.
 
 Running the package chains `kio check`, `kio test`, the per-backend build, and
 the runner; `main` prints five lines:
@@ -80,10 +80,10 @@ bridge {
   kiodoc;
 }
 
-module kiodoc;
+mod kiodoc;
 
-import derive(macro derive);
-import sequence(macro do);
+import derive {macro derive}
+import sequence {macro do}
 
 host type String role(str);
 host fn print(p0: String);
@@ -328,7 +328,7 @@ harness imports it the way the POC does (in the POC the module path is
 `macros/derive`):
 
 ```text
-import derive(macro derive);
+import derive {macro derive}
 ```
 
 The POC's use is the simplest possible derivation: pick the right base
@@ -430,7 +430,7 @@ To reuse the HKT pieces in your own package:
    scaffolding.
 3. To use `derive`, depend on the
    [`macros` POC](../guides/using-libraries.md), which carries the
-   `derive` macro, and import it with `import macros/derive(macro derive);`.
+   `derive` macro, and import it with `import macros/derive {macro derive}`.
    Declaring a dependency is documented once in
    [`pkg.md` § Dependency files](../guides/pkg.md#dependency-files).
 

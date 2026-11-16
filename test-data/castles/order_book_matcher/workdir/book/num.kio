@@ -1,11 +1,11 @@
 /// The host env supplies exactly one integer comparison, `leq_i32`, so
 /// equality, strict order, and negation are derived from it here, once,
 /// for the rest of the package.
-module book/num;
+mod book/num;
 
-import macros/control(macro if);
-import testapi(Bool, I32);
-import testapi/arith(leq_i32);
+import macros/control { macro if }
+import testapi { type Bool; type I32 }
+import testapi/arith { fn leq_i32 }
 
 pub fn not(value: Bool) -> Bool {
   if(value) { .f } else { .t }

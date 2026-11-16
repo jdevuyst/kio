@@ -1,6 +1,6 @@
-module litexp/main;
+mod litexp/main;
 
-import litexp(I32, I64);
+import litexp { type I32; type I64 }
 
 fn ret_i32() -> I32 { 7 }
 

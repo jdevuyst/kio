@@ -4,16 +4,16 @@
 /// `end`. The echo is not decoration: it is the only place the nesting the
 /// parser recovered becomes observable, so a `repeat` that swallowed the wrong
 /// commands shows up in the output before the plot does.
-module turtle/echo;
+mod turtle/echo;
 
 import list/core as list;
-import macros/control(macro if);
-import macros/match(macro match);
-import macros/row_macros(macro select);
-import testapi(Bool, I32, String);
-import testapi/arith(add_i32, mul_i32);
-import testapi/io(print);
-import testapi/iter(loop);
+import macros/control { macro if }
+import macros/match { macro match }
+import macros/row_macros { macro select }
+import testapi { type Bool; type I32; type String }
+import testapi/arith { fn add_i32; fn mul_i32 }
+import testapi/io { fn print }
+import testapi/iter { fn loop }
 import turtle/command as cmd;
 import turtle/text as text;
 

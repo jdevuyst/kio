@@ -1,4 +1,4 @@
-module main;
+mod main;
 
 rec {
   type { P: . | (Q -> .) { pub mk; pub get } };

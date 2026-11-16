@@ -1,4 +1,4 @@
-package typecheck_nested_label_field_access;
+pkg typecheck_nested_label_field_access;
 
 build {
   cache "out/.kio-cache/";

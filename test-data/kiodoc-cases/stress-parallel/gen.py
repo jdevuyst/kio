@@ -25,7 +25,7 @@ def main() -> int:
     # `docs` `md "input"`, and walks the markdown tree there.
     with open(os.path.join(here, "pkg.pkg.kio"), "w") as f:
         f.write(
-            "package pkg;\n\n"
+            "pkg pkg;\n\n"
             'build {\n  cache ();\n\n  docs {\n    md "input";\n  };\n}\n'
         )
 
@@ -46,7 +46,7 @@ def main() -> int:
     lines.append("  kiodoc;\n")
     lines.append("}\n")
     lines.append("\n")
-    lines.append("module kiodoc;\n")
+    lines.append("mod kiodoc;\n")
     lines.append("\n")
     lines.append("host type S role(str);\n")
     lines.append("host type N role(i32);\n")

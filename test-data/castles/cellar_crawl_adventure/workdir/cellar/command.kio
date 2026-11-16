@@ -6,14 +6,14 @@
 /// decides whether one is read at all. Parsing therefore happens in two steps —
 /// classify the verb, then pull an object only if that verb wants one — which
 /// is also why a mistyped verb never swallows the command after it.
-module cellar/command;
+mod cellar/command;
 
-import macros/control(macro if);
-import macros/match(macro match);
-import macros/row_macros(macro select);
-import macros/spine_macros(macro widen_sum);
-import testapi(Bool, String);
-import testapi/text(string_eq);
+import macros/control { macro if }
+import macros/match { macro match }
+import macros/row_macros { macro select }
+import macros/spine_macros { macro widen_sum }
+import testapi { type Bool; type String }
+import testapi/text { fn string_eq }
 
 pub type Verb =
   | { Go_verb: . }

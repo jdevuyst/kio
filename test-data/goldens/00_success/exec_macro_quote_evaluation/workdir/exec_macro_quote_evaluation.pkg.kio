@@ -1,4 +1,4 @@
-package exec_macro_quote_evaluation;
+pkg exec_macro_quote_evaluation;
 
 build {
   cache "out/.kio-cache/";

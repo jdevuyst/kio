@@ -1327,7 +1327,7 @@ mod tests {
     #[test]
     fn fresh_exports_keep_ordinary_category_purity_and_written_stages() {
         let parsed = crate::pass::parser::parse_signature_file(
-            "signature app v(1); v(1) { nonbreaking { add { module api {
+            "sig app v(1); v(1) { nonbreaking { add { mod api {
                 pub pure fn direct[A] -> A -> A;
                 pub fn staged[A]()(value: A)[B] -> A;
                 host fn callback[A](value: A) -> A;
@@ -1403,108 +1403,107 @@ mod tests {
         let cases = [
             (
                 "bare dependency",
-                "module api { host type Raw; pub type Wrapped = Raw; }",
+                "mod api { host type Raw; pub type Wrapped = Raw; }",
                 true,
             ),
             (
                 "selective import",
-                "module dep { host type Raw; host type Other; }; module api { import dep(Raw); pub fn wrap(value: Raw) -> Raw; }",
+                "mod dep { host type Raw; host type Other; }; mod api { import dep {type Raw}; pub fn wrap(value: Raw) -> Raw; }",
                 true,
             ),
             (
                 "qualified import",
-                "module dep { host type Raw; }; module api { import dep as d; pub type Wrapped = d.Raw; }",
+                "mod dep { host type Raw; }; mod api { import dep as d; pub type Wrapped = d.Raw; }",
                 true,
             ),
             (
                 "unimported nested owner",
-                "module foo/bar { host type Raw; }; module api { pub type Wrapped = foo/bar.Raw; }",
+                "mod foo/bar { host type Raw; }; mod api { pub type Wrapped = foo/bar.Raw; }",
                 false,
             ),
             (
                 "imported nested owner",
-                "module foo/bar { host type Raw; }; module api { import foo/bar as nested; pub type Wrapped = nested.Raw; }",
+                "mod foo/bar { host type Raw; }; mod api { import foo/bar as nested; pub type Wrapped = nested.Raw; }",
                 true,
             ),
             (
                 "alias precedence",
-                "module dep { host type Raw; }; module other { host type Raw; }; module api { import dep as other; pub type Wrapped = other.Raw; }",
+                "mod dep { host type Raw; }; mod other { host type Raw; }; mod api { import dep as other; pub type Wrapped = other.Raw; }",
                 true,
             ),
             (
                 "generic shadowing",
-                "module dep { host type Raw; }; module api { import dep(Raw); host fn choose[Raw](value: Raw) -> Raw; }",
+                "mod dep { host type Raw; }; mod api { import dep {type Raw}; host fn choose[Raw](value: Raw) -> Raw; }",
                 true,
             ),
             (
                 "unused written import",
-                "module dep { host type Raw; }; module api { import dep(Raw); pub type Wrapped = .; }",
+                "mod dep { host type Raw; }; mod api { import dep {type Raw}; pub type Wrapped = .; }",
                 true,
             ),
             (
                 "newtype payload",
-                "module dep { host type Raw; }; module api { import dep(Raw); pub type { Wrapped : Raw { pub mk; pub get; }; }; }",
+                "mod dep { host type Raw; }; mod api { import dep {type Raw}; pub type { Wrapped : Raw { pub mk; pub get; }; }; }",
                 true,
             ),
             (
                 "higher kind and forall",
-                "module dep { host type Raw; }; module api { import dep(Raw); pub type Wrapped[*F][A] = [Raw] F[Raw] -> A; }",
+                "mod dep { host type Raw; }; mod api { import dep {type Raw}; pub type Wrapped[*F][A] = [Raw] F[Raw] -> A; }",
                 true,
             ),
             (
                 "missing module",
-                "module dep { host type Raw; }; module api { import absent(Raw); pub type Wrapped = Raw; }",
+                "mod dep { host type Raw; }; mod api { import absent {type Raw}; pub type Wrapped = Raw; }",
                 false,
             ),
             (
                 "missing import",
-                "module dep { host type Raw; }; module api { import dep(Missing); pub type Wrapped = .; }",
+                "mod dep { host type Raw; }; mod api { import dep {type Missing}; pub type Wrapped = .; }",
                 false,
             ),
             (
                 "missing local type",
-                "module dep { host type Raw; }; module api { pub type Wrapped = Raw; }",
+                "mod dep { host type Raw; }; mod api { pub type Wrapped = Raw; }",
                 false,
             ),
             (
                 "missing qualified type",
-                "module dep { host type Raw; }; module api { import dep as d; pub type Wrapped = d.Missing; }",
+                "mod dep { host type Raw; }; mod api { import dep as d; pub type Wrapped = d.Missing; }",
                 false,
             ),
             (
                 "local selective collision",
-                "module dep { host type Raw; }; module api { import dep(Raw); host type Raw; pub type Wrapped = .; }",
+                "mod dep { host type Raw; }; mod api { import dep {type Raw}; host type Raw; pub type Wrapped = .; }",
                 false,
             ),
             (
                 "local alias collision",
-                "module dep { host type Raw; }; module api { import dep as d; host fn d() -> .; pub type Wrapped = .; }",
+                "mod dep { host type Raw; }; mod api { import dep as d; host fn d() -> .; pub type Wrapped = .; }",
                 false,
             ),
             (
                 "conflicting aliases",
-                "module dep { host type Raw; }; module other { host type Raw; }; module api { import dep as d; import other as d; pub type Wrapped = .; }",
+                "mod dep { host type Raw; }; mod other { host type Raw; }; mod api { import dep as d; import other as d; pub type Wrapped = .; }",
                 false,
             ),
             (
                 "alias suffix boundary",
-                "module dep { host type Raw; }; module d/nested { host type Raw; }; module api { import dep as d; pub type Wrapped = d/nested.Raw; }",
+                "mod dep { host type Raw; }; mod d/nested { host type Raw; }; mod api { import dep as d; pub type Wrapped = d/nested.Raw; }",
                 false,
             ),
             (
                 "unimported comptime type",
-                "module api { pub type Wrapped = __Type__; }",
+                "mod api { pub type Wrapped = __Type__; }",
                 false,
             ),
             (
                 "imported comptime type",
-                "module api { import __comptime__; pub type Wrapped = __Type__; }",
+                "mod api { import __comptime__; pub type Wrapped = __Type__; }",
                 true,
             ),
         ];
         for (description, modules, accepted) in cases {
-            let source =
-                format!("signature app v(1); v(1) {{ nonbreaking {{ add {{ {modules} }} }} }}");
+            let source = format!("sig app v(1); v(1) {{ nonbreaking {{ add {{ {modules} }} }} }}");
             let parsed = crate::pass::parser::parse_signature_file(&source, Some("app"))
                 .unwrap_or_else(|error| panic!("{description}: {error:?}"));
             let sections = parsed.versions[0]
@@ -1545,8 +1544,8 @@ mod tests {
 
     #[test]
     fn fresh_origin_slice_matches_full_epoch_recursive_context() {
-        let source = "signature app v(1); v(1) {
-          with { module api { rec {
+        let source = "sig app v(1); v(1) {
+          with { mod api { rec {
             pub type A = . | B;
             pub type { B : A { pub mk; pub get; }; };
           } } };
@@ -1633,7 +1632,7 @@ mod tests {
         let arguments = (0..parameters)
             .map(|index| format!("[A{index}]"))
             .collect::<String>();
-        let mut source = String::from("module api; rec {");
+        let mut source = String::from("mod api; rec {");
         for index in 0..cycle_members {
             let next = (index + 1) % cycle_members;
             write!(

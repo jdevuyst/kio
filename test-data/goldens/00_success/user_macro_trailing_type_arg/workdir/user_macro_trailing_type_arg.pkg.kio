@@ -1,4 +1,4 @@
-package user_macro_trailing_type_arg;
+pkg user_macro_trailing_type_arg;
 
 build {
   cache "out/.kio-cache/";

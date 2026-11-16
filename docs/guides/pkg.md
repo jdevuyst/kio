@@ -17,11 +17,11 @@ this guide is the narrative companion.
 
 ## The package file
 
-A package file begins with `package <name>;`, where `<name>` matches
+A package file begins with `pkg <name>;`, where `<name>` matches
 the filename stem. The optional `build` and `bridge` blocks can follow in
 either order. `kio fmt` prints them in this canonical order:
 
-1. `package <name>;`
+1. `pkg <name>;`
 2. optional `build { ... }`
 3. optional `bridge { ... }`
 
@@ -31,7 +31,7 @@ enumerated in the package file.
 
 ```kio {file}
 // logger.pkg.kio
-package logger;
+pkg logger;
 
 bridge {
   logger;
@@ -46,7 +46,7 @@ declarations, and what it offers with ordinary `pub` items:
 
 ```kio {file}
 // logger.kio
-module logger;
+mod logger;
 
 host type String role(str);
 
@@ -59,18 +59,18 @@ capability that returns unit; write `-> Type` when it returns another type.
 
 ```kio {file}
 // logger/main.kio
-module logger/main;
+mod logger/main;
 
-import logger(String, print);
+import logger {type String; fn print}
 
 pub fn log_impl(s: String) { print(s) }
 ```
 
 <!--kio {harness=logger_consumer file placeholder="__INSERT_CODE_HERE__"}
-module logger/check;
+mod logger/check;
 
-import logger(String);
-import logger/main(log_impl);
+import logger {type String}
+import logger/main {fn log_impl}
 
 __INSERT_CODE_HERE__
 -->
@@ -102,7 +102,7 @@ can bind the same type parameters:
 
 ```kio {variant=module}
 // arrays.kio
-module arrays;
+mod arrays;
 
 host type I32 role(i32);
 
@@ -137,9 +137,9 @@ recursion form. This module selects `I32` for the generic fill value's literal
 and `Bool` for the branching operation; the host roles alone do not select them.
 
 ```kio {variant=module}
-module array_fill;
+mod array_fill;
 
-import control(Bool, macro if);
+import control { type Bool; macro if }
 
 host type I32 role(i32);
 
@@ -176,7 +176,7 @@ command language usually declares small inspection primitives and writes the
 parser in Kio:
 
 ```kio {variant=module}
-module text_tools;
+mod text_tools;
 
 host type String role(str);
 
@@ -211,7 +211,7 @@ same way an `import` statement spells them and extended with `*` and `**` shell-
 wildcards. `*` matches a single path segment; `**` matches a whole subtree.
 
 ```kio {variant=package}
-package app;
+pkg app;
 
 bridge {
   app;
@@ -262,7 +262,7 @@ A glob that matches no module is rejected as an almost-certain typo.
 ## Dependency files
 
 A package can reuse another package through a package-root `<local>.dep.kio`
-file. The filename stem and the `dependency` header are the dependency's local
+file. The filename stem and the `dep` header are the dependency's local
 name inside the consumer. The `source` block names where the dependency comes
 from, in **exactly one** of two forms — a local path or a remote git repository.
 
@@ -271,7 +271,7 @@ relative `/`-separated `path`:
 
 ```kio {variant=dependency}
 // macros.dep.kio
-dependency macros;
+dep macros;
 
 source {
   path "../libs/macros/macros.pkg.kio"
@@ -284,7 +284,7 @@ package is nested:
 
 ```kio {variant=dependency}
 // macros.dep.kio
-dependency macros;
+dep macros;
 
 source {
   git "https://example.com/libraries.git";
@@ -302,11 +302,11 @@ repository root or one directory below it. The standalone local-path form above
 keeps its consumer-relative meaning.
 
 Either way, the dependency's modules are re-rooted under the local name, so a
-module that was `module match;` in the dependency is imported as `macros/match` by
+module that was `mod match;` in the dependency is imported as `macros/match` by
 the consumer:
 
 ```kio {ignore}
-import macros/match(macro match);
+import macros/match {macro match}
 import macros/spine_macros as spine;
 ```
 
@@ -319,7 +319,7 @@ declarations must be part of the consumer's host-facing surface, match the
 re-rooted module in the consumer bridge just as you would for a local module:
 
 ```kio {variant=package}
-package app;
+pkg app;
 
 bridge {
   app;
@@ -477,15 +477,15 @@ and `widget/store.Tag` — distinct nominal copies. A value minted as one cannot
 flow where the other is expected:
 
 <!--kio {file}
-module core;
+mod core;
 -->
 
 <!--kio {file}
-module widget;
+mod widget;
 -->
 
 <!--kio {file}
-module core/store;
+mod core/store;
 
 host type I32 role(i32);
 pub type { Tag: I32; }
@@ -494,9 +494,9 @@ pub fn tag_val(value: Tag) -> I32 { Tag.get(value) }
 -->
 
 <!--kio {file}
-module widget/store;
+mod widget/store;
 
-import core/store(I32);
+import core/store {type I32}
 
 pub type { Tag: I32; }
 pub fn make_tag(value: I32) -> Tag { Tag.mk(value) }
@@ -504,23 +504,23 @@ pub fn tag_val(value: Tag) -> I32 { Tag.get(value) }
 -->
 
 <!--kio {file}
-module widget/relay;
+mod widget/relay;
 
-import core/store(I32);
-import widget/store(Tag, make_tag);
+import core/store {type I32}
+import widget/store {type Tag; fn make_tag}
 
 pub fn relay_tag(value: I32) -> Tag { make_tag(value) }
 -->
 
 <!--kio {harness=nominal_copies file placeholder="__INSERT_CODE_HERE__"}
-module logger/nominal;
+mod logger/nominal;
 
 __INSERT_CODE_HERE__
 -->
 
 ```kio {@nominal_copies check_exit_code=14}
-import core/store(make_tag, tag_val);
-import widget/relay(relay_tag);
+import core/store { fn make_tag; fn tag_val }
+import widget/relay { fn relay_tag }
 
 // relay_tag returns widget/store.Tag
 
@@ -533,7 +533,7 @@ duplicate copies into one:
 
 ```kio {variant=dependency}
 // widget.dep.kio
-dependency widget;
+dep widget;
 
 source {
   path "../widget/widget.pkg.kio"
@@ -605,7 +605,7 @@ module that supplies replacements, sharing the consumer's type identities:
 
 ```kio {variant=dependency}
 // foobar.dep.kio
-dependency foobar;
+dep foobar;
 
 source {
   path "../foobar/foobar.pkg.kio"
@@ -639,33 +639,33 @@ bridged, to the host. A `pub` may instead carry a **scope restriction**, written
 `pub(<module-path>)`, to export only within a named subtree:
 
 <!--kio {file}
-module app;
+mod app;
 
 host type I32 role(i32);
 -->
 
 ```kio {file}
-module app/internal;
+mod app/internal;
 
-import app(I32);
+import app {type I32}
 
 pub(app) type { Token: I32; }
 ```
 
 <!--kio {file}
-module app/check;
+mod app/check;
 
-import app(I32);
-import app/internal(Token);
+import app {type I32}
+import app/internal {type Token}
 
 pub fn roundtrip(value: I32) -> I32 { Token.get(Token.mk(value)) }
 -->
 
 <!--kio {harness=scoped_consumer file placeholder="__INSERT_CODE_HERE__"}
-module logger/scoped_check;
+mod logger/scoped_check;
 
-import app(I32);
-import app/check(roundtrip);
+import app {type I32}
+import app/check {fn roundtrip}
 
 __INSERT_CODE_HERE__
 -->
@@ -697,7 +697,7 @@ A nominal type can be used in multiple products without creating another
 identity. Write the existing type as an operand in the later declaration:
 
 ```kio {variant=module}
-module shared_fields;
+mod shared_fields;
 
 host type String role(str);
 
@@ -718,7 +718,7 @@ The package file's optional `build { ... }` block sits directly after the
 package header:
 
 ```kio {variant=package}
-package app;
+pkg app;
 
 build {
   cache "out/.kio-cache/";
@@ -767,7 +767,7 @@ To build the same package more than once for one backend, give each target a
 name. The pair is `(backend, "name")`:
 
 ```kio {variant=package}
-package app;
+pkg app;
 
 build {
   target (js, "web") {

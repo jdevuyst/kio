@@ -805,14 +805,14 @@ destination, two host functions, and an exported `main`:
 
 ```kio
 // greet.pkg.kio
-package greet;
+pkg greet;
 build { cache "out/.kio-cache/"; target haskell { out "out/haskell/"; } }
 bridge { app; app/**; }
 ```
 
 ```kio
 // app.kio
-module app;
+mod app;
 host type Str role(str);
 host type Output;
 host fn stdout() -> Output;
@@ -821,9 +821,9 @@ host fn print(output: Output, s: Str);
 
 ```kio
 // app/main.kio
-module app/main;
-import app(Str);
-import app(print, stdout);
+mod app/main;
+import app {type Str}
+import app {fn print; fn stdout}
 pub fn main() { print(stdout(), "hello\n"[Str]) }
 ```
 

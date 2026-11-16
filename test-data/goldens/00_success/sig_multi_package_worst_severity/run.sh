@@ -41,24 +41,24 @@ expect_exit() {
 
 # Sealed baseline both packages share: v(1) records `api.serve`, header
 # at v(2). The open v(2) draft (when present) records the break.
-sealed_v1='signature %s v(2);
+sealed_v1='sig %s v(2);
 
 v(1) {
   nonbreaking {
     add {
-      module api {
+      mod api {
         pub fn serve() -> .;
       }
     }
   }
 }
 '
-recorded_break='signature %s v(2);
+recorded_break='sig %s v(2);
 
 v(1) {
   nonbreaking {
     add {
-      module api {
+      mod api {
         pub fn serve() -> .;
       }
     }
@@ -68,14 +68,14 @@ v(1) {
 v(2) {
   breaking {
     remove {
-      module api {
-        serve;
-      }
+
+        api.serve;
+
     }
   };
   nonbreaking {
     add {
-      module api {
+      mod api {
         pub fn other() -> .;
       }
     }
@@ -86,22 +86,22 @@ v(2) {
 # === Pairing 1: A = 82, B = 81 -> overall 82 ===
 # A: live dropped `serve` (exports `other`); the open v(2) draft records
 # the break -> 82.
-printf 'module api;\n\npub fn other() -> . { () }\n' > pkg_a/api.kio
+printf 'mod api;\n\npub fn other() -> . { () }\n' > pkg_a/api.kio
 # shellcheck disable=SC2059
 printf "$recorded_break" alpha > pkg_a/alpha.sig.kio
 # B: fresh package (one export, no sig) -> 81.
-printf 'module api;\n\npub fn serve() -> . { () }\n' > pkg_b/api.kio
+printf 'mod api;\n\npub fn serve() -> . { () }\n' > pkg_b/api.kio
 rm -f pkg_b/beta.sig.kio
 expect_exit 82 "$KIO_BIN" sig status
 
 # === Pairing 2: A = 80, B = 82 -> overall 80 ===
 # A: live dropped `serve`, but only the sealed v(1) is recorded (no v(2)
 # draft) -> the break is unrecorded -> 80.
-printf 'module api;\n\npub fn other() -> . { () }\n' > pkg_a/api.kio
+printf 'mod api;\n\npub fn other() -> . { () }\n' > pkg_a/api.kio
 # shellcheck disable=SC2059
 printf "$sealed_v1" alpha > pkg_a/alpha.sig.kio
 # B: recorded unsealed break -> 82.
-printf 'module api;\n\npub fn other() -> . { () }\n' > pkg_b/api.kio
+printf 'mod api;\n\npub fn other() -> . { () }\n' > pkg_b/api.kio
 # shellcheck disable=SC2059
 printf "$recorded_break" beta > pkg_b/beta.sig.kio
 expect_exit 80 "$KIO_BIN" sig status

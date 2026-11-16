@@ -1,4 +1,4 @@
-module errsolv;
+mod errsolv;
 
 host type A role(i32);
 

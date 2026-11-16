@@ -1,4 +1,4 @@
-module app/syntax;
+mod app/syntax;
 
 fn private_add(left: ., _right: .) { left }
 
@@ -16,13 +16,13 @@ fn private_empty() { () }
 
 fn private_push(_head: ., tail: .) { tail }
 
-varop [* *] { foldr private_push private_empty }
+op_var [* *] { foldr private_push private_empty }
 
 pub(app) fn package_empty() { () }
 
 pub(app) fn package_push(_head: ., tail: .) { tail }
 
-pub(app) varop [% %] { foldr package_push package_empty }
+pub(app) op_var [% %] { foldr package_push package_empty }
 
 pub fn public_empty() { () }
 
@@ -30,4 +30,4 @@ pub fn public_push(_head: ., tail: .) { tail }
 
 pub fn public_finish(value: .) { value }
 
-pub varop [! !] { foldr public_push public_empty; finalize public_finish }
+pub op_var [! !] { foldr public_push public_empty; finalize public_finish }

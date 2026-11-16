@@ -1,15 +1,15 @@
-module catalog/shelf;
+mod catalog/shelf;
 
 import catalog/domain as dom;
-import catalog/domain(Book, Book_index, Failure, Hold_list, Hold_rec);
-import catalog/domain(Copies_out, Copies_total, Held_call);
+import catalog/domain { type Book; type Book_index; type Failure; type Hold_list; type Hold_rec }
+import catalog/domain { type Copies_out; type Copies_total; type Held_call }
 import dict/dict as dict;
 import list/list as list;
-import macros/match(macro match);
-import macros/row_macros(macro select, macro with);
+import macros/match { macro match }
+import macros/row_macros { macro select; macro with }
 import result/result as result;
-import testapi(Bool, I32);
-import testapi/arith(add_i32, eq_i32, lt_i32, sub_i32);
+import testapi { type Bool; type I32 }
+import testapi/arith { fn add_i32; fn eq_i32; fn lt_i32; fn sub_i32 }
 
 pub type Book_result = result.Result[Book][Failure];
 

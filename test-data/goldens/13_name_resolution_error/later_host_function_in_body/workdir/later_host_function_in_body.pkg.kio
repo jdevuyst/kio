@@ -1,4 +1,4 @@
-package later_host_function_in_body;
+pkg later_host_function_in_body;
 
 build {
   cache "out/.kio-cache/";

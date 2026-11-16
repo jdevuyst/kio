@@ -1,4 +1,4 @@
-package pure_comptime_alias;
+pkg pure_comptime_alias;
 
 build {
   cache "out/.kio-cache/";

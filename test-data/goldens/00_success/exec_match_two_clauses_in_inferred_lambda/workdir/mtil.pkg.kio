@@ -1,4 +1,4 @@
-package mtil;
+pkg mtil;
 
 build {
   cache "out/.kio-cache/";

@@ -1,33 +1,33 @@
-module expression_formatter/parse;
+mod expression_formatter/parse;
 
-import expression_formatter/types(
-, Add_token
-, Assignment_name
-, Binding_count
-, Binding_token
-, Close_token
-, Eq_token
-, Factor_text
-, Group_token
-, Grouped_term
-, Left_term
-, Left_token
-, Literal_token
-, Max_depth
-, Mul_token
-, Normalized_expr
-, Open_token
-, Shape_name
-, Source_text
-, Token_count
-, Token_text
-, Valid_shape
-);
-import macros/control(macro if);
-import macros/row_macros(macro select);
-import testapi(Bool, Int, String);
-import testapi/fmt(int_to_string);
-import testapi/text(string_concat, string_eq, string_len);
+import expression_formatter/types {
+  type Add_token;
+  type Assignment_name;
+  type Binding_count;
+  type Binding_token;
+  type Close_token;
+  type Eq_token;
+  type Factor_text;
+  type Group_token;
+  type Grouped_term;
+  type Left_term;
+  type Left_token;
+  type Literal_token;
+  type Max_depth;
+  type Mul_token;
+  type Normalized_expr;
+  type Open_token;
+  type Shape_name;
+  type Source_text;
+  type Token_count;
+  type Token_text;
+  type Valid_shape
+}
+import macros/control { macro if }
+import macros/row_macros { macro select }
+import testapi { type Bool; type Int; type String }
+import testapi/fmt { fn int_to_string }
+import testapi/text { fn string_concat; fn string_eq; fn string_len }
 
 fn and_bool(a: Bool, b: Bool) -> Bool {
   if(a) { b } else { .f }

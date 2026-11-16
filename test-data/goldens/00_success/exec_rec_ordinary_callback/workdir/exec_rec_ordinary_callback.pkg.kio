@@ -1,4 +1,4 @@
-package exec_rec_ordinary_callback;
+pkg exec_rec_ordinary_callback;
 
 build {
   cache "out/.kio-cache/";

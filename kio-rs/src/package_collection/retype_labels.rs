@@ -103,13 +103,7 @@ mod tests {
     #[test]
     fn affected_owners_ignore_ordinary_rhs_references() {
         let module = parse(
-            "module source; \
-             type Before = Foo & { First: .; }; \
-             type Forwarded = Foo; \
-             type Via_forward = Forwarded & { Second: .; }; \
-             pub type { Foo: .; } \
-             pub type Later[A] = Foo & { Box[A]: A; }; \
-             type Still[A] = Box[A] & { Last: .; };",
+            "mod source; type Before = Foo & { First: .; }; type Forwarded = Foo; type Via_forward = Forwarded & { Second: .; }; pub type { Foo: .; } pub type Later[A] = Foo & { Box[A]: A; }; type Still[A] = Box[A] & { Last: .; };",
         );
         assert_eq!(
             affected_owners(&module, &["Foo".to_owned()].into_iter().collect()),
@@ -120,13 +114,7 @@ mod tests {
     #[test]
     fn affected_owners_select_only_written_recursive_member_declarations() {
         let module = parse(
-            "module source; \
-             type { Box[*F][A]<X>: F[A] & X; } \
-             type Plain[*F][A] = Box[F][A] & { Marker: .; }; \
-             rec { \
-               type Later[*G][B] = Box[G][B] | { Link[*G][B]: Next[G][ B]; }; \
-               type Next[*H][C] = Box[H][C] | { Back[*H][C]: Later[H][ C]; }; \
-             }",
+            "mod source; type { Box[*F][A]<X>: F[A] & X; } type Plain[*F][A] = Box[F][A] & { Marker: .; }; rec { type Later[*G][B] = Box[G][B] | { Link[*G][B]: Next[G][ B]; }; type Next[*H][C] = Box[H][C] | { Back[*H][C]: Later[H][ C]; }; }",
         );
         assert_eq!(
             affected_owners(&module, &["Box".to_owned()].into_iter().collect()),
@@ -137,9 +125,8 @@ mod tests {
     #[test]
     fn decomposition_keeps_unselected_origins_and_named_arm_arguments() {
         let module = parse(
-            "module source; \
-             /// A family.\n\
-             pub type Choice[A] = { Value[A]<X>: A & X; } | (Value[A] & { Empty: .; });",
+            "mod source; /// A family.
+pub type Choice[A] = { Value[A]<X>: A & X; } | (Value[A] & { Empty: .; });",
         );
         let Item::Labels(owner, ()) = &module.items[0] else {
             panic!("labels owner");

@@ -4,14 +4,14 @@
 /// every other node takes one or two child relations and produces one.
 /// Predicates and comparison operators are their own little trees beside
 /// it, so a filter is data the engine walks, not a function it calls.
-module query/plan;
+mod query/plan;
 
-import macros/match(macro match);
-import macros/row_macros(macro select);
-import macros/spine_macros(macro widen_sum);
+import macros/match { macro match }
+import macros/row_macros { macro select }
+import macros/spine_macros { macro widen_sum }
 import query/schema as schema;
-import testapi(Bool, I32, String);
-import testapi/iter(loop);
+import testapi { type Bool; type I32; type String }
+import testapi/iter { fn loop }
 
 pub type Cmp_op = { Op_eq: . } | { Op_lt: . } | { Op_leq: . } | { Op_gt: . } | { Op_geq: . };
 

@@ -1,6 +1,6 @@
-module derive_empty_candidates_unit_no_rule/main;
+mod derive_empty_candidates_unit_no_rule/main;
 
-import macros/derive(macro derive);
+import macros/derive { macro derive }
 
 fn bad() { derive(())[.] }
 

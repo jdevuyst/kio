@@ -1,4 +1,4 @@
-package host_type_higher_kind_parameter;
+pkg host_type_higher_kind_parameter;
 
 build {
   cache "out/.kio-cache/";

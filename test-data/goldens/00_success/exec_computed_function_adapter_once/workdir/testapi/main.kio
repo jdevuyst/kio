@@ -1,7 +1,7 @@
-module testapi/main;
+mod testapi/main;
 
-import testapi(String);
-import testapi/io(print);
+import testapi { type String }
+import testapi/io { fn print }
 
 fn use_twice(function: [A] (A & A) -> A, first: String, second: String) {
   print(function[String]((first, second)));

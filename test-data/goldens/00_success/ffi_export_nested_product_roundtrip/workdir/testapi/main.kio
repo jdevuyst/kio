@@ -1,6 +1,6 @@
-module testapi/main;
+mod testapi/main;
 
-import testapi(I32, String);
+import testapi { type I32; type String }
 
 // `Inner` is a nominal type wrapping the product `(I32 & I32)`;
 // `Outer` nests it as a slot of its own product payload. Crossing the

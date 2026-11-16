@@ -1,4 +1,4 @@
-package ease_fn_rejects_param_sum_narrowing;
+pkg ease_fn_rejects_param_sum_narrowing;
 
 build {
   cache "out/.kio-cache/";

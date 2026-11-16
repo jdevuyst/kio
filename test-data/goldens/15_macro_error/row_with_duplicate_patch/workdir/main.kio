@@ -1,6 +1,6 @@
-module main;
+mod main;
 
-import macros/row_macros(macro with);
+import macros/row_macros { macro with }
 
 type { A: . { mk; get } }
 

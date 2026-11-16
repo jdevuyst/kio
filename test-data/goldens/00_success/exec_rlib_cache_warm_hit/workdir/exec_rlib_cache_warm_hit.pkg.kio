@@ -1,4 +1,4 @@
-package exec_rlib_cache_warm_hit;
+pkg exec_rlib_cache_warm_hit;
 
 build {
   cache "out/.kio-cache/";

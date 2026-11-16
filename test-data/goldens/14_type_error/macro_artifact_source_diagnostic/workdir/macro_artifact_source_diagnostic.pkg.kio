@@ -1,4 +1,4 @@
-package macro_artifact_source_diagnostic;
+pkg macro_artifact_source_diagnostic;
 
 build {
   target js {

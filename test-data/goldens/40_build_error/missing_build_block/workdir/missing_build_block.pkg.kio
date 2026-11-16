@@ -1,4 +1,4 @@
-package missing_build_block;
+pkg missing_build_block;
 
 bridge {
   main

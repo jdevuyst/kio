@@ -1,7 +1,7 @@
-module host/m;
+mod host/m;
 
-import host(Bool, bar, foo);
-import macros/control(macro if);
+import host { type Bool; fn bar; fn foo }
+import macros/control { macro if }
 
 equiv if_true_takes_then_arm() {
   if(.t) { foo() } else { bar() };

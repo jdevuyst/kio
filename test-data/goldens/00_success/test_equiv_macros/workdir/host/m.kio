@@ -1,8 +1,8 @@
-module host/m;
+mod host/m;
 
-import host(Bool);
-import macros/control(macro if);
-import macros/match(macro match);
+import host { type Bool }
+import macros/control { macro if }
+import macros/match { macro match }
 
 equiv if_else_same_shape() {
   if(.t) { () } else { () };

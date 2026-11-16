@@ -1,4 +1,4 @@
-package exec_monadic_distinct_bind_types;
+pkg exec_monadic_distinct_bind_types;
 
 build {
   cache "out/.kio-cache/";

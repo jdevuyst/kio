@@ -1,4 +1,4 @@
-package typed_let_annotation_mismatch;
+pkg typed_let_annotation_mismatch;
 
 build {
   cache "out/.kio-cache/";

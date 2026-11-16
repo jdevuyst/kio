@@ -1,4 +1,4 @@
-package rational_arithmetic_grader;
+pkg rational_arithmetic_grader;
 
 build {
   cache "out/.kio-cache/";

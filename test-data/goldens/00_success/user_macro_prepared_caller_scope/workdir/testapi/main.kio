@@ -1,7 +1,7 @@
-module testapi/main;
+mod testapi/main;
 
-import testapi/fmt(int_to_string);
-import testapi/io(print);
+import testapi/fmt { fn int_to_string }
+import testapi/io { fn print }
 import testapi/left as left;
 import testapi/model as model;
 

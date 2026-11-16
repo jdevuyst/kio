@@ -1,30 +1,41 @@
-module testapi/main;
+mod testapi/main;
 
-import library/core(Bool, Queue, bool_to, empty, is_empty, no, peek, singleton, well_formed, yes);
-import library/macros/match(macro match);
-import library/macros/spine_macros(macro widen_sum);
-import library/queue(
-, concat
-, dequeue
-, enqueue
-, from_list
-, length
-, map
-, op _ ++ _
-, op _ <<
-, op _ >> _
-, op _ ^?
-, reverse
-, to_list
-);
-import list/core(List);
+import library/core {
+  type Bool;
+  type Queue;
+  fn bool_to;
+  fn empty;
+  fn is_empty;
+  fn no;
+  fn peek;
+  fn singleton;
+  fn well_formed;
+  fn yes
+}
+import library/macros/match { macro match }
+import library/macros/spine_macros { macro widen_sum }
+import library/queue {
+  fn concat;
+  fn dequeue;
+  fn enqueue;
+  fn from_list;
+  fn length;
+  fn map;
+  fn reverse;
+  fn to_list;
+  op _ ++ _;
+  op _ <<;
+  op _ >> _;
+  op _ ^?
+}
+import list/core { type List }
 import list/list as lists;
-import list/list(varop [] as [* *]);
-import testapi(I32, String);
-import testapi/arith(add_i32);
-import testapi/fmt(int_to_string);
-import testapi/io(print);
-import testapi/text(string_concat);
+import list/list { op_var [] as [* *] }
+import testapi { type I32; type String }
+import testapi/arith { fn add_i32 }
+import testapi/fmt { fn int_to_string }
+import testapi/io { fn print }
+import testapi/text { fn string_concat }
 
 fn cat(a: String, b: String) -> String { string_concat(a, b) }
 

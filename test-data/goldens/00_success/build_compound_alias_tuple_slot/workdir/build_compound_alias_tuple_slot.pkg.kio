@@ -1,4 +1,4 @@
-package build_compound_alias_tuple_slot;
+pkg build_compound_alias_tuple_slot;
 
 build {
   cache "out/.kio-cache/";

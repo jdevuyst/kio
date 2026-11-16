@@ -1,4 +1,4 @@
-package macro_nested_type_fuel_refinement;
+pkg macro_nested_type_fuel_refinement;
 
 build {
   cache "out/.kio-cache/";

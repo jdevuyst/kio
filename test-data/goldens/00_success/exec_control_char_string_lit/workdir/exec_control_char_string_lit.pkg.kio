@@ -1,4 +1,4 @@
-package exec_control_char_string_lit;
+pkg exec_control_char_string_lit;
 
 build {
   cache "out/.kio-cache/";

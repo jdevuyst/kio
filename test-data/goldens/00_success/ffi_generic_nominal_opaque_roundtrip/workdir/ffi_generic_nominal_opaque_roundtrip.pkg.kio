@@ -1,4 +1,4 @@
-package ffi_generic_nominal_opaque_roundtrip;
+pkg ffi_generic_nominal_opaque_roundtrip;
 
 build {
   cache "out/.kio-cache/";

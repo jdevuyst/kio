@@ -1,4 +1,4 @@
-package group_guest;
+pkg group_guest;
 
 build {
   cache "out/.kio-cache/";

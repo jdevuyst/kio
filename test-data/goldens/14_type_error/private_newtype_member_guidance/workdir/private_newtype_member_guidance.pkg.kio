@@ -1,4 +1,4 @@
-package private_newtype_member_guidance;
+pkg private_newtype_member_guidance;
 
 build {
   cache "out/.kio-cache/";

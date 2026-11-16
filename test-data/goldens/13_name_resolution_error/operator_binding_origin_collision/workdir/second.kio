@@ -1,4 +1,4 @@
-module second;
+mod second;
 
 pub fn second_value() { () }
 

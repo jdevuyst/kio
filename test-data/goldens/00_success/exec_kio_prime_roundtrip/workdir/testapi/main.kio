@@ -1,11 +1,11 @@
-module testapi/main;
+mod testapi/main;
 
 import __intrinsics__;
 
-import macros/control(macro if);
-import macros/match(macro match);
-import testapi(Bool, String);
-import testapi/io(print);
+import macros/control { macro if }
+import macros/match { macro match }
+import testapi { type Bool; type String }
+import testapi/io { fn print }
 
 // Exercises the kio-prime round-trip: a tuple literal, a host function
 // call, and an `if`/`else` arm — three constructs that desugar

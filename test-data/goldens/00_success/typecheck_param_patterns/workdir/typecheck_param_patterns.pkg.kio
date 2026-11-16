@@ -1,4 +1,4 @@
-package typecheck_param_patterns;
+pkg typecheck_param_patterns;
 
 build {
   cache "out/.kio-cache/";

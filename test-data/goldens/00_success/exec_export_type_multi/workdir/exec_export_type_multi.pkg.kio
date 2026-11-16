@@ -1,4 +1,4 @@
-package exec_export_type_multi;
+pkg exec_export_type_multi;
 
 build {
   cache "out/.kio-cache/";

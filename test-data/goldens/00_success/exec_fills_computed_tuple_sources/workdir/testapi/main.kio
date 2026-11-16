@@ -1,7 +1,7 @@
-module testapi/main;
+mod testapi/main;
 
-import observer(macro retain);
-import testapi(String);
+import observer { macro retain }
+import testapi { type String }
 import testapi/io as io;
 
 fn identity[A](value: A) -> A { value }

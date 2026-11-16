@@ -1,4 +1,4 @@
-package pure_handler_factories;
+pkg pure_handler_factories;
 
 build {
   cache "out/.kio-cache/";

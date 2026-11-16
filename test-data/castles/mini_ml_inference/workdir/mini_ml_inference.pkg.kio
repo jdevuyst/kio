@@ -1,4 +1,4 @@
-package mini_ml_inference;
+pkg mini_ml_inference;
 
 build {
   cache "out/.kio-cache/";

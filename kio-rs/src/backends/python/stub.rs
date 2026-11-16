@@ -2555,7 +2555,7 @@ mod tests {
             })
             .collect();
         let parsed_package_file =
-            parse_package_file(&format!("package pkg;\n{package_file_src}"), None)
+            parse_package_file(&format!("pkg pkg;\n{package_file_src}"), None)
                 .expect("parse package file");
         let (lowered_modules, lowered_package_file) =
             FullPipeline::lower_package(parsed_modules, Some(parsed_package_file))
@@ -2759,7 +2759,7 @@ mod tests {
 
     #[test]
     fn stage_protocol_variance_composes_captures_and_nested_stages() {
-        let pkg = build_package(&["module main; pub fn unit() { () }"], "bridge { main; }");
+        let pkg = build_package(&["mod main; pub fn unit() { () }"], "bridge { main; }");
         let prepared = PreparedBoundaryCallableSites::collect(&pkg, None).expect("prepare");
         let mut stub = PreparedPythonStub::new(&pkg, &prepared, "Greeter".to_owned(), "greeter");
         stub.render_callable_protocol();
@@ -2830,7 +2830,7 @@ mod tests {
     #[test]
     fn stage_protocol_variance_batches_all_captures_in_one_annotation_walk() {
         const CAPTURES: usize = 64;
-        let pkg = build_package(&["module main; pub fn unit() { () }"], "bridge { main; }");
+        let pkg = build_package(&["mod main; pub fn unit() { () }"], "bridge { main; }");
         let prepared = PreparedBoundaryCallableSites::collect(&pkg, None).expect("prepare");
         let mut stub = PreparedPythonStub::new(&pkg, &prepared, "Greeter".to_owned(), "greeter");
         stub.render_callable_protocol();
@@ -2851,10 +2851,7 @@ mod tests {
 
     #[test]
     fn protocol_localization_batches_mixed_exact_roots_and_preserves_ordinal_holes() {
-        let pkg = build_package(
-            &["module main; pub fn unit() -> . { () }"],
-            "bridge { main; }",
-        );
+        let pkg = build_package(&["mod main; pub fn unit() -> . { () }"], "bridge { main; }");
         let prepared = PreparedBoundaryCallableSites::collect(&pkg, None).expect("prepare");
         let mut stub = PreparedPythonStub::new(&pkg, &prepared, "Greeter".to_owned(), "greeter");
         let mut signatures = vec![FnSig {
@@ -2905,10 +2902,7 @@ mod tests {
     fn typed_dict_selection_visits_current_inventory_once_per_instantiation() {
         const WIDTH: usize = 16;
         const DEPTH: usize = 16;
-        let pkg = build_package(
-            &["module main; pub fn unit() -> . { () }"],
-            "bridge { main; }",
-        );
+        let pkg = build_package(&["mod main; pub fn unit() -> . { () }"], "bridge { main; }");
         let prepared = PreparedBoundaryCallableSites::collect(&pkg, None).expect("prepare");
         let mut stub = PreparedPythonStub::new(&pkg, &prepared, "Greeter".to_owned(), "greeter");
         stub.root_bindings = (0..WIDTH)
@@ -2974,10 +2968,7 @@ mod tests {
 
     #[test]
     fn typed_dict_definitions_share_only_exact_fields_and_binders() {
-        let pkg = build_package(
-            &["module main; pub fn unit() -> . { () }"],
-            "bridge { main; }",
-        );
+        let pkg = build_package(&["mod main; pub fn unit() -> . { () }"], "bridge { main; }");
         let prepared = PreparedBoundaryCallableSites::collect(&pkg, None).expect("prepare");
         let mut stub = PreparedPythonStub::new(&pkg, &prepared, "Greeter".to_owned(), "greeter");
         stub.root_bindings = ["First", "Second"]
@@ -3043,7 +3034,7 @@ mod tests {
     #[test]
     fn phantom_host_protocol_roots_are_covariant() {
         let pkg = build_package(
-            &["module main; host type Token; pub fn unit() -> . { () }"],
+            &["mod main; host type Token; pub fn unit() -> . { () }"],
             "bridge { main; }",
         );
         let stub: String = lower_package_to_stub(&pkg, "greeter").expect("render");
@@ -3065,7 +3056,7 @@ mod tests {
     #[test]
     fn public_newtype_indices_do_not_expand_payloads_at_wide_sites() {
         for width in [8, 32] {
-            let mut source = "module main;".to_owned();
+            let mut source = "mod main;".to_owned();
             for index in 0..width {
                 source.push_str(&format!(
                     " pub type {{ Wrapper{index:03}[A]: A -> A {{ \
@@ -3101,7 +3092,7 @@ mod tests {
     #[test]
     fn returned_function_preserves_product_source_parameter() {
         let pkg = build_package(
-            &["module main; \
+            &["mod main; \
                host type I32 role(i32); \
                pub fn make() -> (& I32 & I32) -> I32 { \
                  .(, left: I32, right: I32) { left } \
@@ -3120,7 +3111,7 @@ mod tests {
 
     #[test]
     fn python_310_bottom_uses_no_return() {
-        let pkg = build_package(&["module main; host fn abort() -> !;"], "bridge { main; }");
+        let pkg = build_package(&["mod main; host fn abort() -> !;"], "bridge { main; }");
         let stub = lower_package_to_stub(&pkg, "greeter").expect("render");
         assert!(
             stub.contains("def abort(self) -> __kio_typing__.NoReturn: ..."),
@@ -3150,7 +3141,7 @@ mod tests {
             );
         }
         let pkg = build_package(
-            &["module main; \
+            &["mod main; \
                host fn typing() -> .; \
                host fn z_stop() -> !; \
                pub fn check() { typing() }"],
@@ -3180,7 +3171,7 @@ mod tests {
     #[test]
     fn directly_written_unit_source_has_a_nullary_public_facade() {
         let pkg = build_package(
-            &["module main; \
+            &["mod main; \
                pub fn nullary() -> . { () } \
                pub fn explicit(value: .) -> . { value }"],
             "bridge { main; }",
@@ -3194,7 +3185,7 @@ mod tests {
     #[test]
     fn first_class_unit_keeps_one_domain_argument_and_type_stages_stay_separate() {
         let pkg = build_package(
-            &["module main; \
+            &["mod main; \
                pub fn relay(f: . -> .) -> . -> . { f } \
                host fn stages(f: [A][ B] A -> B -> A) -> .;"],
             "bridge { main; }",
@@ -3235,7 +3226,7 @@ mod tests {
     #[test]
     fn callable_alias_retains_one_positional_domain() {
         let pkg = build_package(
-            &["module main; pub fn relay(f: . -> .) -> . -> . { f }"],
+            &["mod main; pub fn relay(f: . -> .) -> . -> . { f }"],
             "bridge { main; }",
         );
         let stub = lower_package_to_stub(&pkg, "facade").expect("render");
@@ -3251,12 +3242,12 @@ mod tests {
     #[test]
     fn shared_stage_files_are_closed_and_independent_of_package_inventory() {
         let first = build_package(
-            &["module alpha; host fn use(f: [A] A -> A) -> .;"],
+            &["mod alpha; host fn use(f: [A] A -> A) -> .;"],
             "bridge { alpha; }",
         );
         let second = build_package(
             &[
-                "module beta; host type Token; host fn extra(f: [A][ B] A -> B -> A) -> .; host fn use(f: [A] A -> A) -> .;",
+                "mod beta; host type Token; host fn extra(f: [A][ B] A -> B -> A) -> .; host fn use(f: [A] A -> A) -> .;",
             ],
             "bridge { beta; }",
         );
@@ -3312,7 +3303,7 @@ mod tests {
     #[test]
     fn readable_declaration_views_alias_exact_classes_and_constructor_indices() {
         let pkg = build_package(
-            &["module api; host type Token; host type Box[A]; \
+            &["mod api; host type Token; host type Box[A]; \
                pub fn keep[A](value: Box[A]) -> Box[A] { value } \
                pub type { Wrapper[A]: Token & A { pub mk; pub get; }; }"],
             "bridge { api; }",
@@ -3356,7 +3347,7 @@ mod tests {
 
     #[test]
     fn readable_slot_views_preserve_sources_and_local_stage_order() {
-        let source = "module api; host fn apply_poly(f: [T] T -> T) -> .; pub type { Shadow[T]: T & ([U] U -> U) { pub mk; pub get; }; }";
+        let source = "mod api; host fn apply_poly(f: [T] T -> T) -> .; pub type { Shadow[T]: T & ([U] U -> U) { pub mk; pub get; }; }";
         let pkg = build_package(&[source], "bridge { api; }");
         let expanded = build_package(
             &[&format!(
@@ -3385,8 +3376,8 @@ mod tests {
     fn readable_views_keep_module_and_member_roles_distinct() {
         let pkg = build_package(
             &[
-                "module a/b; host fn use(f: [T] T -> T) -> .;",
-                "module a_b; host fn use(f: [T] T -> T) -> .; pub fn mk(f: . -> .) -> . -> . { f } pub type { N: . { pub mk; pub get; }; }",
+                "mod a/b; host fn use(f: [T] T -> T) -> .;",
+                "mod a_b; host fn use(f: [T] T -> T) -> .; pub fn mk(f: . -> .) -> . -> . { f } pub type { N: . { pub mk; pub get; }; }",
             ],
             "bridge { a/b; a_b; }",
         );
@@ -3408,7 +3399,7 @@ mod tests {
     #[test]
     fn canonical_binary_slots_keep_nominals_explicit() {
         let pkg = build_package(
-            &["module main; \
+            &["mod main; \
                host type N role(i32); \
                pub type { Named: N { pub mk; pub get; }; }; \
                host fn split(a: N, b: N) -> N; \
@@ -3442,7 +3433,7 @@ mod tests {
     #[test]
     fn type_variable_erasure_observes_ordered_and_nested_binder_scope() {
         let pkg = build_package(
-            &["module main; \
+            &["mod main; \
                host type Str role(str); \
                pub type { T: Str { pub mk; pub get; }; }; \
                pub type { Box[A]: A { pub mk; pub get; }; }; \
@@ -3506,7 +3497,7 @@ mod tests {
     #[test]
     fn synthesized_shapes_omit_phantom_package_roots() {
         let pkg = build_package(
-            &["module main; \
+            &["mod main; \
                host type Str role(str); \
                pub type { Shadow[T]: T & ([T] T -> T) { \
                  pub mk; pub get; \
@@ -3536,7 +3527,7 @@ mod tests {
     #[test]
     fn nested_forall_protocols_thread_captured_outer_binders() {
         let pkg = build_package(
-            &["module main; \
+            &["mod main; \
                pub type { Pack<T>: T { \
                  pub mk; pub get; \
                }; };"],
@@ -3593,7 +3584,7 @@ mod tests {
     #[test]
     fn host_protocol_maps_roles_and_nests_by_module() {
         let pkg = build_package(
-            &["module main; \
+            &["mod main; \
                host type Str role(str); host type I64 role(i64); \
                host fn emit(p0: Str, p1: I64) -> .; \
                fn dummy() -> . { () }"],
@@ -3638,10 +3629,10 @@ mod tests {
     fn same_leaf_host_types_keep_exact_roles() {
         let pkg = build_package(
             &[
-                "module left; \
+                "mod left; \
                  host type Shared role(i32); \
                  host fn keep_left(value: Shared) -> Shared;",
-                "module right; \
+                "mod right; \
                  host type Shared role(str); \
                  host fn keep_right(value: Shared) -> Shared;",
             ],
@@ -3671,10 +3662,7 @@ mod tests {
 
     #[test]
     fn empty_host_makes_host_argument_optional() {
-        let pkg = build_package(
-            &["module main; pub fn run() -> . { () }"],
-            "bridge { main; }",
-        );
+        let pkg = build_package(&["mod main; pub fn run() -> . { () }"], "bridge { main; }");
         let stub = lower_package_to_stub(&pkg, "greeter").expect("render");
         assert!(
             stub.contains("class GreeterHost(__kio_typing__.Protocol):\n    ...\n"),
@@ -3689,7 +3677,7 @@ mod tests {
     #[test]
     fn structural_product_and_sum_export_shapes() {
         let pkg = build_package(
-            &["module main; \
+            &["mod main; \
                import __intrinsics__; \
                host type I32 role(i32); host type Str role(str); \
                pub fn split(p: (I32 & Str)) -> (I32 | Str) { \
@@ -3722,7 +3710,7 @@ mod tests {
     #[test]
     fn newtype_namespace_members_named_and_typed() {
         let pkg = build_package(
-            &["module main; \
+            &["mod main; \
                host type I32 role(i32); \
                pub type { Counter: I32 { pub mk; pub get; }; };"],
             "bridge { main; }",
@@ -3764,7 +3752,7 @@ mod tests {
     #[test]
     fn public_newtype_markers_case_words_and_preserve_affixes() {
         let pkg = build_package(
-            &["module main; \
+            &["mod main; \
                pub type { _Word_box__[Item_type]: Item_type { \
                  pub mk; pub get; \
                }; };"],
@@ -3785,8 +3773,8 @@ mod tests {
     fn generic_newtype_docs_belong_to_the_exact_public_constructor_index() {
         let pkg = build_package(
             &[
-                "module left;\n/// Left wrapper.\npub type { Box[A]: A { pub mk; pub get; }; };",
-                "module right;\n/// Right wrapper.\npub type { Box[A]: A { pub mk; pub get; }; };",
+                "mod left;\n/// Left wrapper.\npub type { Box[A]: A { pub mk; pub get; }; };",
+                "mod right;\n/// Right wrapper.\npub type { Box[A]: A { pub mk; pub get; }; };",
             ],
             "bridge { left; right; }",
         );
@@ -3814,7 +3802,7 @@ mod tests {
     #[test]
     fn opaque_newtypes_are_declaration_nominal_and_payload_hidden() {
         let pkg = build_package(
-            &["module main; \
+            &["mod main; \
                host type I32 role(i32); \
                pub type { Opaque_a: I32 { mk; get; }; }; \
                pub type { Opaque_b: I32 { mk; get; }; }; \
@@ -3879,7 +3867,7 @@ mod tests {
             );
         }
         let public_control = build_package(
-            &["module main; host type I32 role(i32); \
+            &["mod main; host type I32 role(i32); \
                pub type { Opaque_a: I32 { pub mk; pub get; }; };"],
             "bridge { main; }",
         );
@@ -3892,7 +3880,7 @@ mod tests {
     fn same_leaf_newtypes_keep_defining_module_identity() {
         let pkg = build_package(
             &[
-                "module left; \
+                "mod left; \
                  host type I32 role(i32); \
                  pub type { Token: I32 { mk; get; }; }; \
                  pub type { Build: I32 { pub mk; get; }; }; \
@@ -3900,7 +3888,7 @@ mod tests {
                  host fn round_left_build(value: Build) -> Build; \
                  pub fn make_left_token(value: I32) -> Token { Token.mk(value) } \
                  pub fn keep_left_build(value: Build) -> Build { value }",
-                "module right; \
+                "mod right; \
                  host type I32 role(i32); \
                  pub type { Token: I32 { mk; get; }; }; \
                  pub type { Build: I32 { pub mk; get; }; }; \
@@ -3989,7 +3977,7 @@ mod tests {
     #[test]
     fn newtype_namespace_uses_function_boundary_shapes_for_public_members() {
         let pkg = build_package(
-            &["module main; \
+            &["mod main; \
                host type I32 role(i32); \
                pub type { Make_only: I32 { pub mk; get; }; }; \
                pub type { Read_only: I32 { mk; pub get; }; }; \
@@ -4135,28 +4123,28 @@ mod tests {
     fn comptime_prefixed_user_types_keep_exact_boundary_identity() {
         let pkg = build_package(
             &[
-                "module visible; \
+                "mod visible; \
                  host type I32 role(i32); \
                  pub type { Comptime_bool: I32 { \
                    pub mk; pub get; \
                  }; }; \
                  pub fn round_visible(value: Comptime_bool) -> Comptime_bool { value }",
-                "module hidden; \
+                "mod hidden; \
                  host type I32 role(i32); \
                  pub type { Comptime_bool: I32 { \
                    mk; get; \
                  }; }; \
                  pub fn round_hidden(value: Comptime_bool) -> Comptime_bool { value }",
-                "module generic; \
+                "mod generic; \
                  pub fn keep[Comptime_bool](value: Comptime_bool) -> Comptime_bool { value }",
-                "module hostish; \
+                "mod hostish; \
                  host type Comptime_bool role(i32); \
                  pub type { Wrapped: Comptime_bool { \
                    pub mk; pub get; \
                  }; }; \
                  pub fn round_host(value: Comptime_bool) -> Comptime_bool { value } \
                  pub fn round_wrapped(value: Wrapped) -> Wrapped { value }",
-                "module aliasing; \
+                "mod aliasing; \
                  host type I32 role(i32); \
                  pub type Comptime_bool = I32; \
                  pub fn round_alias(value: Comptime_bool) -> Comptime_bool { value }",
@@ -4231,7 +4219,7 @@ mod tests {
         // method spelling; the class omits it and carries a `getattr`
         // escape (the access is `object`, never a lie).
         let pkg = build_package(
-            &["module main; pub fn is() -> . { () } pub fn ok() -> . { () }"],
+            &["mod main; pub fn is() -> . { () } pub fn ok() -> . { () }"],
             "bridge { main; }",
         );
         let stub = lower_package_to_stub(&pkg, "greeter").expect("render");
@@ -4249,7 +4237,7 @@ mod tests {
     #[test]
     fn hard_keyword_host_function_escapes_to_getattr() {
         let pkg = build_package(
-            &["module main; host fn is() -> .; host fn ok() -> .;"],
+            &["mod main; host fn is() -> .; host fn ok() -> .;"],
             "bridge { main; }",
         );
         let stub = lower_package_to_stub(&pkg, "greeter").expect("render");
@@ -4276,10 +4264,7 @@ mod tests {
 
     #[test]
     fn no_package_file_renders_empty_stub() {
-        let pkg = build_package(
-            &["module main; pub fn run() -> . { () }"],
-            "bridge { main; }",
-        );
+        let pkg = build_package(&["mod main; pub fn run() -> . { () }"], "bridge { main; }");
         let stub = lower_package_to_stub(&pkg, "greeter").expect("render");
         assert!(stub.starts_with("# Generated by kio"), "{stub}");
         assert!(stub.contains("import typing"), "{stub}");
@@ -4290,7 +4275,7 @@ mod tests {
     #[test]
     fn exact_host_bindings_reach_the_complete_generic_facade() {
         let pkg = build_package(
-            &["module api; \
+            &["mod api; \
                host type Count role(i32); \
                host type Token; \
                host type Box[A]; \
@@ -4337,7 +4322,7 @@ mod tests {
     #[test]
     fn unsaturated_newtype_witness_keeps_the_package_root_selection() {
         let pkg = build_package(
-            &["module api; \
+            &["mod api; \
                host type String role(str); \
                pub type { Box[A]: A { \
                  pub mk; pub get; \
@@ -4379,7 +4364,7 @@ mod tests {
     #[test]
     fn recursive_newtype_uses_a_finite_exact_nominal_leaf() {
         let pkg = build_package(
-            &["module main; \
+            &["mod main; \
                import __intrinsics__; \
                host type I32 role(i32); \
                pub rec type { Recursive: . | Recursive { \
@@ -4427,7 +4412,7 @@ mod tests {
     #[test]
     fn sealed_history_keeps_mixed_python_artifacts_live_only() {
         let pkg = build_package(
-            &["module api; \
+            &["mod api; \
                host type Live role(str); \
                host type Live_box[A]; \
                pub type { Live_token[A]: A { \
@@ -4439,11 +4424,11 @@ mod tests {
             "bridge { api; }",
         );
         let signature = crate::pass::parser::parse_signature_file(
-            r#"signature pkg v(3);
+            r#"sig pkg v(3);
 v(1) {
   nonbreaking {
     add {
-      module api {
+      mod api {
         host type Retired role(i32);
         host type Retired_box[A];
         type { Retired_token[A]: A {
@@ -4458,12 +4443,10 @@ v(1) {
 v(2) {
   nonbreaking {
     remove {
-      module api {
-        Retired;
-        Retired_box;
-        Retired_token;
-        old;
-      }
+      api.Retired;
+      api.Retired_box;
+      api.Retired_token;
+      api.old;
     }
   }
 }

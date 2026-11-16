@@ -22,17 +22,27 @@
 /// waits until its producer has left MEM and written the file: two cycles
 /// for a back-to-back dependence, one for a dependence at distance two,
 /// and none beyond that.
-module cpu/hazard;
+mod cpu/hazard;
 
-import cpu/isa(Instr, dest_of, is_load, reads_reg, writes_reg);
-import cpu/machine(Cpu, Machine, stage_empty);
-import cpu/machine(Ex_mem, Forwarding, Mem_wb, Prog, Regs, St_ex, St_id, St_mem, St_wb);
-import macros/control(macro if);
-import macros/match(macro match);
-import macros/row_macros(macro select as row_select);
-import macros/spine_macros(macro widen_sum);
-import testapi(Array, Bool, I32);
-import testapi/array(array_get);
+import cpu/isa { type Instr; fn dest_of; fn is_load; fn reads_reg; fn writes_reg }
+import cpu/machine {
+  type Ex_mem;
+  type Forwarding;
+  type Mem_wb;
+  type Prog;
+  type Regs;
+  type St_ex;
+  type St_id;
+  type St_mem;
+  type St_wb
+}
+import cpu/machine { type Cpu; type Machine; fn stage_empty }
+import macros/control { macro if }
+import macros/match { macro match }
+import macros/row_macros { macro select as row_select }
+import macros/spine_macros { macro widen_sum }
+import testapi { type Array; type Bool; type I32 }
+import testapi/array { fn array_get }
 
 /// Where an operand value actually came from, which is the same thing as
 /// which wire the EX stage's operand mux selected.

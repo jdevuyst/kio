@@ -5,12 +5,12 @@
 /// raises. Nothing here renders itself: `cellar/report` is the only module that
 /// turns an outcome into English, and `cellar/engine` is the only one that
 /// mints it.
-module cellar/outcome;
+mod cellar/outcome;
 
 import cellar/ids as ids;
-import macros/match(macro match);
-import macros/spine_macros(macro widen_sum);
-import testapi(Bool, String);
+import macros/match { macro match }
+import macros/spine_macros { macro widen_sum }
+import testapi { type Bool; type String }
 
 pub type Outcome =
   | { Saw_room: . }

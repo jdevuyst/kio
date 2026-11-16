@@ -61,7 +61,7 @@ fn template_canonicalization_handles_deep_type_arguments() {
 
 #[test]
 fn template_canonicalization_materializes_deep_alias_bodies() {
-    let mut module = parse_module("module owner; type Deep = .;");
+    let mut module = parse_module("mod owner; type Deep = .;");
     let Item::TypeAlias(alias) = &mut module.module.items[0] else {
         panic!("fixture declares an alias")
     };
@@ -86,11 +86,11 @@ fn template_canonicalization_preserves_qualified_nominals_and_rigid_heads() {
     let package = lowered_package(&[
         (
             "owner.kio",
-            "module owner; host type Actual; type Hidden = Actual;",
+            "mod owner; host type Actual; type Hidden = Actual;",
         ),
         (
             "caller.kio",
-            "module caller; import owner as different; host type Actual; type T = .; type F[A] = .;",
+            "mod caller; import owner as different; host type Actual; type T = .; type F[A] = .;",
         ),
     ]);
     let caller = &package.module("caller").expect("caller").module;

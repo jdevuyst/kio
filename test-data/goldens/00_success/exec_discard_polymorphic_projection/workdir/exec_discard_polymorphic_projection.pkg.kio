@@ -1,4 +1,4 @@
-package exec_discard_polymorphic_projection;
+pkg exec_discard_polymorphic_projection;
 
 build {
   cache "out/.kio-cache/";

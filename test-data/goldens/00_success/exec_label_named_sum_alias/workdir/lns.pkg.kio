@@ -1,4 +1,4 @@
-package lns;
+pkg lns;
 
 build {
   cache "out/.kio-cache/";

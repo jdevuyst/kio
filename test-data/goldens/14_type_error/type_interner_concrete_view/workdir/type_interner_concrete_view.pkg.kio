@@ -1,4 +1,4 @@
-package type_interner_concrete_view;
+pkg type_interner_concrete_view;
 
 build {
   target js {

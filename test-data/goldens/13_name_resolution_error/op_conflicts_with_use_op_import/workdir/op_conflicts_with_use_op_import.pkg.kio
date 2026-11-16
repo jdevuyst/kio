@@ -1,4 +1,4 @@
-package op_conflicts_with_use_op_import;
+pkg op_conflicts_with_use_op_import;
 
 build {
   target js {

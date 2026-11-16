@@ -1,10 +1,10 @@
-module testapi/main;
+mod testapi/main;
 
-import macros/control(macro if);
+import macros/control { macro if }
 import sensor_alarm_window/fixtures as fixtures;
 import sensor_alarm_window/scanner as scanner;
 import sensor_alarm_window/window as window;
-import testapi(Bool, String);
+import testapi { type Bool; type String }
 import testapi/fmt as fmt;
 import testapi/io as io;
 import testapi/text as text;

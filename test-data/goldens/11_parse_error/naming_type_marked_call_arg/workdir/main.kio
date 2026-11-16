@@ -1,4 +1,4 @@
-module main;
+mod main;
 
 fn id[A](x: A) -> A { x }
 

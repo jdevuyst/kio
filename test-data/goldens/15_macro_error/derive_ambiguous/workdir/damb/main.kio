@@ -1,6 +1,6 @@
-module damb/main;
+mod damb/main;
 
-import macros/derive(macro derive);
+import macros/derive { macro derive }
 
 pub type { Box[A]: A { pub mk; pub get } }
 

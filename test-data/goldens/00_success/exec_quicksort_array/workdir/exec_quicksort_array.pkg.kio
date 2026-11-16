@@ -1,4 +1,4 @@
-package exec_quicksort_array;
+pkg exec_quicksort_array;
 
 build {
   cache "out/.kio-cache/";

@@ -1,4 +1,4 @@
-package max_flow_cut_planner;
+pkg max_flow_cut_planner;
 
 build {
   target js {

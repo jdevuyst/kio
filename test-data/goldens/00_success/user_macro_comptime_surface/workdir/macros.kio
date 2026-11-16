@@ -1,9 +1,9 @@
-module macros;
+mod macros;
 
 import __intrinsics__;
 
 import __comptime__;
-import testapi(String);
+import testapi { type String }
 
 pure fn comptime_bool_and(ct: __Comptime__, left: Comptime_bool, right: Comptime_bool) -> Comptime_bool {
   __comptime_if_then_else__(ct)(

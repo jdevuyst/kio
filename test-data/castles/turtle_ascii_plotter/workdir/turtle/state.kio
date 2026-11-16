@@ -6,14 +6,14 @@
 /// going, and come back to draw again — so the plotter clips *ink*, not
 /// movement. That is what a rasterizer does, and it is why the state carries a
 /// clip counter rather than a bounds check on the position.
-module turtle/state;
+mod turtle/state;
 
-import macros/control(macro if);
-import macros/match(macro match);
-import macros/row_macros(macro select, macro with);
-import macros/spine_macros(macro widen_sum);
-import testapi(Bool, I32, String);
-import testapi/arith(add_i32);
+import macros/control { macro if }
+import macros/match { macro match }
+import macros/row_macros { macro select; macro with }
+import macros/spine_macros { macro widen_sum }
+import testapi { type Bool; type I32; type String }
+import testapi/arith { fn add_i32 }
 import turtle/canvas as canvas;
 
 /// Which way the turtle faces. Row 0 is the top of the plot, so `north` walks

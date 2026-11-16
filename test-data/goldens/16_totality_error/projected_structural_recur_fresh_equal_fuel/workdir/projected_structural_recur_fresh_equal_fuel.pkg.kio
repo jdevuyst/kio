@@ -1,4 +1,4 @@
-package projected_structural_recur_fresh_equal_fuel;
+pkg projected_structural_recur_fresh_equal_fuel;
 
 build {
   cache "out/.kio-cache/";

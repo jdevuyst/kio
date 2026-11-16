@@ -11,9 +11,9 @@ bridge {
   kiodoc;
 }
 
-module kiodoc;
+mod kiodoc;
 
-import spine_macros(macro narrow_prod);
+import spine_macros {macro narrow_prod}
 
 host type String role(str);
 host fn string_concat(p0: String, p1: String) -> String;
@@ -223,9 +223,9 @@ when [adopting the library](using-libraries.md#the-macro-library).
 This complete module defines two functions that supply exactly the same arguments:
 
 ```kio {}
-module block_splices;
+mod block_splices;
 
-import match(macro match);
+import match { macro match }
 
 host type String role(str);
 
@@ -277,9 +277,9 @@ inserts the inner condition. As with `match` above, adjust the module path to
 your configured library dependency:
 
 ```kio {}
-module nested_block_splices;
+mod nested_block_splices;
 
-import control(Bool, macro if);
+import control { type Bool; macro if }
 
 fn outer_splice[A](value: A) -> A {
   if {

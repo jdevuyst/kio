@@ -151,7 +151,7 @@ dispatch key. The dot wraps the whole operand once before ordinary call
 preparation and does not consult a macro's trailing descriptors. Preserve
 comments around marker tokens when canonicalizing their spacing.
 
-Keep ordinary declarations named `op` distinct from `op macro` declarations,
+Keep ordinary declarations named `op` distinct from `op_macro` declarations,
 including incomplete editor text and lazy item splitting. Macro operator
 targets carry the actually resolved macro identity into ordinary expansion;
 user spelling and generated names confer no primitive authority. Exercise

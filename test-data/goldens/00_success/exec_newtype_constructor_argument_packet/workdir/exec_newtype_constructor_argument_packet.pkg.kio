@@ -1,4 +1,4 @@
-package exec_newtype_constructor_argument_packet;
+pkg exec_newtype_constructor_argument_packet;
 
 build {
   cache "out/.kio-cache/";

@@ -1,4 +1,4 @@
-package build_sum_elimination;
+pkg build_sum_elimination;
 
 build {
   cache "out/.kio-cache/";

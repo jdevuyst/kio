@@ -1,4 +1,4 @@
-package rust_output_layout;
+pkg rust_output_layout;
 
 build {
   cache "out/.kio-cache/";

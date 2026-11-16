@@ -1,4 +1,4 @@
-module right;
+mod right;
 
 pub fn make[Right](value: Right) -> [Right] Right -> Right {
   .[Item](inner: Item) -> Item { inner }

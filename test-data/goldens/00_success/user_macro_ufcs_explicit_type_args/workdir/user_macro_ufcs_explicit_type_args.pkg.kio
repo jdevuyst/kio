@@ -1,4 +1,4 @@
-package user_macro_ufcs_explicit_type_args;
+pkg user_macro_ufcs_explicit_type_args;
 
 build {
   cache "out/.kio-cache/";

@@ -1,6 +1,6 @@
-module u/main;
+mod u/main;
 
-import u(Int, String);
+import u { type Int; type String }
 
 fn want_int(x: Int) -> Int { x }
 

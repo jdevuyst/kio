@@ -1,4 +1,4 @@
-package exec_forall_sum_injection;
+pkg exec_forall_sum_injection;
 
 build {
   target js {

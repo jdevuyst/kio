@@ -1,4 +1,4 @@
-package dt;
+pkg dt;
 
 build {
   cache "out/.kio-cache/";

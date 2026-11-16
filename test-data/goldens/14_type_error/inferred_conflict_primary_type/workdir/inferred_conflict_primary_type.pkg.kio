@@ -1,4 +1,4 @@
-package inferred_conflict_primary_type;
+pkg inferred_conflict_primary_type;
 
 build {
   target js {

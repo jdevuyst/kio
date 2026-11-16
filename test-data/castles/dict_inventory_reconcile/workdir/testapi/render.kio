@@ -1,30 +1,30 @@
-module testapi/render;
+mod testapi/render;
 
-import testapi(String);
-import testapi/domain(
-, Line
-, Report
-, Totals
-, line_actual_of
-, line_delta_of
-, line_expected_of
-, line_name_of
-, line_status_of
-, report_bolt_of
-, report_gear_of
-, report_panel_of
-, report_seal_of
-, report_totals_of
-, report_unknown_of
-, report_valve_of
-, totals_missing
-, totals_ok
-, totals_skewed
-, totals_unknown
-);
-import testapi/fmt(int_to_string);
-import testapi/io(print);
-import testapi/text(string_concat);
+import testapi { type String }
+import testapi/domain {
+  type Line;
+  type Report;
+  type Totals;
+  fn line_actual_of;
+  fn line_delta_of;
+  fn line_expected_of;
+  fn line_name_of;
+  fn line_status_of;
+  fn report_bolt_of;
+  fn report_gear_of;
+  fn report_panel_of;
+  fn report_seal_of;
+  fn report_totals_of;
+  fn report_unknown_of;
+  fn report_valve_of;
+  fn totals_missing;
+  fn totals_ok;
+  fn totals_skewed;
+  fn totals_unknown
+}
+import testapi/fmt { fn int_to_string }
+import testapi/io { fn print }
+import testapi/text { fn string_concat }
 
 fn cat3(a: String, b: String, c: String) -> String { string_concat(a, string_concat(b, c)) }
 

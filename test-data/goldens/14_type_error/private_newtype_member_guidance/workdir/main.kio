@@ -1,5 +1,5 @@
-module main;
+mod main;
 
-import provider(Box);
+import provider { type Box }
 
 fn bad(value: .) -> Box { Box.gte(value) }

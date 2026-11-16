@@ -1,4 +1,4 @@
-module list/core;
+mod list/core;
 
 pub rec type { List[A]: . | (A & List[A]) { pub mk; pub get } }
 

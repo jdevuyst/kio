@@ -1,5 +1,5 @@
-module outside;
+mod outside;
 
-import scope/box(Box);
+import scope/box { type Box }
 
 fn bad(value: .) -> Box[.] { Box.mk(value) }

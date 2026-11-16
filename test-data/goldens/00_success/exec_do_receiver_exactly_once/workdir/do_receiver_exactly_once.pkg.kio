@@ -1,4 +1,4 @@
-package do_receiver_exactly_once;
+pkg do_receiver_exactly_once;
 
 build {
   target js {

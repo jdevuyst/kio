@@ -1,9 +1,9 @@
-module main;
+mod main;
 
 fn empty() { () }
 
 fn prepend(value: ., rest: .) { value }
 
-varop [* *] { foldr prepend empty; };
+op_var [* *] { foldr prepend empty; };
 
 fn rejected() { [* (); () *] }

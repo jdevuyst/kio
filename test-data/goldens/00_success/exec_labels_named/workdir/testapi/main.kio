@@ -1,8 +1,8 @@
-module testapi/main;
+mod testapi/main;
 
-import macros/match(macro match);
-import testapi(String);
-import testapi/io(print);
+import macros/match { macro match }
+import testapi { type String }
+import testapi/io { fn print }
 
 // The named nominal declaration introduces the product alias and its
 // component types. The body constructs the pair, then unwraps its second component.

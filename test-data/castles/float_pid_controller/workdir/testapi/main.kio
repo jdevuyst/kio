@@ -1,11 +1,11 @@
-module testapi/main;
+mod testapi/main;
 
-import macros/row_macros(macro select);
-import pid/model(First, Second, Third, Timeline, scenario);
-import pid/pipeline(run);
-import pid/report(print_step);
-import testapi(String);
-import testapi/io(print);
+import macros/row_macros { macro select }
+import pid/model { type First; type Second; type Third; type Timeline; fn scenario }
+import pid/pipeline { fn run }
+import pid/report { fn print_step }
+import testapi { type String }
+import testapi/io { fn print }
 
 pub fn main() {
   let timeline = run(scenario());

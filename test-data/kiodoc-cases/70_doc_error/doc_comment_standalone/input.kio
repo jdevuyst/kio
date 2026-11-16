@@ -6,6 +6,6 @@
 /// ```kio {}
 /// ()
 /// ```
-module doctest/standalone;
+mod doctest/standalone;
 
 pub fn greet() { () }

@@ -1,6 +1,6 @@
-module guest;
+mod guest;
 
-import hostapi(I32, add_i32);
+import hostapi { type I32; fn add_i32 }
 
 pub fn sum9(
 , first_addend: I32

@@ -1,4 +1,4 @@
-module widget/store;
+mod widget/store;
 
 import core/a as _rehost_gdgphcgfcpgb;
 import core/b as _rehost_gdgphcgfcpgc;

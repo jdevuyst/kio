@@ -1,13 +1,13 @@
-module testapi/main;
+mod testapi/main;
 
-import macros/match(macro match);
+import macros/match { macro match }
 import report/aggregate as aggregate;
 import report/events as events;
 import report/model as model;
 import report/render as render;
-import testapi(String);
+import testapi { type String }
 import testapi/io as io;
-import testapi/iter(loop);
+import testapi/iter { fn loop }
 
 rec(loop) fn consume(state: model.State) -> model.State {
   match(io.read_ascii_line()) {

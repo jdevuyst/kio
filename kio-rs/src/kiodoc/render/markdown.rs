@@ -280,7 +280,7 @@ mod tests {
 
     #[test]
     fn fenced_code_block() {
-        let source = "module kio_doc; fn value() { let x = 1; x }";
+        let source = "mod kio_doc; fn value() { let x = 1; x }";
         crate::pass::parser::parse(source).expect("valid declaration and local binding");
         let md = format!("```kio\n{source}\n```");
         let html = render_html(&md);
@@ -295,7 +295,7 @@ mod tests {
     #[test]
     fn item_signature_uses_declaration_context_for_type_binder_brackets() {
         let signature = "pub fn identity[A](x: A) -> A";
-        crate::pass::parser::parse(&format!("module kio_doc;\n{signature} {{ x }}"))
+        crate::pass::parser::parse(&format!("mod kio_doc;\n{signature} {{ x }}"))
             .expect("valid complete declaration supplies the body-less signature");
         let html = highlight_kio_item_signature(signature);
         assert!(html.contains("<span class=\"kio-punctuation-bracket\">[</span>"));
@@ -318,8 +318,8 @@ mod tests {
     #[test]
     fn item_signature_separates_structural_brackets_from_marker_words() {
         for (head, marker, count) in [("[]", "", 0), ("[* *]", "*", 2), ("[**]", "**", 1)] {
-            let signature = format!("pub varop {head} {{ foldl join empty; }};");
-            crate::pass::parser::parse(&format!("module kio_doc;\n{signature}"))
+            let signature = format!("pub op_var {head} {{ foldl join empty; }};");
+            crate::pass::parser::parse(&format!("mod kio_doc;\n{signature}"))
                 .expect("signature exercises the parser-backed path");
             let html = highlight_kio_item_signature(&signature);
             assert!(html.contains("<span class=\"kio-punctuation-bracket\">[</span>"));

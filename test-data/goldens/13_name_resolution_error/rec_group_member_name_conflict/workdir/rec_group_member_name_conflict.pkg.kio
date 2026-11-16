@@ -1,4 +1,4 @@
-package rec_group_member_name_conflict;
+pkg rec_group_member_name_conflict;
 
 build {
   cache "out/.kio-cache/";

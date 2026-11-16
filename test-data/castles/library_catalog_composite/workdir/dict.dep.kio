@@ -1,4 +1,4 @@
-dependency dict;
+dep dict;
 
 source {
   path "../../../poc/dict/workdir/dict.pkg.kio"

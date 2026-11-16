@@ -1,25 +1,25 @@
-module config/editor;
+mod config/editor;
 
-import macros/match(macro match);
-import macros/row_macros(macro select, macro with);
-import optics/optics(
-, Lens
-, Prism
-, assoc_iso
-, compose_lens
-, iso_to_lens
-, left_prism
-, over
-, over_prism
-, review
-, right_prism
-, set
-, view
-);
-import testapi(Bool, I32, String);
-import testapi/arith(add_i32, eq_i32, leq_i32, mul_i32, sub_i32);
-import testapi/fmt(bool_to_string, int_to_string);
-import testapi/text(string_concat);
+import macros/match { macro match }
+import macros/row_macros { macro select; macro with }
+import optics/optics {
+  type Lens;
+  type Prism;
+  fn assoc_iso;
+  fn compose_lens;
+  fn iso_to_lens;
+  fn left_prism;
+  fn over;
+  fn over_prism;
+  fn review;
+  fn right_prism;
+  fn set;
+  fn view
+}
+import testapi { type Bool; type I32; type String }
+import testapi/arith { fn add_i32; fn eq_i32; fn leq_i32; fn mul_i32; fn sub_i32 }
+import testapi/fmt { fn bool_to_string; fn int_to_string }
+import testapi/text { fn string_concat }
 
 type Mode_state = { Stable_mode: . } | { Degraded_mode: I32 };
 

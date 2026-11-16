@@ -1,4 +1,4 @@
-package cellar_crawl_adventure;
+pkg cellar_crawl_adventure;
 
 build {
   cache "out/.kio-cache/";

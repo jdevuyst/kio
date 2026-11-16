@@ -581,19 +581,19 @@ mod tests {
     /// for the `.kio` (regular module) path.
     #[test]
     fn format_one_handles_regular_module() {
-        let src = "module a;\n\nfn id[A](x: A) -> A { x }\n";
+        let src = "mod a;\n\nfn id[A](x: A) -> A { x }\n";
         let out = format_one(Path::new("a.kio"), src, false).expect("parse + format");
         // The canonical form keeps the signature inline at this
         // width; the A1 width-driven layout only breaks when the
         // flat form overflows the 100-column budget.
-        assert!(out.contains("module a;"));
+        assert!(out.contains("mod a;"));
         assert!(out.contains("fn id"));
     }
 
     #[test]
     fn format_one_preserves_recursive_type_group_outer_docs() {
         let source = concat!(
-            "module docs;\n",
+            "mod docs;\n",
             "\n",
             "/// outer group docs\n",
             "rec {\n",
@@ -617,7 +617,7 @@ mod tests {
     /// invalid input.
     #[test]
     fn format_one_returns_parse_error_on_garbage() {
-        let src = "module a;\n\nfn ()))(())";
+        let src = "mod a;\n\nfn ()))(())";
         let err = format_one(Path::new("a.kio"), src, false);
         assert!(err.is_err(), "expected parse error, got {err:?}");
     }
@@ -625,15 +625,15 @@ mod tests {
     #[test]
     fn imported_multislot_fold_formats_with_package_provider_context() {
         let temp = tempfile::tempdir().expect("temp package");
-        std::fs::write(temp.path().join("test.pkg.kio"), "package test;\n")
+        std::fs::write(temp.path().join("test.pkg.kio"), "pkg test;\n")
             .expect("write package file");
         std::fs::write(
             temp.path().join("syntax.kio"),
-            "module syntax;\npub varop [% %] { foldr cons nil; };\n",
+            "mod syntax;\npub op_var [% %] { foldr cons nil; };\n",
         )
         .expect("write operator provider");
-        let source = "module main;\nimport syntax(varop [% %]);\nfn pairs(k1:A,v1:A,k2:A,v2:A)->A{[% (k1,v1),(k2,v2) %]}\n";
-        let expected = "module main;\n\nimport syntax(varop [% %]);\n\nfn pairs(k1: A, v1: A, k2: A, v2: A) -> A { [% (k1, v1), (k2, v2) %] }\n";
+        let source = "mod main;\nimport syntax { op_var [% %] }\nfn pairs(k1:A,v1:A,k2:A,v2:A)->A{[% (k1,v1),(k2,v2) %]}\n";
+        let expected = "mod main;\n\nimport syntax { op_var [% %] }\n\nfn pairs(k1: A, v1: A, k2: A, v2: A) -> A { [% (k1, v1), (k2, v2) %] }\n";
         let formatted =
             format_one(Path::new("main.kio"), source, false).expect("package-aware format");
         assert_eq!(formatted, expected);
@@ -655,17 +655,17 @@ mod tests {
             .expect("provider dirs");
         std::fs::write(
             &provider,
-            "module a/d/e;\npub varop [% %] { foldr cons nil; };\n",
+            "mod a/d/e;\npub op_var [% %] { foldr cons nil; };\n",
         )
         .expect("operator provider");
-        let source = "module a/b/c;\nimport a/d/e(varop [% %]);\nfn pairs(k1:A,v1:A,k2:A,v2:A)->A{[% (k1,v1),(k2,v2) %]}\n";
-        let expected = "module a/b/c;\n\nimport a/d/e(varop [% %]);\n\nfn pairs(k1: A, v1: A, k2: A, v2: A) -> A { [% (k1, v1), (k2, v2) %] }\n";
+        let source = "mod a/b/c;\nimport a/d/e { op_var [% %] }\nfn pairs(k1:A,v1:A,k2:A,v2:A)->A{[% (k1,v1),(k2,v2) %]}\n";
+        let expected = "mod a/b/c;\n\nimport a/d/e { op_var [% %] }\n\nfn pairs(k1: A, v1: A, k2: A, v2: A) -> A { [% (k1, v1), (k2, v2) %] }\n";
         assert_eq!(
             format_one_with_file_context(&consumer, source, false).expect("file-context format"),
             expected
         );
 
-        std::fs::write(temp.path().join("a/near.pkg.kio"), "package near;\n")
+        std::fs::write(temp.path().join("a/near.pkg.kio"), "pkg near;\n")
             .expect("misleading package marker");
         assert!(
             format_one_with_file_context(&consumer, source, false).is_ok(),
@@ -676,30 +676,30 @@ mod tests {
     #[test]
     fn package_aware_formatting_leaves_operator_origins_to_resolution() {
         let temp = tempfile::tempdir().expect("temp package");
-        std::fs::write(temp.path().join("test.pkg.kio"), "package test;\n")
+        std::fs::write(temp.path().join("test.pkg.kio"), "pkg test;\n")
             .expect("write package file");
         std::fs::write(
             temp.path().join("binary.kio"),
-            "module binary; pub fn choose(a: ., b: .) -> . { a } pub op _ ? _ { impl choose; };",
+            "mod binary; pub fn choose(a: ., b: .) -> . { a } pub op _ ? _ { impl choose; };",
         )
         .expect("write binary provider");
         std::fs::write(
             temp.path().join("ternary.kio"),
-            "module ternary; pub fn choose(a: ., b: ., c: .) -> . { a } pub op _ ? _ : _ { impl choose; };",
+            "mod ternary; pub fn choose(a: ., b: ., c: .) -> . { a } pub op _ ? _ : _ { impl choose; };",
         )
         .expect("write ternary provider");
 
-        let ambiguous = "module main; import binary(op _ ? _); import ternary(op _ ? _ : _); fn broken() -> . { ( }";
+        let ambiguous = "mod main; import binary {op _ ? _} import ternary {op _ ? _ : _} fn broken() -> . { ( }";
         let error = format_one(Path::new("main.kio"), ambiguous, false)
             .expect_err("formatting must report the malformed body");
         assert!(matches!(error, Error::Parse(_)));
         assert!(error.diag().1.contains("unterminated `(`"));
 
-        let ambiguous_valid = "module main; import binary(op _ ? _); import ternary(op _ ? _ : _); fn choose(a: ., b: .) -> . { a ? b }";
+        let ambiguous_valid = "mod main; import binary {op _ ? _} import ternary {op _ ? _ : _} fn choose(a: ., b: .) -> . { a ? b }";
         format_one(Path::new("main.kio"), ambiguous_valid, false)
             .expect("provider-origin conflicts belong to semantic resolution");
 
-        let repeated = "module main; import binary(op _ ? _); import binary(op _ ? _); fn choose(a: ., b: .) -> . { a ? b }";
+        let repeated = "mod main; import binary {op _ ? _} import binary {op _ ? _} fn choose(a: ., b: .) -> . { a ? b }";
         format_one(Path::new("main.kio"), repeated, false)
             .expect("duplicate imports belong to semantic resolution");
     }
@@ -711,28 +711,28 @@ mod tests {
         let consumer = temp.path().join("consumer");
         std::fs::create_dir_all(&dependency).expect("create dependency");
         std::fs::create_dir_all(&consumer).expect("create consumer");
-        std::fs::write(dependency.join("provider.pkg.kio"), "package provider;\n")
+        std::fs::write(dependency.join("provider.pkg.kio"), "pkg provider;\n")
             .expect("write dependency package");
         std::fs::write(
             dependency.join("syntax.kio"),
-            "module syntax;\npub varop [% %] { foldr cons nil; };\n",
+            "mod syntax;\npub op_var [% %] { foldr cons nil; };\n",
         )
         .expect("write dependency provider");
-        std::fs::write(consumer.join("consumer.pkg.kio"), "package consumer;\n")
+        std::fs::write(consumer.join("consumer.pkg.kio"), "pkg consumer;\n")
             .expect("write consumer package");
         std::fs::write(
             consumer.join("ops.dep.kio"),
-            "dependency ops;\n\nsource {\n  path \"../provider/provider.pkg.kio\";\n}\n",
+            "dep ops;\n\nsource {\n  path \"../provider/provider.pkg.kio\";\n}\n",
         )
         .expect("write dependency declaration");
         crate::package_collection::materialize_dependencies(&consumer)
             .expect("materialize re-rooted provider");
 
-        let source = "module main;\nimport ops/syntax(varop [% %]);\nfn pairs(k1:A,v1:A,k2:A,v2:A)->A{[% (k1,v1),(k2,v2) %]}\n";
+        let source = "mod main;\nimport ops/syntax { op_var [% %] }\nfn pairs(k1:A,v1:A,k2:A,v2:A)->A{[% (k1,v1),(k2,v2) %]}\n";
         let formatted = format_one(Path::new("main.kio"), source, false)
             .expect("format through re-rooted dependency provider");
 
-        assert!(formatted.contains("import ops/syntax(varop [% %]);"));
+        assert!(formatted.contains("import ops/syntax { op_var [% %] }"));
         assert!(formatted.contains("[% (k1, v1), (k2, v2) %]"));
     }
 
@@ -741,9 +741,9 @@ mod tests {
     /// and not through a byte-identical no-op.
     #[test]
     fn format_one_formats_signature_file() {
-        let src = "signature   app   v(1) ;\n";
+        let src = "sig   app   v(1) ;\n";
         let out = format_one(Path::new("app.sig.kio"), src, false).expect("parse + format");
-        assert_eq!(out, "signature app v(1);\n");
+        assert_eq!(out, "sig app v(1);\n");
     }
 
     /// A package file's `build { ... }` block formats inline:
@@ -751,10 +751,9 @@ mod tests {
     /// with bare-identifier target ids.
     #[test]
     fn format_one_formats_inline_build_block() {
-        let src =
-            "package a;\n\nbuild {\n  cache ();\n\n  target js {\n    out \"out/js/\";\n  }\n}\n";
+        let src = "pkg a;\n\nbuild {\n  cache ();\n\n  target js {\n    out \"out/js/\";\n  }\n}\n";
         let out = format_one(Path::new("a.pkg.kio"), src, false).expect("parse + format");
-        assert!(out.contains("package a;"));
+        assert!(out.contains("pkg a;"));
         assert!(out.contains("build {"));
         assert!(out.contains("cache ();"));
         assert!(out.contains("target js {"));
@@ -767,10 +766,10 @@ mod tests {
     /// the `dependency <local>;` header must match the stem.
     #[test]
     fn format_one_formats_dependency_file() {
-        let messy = "dependency mathlib  ;\n\nsource   {\n    path  \"../lib/m.pkg.kio\" ;\n}\n";
+        let messy = "dep mathlib  ;\n\nsource   {\n    path  \"../lib/m.pkg.kio\" ;\n}\n";
         let out = format_one(Path::new("mathlib.dep.kio"), messy, false).expect("parse + format");
         assert_eq!(
-            out, "dependency mathlib;\n\nsource {\n  path \"../lib/m.pkg.kio\"\n}\n",
+            out, "dep mathlib;\n\nsource {\n  path \"../lib/m.pkg.kio\"\n}\n",
             "messy .dep.kio did not canonicalise:\n{out}"
         );
     }
@@ -781,7 +780,7 @@ mod tests {
     #[test]
     fn format_one_is_fixpoint_on_canonical_dependency_file() {
         let canonical =
-            "dependency mathlib;\n\nsource {\n  path \"../library/mathlib/mathlib.pkg.kio\"\n}\n";
+            "dep mathlib;\n\nsource {\n  path \"../library/mathlib/mathlib.pkg.kio\"\n}\n";
         let out =
             format_one(Path::new("mathlib.dep.kio"), canonical, false).expect("parse + format");
         assert_eq!(
@@ -794,11 +793,11 @@ mod tests {
     /// pair and canonicalises the `git` / `ref` pair.
     #[test]
     fn format_one_formats_git_dependency_file() {
-        let messy = "dependency foo ;\n\nsource  {\n  git  \"https://example.com/foo.git\" ;\n  ref \"main\";\n}\n";
+        let messy = "dep foo ;\n\nsource  {\n  git  \"https://example.com/foo.git\" ;\n  ref \"main\";\n}\n";
         let out = format_one(Path::new("foo.dep.kio"), messy, false).expect("parse + format");
         assert_eq!(
             out,
-            "dependency foo;\n\nsource {\n  git \"https://example.com/foo.git\";\n  ref \"main\"\n}\n",
+            "dep foo;\n\nsource {\n  git \"https://example.com/foo.git\";\n  ref \"main\"\n}\n",
             "messy git .dep.kio did not canonicalise:\n{out}"
         );
     }

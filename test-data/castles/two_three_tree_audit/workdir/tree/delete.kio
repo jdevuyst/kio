@@ -5,38 +5,38 @@
 /// two to spare, or MERGES the short child with a sibling that has not. A merge
 /// costs the parent a key, so a 2-node parent goes deficient in turn and the
 /// deficit climbs; one that reaches the root drops a level off the whole tree.
-module tree/delete;
+mod tree/delete;
 
-import macros/control(macro if);
-import macros/match(macro match);
-import macros/row_macros(macro select);
-import macros/spine_macros(macro widen_sum);
-import testapi(Bool, I32, String);
-import testapi/arith(eq_i32, lt_i32, sub_i32);
-import testapi/iter(loop);
-import tree/node(
-, Leaf
-, Node
-, Three
-, Tree
-, Two
-, is_leaf
-, leaf_node
-, make_tree
-, root_of
-, size_of
-, three_node
-, two_node
-);
-import tree/tally(
-, Tally
-, tally_add
-, tally_borrow_left
-, tally_borrow_right
-, tally_merge
-, tally_root_shrink
-, tally_zero
-);
+import macros/control { macro if }
+import macros/match { macro match }
+import macros/row_macros { macro select }
+import macros/spine_macros { macro widen_sum }
+import testapi { type Bool; type I32; type String }
+import testapi/arith { fn eq_i32; fn lt_i32; fn sub_i32 }
+import testapi/iter { fn loop }
+import tree/node {
+  type Leaf;
+  type Node;
+  type Three;
+  type Tree;
+  type Two;
+  fn is_leaf;
+  fn leaf_node;
+  fn make_tree;
+  fn root_of;
+  fn size_of;
+  fn three_node;
+  fn two_node
+}
+import tree/tally {
+  type Tally;
+  fn tally_add;
+  fn tally_borrow_left;
+  fn tally_borrow_right;
+  fn tally_merge;
+  fn tally_root_shrink;
+  fn tally_zero
+}
 
 type Del = { Held: Node } | { Deficit: Node } | { Missing: . };
 

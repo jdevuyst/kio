@@ -1,6 +1,6 @@
-module main;
+mod main;
 
-import provider(Alias);
+import provider { type Alias }
 
 host type Shared;
 

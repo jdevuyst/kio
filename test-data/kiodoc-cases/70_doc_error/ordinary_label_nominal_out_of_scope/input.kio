@@ -1,4 +1,4 @@
 /// See [`Foo`].
-module pkg;
+mod pkg;
 
 import pkg/provider as provider;

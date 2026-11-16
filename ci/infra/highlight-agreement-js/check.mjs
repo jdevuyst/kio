@@ -90,6 +90,7 @@ const TS_KIND_MAP = {
   keyword_module: "keyword.declaration",
   keyword_import: "identifier",
   keyword_op: "identifier",
+  keyword_op_macro: "identifier",
   keyword_varop: "identifier",
   keyword_let: "keyword.declaration",
   keyword_as: "identifier",
@@ -268,7 +269,7 @@ function treeSitterKind(node) {
       ? "keyword.declaration"
       : "identifier";
   }
-  if (node.type === "keyword_op" || node.type === "keyword_varop") {
+  if (node.type === "keyword_op" || node.type === "keyword_op_macro" || node.type === "keyword_varop") {
     return ["op_decl", "incomplete_op_decl", "variadic_decl", "incomplete_variadic_decl", "import_operator_item"].includes(parentType)
       ? "keyword.declaration"
       : "identifier";
@@ -491,8 +492,9 @@ function malformedFixtureEnd(name, source) {
   return start + 1;
 }
 
-function malformedFixtureTokens(tokens, end) {
-  return tokens.map((token) => token.end <= end && TEXTMATE_NORMALIZATION.has(token.kind)
+function malformedFixtureTokens(tokens, end, selectorTag = -1) {
+  return tokens.map((token) => token.end <= end && (TEXTMATE_NORMALIZATION.has(token.kind)
+    || (token.start === selectorTag && token.kind === "keyword.declaration"))
     ? { ...token, kind: "identifier" } : token);
 }
 
@@ -653,19 +655,23 @@ async function checkFixture(treeSitterParser, tmGrammar, fixtureDir, malformedDo
     };
     requiresSyntaxError(source);
     const validSource = malformedEnd < source.length
-      ? "module clean;\n" + source.slice(malformedEnd)
-      : "module clean; fn run[A](value: A) -> A { value }\n";
+      ? "mod clean;\n" + source.slice(malformedEnd)
+      : "mod clean; fn run[A](value: A) -> A { value }\n";
     assert.throws(() => requiresSyntaxError(validSource),
       /named malformed region must still contain a syntax error/,
       "repairing the malformed source must retire its lexical-only comparison");
   }
-  const comparisonReference = malformedFixtureTokens(refTokens, malformedEnd);
+  // Native recovery falls back to lexical roles for this contextual tag;
+  // the separate complete-prefix check below requires its structural role.
+  const selectorTag = name === "48_call_stage_recovery"
+    ? source.indexOf("macro form") : -1;
+  const comparisonReference = malformedFixtureTokens(refTokens, malformedEnd, selectorTag);
   const refForTextMate = normalizeFor(refTokens, TEXTMATE_NORMALIZATION);
 
   // (2) Tree-sitter — exact roles except the two named malformed regions;
   // token boundaries and lexical kinds are conserved throughout both regions.
   const tsTokens = treeSitterTokens(treeSitterParser, source);
-  const comparisonTreeSitter = malformedFixtureTokens(tsTokens, malformedEnd);
+  const comparisonTreeSitter = malformedFixtureTokens(tsTokens, malformedEnd, selectorTag);
   if (!treeSitterTokensAgree(comparisonReference, comparisonTreeSitter, malformedDocContext)) {
     return {
       name,
@@ -708,7 +714,7 @@ async function checkFixture(treeSitterParser, tmGrammar, fixtureDir, malformedDo
         tmFixtureFailures.map((failure) => `  ${failure}`).join("\n"),
     };
   }
-  const tmTokensNormalized = normalizeFor(tmTokens, TEXTMATE_NORMALIZATION);
+  const tmTokensNormalized = malformedFixtureTokens(normalizeFor(tmTokens, TEXTMATE_NORMALIZATION), malformedEnd, selectorTag);
   const tmFailures = checkTextMateAgreement(
     refForTextMate,
     tmTokensNormalized,

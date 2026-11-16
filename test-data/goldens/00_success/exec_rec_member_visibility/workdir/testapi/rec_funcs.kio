@@ -1,6 +1,6 @@
-module testapi/rec_funcs;
+mod testapi/rec_funcs;
 
-import testapi/iter(loop);
+import testapi/iter { fn loop }
 
 rec(loop) {
   fn local(value: .) { recur scoped(value) };

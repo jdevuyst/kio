@@ -1,4 +1,4 @@
-package dfb;
+pkg dfb;
 
 build {
   cache "out/.kio-cache/";

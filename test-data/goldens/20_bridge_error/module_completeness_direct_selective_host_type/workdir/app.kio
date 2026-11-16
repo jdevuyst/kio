@@ -1,5 +1,5 @@
-module app;
+mod app;
 
-import cap(Raw);
+import cap { type Raw }
 
 pub fn run(x: Raw) { () }

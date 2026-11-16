@@ -1,8 +1,8 @@
-module testapi/main;
+mod testapi/main;
 
 import __intrinsics__;
 
-import testapi(I32);
+import testapi { type I32 }
 
 pub type { A: I32 { pub mk; pub get } }
 

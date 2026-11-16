@@ -1,6 +1,6 @@
-module http_status_window/strings;
+mod http_status_window/strings;
 
-import testapi(String);
+import testapi { type String }
 import testapi/text as text;
 
 pub fn cat(left: String, right: String) -> String { text.string_concat(left, right) }

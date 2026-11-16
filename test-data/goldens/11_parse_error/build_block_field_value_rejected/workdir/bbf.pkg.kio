@@ -1,4 +1,4 @@
-package bbf;
+pkg bbf;
 
 build {
   target js {

@@ -38,7 +38,7 @@ A package emits to Haskell by declaring a `haskell` target in
 `<pkg>.pkg.kio`:
 
 ```kio {variant=package}
-package greeter;
+pkg greeter;
 
 build {
   cache "out/.kio-cache/";
@@ -412,7 +412,7 @@ the next stage.
 `greeter.pkg.kio`:
 
 ```kio {variant=package}
-package greeter;
+pkg greeter;
 
 build {
   cache "out/.kio-cache/";
@@ -432,7 +432,7 @@ bridge {
 `greeter.kio`:
 
 ```kio {file}
-module greeter;
+mod greeter;
 
 host type Str role(str);
 host type Output;
@@ -443,7 +443,7 @@ host fn print(output: Output, s: Str);
 `greeter/main.kio`:
 
 <!--kio {file}
-package greeter;
+pkg greeter;
 
 build {
   cache "out/.kio-cache/";
@@ -460,17 +460,17 @@ bridge {
 -->
 
 <!--kio {harness=greeter_haskell_main file placeholder="__SNIPPET__"}
-module greeter/main;
+mod greeter/main;
 
-import greeter(Str, print, stdout);
+import greeter {type Str; fn print; fn stdout}
 
 __SNIPPET__
 -->
 
-```kio {@greeter_haskell_main placeholder={"module greeter/main;":"","import greeter(Str, print, stdout);":""}}
-module greeter/main;
+```kio {@greeter_haskell_main placeholder={"mod greeter/main;":"","import greeter {type Str; fn print; fn stdout}":""}}
+mod greeter/main;
 
-import greeter(Str, print, stdout);
+import greeter {type Str; fn print; fn stdout}
 
 pub fn main() { print(stdout(), "hello\n"[Str]) }
 ```

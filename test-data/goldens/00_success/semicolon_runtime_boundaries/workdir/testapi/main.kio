@@ -1,6 +1,6 @@
-module testapi/main;
+mod testapi/main;
 
-import testapi(String);
+import testapi { type String }
 import testapi/io as io;
 
 type { Message: String { mk; get } }
@@ -11,7 +11,7 @@ pure fn keep(value: String) -> String { value }
 
 op _ <+> _ { impl first }
 
-varop [* *] { foldr1 first keep }
+op_var [* *] { foldr1 first keep }
 
 equiv first_message() {
   [* "boundaries", "discarded" *] <+> "ignored";

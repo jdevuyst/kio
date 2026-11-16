@@ -1,4 +1,4 @@
-dependency sinklib;
+dep sinklib;
 
 source {
   path "../library/sinklib/sinklib.pkg.kio"

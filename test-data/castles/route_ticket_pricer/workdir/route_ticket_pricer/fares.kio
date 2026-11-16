@@ -1,7 +1,7 @@
-module route_ticket_pricer/fares;
+mod route_ticket_pricer/fares;
 
-import testapi(I64);
-import testapi/arith(add_i64);
+import testapi { type I64 }
+import testapi/arith { fn add_i64 }
 
 fn local_distance_cents() -> I64 { add_i64(185, 245) }
 

@@ -1,4 +1,4 @@
-package immediate_lambda_call_stages;
+pkg immediate_lambda_call_stages;
 
 build {
   cache "out/.kio-cache/";

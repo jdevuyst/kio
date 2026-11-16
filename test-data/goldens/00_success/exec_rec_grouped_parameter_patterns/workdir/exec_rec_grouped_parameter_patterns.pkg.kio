@@ -1,4 +1,4 @@
-package exec_rec_grouped_parameter_patterns;
+pkg exec_rec_grouped_parameter_patterns;
 
 build {
   target js {

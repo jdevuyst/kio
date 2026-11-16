@@ -1,4 +1,4 @@
-module dep;
+mod dep;
 
 import types as types;
 

@@ -1,4 +1,4 @@
-package chain_guest;
+pkg chain_guest;
 
 build {
   cache "out/.kio-cache/";

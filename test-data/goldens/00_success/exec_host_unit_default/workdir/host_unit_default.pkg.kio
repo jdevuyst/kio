@@ -1,4 +1,4 @@
-package host_unit_default;
+pkg host_unit_default;
 
 build {
   cache "out/.kio-cache/";

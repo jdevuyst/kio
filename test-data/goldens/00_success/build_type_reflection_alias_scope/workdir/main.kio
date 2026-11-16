@@ -1,5 +1,5 @@
-module main;
+mod main;
 
-import type_of(Type_rep, macro type_of);
+import type_of { type Type_rep; macro type_of }
 
 pub fn reflected_type_rep() -> Type_rep { type_of[Type_rep](()) }

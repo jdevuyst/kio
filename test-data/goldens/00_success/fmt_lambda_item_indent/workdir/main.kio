@@ -1,6 +1,6 @@
-module main;
+mod main;
 
-import macros/control(Bool, macro if);
+import macros/control { type Bool; macro if }
 
 fn fold_two[A](seed: A, first_element: A, second_element: A, step: (A & A) -> A) -> A {
   step(step(seed, first_element), second_element)

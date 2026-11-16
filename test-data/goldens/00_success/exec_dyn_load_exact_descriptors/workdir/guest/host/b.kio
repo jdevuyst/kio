@@ -1,4 +1,4 @@
-module host/b;
+mod host/b;
 
 host type Value role(str);
 

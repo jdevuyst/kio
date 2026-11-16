@@ -1,4 +1,4 @@
-package macro_later_host_type_capture;
+pkg macro_later_host_type_capture;
 
 build {
   cache "out/.kio-cache/";

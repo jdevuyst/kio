@@ -1,14 +1,14 @@
-module testapi/main;
+mod testapi/main;
 
 import __intrinsics__;
 
-import macros/algebraic_macros(macro align, macro ease, macro onto);
-import macros/derive(macro derive);
-import macros/lookup(Lookup_bool, macro contains, macro lookup);
-import macros/tuple_macros(macro map, macro tail, macro zip);
-import macros/type_of(macro type_of);
-import testapi(String);
-import testapi/io(print);
+import macros/algebraic_macros { macro align; macro ease; macro onto }
+import macros/derive { macro derive }
+import macros/lookup { type Lookup_bool; macro contains; macro lookup }
+import macros/tuple_macros { macro map; macro tail; macro zip }
+import macros/type_of { macro type_of }
+import testapi { type String }
+import testapi/io { fn print }
 
 type { A: String; B: String; Missing: . }
 

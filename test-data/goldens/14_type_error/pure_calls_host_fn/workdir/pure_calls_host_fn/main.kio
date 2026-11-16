@@ -1,5 +1,5 @@
-module pure_calls_host_fn/main;
+mod pure_calls_host_fn/main;
 
-import pure_calls_host_fn(tick);
+import pure_calls_host_fn { fn tick }
 
 pure fn bad() { tick() }

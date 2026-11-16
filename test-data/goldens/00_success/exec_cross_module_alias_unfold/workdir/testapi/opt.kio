@@ -1,7 +1,7 @@
-module testapi/opt;
+mod testapi/opt;
 
-import macros/spine_macros(macro widen_sum);
-import testapi(I32);
+import macros/spine_macros { macro widen_sum }
+import testapi { type I32 }
 
 // An optional built from the nominal type `Present`;
 // the `pub type Option` names the sum of that type with unit. When a

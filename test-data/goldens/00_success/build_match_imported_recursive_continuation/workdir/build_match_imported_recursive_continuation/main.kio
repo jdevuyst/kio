@@ -1,8 +1,8 @@
-module build_match_imported_recursive_continuation/main;
+mod build_match_imported_recursive_continuation/main;
 
-import build_match_imported_recursive_continuation(loop);
+import build_match_imported_recursive_continuation { fn loop }
 import build_match_imported_recursive_continuation/list as list;
-import macros/match(macro match);
+import macros/match { macro match }
 
 pub rec(loop) fn copy[A](items: list.List[A]) -> list.Copied[A] {
   match(items.>list.List.get) {

@@ -1,6 +1,6 @@
-module testapi/other;
+mod testapi/other;
 
-import testapi(String);
+import testapi { type String }
 import testapi/io as io;
 
 /// SECOND-SAME-DOC identity.

@@ -1,4 +1,4 @@
-package ffi_export_wide_callable;
+pkg ffi_export_wide_callable;
 
 build {
   cache "out/.kio-cache/";

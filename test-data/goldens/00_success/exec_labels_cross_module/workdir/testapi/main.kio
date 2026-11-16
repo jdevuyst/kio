@@ -1,8 +1,8 @@
-module testapi/main;
+mod testapi/main;
 
-import testapi(String);
-import testapi/io(print);
-import testapi/labels(Greeting);
+import testapi { type String }
+import testapi/io { fn print }
+import testapi/labels { type Greeting }
 
 // Construct and project the nominal exported by the provider module.
 pub fn main() {

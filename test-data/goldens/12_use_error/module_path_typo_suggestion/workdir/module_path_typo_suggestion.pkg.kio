@@ -1,4 +1,4 @@
-package module_path_typo_suggestion;
+pkg module_path_typo_suggestion;
 
 build {
   target js {

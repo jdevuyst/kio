@@ -6,7 +6,7 @@ work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT INT TERM HUP
 mkdir -p "$work/d/inner" "$work/.originals/d/inner"
 for module in z a d/z d/a d/inner/m; do
-  printf 'module %s;fn main(){()}\n' "$module" > "$work/$module.kio"
+  printf 'mod %s;fn main(){()}\n' "$module" > "$work/$module.kio"
   cp "$work/$module.kio" "$work/.originals/$module.kio"
 done
 cd "$work"

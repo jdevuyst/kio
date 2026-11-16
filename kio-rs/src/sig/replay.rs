@@ -399,12 +399,6 @@ impl ReplayState {
             for reference in &set.modify_refs {
                 stage_context_for_ref(&mut next_catalog, context, reference);
             }
-            for remove in &set.remove {
-                let module_path = module_path_str(&remove.path);
-                for name in &remove.names {
-                    next_catalog.remove(&QualifiedName::new(&module_path, &name.name));
-                }
-            }
             for reference in &set.remove_refs {
                 next_catalog.remove(&qualified_ref(reference));
             }
@@ -442,24 +436,6 @@ impl ReplayState {
                 version_catalog,
                 context,
             )?;
-        }
-        for remove in &set.remove {
-            let module_path = module_path_str(&remove.path);
-            for name in &remove.names {
-                let qn = QualifiedName::new(module_path.clone(), name.name.clone());
-                self.live.remove(&qn);
-                let Some(record) = self.frozen.get(&qn).cloned() else {
-                    return Err(Error::bridge(
-                        name.span,
-                        format!(
-                            "signature changelog removes `{qn}`, which was never added or \
-                             modified in an earlier version"
-                        ),
-                    ));
-                };
-                self.retired
-                    .insert((qn, record.entry.side.into()), record.removed_item(version));
-            }
         }
         for reference in &set.remove_refs {
             self.apply_remove_reference(reference, version)?;
@@ -561,8 +537,7 @@ impl ReplayState {
                 return Err(Error::bridge(
                     item_span(&projected_item),
                     format!(
-                        "signature changelog modifies `{qn}`, which was never added in an \
-                         earlier version"
+                        "signature changelog modifies `{qn}`, which was never added in an earlier version"
                     ),
                 ));
             }
@@ -883,17 +858,6 @@ fn validate_version_operation_targets(version: &SigVersion<Surface>) -> Result<(
                 )?;
             }
         }
-        for remove in &set.remove {
-            let module_path = module_path_str(&remove.path);
-            for name in &remove.names {
-                insert(
-                    &mut seen,
-                    Operation::Remove,
-                    QualifiedName::new(&module_path, &name.name),
-                    name.span,
-                )?;
-            }
-        }
     }
 
     Ok(())
@@ -1052,14 +1016,6 @@ fn version_target_spans(version: &SigVersion<Surface>) -> VersionTargetSpans {
             targets
                 .context_refs
                 .insert(qualified_ref(reference), reference.span);
-        }
-        for remove in &set.remove {
-            let module = module_path_str(&remove.path);
-            for name in &remove.names {
-                targets
-                    .removed
-                    .insert(QualifiedName::new(&module, &name.name), name.span);
-            }
         }
         for reference in &set.remove_refs {
             targets
@@ -1569,14 +1525,14 @@ mod tests {
     #[test]
     fn type_only_exports_replay_binder_order_and_sealed_unit_stage() {
         let file = parse_signature_file(
-            "signature app v(2);
-            v(1) { nonbreaking { add { module api {
+            "sig app v(2);
+            v(1) { nonbreaking { add { mod api {
                 pub pure fn direct[A] -> A -> A;
                 pub fn delayed[A]() -> .;
                 pub fn adjacent[A][B] -> A -> B -> A;
                 pub fn mixed[A](value: A)[B] -> A;
             } } } }
-            v(2) { breaking { modify { module api {
+            v(2) { breaking { modify { mod api {
                 pub fn delayed[A] -> .;
             } } } }",
             None,
@@ -1619,7 +1575,7 @@ mod tests {
 
     #[test]
     fn header_only_is_empty_interface() {
-        let r = replay_src("signature app v(1);\n");
+        let r = replay_src("sig app v(1);\n");
         assert!(r.current.items.is_empty());
         assert!(r.removed.is_empty());
     }
@@ -1627,10 +1583,10 @@ mod tests {
     #[test]
     fn version_context_recursive_group_replays_each_referenced_member() {
         let r = replay_src(
-            r#"signature app v(1);
+            r#"sig app v(1);
 v(1) {
   with {
-    module api {
+    mod api {
       rec {
         pub type A = B;
         pub type { B : A { pub mk; pub get; }; };
@@ -1661,10 +1617,10 @@ v(1) {
     #[test]
     fn fresh_repartitioned_recursive_context_replays() {
         let r = replay_src(
-            r#"signature app v(1);
+            r#"sig app v(1);
 v(1) {
   with {
-    module api {
+    mod api {
       pub rec type { A : A | B {
         pub mk;
         get;
@@ -1674,7 +1630,7 @@ v(1) {
   nonbreaking {
     add {
       api.A;
-      module api {
+      mod api {
         pub type { B : . {
           mk;
           get;
@@ -1700,10 +1656,10 @@ v(1) {
 
     #[test]
     fn fresh_context_rejects_multiple_written_recursive_components_before_projection() {
-        let source = r#"signature app v(1);
+        let source = r#"sig app v(1);
 v(1) {
   with {
-    module api {
+    mod api {
       rec {
         pub type { A : . | A { pub mk; pub get; }; };
         pub type { B : . | B { pub mk; pub get; }; };
@@ -1723,10 +1679,10 @@ v(1) {
 
     #[test]
     fn fresh_context_rejects_a_written_acyclic_helper_before_projection() {
-        let source = r#"signature app v(1);
+        let source = r#"sig app v(1);
 v(1) {
   with {
-    module api {
+    mod api {
       rec {
         pub type { A : A | B { pub mk; pub get; }; };
         pub type { B : . { pub mk; pub get; }; };
@@ -1754,10 +1710,10 @@ v(1) {
 
     #[test]
     fn signature_projection_preserves_a_qualified_path_and_written_group_container() {
-        let source = r#"signature app v(1);
+        let source = r#"sig app v(1);
 v(1) {
   with {
-    module recursive {
+    mod recursive {
       import dep as d;
       rec {
         pub type Peer = Wrapped | d.External;
@@ -1811,10 +1767,10 @@ v(1) {
 
     #[test]
     fn version_contexts_cannot_split_one_maximal_recursive_component() {
-        let source = r#"signature app v(1);
+        let source = r#"sig app v(1);
 v(1) {
   with {
-    module api {
+    mod api {
       pub rec type { A : A | B { pub mk; pub get; }; };
       pub rec type { B : B | A { pub mk; pub get; }; };
     }
@@ -1841,10 +1797,10 @@ v(1) {
     #[test]
     fn independent_recursive_singletons_keep_distinct_contexts() {
         let replayed = replay_src(
-            r#"signature app v(1);
+            r#"sig app v(1);
 v(1) {
   with {
-    module api {
+    mod api {
       pub rec type { A : . | A { pub mk; pub get; }; };
       pub rec type { B : . | B { pub mk; pub get; }; };
     }
@@ -1864,10 +1820,10 @@ v(1) {
     #[test]
     fn recursive_singletons_can_merge_into_one_context_epoch() {
         let replayed = replay_src(
-            r#"signature app v(2);
+            r#"sig app v(2);
 v(1) {
   with {
-    module api {
+    mod api {
       pub rec type { A : . | A { pub mk; pub get; }; };
       pub rec type { B : . | B { pub mk; pub get; }; };
     }
@@ -1876,7 +1832,7 @@ v(1) {
 }
 v(2) {
   with {
-    module api {
+    mod api {
       rec {
         pub type { A : (A | B) | . { pub mk; pub get; }; };
         pub type { B : (B | A) | . { pub mk; pub get; }; };
@@ -1898,8 +1854,9 @@ v(2) {
     #[test]
     fn version_context_reference_must_resolve_exactly() {
         let file = parse_signature_file(
-            "signature app v(1);\n\
-             v(1) { nonbreaking { add { api.A; } } }\n",
+            "sig app v(1);
+v(1) { nonbreaking { add { api.A; } } }
+",
             None,
         )
         .expect("parse exact reference");
@@ -1912,10 +1869,10 @@ v(2) {
 
     #[test]
     fn ordinary_with_declaration_cannot_be_an_operation_target() {
-        let source = r#"signature app v(1);
+        let source = r#"sig app v(1);
 v(1) {
   with {
-    module api { pub type T = .; }
+    mod api { pub type T = .; }
   };
   nonbreaking { add { api.T; } }
 }
@@ -1933,18 +1890,18 @@ v(1) {
 
     #[test]
     fn unrelated_unchanged_declaration_is_not_version_context() {
-        let source = r#"signature app v(2);
+        let source = r#"sig app v(2);
 v(1) {
   nonbreaking { add {
-    module api { pub type T = .; }
+    mod api { pub type T = .; }
   } }
 }
 v(2) {
   with {
-    module api { pub type T = .; }
+    mod api { pub type T = .; }
   };
   nonbreaking { add {
-    module api { pub fn f() -> .; }
+    mod api { pub fn f() -> .; }
   } }
 }
 "#;
@@ -1961,10 +1918,10 @@ v(2) {
 
     #[test]
     fn unchanged_recursive_context_is_not_repeated_for_an_unrelated_change() {
-        let source = r#"signature app v(2);
+        let source = r#"sig app v(2);
 v(1) {
   with {
-    module api {
+    mod api {
       pub rec type { Loop : . | Loop { pub mk; pub get; }; };
     }
   };
@@ -1972,12 +1929,12 @@ v(1) {
 }
 v(2) {
   with {
-    module api {
+    mod api {
       pub rec type { Loop : . | Loop { pub mk; pub get; }; };
     }
   };
   nonbreaking { add {
-    module api { pub fn f() -> .; }
+    mod api { pub fn f() -> .; }
   } }
 }
 "#;
@@ -1995,10 +1952,10 @@ v(2) {
     #[test]
     fn unchanged_ordinary_peer_can_join_a_new_recursive_context() {
         let replayed = replay_src(
-            r#"signature app v(2);
+            r#"sig app v(2);
 v(1) {
   nonbreaking { add {
-    module api {
+    mod api {
       pub type A = B;
       pub type { B : . { pub mk; pub get; }; };
     }
@@ -2006,7 +1963,7 @@ v(1) {
 }
 v(2) {
   with {
-    module api {
+    mod api {
       rec {
         pub type A = B;
         pub type { B : . | A { pub mk; pub get; }; };
@@ -2027,10 +1984,10 @@ v(2) {
 
     #[test]
     fn removed_declaration_is_not_repeated_in_version_context() {
-        let source = r#"signature app v(2);
+        let source = r#"sig app v(2);
 v(1) {
   with {
-    module api {
+    mod api {
       pub rec type { Loop : . | Loop { pub mk; pub get; }; };
     }
   };
@@ -2038,7 +1995,7 @@ v(1) {
 }
 v(2) {
   with {
-    module api {
+    mod api {
       pub rec type { Loop : . | Loop { pub mk; pub get; }; };
     }
   };
@@ -2059,10 +2016,10 @@ v(2) {
 
     #[test]
     fn recursive_context_member_is_not_modified_inline() {
-        let source = r#"signature app v(2);
+        let source = r#"sig app v(2);
 v(1) {
   with {
-    module api {
+    mod api {
       pub rec type { Loop : . | Loop { pub mk; pub get; }; };
     }
   };
@@ -2070,12 +2027,12 @@ v(1) {
 }
 v(2) {
   with {
-    module api {
+    mod api {
       pub rec type { Loop : (. | Loop) | . { pub mk; pub get; }; };
     }
   };
   breaking { modify {
-    module api {
+    mod api {
       pub type { Loop : (. | Loop) | . { pub mk; pub get; }; };
     }
   } }
@@ -2096,10 +2053,10 @@ v(2) {
     #[test]
     fn version_context_rejects_an_alias_only_recursive_group() {
         let file = parse_signature_file(
-            r#"signature app v(1);
+            r#"sig app v(1);
 v(1) {
   with {
-    module api {
+    mod api {
       rec {
         pub type A = B;
         pub type B = A;
@@ -2125,10 +2082,10 @@ v(1) {
     #[test]
     fn version_context_rejects_surface_type_inference_inside_a_group() {
         let file = parse_signature_file(
-            r#"signature app v(1);
+            r#"sig app v(1);
 v(1) {
   with {
-    module api {
+    mod api {
       rec {
         pub type A = _ | B;
         pub type { B : A { pub mk; pub get; }; };
@@ -2167,9 +2124,9 @@ v(1) {
 
     #[test]
     fn fresh_history_rejects_direct_negative_recursion() {
-        let src = r#"signature app v(1);
+        let src = r#"sig app v(1);
 v(1) {
-  with { module api {
+  with { mod api {
     pub rec type { Bad : (Bad -> .) { pub mk; pub get; }; };
   } };
   nonbreaking { add { api.Bad; } }
@@ -2181,13 +2138,13 @@ v(1) {
 
     #[test]
     fn fresh_history_rejects_alias_hidden_negative_recursion() {
-        let src = r#"signature app v(1);
+        let src = r#"sig app v(1);
 v(1) {
-  with { module api {
+  with { mod api {
     pub rec type { Bad : Negate[Bad] { pub mk; pub get; }; };
   } };
   nonbreaking { add {
-    module api { pub type Negate[A] = A -> .; };
+    mod api { pub type Negate[A] = A -> .; };
     api.Bad;
   } }
 }
@@ -2198,13 +2155,13 @@ v(1) {
 
     #[test]
     fn fresh_history_rejects_invariant_host_type_recursion() {
-        let src = r#"signature app v(1);
+        let src = r#"sig app v(1);
 v(1) {
-  with { module api {
+  with { mod api {
     pub rec type { Bad : Stream[Bad] { pub mk; pub get; }; };
   } };
   nonbreaking { add {
-    module api { host type Stream[A]; };
+    mod api { host type Stream[A]; };
     api.Bad;
   } }
 }
@@ -2215,8 +2172,8 @@ v(1) {
 
     #[test]
     fn fresh_history_rejects_kind_mismatch() {
-        let src = r#"signature app v(1);
-v(1) { nonbreaking { add { module api {
+        let src = r#"sig app v(1);
+v(1) { nonbreaking { add { mod api {
   host type Box[A];
   type { Bad : Box { pub mk; pub get; }; };
 } } } }
@@ -2227,8 +2184,8 @@ v(1) { nonbreaking { add { module api {
 
     #[test]
     fn fresh_history_rejects_nullary_type_overapplication() {
-        let src = r#"signature app v(1);
-v(1) { nonbreaking { add { module api {
+        let src = r#"sig app v(1);
+v(1) { nonbreaking { add { mod api {
   host type Atom;
   type { Bad : Atom[.] { pub mk; pub get; }; };
 } } } }
@@ -2239,8 +2196,8 @@ v(1) { nonbreaking { add { module api {
 
     #[test]
     fn fresh_history_rejects_an_unresolved_type() {
-        let src = r#"signature app v(1);
-v(1) { nonbreaking { add { module api {
+        let src = r#"sig app v(1);
+v(1) { nonbreaking { add { mod api {
   host fn consume(value: Missing) -> .;
 } } } }
 "#;
@@ -2250,8 +2207,8 @@ v(1) { nonbreaking { add { module api {
 
     #[test]
     fn fresh_history_rejects_an_unimported_comptime_type() {
-        let src = r#"signature app v(1);
-v(1) { nonbreaking { add { module api {
+        let src = r#"sig app v(1);
+v(1) { nonbreaking { add { mod api {
   host fn consume(value: __Type__) -> .;
 } } } }
 "#;
@@ -2261,9 +2218,9 @@ v(1) { nonbreaking { add { module api {
 
     #[test]
     fn fresh_history_rejects_a_missing_imported_module() {
-        let src = r#"signature app v(1);
-v(1) { nonbreaking { add { module api {
-  import absent(Missing);
+        let src = r#"sig app v(1);
+v(1) { nonbreaking { add { mod api {
+  import absent {type Missing};
   host fn consume(value: Missing) -> .;
 } } } }
 "#;
@@ -2273,8 +2230,8 @@ v(1) { nonbreaking { add { module api {
 
     #[test]
     fn fresh_history_rejects_a_standalone_alias_only_cycle() {
-        let src = r#"signature app v(1);
-v(1) { nonbreaking { add { module api {
+        let src = r#"sig app v(1);
+v(1) { nonbreaking { add { mod api {
   type A = B;
   type B = A;
 } } } }
@@ -2289,22 +2246,22 @@ v(1) { nonbreaking { add { module api {
     #[test]
     fn fresh_history_accepts_covariant_phantom_imported_and_shadowed_recursion() {
         replay_src(
-            r#"signature app v(1);
+            r#"sig app v(1);
 v(1) {
   with {
-    module api {
-      import shapes(Box, Phantom);
+    mod api {
+      import shapes {type Box; type Phantom};
       pub rec type { Covariant : Box[Covariant] { pub mk; pub get; }; };
       pub rec type { Ignored : Phantom[Ignored] { pub mk; pub get; }; };
       pub rec type { Shadow[A] : . | (A & Shadow[A]) { pub mk; pub get; }; };
     }
   };
   nonbreaking { add {
-    module shapes {
+    mod shapes {
       pub type { Box[A] : A { pub mk; pub get; }; };
       pub type { Phantom[A] : . { pub mk; pub get; }; };
     };
-    module api { host type A; };
+    mod api { host type A; };
     api.Covariant; api.Ignored; api.Shadow;
   } }
 }
@@ -2315,21 +2272,21 @@ v(1) {
     #[test]
     fn later_origin_import_does_not_rebind_an_earlier_declaration() {
         let replayed = replay_src(
-            r#"signature app v(2);
+            r#"sig app v(2);
 v(1) {
   nonbreaking { add {
-    module left { host type Token; };
-    module api {
-      import left(Token);
+    mod left { host type Token; };
+    mod api {
+      import left {type Token};
       host fn consume_left(value: Token) -> .;
     }
   } }
 }
 v(2) {
   nonbreaking { add {
-    module right { host type Token; };
-    module api {
-      import right(Token);
+    mod right { host type Token; };
+    mod api {
+      import right {type Token};
       host fn consume_right(value: Token) -> .;
     }
   } }
@@ -2354,7 +2311,7 @@ v(2) {
 
         for count in [64, 128] {
             let mut source = String::from(
-                "signature app v(1);\nv(1) {\n  nonbreaking {\n    add {\n      module api {\n",
+                "sig app v(1);\nv(1) {\n  nonbreaking {\n    add {\n      mod api {\n",
             );
             for index in 0..count {
                 writeln!(source, "        pub type T{index} = .;").expect("write source");
@@ -2374,9 +2331,9 @@ v(2) {
         use std::fmt::Write as _;
 
         for count in [64, 128] {
-            let mut source = String::from("signature app v(1); v(1) { nonbreaking { add {\n");
+            let mut source = String::from("sig app v(1); v(1) { nonbreaking { add {\n");
             for index in 0..count {
-                writeln!(source, "module m{index} {{ pub type T = .; }};").expect("write source");
+                writeln!(source, "mod m{index} {{ pub type T = .; }};").expect("write source");
             }
             source.push_str("} } }\n");
 
@@ -2397,12 +2354,12 @@ v(2) {
     #[test]
     fn fresh_canonicalization_slice_contains_each_referenced_import() {
         replay_src(
-            r#"signature app v(1);
+            r#"sig app v(1);
 v(1) {
   nonbreaking {
     add {
-      module dep { host type Raw; };
-      module api {
+      mod dep { host type Raw; };
+      mod api {
         import dep as d;
         pub type Wrapped = d.Raw;
       }
@@ -2419,13 +2376,13 @@ v(1) {
     #[test]
     fn fresh_canonicalization_slice_routes_imported_module_type_paths() {
         let replayed = replay_src(
-            r#"signature app v(1);
+            r#"sig app v(1);
 v(1) {
   nonbreaking {
     add {
-      module provider { host type Tag; };
-      module foo/bar { host type Tag; };
-      module api {
+      mod provider { host type Tag; };
+      mod foo/bar { host type Tag; };
+      mod api {
         import provider as provider;
         import foo/bar as nested;
         host fn consume_shallow(value: provider.Tag) -> .;
@@ -2455,13 +2412,13 @@ v(1) {
     #[test]
     fn fresh_canonicalization_slice_prefers_a_two_segment_import_alias() {
         let replayed = replay_src(
-            r#"signature app v(1);
+            r#"sig app v(1);
 v(1) {
   nonbreaking {
     add {
-      module imported { host type Tag; };
-      module shadow { host type Tag; };
-      module api {
+      mod imported { host type Tag; };
+      mod shadow { host type Tag; };
+      mod api {
         import imported as shadow;
         host fn consume(value: shadow.Tag) -> .;
       }
@@ -2486,10 +2443,10 @@ v(1) {
     #[test]
     fn unchanged_recursive_peer_advances_to_the_versions_context_epoch() {
         let r = replay_src(
-            r#"signature app v(2);
+            r#"sig app v(2);
 v(1) {
   with {
-    module api {
+    mod api {
       rec {
         pub type A = B;
         pub type { B : A { pub mk; pub get; }; };
@@ -2500,7 +2457,7 @@ v(1) {
 }
 v(2) {
   with {
-    module api {
+    mod api {
       rec {
         pub type A = . | B;
         pub type { B : A { pub mk; pub get; }; };
@@ -2528,10 +2485,10 @@ v(2) {
     #[test]
     fn changed_recursive_peer_must_have_its_own_modify_reference() {
         let file = parse_signature_file(
-            r#"signature app v(2);
+            r#"sig app v(2);
 v(1) {
   with {
-    module api {
+    mod api {
       rec {
         pub type A = B;
         pub type { B : A { pub mk; pub get; }; };
@@ -2542,7 +2499,7 @@ v(1) {
 }
 v(2) {
   with {
-    module api {
+    mod api {
       rec {
         pub type A = B;
         pub type { B : . | A { pub mk; pub get; }; };
@@ -2567,10 +2524,10 @@ v(2) {
 
     #[test]
     fn recursive_member_cannot_be_modified_both_inline_and_by_reference() {
-        let source = r#"signature app v(2);
+        let source = r#"sig app v(2);
 v(1) {
   with {
-    module api {
+    mod api {
       rec {
         pub type { A : A | B { pub mk; pub get; }; };
         pub type { B : B | A { pub mk; pub get; }; };
@@ -2581,7 +2538,7 @@ v(1) {
 }
 v(2) {
   with {
-    module api {
+    mod api {
       rec {
         pub type { A : (A | B) | . { pub mk; pub get; }; };
         pub type { B : B | A { pub mk; pub get; }; };
@@ -2589,7 +2546,7 @@ v(2) {
     }
   };
   breaking { modify {
-    module api {
+    mod api {
       pub type { A : (A | B) | . { pub mk; pub get; }; };
     };
     api.A;
@@ -2611,10 +2568,10 @@ v(2) {
     #[test]
     fn ordinary_inline_signature_operation_remains_valid() {
         replay_src(
-            r#"signature app v(1);
+            r#"sig app v(1);
 v(1) {
   nonbreaking { add {
-    module api {
+    mod api {
       pub type { Token : . { pub mk; pub get; }; };
     }
   } }
@@ -2625,14 +2582,14 @@ v(1) {
 
     #[test]
     fn operation_target_is_unique_across_verdicts_and_remove_spellings() {
-        let source = r#"signature app v(2);
+        let source = r#"sig app v(2);
 v(1) {
   nonbreaking { add {
-    module api { pub type { Token : . { pub mk; pub get; }; }; }
+    mod api { pub type { Token : . { pub mk; pub get; }; }; }
   } }
 }
 v(2) {
-  breaking { remove { module api { Token; } } };
+  breaking { remove {  api.Token;  } };
   nonbreaking { remove { api.Token; } }
 }
 "#;
@@ -2651,16 +2608,16 @@ v(2) {
     #[test]
     fn different_operation_kinds_may_target_one_name_in_one_version() {
         let replayed = replay_src(
-            r#"signature app v(2);
+            r#"sig app v(2);
 v(1) {
   nonbreaking { add {
-    module api { pub type { Token : . { pub mk; pub get; }; }; }
+    mod api { pub type { Token : . { pub mk; pub get; }; }; }
   } }
 }
 v(2) {
   breaking { remove { api.Token; } };
   nonbreaking { add {
-    module api { pub type { Token : . | . { pub mk; pub get; }; }; }
+    mod api { pub type { Token : . | . { pub mk; pub get; }; }; }
   } }
 }
 "#,
@@ -2674,10 +2631,10 @@ v(2) {
     #[test]
     fn one_context_can_drive_mixed_recursive_member_modifications() {
         let r = replay_src(
-            r#"signature app v(2);
+            r#"sig app v(2);
 v(1) {
   with {
-    module api {
+    mod api {
       rec {
         pub type A = B;
         pub type { B : A { pub mk; pub get; }; };
@@ -2688,7 +2645,7 @@ v(1) {
 }
 v(2) {
   with {
-    module api {
+    mod api {
       rec {
         pub type A = . | B;
         pub type { B : . | A { pub mk; pub get; }; };
@@ -2719,10 +2676,10 @@ v(2) {
     #[test]
     fn removed_recursive_group_can_be_readded_from_a_new_context_epoch() {
         let r = replay_src(
-            r#"signature app v(3);
+            r#"sig app v(3);
 v(1) {
   with {
-    module api {
+    mod api {
       rec {
         pub type A = B;
         pub type { B : A { pub mk; pub get; }; };
@@ -2736,7 +2693,7 @@ v(2) {
 }
 v(3) {
   with {
-    module api {
+    mod api {
       rec {
         pub type A = . | B;
         pub type { B : A { pub mk; pub get; }; };
@@ -2757,10 +2714,10 @@ v(3) {
     #[test]
     fn split_group_requires_a_replacement_context_when_a_member_is_readded() {
         let file = parse_signature_file(
-            r#"signature app v(2);
+            r#"sig app v(2);
 v(1) {
   with {
-    module api {
+    mod api {
       rec {
         pub type A = B;
         pub type { B : . | A { pub mk; pub get; }; };
@@ -2771,7 +2728,7 @@ v(1) {
 }
 v(2) {
   breaking { remove { api.B; } };
-  nonbreaking { add { module api {
+  nonbreaking { add { mod api {
     pub type { B : . { pub mk; pub get; }; };
   } } }
 }
@@ -2792,9 +2749,17 @@ v(2) {
     #[test]
     fn role_bearing_parameterized_host_type_is_rejected() {
         let file = parse_signature_file(
-            "signature app v(1);\n\
-             v(1) {\n  nonbreaking {\n    add {\n      module api {\n        \
-             host type Count[A] role(i32);\n      }\n    }\n  }\n}\n",
+            "sig app v(1);
+v(1) {
+  nonbreaking {
+    add {
+      mod api {
+        host type Count[A] role(i32);
+      }
+    }
+  }
+}
+",
             None,
         )
         .expect("parse");
@@ -2815,9 +2780,17 @@ v(2) {
     #[test]
     fn higher_kinded_host_type_parameter_is_rejected() {
         let file = parse_signature_file(
-            "signature app v(1);\n\
-             v(1) {\n  nonbreaking {\n    add {\n      module api {\n        \
-             host type Wrapper[*F];\n      }\n    }\n  }\n}\n",
+            "sig app v(1);
+v(1) {
+  nonbreaking {
+    add {
+      mod api {
+        host type Wrapper[*F];
+      }
+    }
+  }
+}
+",
             None,
         )
         .expect("parse");
@@ -2837,9 +2810,18 @@ v(2) {
     #[test]
     fn add_makes_present() {
         let r = replay_src(
-            "signature app v(1);\n\
-             v(1) {\n  nonbreaking {\n    add {\n      module api {\n        \
-             host type H role(i32);\n        pub fn f(x: H) -> H;\n      }\n    }\n  }\n}\n",
+            "sig app v(1);
+v(1) {
+  nonbreaking {
+    add {
+      mod api {
+        host type H role(i32);
+        pub fn f(x: H) -> H;
+      }
+    }
+  }
+}
+",
         );
         assert!(r.current.items.contains_key(&name("api", "H")));
         assert!(r.current.items.contains_key(&name("api", "f")));
@@ -2854,9 +2836,17 @@ v(2) {
     #[test]
     fn accepted_private_signature_newtype_replays_as_opaque() {
         let replayed = replay_src(
-            "signature app v(1);\n\
-             v(1) {\n  nonbreaking {\n    add {\n      module api {\n        \
-             type { Id : . { mk; get; }; };\n      }\n    }\n  }\n}\n",
+            "sig app v(1);
+v(1) {
+  nonbreaking {
+    add {
+      mod api {
+        type { Id : . { mk; get; }; };
+      }
+    }
+  }
+}
+",
         );
         let ContractKind::Newtype { surface, .. } =
             &replayed.current.items[&name("api", "Id")].kind
@@ -2869,13 +2859,20 @@ v(2) {
     #[test]
     fn signature_newtypes_imply_public_outer_visibility_for_member_projection() {
         let replayed = replay_src(
-            "signature app v(1);\n\
-             v(1) {\n  nonbreaking {\n    add {\n      module api {\n        \
-             type { Opaque : . { mk; get; }; };\n        \
-             type { Make : . { pub mk; get; }; };\n        \
-             type { Read : . { mk; pub get; }; };\n        \
-             type { Both : . { pub mk; pub get; }; };\n      \
-             }\n    }\n  }\n}\n",
+            "sig app v(1);
+v(1) {
+  nonbreaking {
+    add {
+      mod api {
+        type { Opaque : . { mk; get; }; };
+        type { Make : . { pub mk; get; }; };
+        type { Read : . { mk; pub get; }; };
+        type { Both : . { pub mk; pub get; }; };
+      }
+    }
+  }
+}
+",
         );
         let surface = |name: &str| {
             let ContractKind::Newtype { surface, .. } =
@@ -2908,9 +2905,17 @@ v(2) {
     #[test]
     fn exported_function_purity_survives_replay() {
         let replayed = replay_src(
-            "signature app v(1);\n\
-             v(1) {\n  nonbreaking {\n    add {\n      module api {\n        \
-             pub pure fn f() -> .;\n      }\n    }\n  }\n}\n",
+            "sig app v(1);
+v(1) {
+  nonbreaking {
+    add {
+      mod api {
+        pub pure fn f() -> .;
+      }
+    }
+  }
+}
+",
         );
         let ContractKind::Fn { pure, .. } = &replayed.current.items[&name("api", "f")].kind else {
             panic!("f should be a function");
@@ -2923,18 +2928,43 @@ v(2) {
         // v(1) adds `f(x: H) -> H`; v(2) modifies it to `f() -> H`. The
         // current interface carries the modified shape.
         let r = replay_src(
-            "signature app v(2);\n\
-             v(1) {\n  nonbreaking {\n    add {\n      module api {\n        \
-             host type H role(i32);\n        pub fn f(x: H) -> H;\n      }\n    }\n  }\n}\n\
-             v(2) {\n  breaking {\n    modify {\n      module api {\n        \
-             pub fn f() -> H;\n      }\n    }\n  }\n}\n",
+            "sig app v(2);
+v(1) {
+  nonbreaking {
+    add {
+      mod api {
+        host type H role(i32);
+        pub fn f(x: H) -> H;
+      }
+    }
+  }
+}
+v(2) {
+  breaking {
+    modify {
+      mod api {
+        pub fn f() -> H;
+      }
+    }
+  }
+}
+",
         );
         // Replay the v(1)-only history to get the original shape, then
         // confirm the v(2) modify reshaped it.
         let original = replay_src(
-            "signature app v(1);\n\
-             v(1) {\n  nonbreaking {\n    add {\n      module api {\n        \
-             host type H role(i32);\n        pub fn f(x: H) -> H;\n      }\n    }\n  }\n}\n",
+            "sig app v(1);
+v(1) {
+  nonbreaking {
+    add {
+      mod api {
+        host type H role(i32);
+        pub fn f(x: H) -> H;
+      }
+    }
+  }
+}
+",
         );
         let ContractKind::Fn {
             signature: orig, ..
@@ -2966,10 +2996,27 @@ v(2) {
     fn remove_drops_and_recovers_side() {
         // v(1) adds host type H + host fn open; v(2) removes open.
         let r = replay_src(
-            "signature app v(2);\n\
-             v(1) {\n  nonbreaking {\n    add {\n      module api {\n        \
-             host type H role(i32);\n        host fn open() -> H;\n      }\n    }\n  }\n}\n\
-             v(2) {\n  nonbreaking {\n    remove {\n      module api {\n        open;\n      }\n    }\n  }\n}\n",
+            "sig app v(2);
+v(1) {
+  nonbreaking {
+    add {
+      mod api {
+        host type H role(i32);
+        host fn open() -> H;
+      }
+    }
+  }
+}
+v(2) {
+  nonbreaking {
+    remove {
+
+        api.open;
+
+    }
+  }
+}
+",
         );
         assert!(!r.current.items.contains_key(&name("api", "open")));
         assert!(r.current.items.contains_key(&name("api", "H")));
@@ -2989,10 +3036,26 @@ v(2) {
         // interface; it is recorded as removed (recoverable) since it
         // was present at v(1)'s sealed boundary.
         let r = replay_src(
-            "signature app v(2);\n\
-             v(1) {\n  nonbreaking {\n    add {\n      module api {\n        \
-             pub fn g() -> .;\n      }\n    }\n  }\n}\n\
-             v(2) {\n  breaking {\n    remove {\n      module api {\n        g;\n      }\n    }\n  }\n}\n",
+            "sig app v(2);
+v(1) {
+  nonbreaking {
+    add {
+      mod api {
+        pub fn g() -> .;
+      }
+    }
+  }
+}
+v(2) {
+  breaking {
+    remove {
+
+        api.g;
+
+    }
+  }
+}
+",
         );
         assert!(!r.current.items.contains_key(&name("api", "g")));
         assert_eq!(r.removed.len(), 1);
@@ -3005,10 +3068,35 @@ v(2) {
         // the current interface and NOT in the removed set (re-add
         // clears the pending removal).
         let r = replay_src(
-            "signature app v(3);\n\
-             v(1) {\n  nonbreaking {\n    add {\n      module api {\n        pub fn g() -> .;\n      }\n    }\n  }\n}\n\
-             v(2) {\n  breaking {\n    remove {\n      module api {\n        g;\n      }\n    }\n  }\n}\n\
-             v(3) {\n  nonbreaking {\n    add {\n      module api {\n        pub fn g() -> .;\n      }\n    }\n  }\n}\n",
+            "sig app v(3);
+v(1) {
+  nonbreaking {
+    add {
+      mod api {
+        pub fn g() -> .;
+      }
+    }
+  }
+}
+v(2) {
+  breaking {
+    remove {
+
+        api.g;
+
+    }
+  }
+}
+v(3) {
+  nonbreaking {
+    add {
+      mod api {
+        pub fn g() -> .;
+      }
+    }
+  }
+}
+",
         );
         assert!(r.current.items.contains_key(&name("api", "g")));
         assert!(r.removed.iter().all(|x| x.entry.name != name("api", "g")));
@@ -3020,11 +3108,36 @@ v(2) {
         // The current interface drops `f`; the removed set has exactly
         // one `f` carrying its LAST frozen (modified) shape.
         let r = replay_src(
-            "signature app v(3);\n\
-             v(1) {\n  nonbreaking {\n    add {\n      module api {\n        \
-             host type H role(i32);\n        pub fn f(x: H) -> H;\n      }\n    }\n  }\n}\n\
-             v(2) {\n  breaking {\n    modify {\n      module api {\n        pub fn f() -> H;\n      }\n    }\n  }\n}\n\
-             v(3) {\n  breaking {\n    remove {\n      module api {\n        f;\n      }\n    }\n  }\n}\n",
+            "sig app v(3);
+v(1) {
+  nonbreaking {
+    add {
+      mod api {
+        host type H role(i32);
+        pub fn f(x: H) -> H;
+      }
+    }
+  }
+}
+v(2) {
+  breaking {
+    modify {
+      mod api {
+        pub fn f() -> H;
+      }
+    }
+  }
+}
+v(3) {
+  breaking {
+    remove {
+
+        api.f;
+
+    }
+  }
+}
+",
         );
         assert!(!r.current.items.contains_key(&name("api", "f")));
         let fs: Vec<_> = r
@@ -3052,10 +3165,28 @@ v(2) {
     fn module_removal_as_empty_drops_all_items() {
         // Removing every item of a module leaves it contributing nothing.
         let r = replay_src(
-            "signature app v(2);\n\
-             v(1) {\n  nonbreaking {\n    add {\n      module api {\n        \
-             pub fn a() -> .;\n        pub fn b() -> .;\n      }\n    }\n  }\n}\n\
-             v(2) {\n  breaking {\n    remove {\n      module api {\n        a;\n        b;\n      }\n    }\n  }\n}\n",
+            "sig app v(2);
+v(1) {
+  nonbreaking {
+    add {
+      mod api {
+        pub fn a() -> .;
+        pub fn b() -> .;
+      }
+    }
+  }
+}
+v(2) {
+  breaking {
+    remove {
+
+        api.a;
+        api.b;
+
+    }
+  }
+}
+",
         );
         assert!(r.current.items.is_empty());
         assert_eq!(r.removed.len(), 2);
@@ -3064,8 +3195,17 @@ v(2) {
     #[test]
     fn remove_never_added_is_error() {
         let file = parse_signature_file(
-            "signature app v(1);\n\
-             v(1) {\n  breaking {\n    remove {\n      module api {\n        ghost;\n      }\n    }\n  }\n}\n",
+            "sig app v(1);
+v(1) {
+  breaking {
+    remove {
+
+        api.ghost;
+
+    }
+  }
+}
+",
             None,
         )
         .expect("parse");
@@ -3083,8 +3223,17 @@ v(2) {
         // earlier version is a history incoherence — mirroring the
         // `remove` gate, replay rejects it rather than silently inserting.
         let file = parse_signature_file(
-            "signature app v(1);\n\
-             v(1) {\n  breaking {\n    modify {\n      module api {\n        pub fn ghost() -> .;\n      }\n    }\n  }\n}\n",
+            "sig app v(1);
+v(1) {
+  breaking {
+    modify {
+      mod api {
+        pub fn ghost() -> .;
+      }
+    }
+  }
+}
+",
             None,
         )
         .expect("parse");
@@ -3143,11 +3292,11 @@ v(2) {
     #[test]
     fn readded_declaration_can_be_modified_and_retired_from_its_new_origin() {
         let r = replay_src(
-            r#"signature app v(5);
-v(1) { nonbreaking { add { module api { pub fn serve() -> .; } } } }
+            r#"sig app v(5);
+v(1) { nonbreaking { add { mod api { pub fn serve() -> .; } } } }
 v(2) { breaking { remove { api.serve; } } }
-v(3) { nonbreaking { add { module api { pub fn serve() -> .; } } } }
-v(4) { breaking { modify { module api { pub fn serve(value: .) -> .; } } } }
+v(3) { nonbreaking { add { mod api { pub fn serve() -> .; } } } }
+v(4) { breaking { modify { mod api { pub fn serve(value: .) -> .; } } } }
 v(5) { breaking { remove { api.serve; } } }
 "#,
         );
@@ -3171,9 +3320,26 @@ v(5) { breaking { remove { api.serve; } } }
         // as an env-side removal for the deprecation re-emit even though
         // `f` is live again as an export.
         let r = replay_src(
-            "signature app v(2);\n\
-             v(1) {\n  nonbreaking {\n    add {\n      module api {\n        host fn f() -> .;\n      }\n    }\n  }\n}\n\
-             v(2) {\n  breaking {\n    modify {\n      module api {\n        pub fn f() -> .;\n      }\n    }\n  }\n}\n",
+            "sig app v(2);
+v(1) {
+  nonbreaking {
+    add {
+      mod api {
+        host fn f() -> .;
+      }
+    }
+  }
+}
+v(2) {
+  breaking {
+    modify {
+      mod api {
+        pub fn f() -> .;
+      }
+    }
+  }
+}
+",
         );
         // `f` is live as an export.
         assert_eq!(
@@ -3196,10 +3362,35 @@ v(5) { breaking { remove { api.serve; } } }
         // host `f` must still be recoverable on the env side (the explicit
         // export removal must not shadow it).
         let r = replay_src(
-            "signature app v(3);\n\
-             v(1) {\n  nonbreaking {\n    add {\n      module api {\n        host fn f() -> .;\n      }\n    }\n  }\n}\n\
-             v(2) {\n  breaking {\n    modify {\n      module api {\n        pub fn f() -> .;\n      }\n    }\n  }\n}\n\
-             v(3) {\n  breaking {\n    remove {\n      module api {\n        f;\n      }\n    }\n  }\n}\n",
+            "sig app v(3);
+v(1) {
+  nonbreaking {
+    add {
+      mod api {
+        host fn f() -> .;
+      }
+    }
+  }
+}
+v(2) {
+  breaking {
+    modify {
+      mod api {
+        pub fn f() -> .;
+      }
+    }
+  }
+}
+v(3) {
+  breaking {
+    remove {
+
+        api.f;
+
+    }
+  }
+}
+",
         );
         assert!(!r.current.items.contains_key(&name("api", "f")));
         let host_f = r
@@ -3213,13 +3404,35 @@ v(5) { breaking { remove { api.serve; } } }
     #[test]
     fn side_flip_back_to_host_clears_the_obsolete_host_retirement() {
         let replayed = replay_src(
-            "signature app v(3);\n\
-             v(1) {\n  nonbreaking {\n    add {\n      module api {\n        \
-             host fn f() -> .;\n      }\n    }\n  }\n}\n\
-             v(2) {\n  breaking {\n    modify {\n      module api {\n        \
-             pub fn f() -> .;\n      }\n    }\n  }\n}\n\
-             v(3) {\n  breaking {\n    modify {\n      module api {\n        \
-             host fn f(x: .) -> .;\n      }\n    }\n  }\n}\n",
+            "sig app v(3);
+v(1) {
+  nonbreaking {
+    add {
+      mod api {
+        host fn f() -> .;
+      }
+    }
+  }
+}
+v(2) {
+  breaking {
+    modify {
+      mod api {
+        pub fn f() -> .;
+      }
+    }
+  }
+}
+v(3) {
+  breaking {
+    modify {
+      mod api {
+        host fn f(x: .) -> .;
+      }
+    }
+  }
+}
+",
         );
 
         assert_eq!(
@@ -3237,11 +3450,26 @@ v(5) { breaking { remove { api.serve; } } }
     #[test]
     fn export_to_host_flip_does_not_implicitly_retire_the_export() {
         let replayed = replay_src(
-            "signature app v(2);\n\
-             v(1) {\n  nonbreaking {\n    add {\n      module api {\n        \
-             pub fn f() -> .;\n      }\n    }\n  }\n}\n\
-             v(2) {\n  breaking {\n    modify {\n      module api {\n        \
-             host fn f() -> .;\n      }\n    }\n  }\n}\n",
+            "sig app v(2);
+v(1) {
+  nonbreaking {
+    add {
+      mod api {
+        pub fn f() -> .;
+      }
+    }
+  }
+}
+v(2) {
+  breaking {
+    modify {
+      mod api {
+        host fn f() -> .;
+      }
+    }
+  }
+}
+",
         );
 
         assert_eq!(
@@ -3259,13 +3487,35 @@ v(5) { breaking { remove { api.serve; } } }
     #[test]
     fn explicit_host_removal_survives_an_export_readd() {
         let replayed = replay_src(
-            "signature app v(3);\n\
-             v(1) {\n  nonbreaking {\n    add {\n      module api {\n        \
-             host fn f() -> .;\n      }\n    }\n  }\n}\n\
-             v(2) {\n  nonbreaking {\n    remove {\n      module api {\n        \
-             f;\n      }\n    }\n  }\n}\n\
-             v(3) {\n  nonbreaking {\n    add {\n      module api {\n        \
-             pub fn f() -> .;\n      }\n    }\n  }\n}\n",
+            "sig app v(3);
+v(1) {
+  nonbreaking {
+    add {
+      mod api {
+        host fn f() -> .;
+      }
+    }
+  }
+}
+v(2) {
+  nonbreaking {
+    remove {
+
+        api.f;
+
+    }
+  }
+}
+v(3) {
+  nonbreaking {
+    add {
+      mod api {
+        pub fn f() -> .;
+      }
+    }
+  }
+}
+",
         );
 
         assert_eq!(
@@ -3285,15 +3535,44 @@ v(5) { breaking { remove { api.serve; } } }
     #[test]
     fn repeated_side_flip_retires_the_latest_host_incarnation() {
         let replayed = replay_src(
-            "signature app v(4);\n\
-             v(1) {\n  nonbreaking {\n    add {\n      module api {\n        \
-             host fn f() -> .;\n      }\n    }\n  }\n}\n\
-             v(2) {\n  breaking {\n    modify {\n      module api {\n        \
-             pub fn f() -> .;\n      }\n    }\n  }\n}\n\
-             v(3) {\n  breaking {\n    modify {\n      module api {\n        \
-             host fn f(x: .) -> .;\n      }\n    }\n  }\n}\n\
-             v(4) {\n  breaking {\n    modify {\n      module api {\n        \
-             pub fn f() -> .;\n      }\n    }\n  }\n}\n",
+            "sig app v(4);
+v(1) {
+  nonbreaking {
+    add {
+      mod api {
+        host fn f() -> .;
+      }
+    }
+  }
+}
+v(2) {
+  breaking {
+    modify {
+      mod api {
+        pub fn f() -> .;
+      }
+    }
+  }
+}
+v(3) {
+  breaking {
+    modify {
+      mod api {
+        host fn f(x: .) -> .;
+      }
+    }
+  }
+}
+v(4) {
+  breaking {
+    modify {
+      mod api {
+        pub fn f() -> .;
+      }
+    }
+  }
+}
+",
         );
 
         let host = replayed
@@ -3313,15 +3592,44 @@ v(5) { breaking { remove { api.serve; } } }
     #[test]
     fn remove_readd_remove_retires_the_readded_incarnation() {
         let replayed = replay_src(
-            "signature app v(4);\n\
-             v(1) {\n  nonbreaking {\n    add {\n      module api {\n        \
-             host fn f() -> .;\n      }\n    }\n  }\n}\n\
-             v(2) {\n  nonbreaking {\n    remove {\n      module api {\n        \
-             f;\n      }\n    }\n  }\n}\n\
-             v(3) {\n  nonbreaking {\n    add {\n      module api {\n        \
-             host fn f(x: .) -> .;\n      }\n    }\n  }\n}\n\
-             v(4) {\n  nonbreaking {\n    remove {\n      module api {\n        \
-             f;\n      }\n    }\n  }\n}\n",
+            "sig app v(4);
+v(1) {
+  nonbreaking {
+    add {
+      mod api {
+        host fn f() -> .;
+      }
+    }
+  }
+}
+v(2) {
+  nonbreaking {
+    remove {
+
+        api.f;
+
+    }
+  }
+}
+v(3) {
+  nonbreaking {
+    add {
+      mod api {
+        host fn f(x: .) -> .;
+      }
+    }
+  }
+}
+v(4) {
+  nonbreaking {
+    remove {
+
+        api.f;
+
+    }
+  }
+}
+",
         );
 
         let retired: Vec<_> = replayed
@@ -3340,11 +3648,25 @@ v(5) { breaking { remove { api.serve; } } }
     #[test]
     fn host_root_freezes_types_across_one_versions_partition_and_item_order() {
         let replayed = replay_src(
-            "signature app v(1);\n\
-             v(1) {\n  breaking {\n    add {\n      module api {\n        \
-             host fn consume(x: Wrapped) -> .;\n      }\n    }\n  };\n  \
-             nonbreaking {\n    add {\n      module api {\n        \
-             type Wrapped = Raw;\n        host type Raw;\n      }\n    }\n  }\n}\n",
+            "sig app v(1);
+v(1) {
+  breaking {
+    add {
+      mod api {
+        host fn consume(x: Wrapped) -> .;
+      }
+    }
+  };
+  nonbreaking {
+    add {
+      mod api {
+        type Wrapped = Raw;
+        host type Raw;
+      }
+    }
+  }
+}
+",
         );
 
         let closure = live_host_closure(&replayed, "api", "consume");
@@ -3361,11 +3683,20 @@ v(5) { breaking { remove { api.serve; } } }
     #[test]
     fn each_host_root_gets_only_its_own_reachable_types() {
         let replayed = replay_src(
-            "signature app v(1);\n\
-             v(1) {\n  nonbreaking {\n    add {\n      module api {\n        \
-             host type Left;\n        host type Right;\n        \
-             host fn take_left(x: Left) -> .;\n        \
-             host fn take_right(x: Right) -> .;\n      }\n    }\n  }\n}\n",
+            "sig app v(1);
+v(1) {
+  nonbreaking {
+    add {
+      mod api {
+        host type Left;
+        host type Right;
+        host fn take_left(x: Left) -> .;
+        host fn take_right(x: Right) -> .;
+      }
+    }
+  }
+}
+",
         );
 
         let left = live_host_closure(&replayed, "api", "take_left");
@@ -3383,10 +3714,24 @@ v(5) { breaking { remove { api.serve; } } }
     #[test]
     fn sealed_add_then_remove_keeps_the_roots_type_origin() {
         let replayed = replay_src(
-            "signature app v(1);\n\
-             v(1) {\n  nonbreaking {\n    add {\n      module api {\n        \
-             host type Raw;\n        host fn f(x: Raw) -> .;\n      }\n    };\n    \
-             remove {\n      module api {\n        Raw;\n        f;\n      }\n    }\n  }\n}\n",
+            "sig app v(1);
+v(1) {
+  nonbreaking {
+    add {
+      mod api {
+        host type Raw;
+        host fn f(x: Raw) -> .;
+      }
+    };
+    remove {
+
+        api.Raw;
+        api.f;
+
+    }
+  }
+}
+",
         );
 
         let removed = replayed
@@ -3407,11 +3752,25 @@ v(5) { breaking { remove { api.serve; } } }
     #[test]
     fn frozen_closure_keeps_each_declarations_own_imports() {
         let replayed = replay_src(
-            "signature app v(1);\n\
-             v(1) {\n  nonbreaking {\n    add {\n      module raw {\n        \
-             host type Raw;\n      };\n      module aliases {\n        \
-             import raw(Raw);\n        type Wrapped = Raw;\n      };\n      module api {\n        \
-             import aliases(Wrapped);\n        host fn consume(x: Wrapped) -> .;\n      }\n    }\n  }\n}\n",
+            "sig app v(1);
+v(1) {
+  nonbreaking {
+    add {
+      mod raw {
+        host type Raw;
+      };
+      mod aliases {
+        import raw {type Raw};
+        type Wrapped = Raw;
+      };
+      mod api {
+        import aliases {type Wrapped};
+        host fn consume(x: Wrapped) -> .;
+      }
+    }
+  }
+}
+",
         );
 
         let root = live_frozen_item(&replayed, "api", "consume");
@@ -3434,10 +3793,19 @@ v(5) { breaking { remove { api.serve; } } }
     #[test]
     fn nested_callback_and_return_types_stay_in_one_root_closure() {
         let replayed = replay_src(
-            "signature app v(1);\n\
-             v(1) {\n  nonbreaking {\n    add {\n      module api {\n        \
-             host type Input;\n        host type Output;\n        \
-             host fn register(cb: (Input) -> Output) -> (Output) -> Input;\n      }\n    }\n  }\n}\n",
+            "sig app v(1);
+v(1) {
+  nonbreaking {
+    add {
+      mod api {
+        host type Input;
+        host type Output;
+        host fn register(cb: (Input) -> Output) -> (Output) -> Input;
+      }
+    }
+  }
+}
+",
         );
 
         let closure = live_host_closure(&replayed, "api", "register");
@@ -3450,13 +3818,33 @@ v(5) { breaking { remove { api.serve; } } }
     #[test]
     fn removed_root_keeps_its_historical_alias_generation() {
         let replayed = replay_src(
-            "signature app v(2);\n\
-             v(1) {\n  nonbreaking {\n    add {\n      module api {\n        \
-             host type Raw;\n        type Wrapped = Raw;\n        \
-             host fn consume(x: Wrapped) -> .;\n      }\n    }\n  }\n}\n\
-             v(2) {\n  breaking {\n    modify {\n      module api {\n        \
-             type { Wrapped : Raw { pub mk; pub get; }; };\n      }\n    };\n    \
-             remove {\n      module api {\n        consume;\n      }\n    }\n  }\n}\n",
+            "sig app v(2);
+v(1) {
+  nonbreaking {
+    add {
+      mod api {
+        host type Raw;
+        type Wrapped = Raw;
+        host fn consume(x: Wrapped) -> .;
+      }
+    }
+  }
+}
+v(2) {
+  breaking {
+    modify {
+      mod api {
+        type { Wrapped : Raw { pub mk; pub get; }; };
+      }
+    };
+    remove {
+
+        api.consume;
+
+    }
+  }
+}
+",
         );
 
         let removed = replayed
@@ -3486,11 +3874,26 @@ v(5) { breaking { remove { api.serve; } } }
     #[test]
     fn missing_historical_type_is_rejected_before_a_future_declaration_can_rebind_it() {
         let file = parse_signature_file(
-            "signature app v(2);\n\
-             v(1) {\n  nonbreaking {\n    add {\n      module api {\n        \
-             host fn f(x: Later) -> .;\n      }\n    }\n  }\n}\n\
-             v(2) {\n  nonbreaking {\n    add {\n      module api {\n        \
-             host type Later;\n      }\n    }\n  }\n}\n",
+            "sig app v(2);
+v(1) {
+  nonbreaking {
+    add {
+      mod api {
+        host fn f(x: Later) -> .;
+      }
+    }
+  }
+}
+v(2) {
+  nonbreaking {
+    add {
+      mod api {
+        host type Later;
+      }
+    }
+  }
+}
+",
             None,
         )
         .expect("parse signature history");
@@ -3501,9 +3904,19 @@ v(5) { breaking { remove { api.serve; } } }
     #[test]
     fn alias_only_cycle_is_rejected_when_a_host_root_reaches_it() {
         let file = parse_signature_file(
-            "signature app v(1);\n\
-             v(1) {\n  nonbreaking {\n    add {\n      module api {\n        \
-             type A = B;\n        type B = A;\n        host fn f(x: A) -> .;\n      }\n    }\n  }\n}\n",
+            "sig app v(1);
+v(1) {
+  nonbreaking {
+    add {
+      mod api {
+        type A = B;
+        type B = A;
+        host fn f(x: A) -> .;
+      }
+    }
+  }
+}
+",
             None,
         )
         .expect("parse");
@@ -3518,13 +3931,28 @@ v(5) { breaking { remove { api.serve; } } }
     #[test]
     fn newtype_is_a_nominal_boundary_for_alias_recursion() {
         let replayed = replay_src(
-            "signature app v(1);\n\
-             v(1) {\n  with {\n    module api {\n      rec {\n        \
-             pub type A = N;\n        \
-             pub type { N : (A & Payload) { pub mk; pub get; }; };\n      }\n    }\n  };\n  \
-             nonbreaking {\n    add {\n      module api {\n        \
-             host type Payload;\n        \
-             host fn f(x: A) -> .;\n      };\n      api.A;\n      api.N;\n    }\n  }\n}\n",
+            "sig app v(1);
+v(1) {
+  with {
+    mod api {
+      rec {
+        pub type A = N;
+        pub type { N : (A & Payload) { pub mk; pub get; }; };
+      }
+    }
+  };
+  nonbreaking {
+    add {
+      mod api {
+        host type Payload;
+        host fn f(x: A) -> .;
+      };
+      api.A;
+      api.N;
+    }
+  }
+}
+",
         );
         let closure = live_host_closure(&replayed, "api", "f");
         assert!(matches!(

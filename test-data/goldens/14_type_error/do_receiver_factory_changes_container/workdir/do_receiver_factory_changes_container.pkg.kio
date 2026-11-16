@@ -1,4 +1,4 @@
-package do_receiver_factory_changes_container;
+pkg do_receiver_factory_changes_container;
 
 build {
   cache "out/.kio-cache/";

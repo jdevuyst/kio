@@ -1,4 +1,4 @@
-package qnv;
+pkg qnv;
 
 build {
   cache "out/.kio-cache/";

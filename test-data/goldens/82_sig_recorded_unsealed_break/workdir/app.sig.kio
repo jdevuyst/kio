@@ -1,9 +1,9 @@
-signature app v(2);
+sig app v(2);
 
 v(1) {
   nonbreaking {
     add {
-      module api {
+      mod api {
         pub fn serve()
       }
     }
@@ -18,7 +18,7 @@ v(2) {
   };
   nonbreaking {
     add {
-      module api {
+      mod api {
         pub fn other()
       }
     }

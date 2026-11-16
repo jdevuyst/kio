@@ -1,4 +1,4 @@
-package exec_let_shadow_module_fn_initializer;
+pkg exec_let_shadow_module_fn_initializer;
 
 build {
   cache "out/.kio-cache/";

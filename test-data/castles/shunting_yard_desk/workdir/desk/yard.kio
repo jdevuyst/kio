@@ -17,21 +17,44 @@
 /// - `(` is pushed as a barrier; `)` pops back to it and drops it.
 /// - At end of input the stack is drained. A barrier still on it is a
 ///   parenthesis nobody closed.
-module desk/yard;
+mod desk/yard;
 
-import desk/list(List, cons, nil, reverse);
-import desk/num(int_eq, not);
-import desk/op(Binary, Binop, Op, Unary, binop_prec, binop_right_assoc, prec);
-import desk/outcome(Failure, bad_token_fault, fault_at, unclosed_open_fault, unmatched_close_fault);
-import desk/step(Step, app_step, lit_step);
-import desk/token(Bad, Lparen, Num, Oper, Placed, Rparen, at_of, tok_of);
-import macros/control(macro if);
-import macros/match(macro match);
-import macros/row_macros(macro select);
-import macros/spine_macros(macro widen_sum);
-import testapi(Bool, I32);
-import testapi/arith(lt_i32);
-import testapi/iter(loop);
+import desk/list { type List; fn cons; fn nil; fn reverse }
+import desk/num { fn int_eq; fn not }
+import desk/op {
+  type Binary;
+  type Binop;
+  type Op;
+  type Unary;
+  fn binop_prec;
+  fn binop_right_assoc;
+  fn prec
+}
+import desk/outcome {
+  type Failure;
+  fn bad_token_fault;
+  fn fault_at;
+  fn unclosed_open_fault;
+  fn unmatched_close_fault
+}
+import desk/step { type Step; fn app_step; fn lit_step }
+import desk/token {
+  type Bad;
+  type Lparen;
+  type Num;
+  type Oper;
+  type Placed;
+  type Rparen;
+  fn at_of;
+  fn tok_of
+}
+import macros/control { macro if }
+import macros/match { macro match }
+import macros/row_macros { macro select }
+import macros/spine_macros { macro widen_sum }
+import testapi { type Bool; type I32 }
+import testapi/arith { fn lt_i32 }
+import testapi/iter { fn loop }
 
 /// An operator waiting on the stack, remembering where it was written so a
 /// fault raised when it finally fires can quote the right token.

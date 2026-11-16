@@ -1,7 +1,7 @@
-module packet_checksum_classifier/scanner;
+mod packet_checksum_classifier/scanner;
 
 import packet_checksum_classifier/source as source;
-import testapi(I32, String);
+import testapi { type I32; type String }
 import testapi/text as text;
 
 fn span(start: I32, end: I32) -> String { text.string_slice(source.frames(), start, end) }

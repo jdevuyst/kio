@@ -32,15 +32,15 @@ fn selective_import_removal_is_exact_and_rechecks_cleanly() {
     let dir = TempDir::new("unused-source-import");
     dir.write(
         "pkg/provider.kio",
-        "module pkg/provider; pub fn used() -> . { () } pub fn unused() -> . { () }",
+        "mod pkg/provider; pub fn used() -> . { () } pub fn unused() -> . { () }",
     );
     let source =
-        "module pkg/main;\nimport pkg/provider(used, unused);\npub fn run() -> . { used() }\n";
+        "mod pkg/main;\nimport pkg/provider {fn used; fn unused}\npub fn run() -> . { used() }\n";
     let (mut lsp, uri) = open(&dir, source);
     let publish = wait_for_publish_version(&mut lsp, &uri, 1);
     let diagnostics = publish["diagnostics"].as_array().unwrap();
     assert_eq!(diagnostics.len(), 1, "{publish}");
-    assert_warning_range(&diagnostics[0], source, "unused");
+    assert_warning_range(&diagnostics[0], source, "fn unused");
     let response = send_code_action(&mut lsp, &uri, &diagnostics[0]);
     let actions = response["result"].as_array().unwrap();
     assert_eq!(actions.len(), 1, "{response}");
@@ -49,10 +49,38 @@ fn selective_import_removal_is_exact_and_rechecks_cleanly() {
     let (edits, version) = action_edits_for_uri(&actions[0], &uri);
     assert_eq!(version, Some(1));
     let repaired = apply_lsp_text_edits(source, edits);
-    assert_eq!(repaired, source.replace(", unused", ""));
+    assert_eq!(repaired, source.replace("; fn unused", ""));
     send_full_text_change(&mut lsp, &uri, 2, &repaired);
     let cleared = wait_for_publish_version(&mut lsp, &uri, 2);
     assert_eq!(cleared["diagnostics"], json!([]), "{cleared}");
+    assert_eq!(lsp.shutdown(), 0);
+}
+
+#[test]
+fn selective_import_removal_preserves_kind_name_comment() {
+    let dir = TempDir::new("unused-source-import-comment");
+    dir.write(
+        "pkg/provider.kio",
+        "mod pkg/provider; pub fn used() -> . { () } pub fn unused() -> . { () }",
+    );
+    let source = "mod pkg/main;\nimport pkg/provider {fn used; fn // keep\n unused}\npub fn run() -> . { used() }\n";
+    let (mut lsp, uri) = open(&dir, source);
+    let published = wait_for_publish_version(&mut lsp, &uri, 1);
+    let diagnostic = published["diagnostics"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|diagnostic| diagnostic["message"] == "unused import")
+        .unwrap_or_else(|| panic!("{published}"));
+    let response = send_code_action(&mut lsp, &uri, diagnostic);
+    assert!(
+        response["result"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|action| action["title"] != "Remove unused import"),
+        "{response}"
+    );
     assert_eq!(lsp.shutdown(), 0);
 }
 
@@ -61,12 +89,12 @@ fn private_removal_owns_docs_and_allows_a_new_unused_import_warning() {
     let dir = TempDir::new("unused-source-private");
     dir.write(
         "pkg/provider.kio",
-        "module pkg/provider; pub fn used() -> . { () }",
+        "mod pkg/provider; pub fn used() -> . { () }",
     );
     let owned =
         "/// Attached declaration documentation.\nfn dead() -> . { let local = (); used() }\n";
     let source = format!(
-        "module pkg/main;\nimport pkg/provider(used);\n// Preserve this independent comment.\n\n{owned}pub fn run() -> . {{ () }}\n"
+        "mod pkg/main;\nimport pkg/provider {{fn used}}\n// Preserve this independent comment.\n\n{owned}pub fn run() -> . {{ () }}\n"
     );
     let (mut lsp, uri) = open(&dir, &source);
     let publish = wait_for_publish_version(&mut lsp, &uri, 1);
@@ -117,9 +145,9 @@ fn active_executable_docs_withhold_only_the_new_source_warnings() {
     let dir = TempDir::new("unused-source-doc-uncertainty");
     dir.write(
         "pkg/provider.kio",
-        "module pkg/provider; pub fn unused() -> . { () }",
+        "mod pkg/provider; pub fn unused() -> . { () }",
     );
-    let source = "module pkg/main;\nimport pkg/provider(unused);\n/// ```kio {@}\n/// ()\n/// ```\nfn dead() -> . { let local = (); () }\n";
+    let source = "mod pkg/main;\nimport pkg/provider {fn unused}\n/// ```kio {@}\n/// ()\n/// ```\nfn dead() -> . { let local = (); () }\n";
     let (mut lsp, uri) = open(&dir, source);
     let publish = wait_for_publish_version(&mut lsp, &uri, 1);
     let diagnostics = publish["diagnostics"].as_array().unwrap();
@@ -133,7 +161,7 @@ fn active_executable_docs_withhold_only_the_new_source_warnings() {
 #[test]
 fn forged_unused_removal_cannot_delete_a_public_declaration() {
     let dir = TempDir::new("unused-source-forged-removal");
-    let source = "module pkg/main;\nfn dead() -> . { () }\npub fn live() -> . { () }\n";
+    let source = "mod pkg/main;\nfn dead() -> . { () }\npub fn live() -> . { () }\n";
     let (mut lsp, uri) = open(&dir, source);
     let publish = wait_for_publish_version(&mut lsp, &uri, 1);
     let diagnostics = publish["diagnostics"].as_array().unwrap();
@@ -152,7 +180,7 @@ fn forged_unused_removal_cannot_delete_a_public_declaration() {
 #[test]
 fn forged_unused_fix_all_cannot_delete_an_intervening_public_declaration() {
     let dir = TempDir::new("unused-source-forged-fix-all");
-    let source = "module pkg/main;\nfn first() -> . { () }\npub fn live() -> . { () }\nfn second() -> . { () }\n";
+    let source = "mod pkg/main;\nfn first() -> . { () }\npub fn live() -> . { () }\nfn second() -> . { () }\n";
     let (mut lsp, uri) = open(&dir, source);
     let publish = wait_for_publish_version(&mut lsp, &uri, 1);
     let diagnostics = publish["diagnostics"].as_array().unwrap();
@@ -162,7 +190,7 @@ fn forged_unused_fix_all_cannot_delete_an_intervening_public_declaration() {
     let (edits, _) = action_edits_for_uri(&valid["result"][0], &uri);
     assert_eq!(
         apply_lsp_text_edits(source, edits),
-        "module pkg/main;\npub fn live() -> . { () }\n"
+        "mod pkg/main;\npub fn live() -> . { () }\n"
     );
     let mut forged = diagnostics.clone();
     let first = forged
@@ -186,7 +214,7 @@ fn private_function_removal_owns_its_optional_separator_but_not_comments() {
         ),
     ] {
         let dir = TempDir::new("unused-source-optional-separator");
-        let source = format!("module pkg/main;\r\n{declaration}pub fn live() -> . {{ () }}\r\n");
+        let source = format!("mod pkg/main;\r\n{declaration}pub fn live() -> . {{ () }}\r\n");
         let (mut lsp, uri) = open(&dir, &source);
         let publish = wait_for_publish_version(&mut lsp, &uri, 1);
         let diagnostics = publish["diagnostics"].as_array().unwrap();
@@ -208,7 +236,7 @@ fn private_function_removal_owns_its_optional_separator_but_not_comments() {
 fn private_type_removal_preserves_the_explicit_underscore_opt_out() {
     let dir = TempDir::new("unused-source-private-type");
     let owned = "/// Attached private type documentation.\ntype Dead = .;\n";
-    let source = format!("module pkg/main;\n{owned}type _Kept = .;\npub fn run() -> . {{ () }}\n");
+    let source = format!("mod pkg/main;\n{owned}type _Kept = .;\npub fn run() -> . {{ () }}\n");
     let (mut lsp, uri) = open(&dir, &source);
     let publish = wait_for_publish_version(&mut lsp, &uri, 1);
     let diagnostics = publish["diagnostics"].as_array().unwrap();

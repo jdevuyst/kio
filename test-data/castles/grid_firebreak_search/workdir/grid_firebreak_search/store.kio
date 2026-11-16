@@ -1,8 +1,8 @@
-module grid_firebreak_search/store;
+mod grid_firebreak_search/store;
 
 import grid_firebreak_search/grid as grid;
-import macros/control(macro if);
-import testapi(Array, Bool, I32);
+import macros/control { macro if }
+import testapi { type Array; type Bool; type I32 }
 import testapi/arith as arith;
 import testapi/array as array;
 import testapi/iter as iter;

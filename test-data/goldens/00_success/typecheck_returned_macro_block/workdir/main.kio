@@ -1,6 +1,6 @@
-module main;
+mod main;
 
-import provider(macro identity);
+import provider { macro identity }
 
 fn accept(_inputs: . & (. -> .)) { () }
 

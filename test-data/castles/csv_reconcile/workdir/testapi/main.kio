@@ -1,4 +1,4 @@
-module testapi/main;
+mod testapi/main;
 
 import csv_reconcile/reconcile as reconcile;
 

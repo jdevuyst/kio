@@ -1,4 +1,4 @@
-package type_only_equiv;
+pkg type_only_equiv;
 
 build {
   cache "out/.kio-cache/";

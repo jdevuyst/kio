@@ -1,6 +1,6 @@
-module provider/names;
+mod provider/names;
 
-import hostapi(I32);
+import hostapi { type I32 }
 
 pub fn from() -> I32 { 7[I32] }
 

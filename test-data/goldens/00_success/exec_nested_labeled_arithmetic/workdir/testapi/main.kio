@@ -1,10 +1,10 @@
-module testapi/main;
+mod testapi/main;
 
-import macros/row_macros(macro select);
-import testapi(I32);
-import testapi/arith(sub_i32);
-import testapi/fmt(int_to_string);
-import testapi/io(print);
+import macros/row_macros { macro select }
+import testapi { type I32 }
+import testapi/arith { fn sub_i32 }
+import testapi/fmt { fn int_to_string }
+import testapi/io { fn print }
 
 type { First: I32 { mk; get }; Second: I32 { mk; get } }
 

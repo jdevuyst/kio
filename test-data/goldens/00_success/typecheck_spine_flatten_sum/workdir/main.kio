@@ -1,6 +1,6 @@
-module main;
+mod main;
 
-import macros/spine_macros(macro flatten_sum);
+import macros/spine_macros { macro flatten_sum }
 
 type { A: . { pub mk; pub get } }
 

@@ -1,4 +1,4 @@
-package exec_do_block_nested;
+pkg exec_do_block_nested;
 
 build {
   cache "out/.kio-cache/";

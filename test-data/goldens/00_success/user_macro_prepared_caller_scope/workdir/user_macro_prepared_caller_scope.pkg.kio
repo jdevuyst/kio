@@ -1,4 +1,4 @@
-package user_macro_prepared_caller_scope;
+pkg user_macro_prepared_caller_scope;
 
 build {
   cache "out/.kio-cache/";

@@ -1,5 +1,5 @@
-module app;
+mod app;
 
-import lib/types(Token);
+import lib/types { type Token }
 
 pub type Public = Token;

@@ -5,20 +5,27 @@
 /// metrics, an integer's by counting its decimal places. The margin drawn
 /// beside each laid-out line is therefore the real margin, and the ragged edge
 /// the reader sees is the slack the badness was computed from.
-module justify/render;
+mod justify/render;
 
-import justify/dp(Table, table_back, table_best, table_fits);
-import justify/layout(Line, line_badness, line_slack, line_start, line_stop, line_used);
+import justify/dp { type Table; fn table_back; fn table_best; fn table_fits }
+import justify/layout {
+  type Line;
+  fn line_badness;
+  fn line_slack;
+  fn line_start;
+  fn line_stop;
+  fn line_used
+}
 import justify/list as list;
-import justify/list(List);
-import justify/word(Word, Words, widest, word_text, word_width);
-import macros/control(macro if);
-import macros/match(macro match);
-import testapi(Bool, I32, String);
-import testapi/arith(add_i32, leq_i32, lt_i32, mul_i32, sub_i32);
-import testapi/fmt(int_to_string);
-import testapi/iter(loop);
-import testapi/text(string_concat);
+import justify/list { type List }
+import justify/word { type Word; type Words; fn widest; fn word_text; fn word_width }
+import macros/control { macro if }
+import macros/match { macro match }
+import testapi { type Bool; type I32; type String }
+import testapi/arith { fn add_i32; fn leq_i32; fn lt_i32; fn mul_i32; fn sub_i32 }
+import testapi/fmt { fn int_to_string }
+import testapi/iter { fn loop }
+import testapi/text { fn string_concat }
 
 fn cat(a: String, b: String) -> String { string_concat(a, b) }
 

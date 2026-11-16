@@ -96,15 +96,15 @@ mod tests {
         package_from_sources(&[
             (
                 "a.kio",
-                "module a;\n/// First export.\npub fn same() { () }\n/// First host.\nhost fn supply() -> .;\n/// Private prose.\nfn hidden() { () }\n/// Replacement private prose.\nfn old() { () }\n",
+                "mod a;\n/// First export.\npub fn same() { () }\n/// First host.\nhost fn supply() -> .;\n/// Private prose.\nfn hidden() { () }\n/// Replacement private prose.\nfn old() { () }\n",
             ),
             (
                 "b.kio",
-                "module b;\n/// Second export.\npub fn same() { () }\npub fn undocumented() { () }\n",
+                "mod b;\n/// Second export.\npub fn same() { () }\npub fn undocumented() { () }\n",
             ),
             (
                 "c.kio",
-                "module c;\n/// Unbridged prose.\npub fn same() { () }\n",
+                "mod c;\n/// Unbridged prose.\npub fn same() { () }\n",
             ),
         ])
     }
@@ -114,7 +114,7 @@ mod tests {
             .iter()
             .map(|(path, source)| (PathBuf::from(path), parse(source).unwrap()))
             .collect();
-        let package_file = parse_package_file("package fixture; bridge { a; b; }", None).unwrap();
+        let package_file = parse_package_file("pkg fixture; bridge { a; b; }", None).unwrap();
         let (modules, package_file) =
             FullPipeline::lower_package(modules, Some(package_file)).unwrap();
         let package = Package::build(
@@ -171,7 +171,7 @@ mod tests {
     fn retained_site_cannot_read_same_name_current_private_docs() {
         let package = package();
         let signature = crate::pass::parser::parse_signature_file(
-            "signature fixture v(3); v(1) { nonbreaking { add { module a { host fn old() -> .; } } } } v(2) { breaking { remove { module a { old; } } } }",
+            "sig fixture v(3); v(1) { nonbreaking { add { mod a { host fn old() -> .; } } } } v(2) { breaking { remove {  a.old;  } } }",
             None,
         ).unwrap();
         let replayed = crate::sig::replay(&signature).unwrap();
@@ -211,9 +211,9 @@ mod tests {
         let package = package_from_sources(&[
             (
                 "a.kio",
-                "module a;\n/// Host constructor prose.\nhost type Box[A];\n/// Host method prose.\nhost fn supply() -> .;\n/// Public function prose.\npub fn same() -> . { supply() }\n/// Nominal prose.\npub type { Token: . { pub mk; pub get; }; };\n",
+                "mod a;\n/// Host constructor prose.\nhost type Box[A];\n/// Host method prose.\nhost fn supply() -> .;\n/// Public function prose.\npub fn same() -> . { supply() }\n/// Nominal prose.\npub type { Token: . { pub mk; pub get; }; };\n",
             ),
-            ("b.kio", "module b;"),
+            ("b.kio", "mod b;"),
         ]);
         let prepared = PreparedBoundaryCallableSites::collect(&package, None).unwrap();
         let binding = prepared
@@ -265,12 +265,12 @@ mod tests {
         let markers = "__kioOpaqueOut( __kioOpaqueIn( __kioProductSlots( __kioProductSlot( __kioSumPayload( __kioSumInject(";
         let benign = "Documentation about this declaration.";
         for source in [
-            "module a;\npub fn unit() -> . { () }\npub type { Token: . { pub mk; pub get; }; };\n",
-            "module a;\npub type { Opaque: . { pub mk; get; }; };\npub fn pair(value: . & .) -> . & . { value }\n",
+            "mod a;\npub fn unit() -> . { () }\npub type { Token: . { pub mk; pub get; }; };\n",
+            "mod a;\npub type { Opaque: . { pub mk; get; }; };\npub fn pair(value: . & .) -> . & . { value }\n",
         ] {
             let emit = |prose| {
                 let source = source.replace("\npub ", &format!("\n/// {prose}\npub "));
-                let package = package_from_sources(&[("a.kio", &source), ("b.kio", "module b;")]);
+                let package = package_from_sources(&[("a.kio", &source), ("b.kio", "mod b;")]);
                 super::super::js::emit::lower_package_to_factory_module(&package, "fixture")
                     .unwrap()
             };
@@ -286,9 +286,9 @@ mod tests {
         let package = package_from_sources(&[
             (
                 "a.kio",
-                "module a;\n/// Opaque nominal prose.\npub type { Opaque: . { pub mk; get; }; };\n/// Recursive nominal prose.\npub rec type { Recursive: . | Recursive { pub mk; pub get; }; };\n",
+                "mod a;\n/// Opaque nominal prose.\npub type { Opaque: . { pub mk; get; }; };\n/// Recursive nominal prose.\npub rec type { Recursive: . | Recursive { pub mk; pub get; }; };\n",
             ),
-            ("b.kio", "module b;"),
+            ("b.kio", "mod b;"),
         ]);
         let ts = super::super::ts::emit::lower_package_to_dts(&package, "fixture").unwrap();
         for (name, prose) in [
@@ -310,9 +310,9 @@ mod tests {
         let package = package_from_sources(&[
             (
                 "a.kio",
-                "module a;\n/// Keyword host prose.\nhost fn is() -> .;\n/// Keyword export prose.\npub fn return() -> . { () }\n",
+                "mod a;\n/// Keyword host prose.\nhost fn is() -> .;\n/// Keyword export prose.\npub fn return() -> . { () }\n",
             ),
-            ("b.kio", "module b;"),
+            ("b.kio", "mod b;"),
         ]);
         let py = super::super::python::stub::lower_package_to_stub(&package, "fixture").unwrap();
         assert!(

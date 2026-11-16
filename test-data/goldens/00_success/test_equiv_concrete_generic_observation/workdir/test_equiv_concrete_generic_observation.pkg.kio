@@ -1,4 +1,4 @@
-package test_equiv_concrete_generic_observation;
+pkg test_equiv_concrete_generic_observation;
 
 build {
   cache "out/.kio-cache/";

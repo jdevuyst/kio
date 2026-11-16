@@ -1,4 +1,4 @@
-package exec_dyn_load_host_unit_default;
+pkg exec_dyn_load_host_unit_default;
 
 build {
   cache "out/.kio-cache/";

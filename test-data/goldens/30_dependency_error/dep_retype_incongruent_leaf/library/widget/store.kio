@@ -1,7 +1,7 @@
-module store;
+mod store;
 
-pub type { Inner: . | . { pub mk; pub get; }; };
+pub type { Inner: . | . { pub mk; pub get } }
 
-pub type { Wrap: Inner { pub mk; pub get; }; };
+pub type { Wrap: Inner { pub mk; pub get } }
 
 pub fn wrap(i: Inner) -> Wrap { Wrap.mk(i) }

@@ -1,4 +1,4 @@
-package expression_formatter;
+pkg expression_formatter;
 
 build {
   cache "out/.kio-cache/";

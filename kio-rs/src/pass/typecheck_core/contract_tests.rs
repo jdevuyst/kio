@@ -85,15 +85,12 @@ fn bodyless_ordinary_pure_generic_uses_the_shared_nominal_and_header_checks() {
     let sources = [
         (
             "provider.kio",
-            "module provider; pub type { Token: . { pub mk; pub get; }; };",
+            "mod provider; pub type { Token: . { pub mk; pub get; }; };",
         ),
-        (
-            "other.kio",
-            "module other; type { Token: . { mk; get; }; };",
-        ),
+        ("other.kio", "mod other; type { Token: . { mk; get; }; };"),
         (
             "consumer.kio",
-            "module consumer; import provider as p; type Local = .; pure fn local(x: Local) -> Local { x } pub pure fn keep[A](unused: A)(x: p.Token) -> p.Token { x }",
+            "mod consumer; import provider as p; type Local = .; pure fn local(x: Local) -> Local { x } pub pure fn keep[A](unused: A)(x: p.Token) -> p.Token { x }",
         ),
     ];
     let (ordinary, contract) = packages(&sources);
@@ -127,13 +124,13 @@ fn bodyless_ordinary_pure_generic_uses_the_shared_nominal_and_header_checks() {
 #[test]
 fn bodyless_validation_preserves_private_nominal_and_kind_error_ownership() {
     for consumer in [
-        "module consumer; import provider as p; pub pure fn bad(x: p.Hidden) -> . { () }",
-        "module consumer; import provider as p; pub pure fn bad[A](x: A[.]) -> . { () }",
+        "mod consumer; import provider as p; pub pure fn bad(x: p.Hidden) -> . { () }",
+        "mod consumer; import provider as p; pub pure fn bad[A](x: A[.]) -> . { () }",
     ] {
         let (ordinary, contract) = packages(&[
             (
                 "provider.kio",
-                "module provider; type { Hidden: . { mk; get; }; };",
+                "mod provider; type { Hidden: . { mk; get; }; };",
             ),
             ("consumer.kio", consumer),
         ]);
@@ -149,15 +146,15 @@ fn bodyless_validation_preserves_private_nominal_and_kind_error_ownership() {
 fn bodyless_phase_keeps_ordinary_function_signatures_independent_of_purity() {
     for (source, valid) in [
         (
-            "module caps; import __comptime__; pub pure fn valid(ctx: __Comptime__)(ty: __Type__) -> __Type__ { ty }",
+            "mod caps; import __comptime__; pub pure fn valid(ctx: __Comptime__)(ty: __Type__) -> __Type__ { ty }",
             true,
         ),
         (
-            "module caps; import __comptime__; pub pure fn invalid(ty: __Type__) -> __Type__ { ty }",
+            "mod caps; import __comptime__; pub pure fn invalid(ty: __Type__) -> __Type__ { ty }",
             true,
         ),
         (
-            "module caps; import __comptime__; pub pure fn invalid(ctx: __Comptime__)(x: .)(fills: __Fill_ctx__) -> . { () }",
+            "mod caps; import __comptime__; pub pure fn invalid(ctx: __Comptime__)(x: .)(fills: __Fill_ctx__) -> . { () }",
             true,
         ),
     ] {
@@ -175,7 +172,7 @@ fn bodyless_phase_keeps_ordinary_function_signatures_independent_of_purity() {
 fn bodyless_projection_does_not_turn_a_body_into_a_signature_obligation() {
     let (ordinary, contract) = packages(&[(
         "sample.kio",
-        "module sample; pub pure fn keep[A](x: A) -> A { absent_body_value }",
+        "mod sample; pub pure fn keep[A](x: A) -> A { absent_body_value }",
     )]);
     assert!(ordinary.check_in_body_resolution().is_err());
     contract.check_signature_resolution().unwrap();
@@ -184,8 +181,8 @@ fn bodyless_projection_does_not_turn_a_body_into_a_signature_obligation() {
 
 #[test]
 fn bodyless_signature_errors_are_stable_under_provider_input_order() {
-    let first = ("a.kio", "module a; pub pure fn bad[A](x: A[.]) -> . { () }");
-    let second = ("z.kio", "module z; pub pure fn bad[B](x: B[.]) -> . { () }");
+    let first = ("a.kio", "mod a; pub pure fn bad[A](x: A[.]) -> . { () }");
+    let second = ("z.kio", "mod z; pub pure fn bad[B](x: B[.]) -> . { () }");
     let mut expected = None;
     for sources in [[first, second], [second, first], [first, second]] {
         let (_, contract) = packages(&sources);
@@ -222,7 +219,10 @@ fn bodyless_function_and_auxiliary_items_are_structurally_excluded_from_typing()
 
 #[test]
 fn bodyless_recursive_member_headers_reuse_the_existing_validator() {
-    let mut source = parser::parse("module recursion; rec(loop) { fn first[A](x: A) -> A { x }; fn second[A](x: A) -> A { x } }").unwrap();
+    let mut source = parser::parse(
+        "mod recursion; rec(loop) { fn first[A](x: A) -> A { x }; fn second[A](x: A) -> A { x } }",
+    )
+    .unwrap();
     let Item::RecGroup(group, _) = source.items.pop().unwrap() else {
         panic!("source group")
     };
@@ -284,8 +284,8 @@ fn bodyless_recursive_member_headers_reuse_the_existing_validator() {
 #[test]
 fn signature_only_on_ordinary_phases_still_checks_retained_auxiliary_items() {
     for source in [
-        "module claims; fn identity[A](x: A) -> A { x } equiv wrong { (); identity }",
-        "module claims; import __comptime__; pure fn implementation(ct: __Comptime__, _unit: __Checked_term__) -> . { () } macro wrong : . -> . { impl implementation; };",
+        "mod claims; fn identity[A](x: A) -> A { x } equiv wrong { (); identity }",
+        "mod claims; import __comptime__; pure fn implementation(ct: __Comptime__, _unit: __Checked_term__) -> . { () } macro wrong : . -> . { impl implementation; };",
     ] {
         let (ordinary, contract) = packages(&[("claims.kio", source)]);
         ordinary.check_in_body_resolution().unwrap();
@@ -302,7 +302,7 @@ fn full_checks_keep_scope_backed_recording_in_both_execution_modes() {
 
     let (ordinary, _) = packages(&[(
         "recording.kio",
-        "module recording; pure fn identity[A](x: A) -> A { x } fn consume() -> . { identity(()) }",
+        "mod recording; pure fn identity[A](x: A) -> A { x } fn consume() -> . { identity(()) }",
     )]);
     ordinary.check_in_body_resolution().unwrap();
     let normalized = crate::pass::alpha_normalize::normalize_package(&ordinary);
@@ -374,7 +374,7 @@ fn ordinary_layout_and_serialization_checkpoint() {
         align_of::<FnDef<Contract>>()
     );
     for modifier in ["", "pure "] {
-        let source = format!("module x; pub {modifier}fn identity[A](x: A) -> A {{ x }}");
+        let source = format!("mod x; pub {modifier}fn identity[A](x: A) -> A {{ x }}");
         let module = parser::parse(&source).unwrap();
         let Item::FnDef(function) = &module.items[0] else {
             panic!("ordinary function")

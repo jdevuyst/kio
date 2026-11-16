@@ -1,4 +1,4 @@
-package exec_unbridged_module_call;
+pkg exec_unbridged_module_call;
 
 build {
   cache "out/.kio-cache/";

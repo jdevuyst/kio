@@ -1,6 +1,14 @@
-module app;
+mod app;
 
-import provider(Box, box_bind, box_pure, macro enter, macro packet, macro sequence, macro two);
+import provider {
+  type Box;
+  fn box_bind;
+  fn box_pure;
+  macro enter;
+  macro packet;
+  macro sequence;
+  macro two
+}
 
 pub fn run() {
   enter {

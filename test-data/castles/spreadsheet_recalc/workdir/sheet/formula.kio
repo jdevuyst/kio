@@ -1,19 +1,27 @@
 /// The formula language: the expression tree, the precedent walk that turns a
 /// formula into graph edges, and its concrete syntax. Nothing here evaluates —
 /// `sheet/eval` interprets the tree.
-module sheet/formula;
+mod sheet/formula;
 
-import macros/control(macro if);
-import macros/match(macro match);
-import macros/row_macros(macro select);
-import macros/spine_macros(macro widen_sum);
-import sheet/addr(Addr, add_all, add_unique, addr_name, col_of, make_addr, row_of);
-import sheet/list(List, cons, nil);
-import testapi(Bool, I32, String);
-import testapi/arith(lt_i32, sub_i32);
-import testapi/fmt(int_to_string);
-import testapi/iter(loop);
-import testapi/text(string_concat);
+import macros/control { macro if }
+import macros/match { macro match }
+import macros/row_macros { macro select }
+import macros/spine_macros { macro widen_sum }
+import sheet/addr {
+  type Addr;
+  fn add_all;
+  fn add_unique;
+  fn addr_name;
+  fn col_of;
+  fn make_addr;
+  fn row_of
+}
+import sheet/list { type List; fn cons; fn nil }
+import testapi { type Bool; type I32; type String }
+import testapi/arith { fn lt_i32; fn sub_i32 }
+import testapi/fmt { fn int_to_string }
+import testapi/iter { fn loop }
+import testapi/text { fn string_concat }
 
 rec {
   pub type Expr_node =

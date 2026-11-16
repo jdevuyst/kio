@@ -1,9 +1,9 @@
-module testapi/main;
+mod testapi/main;
 
-import macros/control(macro if, macro scope);
-import macros/sequence(macro do);
-import testapi(Bool, I32);
-import testapi/io(print);
+import macros/control { macro if; macro scope }
+import macros/sequence { macro do }
+import testapi { type Bool; type I32 }
+import testapi/io { fn print }
 
 fn condition(value: Bool) -> Bool { print("condition\n"); value }
 

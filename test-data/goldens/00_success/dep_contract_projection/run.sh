@@ -43,7 +43,7 @@ bare="$scratch/contract.git"
 git clone --quiet --bare "$src" "$bare" || fail "cannot create dependency repository"
 
 cat > "$scratch/consumer/contract.dep.kio" <<EOF
-dependency contract;
+dep contract;
 
 source {
   git "$bare";

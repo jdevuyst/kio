@@ -1,9 +1,9 @@
-module testapi/main;
+mod testapi/main;
 
-import testapi(String);
-import testapi/arith(round_picker);
-import testapi/io(print);
-import testapi/types(Pick_first);
+import testapi { type String }
+import testapi/arith { fn round_picker }
+import testapi/io { fn print }
+import testapi/types { type Pick_first }
 
 fn first_picker() -> Pick_first {
   Pick_first.mk(.[A](left: A, _right: A) { left })

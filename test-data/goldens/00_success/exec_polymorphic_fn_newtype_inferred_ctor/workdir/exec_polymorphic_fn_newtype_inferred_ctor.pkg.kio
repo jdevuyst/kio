@@ -1,4 +1,4 @@
-package exec_polymorphic_fn_newtype_inferred_ctor;
+pkg exec_polymorphic_fn_newtype_inferred_ctor;
 
 build {
   cache "out/.kio-cache/";

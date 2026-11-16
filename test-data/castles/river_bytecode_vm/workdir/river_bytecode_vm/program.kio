@@ -1,9 +1,9 @@
-module river_bytecode_vm/program;
+mod river_bytecode_vm/program;
 
-import macros/control(macro if);
+import macros/control { macro if }
 import river_bytecode_vm/constants as c;
-import testapi(Bool, I32, String);
-import testapi/arith(eq_i32);
+import testapi { type Bool; type I32; type String }
+import testapi/arith { fn eq_i32 }
 
 pub fn program_len() -> I32 { 17 }
 

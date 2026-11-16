@@ -1,13 +1,13 @@
-module report/aggregate;
+mod report/aggregate;
 
 import list/core as cells;
 import list/list as lists;
-import macros/control(macro if);
-import macros/match(macro match);
-import macros/row_macros(macro select);
+import macros/control { macro if }
+import macros/match { macro match }
+import macros/row_macros { macro select }
 import report/events as events;
 import report/model as model;
-import testapi(Bool, I32, String);
+import testapi { type Bool; type I32; type String }
 import testapi/arith as arith;
 import testapi/fmt as fmt;
 import testapi/text as text;

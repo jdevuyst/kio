@@ -1,4 +1,4 @@
-module dict/macros/testapi;
+mod dict/macros/testapi;
 
 import testapi as _rehost_hegfhdhegbhagj;
 

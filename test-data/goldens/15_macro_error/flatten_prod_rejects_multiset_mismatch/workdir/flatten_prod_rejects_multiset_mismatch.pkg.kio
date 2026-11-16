@@ -1,4 +1,4 @@
-package flatten_prod_rejects_multiset_mismatch;
+pkg flatten_prod_rejects_multiset_mismatch;
 
 build {
   cache "out/.kio-cache/";

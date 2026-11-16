@@ -3,14 +3,14 @@ use super::*;
 #[test]
 fn configuration_fields_publish_shared_value_descriptions() {
     let dir = TempDir::new("configuration-field-details");
-    dir.write("app.pkg.kio", "package app;\n");
-    dir.write("app.kio", "module app;\n");
+    dir.write("app.pkg.kio", "pkg app;\n");
+    dir.write("app.kio", "mod app;\n");
     let mut lsp = LspProcess::spawn();
     lsp.initialize(&path_to_file_uri(dir.path()));
     let mut cases = vec![
         (
             ".pkg",
-            "package app; build { ".to_owned(),
+            "pkg app; build { ".to_owned(),
             vec![
                 ("cache", Some("() | String")),
                 ("docs", None),
@@ -19,7 +19,7 @@ fn configuration_fields_publish_shared_value_descriptions() {
         ),
         (
             ".pkg",
-            "package app; build { docs { ".to_owned(),
+            "pkg app; build { docs { ".to_owned(),
             vec![
                 ("html", Some("() | String")),
                 ("md", Some("String")),
@@ -29,7 +29,7 @@ fn configuration_fields_publish_shared_value_descriptions() {
         ),
         (
             ".dep",
-            "dependency app; source { ".to_owned(),
+            "dep app; source { ".to_owned(),
             vec![
                 ("git", Some("String")),
                 ("path", Some("() | String")),
@@ -82,7 +82,7 @@ fn configuration_fields_publish_shared_value_descriptions() {
         }
         cases.push((
             ".pkg",
-            format!("package app; build {{ target {target} {{ "),
+            format!("pkg app; build {{ target {target} {{ "),
             expected,
         ));
     }
@@ -125,7 +125,7 @@ fn configuration_fields_publish_shared_value_descriptions() {
         );
     }
     let uri = path_to_file_uri(&dir.path().join("app.pkg.kio"));
-    lsp.send_notification("textDocument/didOpen", json!({"textDocument": {"uri": uri, "languageId": "kio", "version": 100, "text": "package app;\n"}}));
+    lsp.send_notification("textDocument/didOpen", json!({"textDocument": {"uri": uri, "languageId": "kio", "version": 100, "text": "pkg app;\n"}}));
     wait_for_analysis_event(&lsp.analysis_events, &uri, 100);
     assert_eq!(lsp.shutdown(), 0);
 }
@@ -133,54 +133,54 @@ fn configuration_fields_publish_shared_value_descriptions() {
 #[test]
 fn configuration_field_hover_tracks_owner_overlay_and_parse_validity() {
     let dir = TempDir::new("configuration-field-hover");
-    dir.write("app.kio", "module app;\nfn namespace() { () }\n");
-    let disk = "package app; build { target kio-prime { out \"out\" } }";
+    dir.write("app.kio", "mod app;\nfn namespace() { () }\n");
+    let disk = "pkg app; build { target kio-prime { out \"out\" } }";
     let uri = path_to_file_uri(&dir.write("app.pkg.kio", disk));
     let mut lsp = LspProcess::spawn();
     lsp.initialize(&path_to_file_uri(dir.path()));
     let cases = [
         (
-            "package app; build { target js { out \"out\"; baseline ((latest)) } }",
+            "pkg app; build { target js { out \"out\"; baseline ((latest)) } }",
             "baseline",
             Some("() | latest | es2020"),
         ),
         (
-            "package app; build { target js { out \"out\"; namespace ((())) } }",
+            "pkg app; build { target js { out \"out\"; namespace ((())) } }",
             "namespace",
             Some("() | String"),
         ),
         (
-            "package app; build { cache (()); docs { md \"docs\"; md_out \"out-md\"; html \"out-html\"; support \"assets\" } }",
+            "pkg app; build { cache (()); docs { md \"docs\"; md_out \"out-md\"; html \"out-html\"; support \"assets\" } }",
             "cache",
             Some("() | String"),
         ),
         (
-            "package app; build { docs { md \"docs\"; md_out \"out-md\"; html \"out-html\"; support \"assets\" } }",
+            "pkg app; build { docs { md \"docs\"; md_out \"out-md\"; html \"out-html\"; support \"assets\" } }",
             "md_out",
             Some("() | String"),
         ),
         (
-            "package app; build { target kio-prime { out \"out\"; namespace \"literal\" } }",
+            "pkg app; build { target kio-prime { out \"out\"; namespace \"literal\" } }",
             "namespace",
             None,
         ),
         (
-            "package other; build { target js { out \"out\"; namespace () } }",
+            "pkg other; build { target js { out \"out\"; namespace () } }",
             "namespace",
             None,
         ),
         (
-            "package app; build { target js { out \"out\"; namespace (",
+            "pkg app; build { target js { out \"out\"; namespace (",
             "namespace",
             None,
         ),
         (
-            "package app; build { target js { out \"namespace\" } }",
+            "pkg app; build { target js { out \"namespace\" } }",
             "namespace",
             None,
         ),
         (
-            "package app; build { target js { out \"out\"; // namespace\n } }",
+            "pkg app; build { target js { out \"out\"; // namespace\n } }",
             "namespace",
             None,
         ),
@@ -235,7 +235,7 @@ fn configuration_field_hover_tracks_owner_overlay_and_parse_validity() {
     for (kind, source, key) in [
         (
             "dep",
-            "dependency app; source { git \"https://example.invalid/dep\"; ref \"main\"; path ((())) }",
+            "dep app; source { git \"https://example.invalid/dep\"; ref \"main\"; path ((())) }",
             "path",
         ),
         (
@@ -262,33 +262,33 @@ fn configuration_field_hover_tracks_owner_overlay_and_parse_validity() {
 #[test]
 fn configuration_value_choices_insert_defaults_and_named_modes() {
     let dir = TempDir::new("configuration-value-choices");
-    dir.write("app.pkg.kio", "package app;\n");
-    dir.write("app.kio", "module app;\n");
+    dir.write("app.pkg.kio", "pkg app;\n");
+    dir.write("app.kio", "mod app;\n");
     let mut lsp = LspProcess::spawn();
     lsp.initialize(&path_to_file_uri(dir.path()));
     let mut cases = vec![
-        (".pkg", "package app; build { cache | }".to_owned(), vec!["()"], "() | String"),
-        (".pkg", "package app; build { docs { md \"docs\"; md_out | } }".to_owned(), vec!["\"out/docs-md/\"", "()"], "() | String"),
-        (".pkg", "package app; build { docs { md \"docs\"; html ((|)) } }".to_owned(), vec!["\"out/docs/\"", "()"], "() | String"),
-        (".pkg", "package app; build { target rust { out \"out\"; thread_safety | } }".to_owned(), vec!["()", "send", "send_sync", "sync"], "() | send | sync | send_sync"),
-        (".pkg", "package app; build { target rust { out \"out\"; thread_safety ((|)) } }".to_owned(), vec!["()", "send", "send_sync", "sync"], "() | send | sync | send_sync"),
-        (".pkg", "package app; build { target js { out \"out\"; baseline ((|)) } }".to_owned(), vec!["()", "es2020", "latest"], "() | latest | es2020"),
-        (".pkg", "package app; build { target ts { out \"out\"; baseline | } }".to_owned(), vec!["()", "latest", "v5_0"], "() | latest | v5_0"),
-        (".pkg", "package app; build { target rust { out \"out\"; baseline | } }".to_owned(), vec!["()", "latest", "v1_85"], "() | latest | v1_85"),
-        (".pkg", "package app; build { target kio-prime { out \"out\"; baseline | } }".to_owned(), vec![], ""),
-        (".dep", "dependency app; source { git \"https://example.invalid/dep\"; ref \"main\"; path | }".to_owned(), vec!["()"], "() | String"),
+        (".pkg", "pkg app; build { cache | }".to_owned(), vec!["()"], "() | String"),
+        (".pkg", "pkg app; build { docs { md \"docs\"; md_out | } }".to_owned(), vec!["\"out/docs-md/\"", "()"], "() | String"),
+        (".pkg", "pkg app; build { docs { md \"docs\"; html ((|)) } }".to_owned(), vec!["\"out/docs/\"", "()"], "() | String"),
+        (".pkg", "pkg app; build { target rust { out \"out\"; thread_safety | } }".to_owned(), vec!["()", "send", "send_sync", "sync"], "() | send | sync | send_sync"),
+        (".pkg", "pkg app; build { target rust { out \"out\"; thread_safety ((|)) } }".to_owned(), vec!["()", "send", "send_sync", "sync"], "() | send | sync | send_sync"),
+        (".pkg", "pkg app; build { target js { out \"out\"; baseline ((|)) } }".to_owned(), vec!["()", "es2020", "latest"], "() | latest | es2020"),
+        (".pkg", "pkg app; build { target ts { out \"out\"; baseline | } }".to_owned(), vec!["()", "latest", "v5_0"], "() | latest | v5_0"),
+        (".pkg", "pkg app; build { target rust { out \"out\"; baseline | } }".to_owned(), vec!["()", "latest", "v1_85"], "() | latest | v1_85"),
+        (".pkg", "pkg app; build { target kio-prime { out \"out\"; baseline | } }".to_owned(), vec![], ""),
+        (".dep", "dep app; source { git \"https://example.invalid/dep\"; ref \"main\"; path | }".to_owned(), vec!["()"], "() | String"),
         (".lock", "lock app; resolved { git \"https://example.invalid/dep\"; ref \"main\"; commit \"abc\"; sig \"digest\"; path | }".to_owned(), vec!["()"], "() | String"),
-        (".pkg", "package app; build { target js { out | } }".to_owned(), vec![], "String"),
-        (".pkg", "package app; build { docs { md | } }".to_owned(), vec![], "String"),
-        (".pkg", "package app; build { target rust { out \"out\"; thread_safety \"se|nd\" } }".to_owned(), vec![], ""),
-        (".pkg", "package app; build { target rust { out \"out\"; thread_safety // se|nd\n } }".to_owned(), vec![], ""),
+        (".pkg", "pkg app; build { target js { out | } }".to_owned(), vec![], "String"),
+        (".pkg", "pkg app; build { docs { md | } }".to_owned(), vec![], "String"),
+        (".pkg", "pkg app; build { target rust { out \"out\"; thread_safety \"se|nd\" } }".to_owned(), vec![], ""),
+        (".pkg", "pkg app; build { target rust { out \"out\"; thread_safety // se|nd\n } }".to_owned(), vec![], ""),
     ];
     for target in [
         "go", "haskell", "java", "js", "python", "rust", "swift", "ts",
     ] {
         cases.push((
             ".pkg",
-            format!("package app; build {{ target {target} {{ out \"out\"; namespace | }} }}"),
+            format!("pkg app; build {{ target {target} {{ out \"out\"; namespace | }} }}"),
             vec!["()"],
             "() | String",
         ));
@@ -323,7 +323,7 @@ fn configuration_value_choices_insert_defaults_and_named_modes() {
         );
     }
     // Replace the entire started mode, retaining the same closed choices.
-    let marked = "package app; build { target rust { out \"out\"; thread_safety se|nd_sync } }";
+    let marked = "pkg app; build { target rust { out \"out\"; thread_safety se|nd_sync } }";
     let cursor = marked.find('|').unwrap();
     let source = marked.replacen('|', "", 1);
     let uri = path_to_file_uri(&dir.path().join("app.pkg.kio"));
@@ -349,14 +349,14 @@ fn configuration_value_choices_insert_defaults_and_named_modes() {
 #[test]
 fn capture_completion_offers_bare_types_and_values_but_value_only_members() {
     let dir = TempDir::new("capture-role-completion");
-    dir.write("app.pkg.kio", "package app;\n");
+    dir.write("app.pkg.kio", "pkg app;\n");
     dir.write(
         "other.kio",
-        "module other; pub type Foo = .; pub pure fn helper() { () }\n",
+        "mod other; pub type Foo = .; pub pure fn helper() { () }\n",
     );
-    let initial = "module app; import other as m;\n";
+    let initial = "mod app; import other as m;\n";
     let uri = path_to_file_uri(&dir.write("app.kio", initial));
-    let head = "module app; import other as m; type Foo = .; type _Foo = .; pure fn helper() { () } macro form: . -> . { ";
+    let head = "mod app; import other as m; type Foo = .; type _Foo = .; pure fn helper() { () } macro form: . -> . { ";
     let mut lsp = LspProcess::spawn();
     lsp.initialize(&path_to_file_uri(dir.path()));
     open_and_wait_for_analysis(&mut lsp, &uri, initial);
@@ -427,19 +427,20 @@ fn closed_cases() -> Vec<ClosedCase> {
         ("fn", " run() { () }"),
         ("host", " type A;"),
         ("import", " __intrinsics__;"),
-        ("literal", " one = 1;"),
+        ("lit", " one = 1;"),
         ("op", " ~ _ { impl run; };"),
+        ("op_macro", " ~ _ { impl run; };"),
         ("pub", " fn run() { () }"),
         ("pure", " fn run() { () }"),
         ("rec", "(loop) fn run() { () }"),
         ("type", " A = .;"),
-        ("varop", " [* *] { foldr step base; };"),
+        ("op_var", " [* *] { foldr step base; };"),
     ];
-    add("", "", &[("module", " app;")]);
-    add("", "module app; ", &declarations);
+    add("", "", &[("mod", " app;")]);
+    add("", "mod app; ", &declarations);
     add(
         "",
-        "module app; pub ",
+        "mod app; pub ",
         &declarations
             .iter()
             .copied()
@@ -448,29 +449,29 @@ fn closed_cases() -> Vec<ClosedCase> {
     );
     add(
         "",
-        "module app; pure ",
+        "mod app; pure ",
         &[("fn", " run() { () }"), ("pub", " fn run() { () }")],
     );
-    add("", "module app; pub pure ", &[("fn", " run() { () }")]);
-    add("", "module app; pure pub ", &[("fn", " run() { () }")]);
+    add("", "mod app; pub pure ", &[("fn", " run() { () }")]);
+    add("", "mod app; pure pub ", &[("fn", " run() { () }")]);
     add(
         "",
-        "module app; host ",
+        "mod app; host ",
         &[("fn", " run() -> .;"), ("pub", " type A;"), ("type", " A;")],
     );
     add(
         "",
-        "module app; host pub ",
+        "mod app; host pub ",
         &[("fn", " run() -> .;"), ("type", " A;")],
     );
     add(
         "",
-        "module app; pub host ",
+        "mod app; pub host ",
         &[("fn", " run() -> .;"), ("type", " A;")],
     );
     add(
         "",
-        "module app; type Prior = .; ",
+        "mod app; type Prior = .; ",
         &declarations
             .iter()
             .copied()
@@ -480,13 +481,13 @@ fn closed_cases() -> Vec<ClosedCase> {
     for visibility in ["", "pub "] {
         add(
             "",
-            &format!("module app; {visibility}rec "),
+            &format!("mod app; {visibility}rec "),
             &[("type", " { A: A { mk; get; }; };")],
         );
     }
     add(
         "",
-        "module app; rec { ",
+        "mod app; rec { ",
         &[
             ("pub", " type A = B; type { B: A { mk; get; }; }; }"),
             ("type", " A = B; type { B: A { mk; get; }; }; }"),
@@ -494,25 +495,25 @@ fn closed_cases() -> Vec<ClosedCase> {
     );
     add(
         "",
-        "module app; rec { pub ",
+        "mod app; rec { pub ",
         &[("type", " A = B; type { B: A { mk; get; }; }; }")],
     );
     add(
         "",
-        "module app; rec(loop) { ",
+        "mod app; rec(loop) { ",
         &[("fn", " run() { () } }"), ("pub", " fn run() { () } }")],
     );
     add(
         "",
-        "module app; rec(loop) { pub ",
+        "mod app; rec(loop) { pub ",
         &[("fn", " run() { () } }")],
     );
-    add("", "module app; import dep/api ", &[("as", " api;")]);
-    add("", "module app; host type A ", &[("role", "(str);")]);
-    add("", "module app; host type A[T] ", &[]);
+    add("", "mod app; import dep/api ", &[("as", " api;")]);
+    add("", "mod app; host type A ", &[("role", "(str);")]);
+    add("", "mod app; host type A[T] ", &[]);
     add(
         "",
-        "module app; host type A role(",
+        "mod app; host type A role(",
         &[
             ("bool", ");"),
             ("f32", ");"),
@@ -532,13 +533,7 @@ fn closed_cases() -> Vec<ClosedCase> {
     );
     add(
         "",
-        "module app; host type A role(str) { ",
-        &[("owned", " };")],
-    );
-    add("", "module app; host type A role(str) { owned ", &[]);
-    add(
-        "",
-        "module app; type { A: . { ",
+        "mod app; type { A: . { ",
         &[
             ("mk", "; get; }; };"),
             ("get", "; mk; }; };"),
@@ -547,28 +542,24 @@ fn closed_cases() -> Vec<ClosedCase> {
     );
     add(
         "",
-        "module app; type { A: . { pub ",
+        "mod app; type { A: . { pub ",
         &[("mk", "; get; }; };"), ("get", "; mk; }; };")],
     );
     add(
         "",
-        "module app; type { A: . { mk; ",
+        "mod app; type { A: . { mk; ",
         &[("get", "; }; };"), ("pub", " get; }; };")],
     );
     add(
         "",
-        "module app; type { A: . { get; ",
+        "mod app; type { A: . { get; ",
         &[("mk", "; }; };"), ("pub", " mk; }; };")],
     );
+    add("", "mod app; type { A: . { get; pub ", &[("mk", "; }; };")]);
+    add("", "mod app; type { A: . { mk; get; ", &[]);
     add(
         "",
-        "module app; type { A: . { get; pub ",
-        &[("mk", "; }; };")],
-    );
-    add("", "module app; type { A: . { mk; get; ", &[]);
-    add(
-        "",
-        "module app; macro make: . -> . { ",
+        "mod app; macro make: . -> . { ",
         &[
             ("captures", " (run); impl run; };"),
             ("impl", " run; };"),
@@ -577,38 +568,34 @@ fn closed_cases() -> Vec<ClosedCase> {
     );
     add(
         "",
-        "module app; macro make: . -> . { captures (run); ",
+        "mod app; macro make: . -> . { captures (run); ",
         &[("impl", " run; };"), ("trailing", " product; impl run; };")],
     );
     add(
         "",
-        "module app; macro make: . { impl(",
+        "mod app; macro make: . { impl(",
         &[("fills", ") run; };")],
     );
     add(
         "",
-        "module app; macro make: . -> . { impl run; ",
+        "mod app; macro make: . -> . { impl run; ",
         &[("captures", " (run); };"), ("trailing", " product; };")],
     );
     add(
         "",
-        "module app; macro make: [A] A -> . { trailing ",
+        "mod app; macro make: [A] A -> . { trailing ",
         &[
             ("product", "; impl run; };"),
             ("thunk", "; impl run; };"),
             ("sequence", "; impl run; };"),
         ],
     );
+    add("", "mod app; macro make: . -> . { trailing product ", &[]);
+    add("", "mod app; op ~ _ { ", &[("impl", " run; };")]);
+    add("", "mod app; op ~ _ { impl run; ", &[]);
     add(
         "",
-        "module app; macro make: . -> . { trailing product ",
-        &[],
-    );
-    add("", "module app; op ~ _ { ", &[("impl", " run; };")]);
-    add("", "module app; op ~ _ { impl run; ", &[]);
-    add(
-        "",
-        "module app; varop [* *] { ",
+        "mod app; op_var [* *] { ",
         &[
             ("foldl", " step base; };"),
             ("foldl1", " step seed; };"),
@@ -619,7 +606,7 @@ fn closed_cases() -> Vec<ClosedCase> {
     );
     add(
         "",
-        "module app; varop [* *] { finalize finish; ",
+        "mod app; op_var [* *] { finalize finish; ",
         &[
             ("foldl", " step base; };"),
             ("foldl1", " step seed; };"),
@@ -630,74 +617,74 @@ fn closed_cases() -> Vec<ClosedCase> {
     for mode in ["foldl", "foldl1", "foldr", "foldr1"] {
         add(
             "",
-            &format!("module app; varop [* *] {{ {mode} step base; "),
+            &format!("mod app; op_var [* *] {{ {mode} step base; "),
             &[("finalize", " finish; };")],
         );
         add(
             "",
-            &format!("module app; varop [* *] {{ {mode} step base; finalize finish; "),
+            &format!("mod app; op_var [* *] {{ {mode} step base; finalize finish; "),
             &[],
         );
     }
     add(
         "",
-        "module app; macro choose : (. & .) -> . { trailing product; trailing product otherwise; impl implementation } fn run() { choose { () } ",
+        "mod app; macro choose : (. & .) -> . { trailing product; trailing product otherwise; impl implementation } fn run() { choose { () } ",
         &[("otherwise", " { () } }")],
     );
     add(
         "",
-        "module app; import dep/api(Entry ",
-        &[("as", " Local);")],
+        "mod app; import dep/api {type Entry ",
+        &[("as", " Local}")],
     );
-    add("", "module app; fn run() { recur(", &[]);
+    add("", "mod app; fn run() { recur(", &[]);
     add(
         "",
-        "module app; rec(loop) fn run(x: .) { recur(",
+        "mod app; rec(loop) fn run(x: .) { recur(",
         &[("cont", ") run(x) }")],
     );
     add(
         "",
-        "module app; rec(loop) fn run[A](x: A) { recur(",
+        "mod app; rec(loop) fn run[A](x: A) { recur(",
         &[("cont", ") run(x) }"), ("poly", ") run(x) }")],
     );
     add(
         "",
-        "module app; rec(loop) fn run[A](x: A) { recur(cont, ",
+        "mod app; rec(loop) fn run[A](x: A) { recur(cont, ",
         &[("poly", ") run(x) }")],
     );
     add(
         "",
-        "module app; rec(loop) fn run[A](x: A) { recur(poly, ",
+        "mod app; rec(loop) fn run[A](x: A) { recur(poly, ",
         &[("cont", ") run(x) }")],
     );
     add(
         "",
-        "module app; rec(loop) fn run[A](x: A) { recur(poly, cont, ",
+        "mod app; rec(loop) fn run[A](x: A) { recur(poly, cont, ",
         &[],
     );
     add(
         "",
-        "module app; rec(loop) fn run[A](x: A) { .(y: A) { recur(",
+        "mod app; rec(loop) fn run[A](x: A) { .(y: A) { recur(",
         &[("escape", ") run(x) } }"), ("poly", ") run(x) } }")],
     );
 
     // Package and backend key contracts. Values are ordinary valid field values;
     // each target cohort has its own independently spelled expected vocabulary.
-    add(".pkg", "", &[("package", " app;")]);
+    add(".pkg", "", &[("pkg", " app;")]);
     add(
         ".pkg",
-        "package app; ",
+        "pkg app; ",
         &[("bridge", " { app; }"), ("build", " { cache (); }")],
     );
-    add(".pkg", "package app; build {} ", &[("bridge", " { app; }")]);
+    add(".pkg", "pkg app; build {} ", &[("bridge", " { app; }")]);
     add(
         ".pkg",
-        "package app; bridge { app; } ",
+        "pkg app; bridge { app; } ",
         &[("build", " { cache (); }")],
     );
     add(
         ".pkg",
-        "package app; build { ",
+        "pkg app; build { ",
         &[
             ("cache", " (); }"),
             ("docs", " { md \"docs\"; } }"),
@@ -706,17 +693,17 @@ fn closed_cases() -> Vec<ClosedCase> {
     );
     add(
         ".pkg",
-        "package app; build { cache (); ",
+        "pkg app; build { cache (); ",
         &[("docs", " { md \"docs\"; } }"), ("target", " rust {} }")],
     );
     add(
         ".pkg",
-        "package app; build { docs { md \"docs\"; }; ",
+        "pkg app; build { docs { md \"docs\"; }; ",
         &[("cache", " (); }"), ("target", " rust {} }")],
     );
     add(
         ".pkg",
-        "package app; build { target rust {}; ",
+        "pkg app; build { target rust {}; ",
         &[
             ("cache", " (); }"),
             ("docs", " { md \"docs\"; } }"),
@@ -725,7 +712,7 @@ fn closed_cases() -> Vec<ClosedCase> {
     );
     add(
         ".pkg",
-        "package app; build { target ",
+        "pkg app; build { target ",
         &[
             ("go", " {} }"),
             ("haskell", " {} }"),
@@ -764,19 +751,19 @@ fn closed_cases() -> Vec<ClosedCase> {
         }
         add(
             ".pkg",
-            &format!("package app; build {{ target {target} {{ "),
+            &format!("pkg app; build {{ target {target} {{ "),
             &keys,
         );
         keys.retain(|(name, _)| *name != "out");
         add(
             ".pkg",
-            &format!("package app; build {{ target {target} {{ out \"out\"; "),
+            &format!("pkg app; build {{ target {target} {{ out \"out\"; "),
             &keys,
         );
     }
     add(
         ".pkg",
-        "package app; build { docs { ",
+        "pkg app; build { docs { ",
         &[
             ("md", " \"docs\"; } }"),
             ("support", " \"assets\"; md \"docs\"; } }"),
@@ -786,7 +773,7 @@ fn closed_cases() -> Vec<ClosedCase> {
     );
     add(
         ".pkg",
-        "package app; build { docs { md \"docs\"; ",
+        "pkg app; build { docs { md \"docs\"; ",
         &[
             ("support", " \"assets\"; } }"),
             ("md_out", " \"out\"; } }"),
@@ -795,7 +782,7 @@ fn closed_cases() -> Vec<ClosedCase> {
     );
     add(
         ".pkg",
-        "package app; build { docs { md \"docs\"; md_out \"out\"; html \"html\"; support \"assets\"; ",
+        "pkg app; build { docs { md \"docs\"; md_out \"out\"; html \"html\"; support \"assets\"; ",
         &[("support", " \"images\"; } }")],
     );
 
@@ -803,11 +790,11 @@ fn closed_cases() -> Vec<ClosedCase> {
     add(
         ".dep",
         "",
-        &[("dependency", " app; source { path \"dep.pkg.kio\"; }")],
+        &[("dep", " app; source { path \"dep.pkg.kio\"; }")],
     );
     add(
         ".dep",
-        "dependency app; ",
+        "dep app; ",
         &[
             ("source", " { path \"dep.pkg.kio\"; }"),
             (
@@ -822,7 +809,7 @@ fn closed_cases() -> Vec<ClosedCase> {
     );
     add(
         ".dep",
-        "dependency app; source { ",
+        "dep app; source { ",
         &[
             ("path", " \"dep.pkg.kio\"; }"),
             ("git", " \"https://example.invalid/dep\"; ref \"main\"; }"),
@@ -831,7 +818,7 @@ fn closed_cases() -> Vec<ClosedCase> {
     );
     add(
         ".dep",
-        "dependency app; source { path \"dep.pkg.kio\"; ",
+        "dep app; source { path \"dep.pkg.kio\"; ",
         &[
             ("git", " \"https://example.invalid/dep\"; ref \"main\"; }"),
             ("ref", " \"main\"; git \"https://example.invalid/dep\"; }"),
@@ -839,7 +826,7 @@ fn closed_cases() -> Vec<ClosedCase> {
     );
     add(
         ".dep",
-        "dependency app; source { git \"https://example.invalid/dep\"; ",
+        "dep app; source { git \"https://example.invalid/dep\"; ",
         &[
             ("path", " \"dep.pkg.kio\"; ref \"main\"; }"),
             ("ref", " \"main\"; }"),
@@ -847,7 +834,7 @@ fn closed_cases() -> Vec<ClosedCase> {
     );
     add(
         ".dep",
-        "dependency app; source { ref \"main\"; ",
+        "dep app; source { ref \"main\"; ",
         &[
             ("git", " \"https://example.invalid/dep\"; }"),
             (
@@ -858,27 +845,27 @@ fn closed_cases() -> Vec<ClosedCase> {
     );
     add(
         ".dep",
-        "dependency app; source { git \"https://example.invalid/dep\"; ref \"main\"; ",
+        "dep app; source { git \"https://example.invalid/dep\"; ref \"main\"; ",
         &[("path", " \"dep.pkg.kio\"; }")],
     );
     add(
         ".dep",
-        "dependency app; source { git \"https://example.invalid/dep\"; path \"dep.pkg.kio\"; ",
+        "dep app; source { git \"https://example.invalid/dep\"; path \"dep.pkg.kio\"; ",
         &[("ref", " \"main\"; }")],
     );
     add(
         ".dep",
-        "dependency app; source { ref \"main\"; path \"dep.pkg.kio\"; ",
+        "dep app; source { ref \"main\"; path \"dep.pkg.kio\"; ",
         &[("git", " \"https://example.invalid/dep\"; }")],
     );
     add(
         ".dep",
-        "dependency app; source { git \"https://example.invalid/dep\"; ref \"main\"; path \"dep.pkg.kio\"; ",
+        "dep app; source { git \"https://example.invalid/dep\"; ref \"main\"; path \"dep.pkg.kio\"; ",
         &[],
     );
     add(
         ".dep",
-        "dependency app; source { path \"dep.pkg.kio\"; } ",
+        "dep app; source { path \"dep.pkg.kio\"; } ",
         &[
             ("rehost", " dep/api to local/api;"),
             ("retype", " dep/api.A to local/api.A;"),
@@ -886,12 +873,12 @@ fn closed_cases() -> Vec<ClosedCase> {
     );
     add(
         ".dep",
-        "dependency app; source { path \"dep.pkg.kio\"; } rehost dep/api ",
+        "dep app; source { path \"dep.pkg.kio\"; } rehost dep/api ",
         &[("to", " local/api;")],
     );
     add(
         ".dep",
-        "dependency app; source { path \"dep.pkg.kio\"; } retype dep/api.A ",
+        "dep app; source { path \"dep.pkg.kio\"; } retype dep/api.A ",
         &[("to", " local/api.A;")],
     );
     let lock_tail =
@@ -947,45 +934,42 @@ fn closed_cases() -> Vec<ClosedCase> {
     }
 
     // Signature changelog occupancy and its restricted declaration grammar.
-    add(".sig", "", &[("signature", " app v(1);")]);
-    add(".sig", "signature app ", &[("v", "(1);")]);
+    add(".sig", "", &[("sig", " app v(1);")]);
+    add(".sig", "sig app ", &[("v", "(1);")]);
     add(
         ".sig",
-        "signature app v(1); ",
+        "sig app v(1); ",
         &[(
             "v",
-            "(1) { nonbreaking { add { module api { pub fn run() -> .; } } } }",
+            "(1) { nonbreaking { add { mod api { pub fn run() -> .; } } } }",
         )],
     );
     add(
         ".sig",
-        "signature app v(1); v(1) { ",
+        "sig app v(1); v(1) { ",
         &[
             (
                 "with",
-                " { module api { pub type A = .; } }; nonbreaking { add { api.A; } } }",
+                " { mod api { pub type A = .; } }; nonbreaking { add { api.A; } } }",
             ),
-            (
-                "breaking",
-                " { add { module api { pub fn run() -> .; } } } }",
-            ),
+            ("breaking", " { add { mod api { pub fn run() -> .; } } } }"),
             (
                 "nonbreaking",
-                " { add { module api { pub fn run() -> .; } } } }",
+                " { add { mod api { pub fn run() -> .; } } } }",
             ),
         ],
     );
     add(
         ".sig",
-        "signature app v(1); v(1) { with { ",
+        "sig app v(1); v(1) { with { ",
         &[(
-            "module",
+            "mod",
             " api { pub type A = .; } }; nonbreaking { add { api.A; } } }",
         )],
     );
     add(
         ".sig",
-        "signature app v(1); v(1) { with { module api { rec { ",
+        "sig app v(1); v(1) { with { mod api { rec { ",
         &[
             (
                 "pub",
@@ -999,7 +983,7 @@ fn closed_cases() -> Vec<ClosedCase> {
     );
     add(
         ".sig",
-        "signature app v(1); v(1) { with { module api { pub type A = .; } }; ",
+        "sig app v(1); v(1) { with { mod api { pub type A = .; } }; ",
         &[
             ("breaking", " { add { api.A; } } }"),
             ("nonbreaking", " { add { api.A; } } }"),
@@ -1007,74 +991,67 @@ fn closed_cases() -> Vec<ClosedCase> {
     );
     add(
         ".sig",
-        "signature app v(1); v(1) { breaking { add { module api { pub type A = .; } } }; ",
+        "sig app v(1); v(1) { breaking { add { mod api { pub type A = .; } } }; ",
         &[
-            ("with", " { module api { pub type A = .; } } }"),
-            (
-                "nonbreaking",
-                " { add { module api { pub type B = .; } } } }",
-            ),
+            ("with", " { mod api { pub type A = .; } } }"),
+            ("nonbreaking", " { add { mod api { pub type B = .; } } } }"),
         ],
     );
     add(
         ".sig",
-        "signature app v(1); v(1) { nonbreaking { add { module api { pub type A = .; } } }; ",
+        "sig app v(1); v(1) { nonbreaking { add { mod api { pub type A = .; } } }; ",
         &[
-            ("with", " { module api { pub type A = .; } } }"),
-            ("breaking", " { add { module api { pub type B = .; } } } }"),
+            ("with", " { mod api { pub type A = .; } } }"),
+            ("breaking", " { add { mod api { pub type B = .; } } } }"),
         ],
     );
     add(
         ".sig",
-        "signature app v(1); v(1) { breaking { ",
+        "sig app v(1); v(1) { breaking { ",
         &[
-            ("add", " { module api { pub fn run() -> .; } } } }"),
-            ("modify", " { module api { pub fn run() -> .; } } } }"),
-            ("remove", " { module api { run; } } } }"),
+            ("add", " { mod api { pub fn run() -> .; } } } }"),
+            ("modify", " { mod api { pub fn run() -> .; } } } }"),
+            ("remove", " { api.run; } } }"),
         ],
     );
     add(
         ".sig",
-        "signature app v(1); v(1) { breaking { add { module api { pub type A = .; } }; ",
+        "sig app v(1); v(1) { breaking { add { mod api { pub type A = .; } }; ",
         &[
-            ("modify", " { module api { pub type B = .; } } } }"),
-            ("remove", " { module api { run; } } } }"),
+            ("modify", " { mod api { pub type B = .; } } } }"),
+            ("remove", " { api.run; } } }"),
         ],
     );
     add(
         ".sig",
-        "signature app v(1); v(1) { breaking { modify { module api { pub type A = .; } }; ",
+        "sig app v(1); v(1) { breaking { modify { mod api { pub type A = .; } }; ",
         &[
-            ("add", " { module api { pub type B = .; } } } }"),
-            ("remove", " { module api { run; } } } }"),
+            ("add", " { mod api { pub type B = .; } } } }"),
+            ("remove", " { api.run; } } }"),
         ],
     );
     add(
         ".sig",
-        "signature app v(1); v(1) { breaking { remove { module api { run; } }; ",
+        "sig app v(1); v(1) { breaking { remove { api.run; }; ",
         &[
-            ("add", " { module api { pub type A = .; } } } }"),
-            ("modify", " { module api { pub type B = .; } } } }"),
+            ("add", " { mod api { pub type A = .; } } } }"),
+            ("modify", " { mod api { pub type B = .; } } } }"),
         ],
     );
     add(
         ".sig",
-        "signature app v(1); v(1) { breaking { add { ",
-        &[("module", " api { pub fn run() -> .; } } } }")],
+        "sig app v(1); v(1) { breaking { add { ",
+        &[("mod", " api { pub fn run() -> .; } } } }")],
     );
     add(
         ".sig",
-        "signature app v(1); v(1) { breaking { modify { ",
-        &[("module", " api { pub fn run() -> .; } } } }")],
+        "sig app v(1); v(1) { breaking { modify { ",
+        &[("mod", " api { pub fn run() -> .; } } } }")],
     );
+    add(".sig", "sig app v(1); v(1) { breaking { remove { ", &[]);
     add(
         ".sig",
-        "signature app v(1); v(1) { breaking { remove { ",
-        &[("module", " api { run; } } } }")],
-    );
-    add(
-        ".sig",
-        "signature app v(1); v(1) { breaking { add { module api { ",
+        "sig app v(1); v(1) { breaking { add { mod api { ",
         &[
             ("host", " type A; } } } }"),
             ("import", " __intrinsics__; pub fn run() -> .; } } } }"),
@@ -1087,9 +1064,9 @@ fn closed_cases() -> Vec<ClosedCase> {
     // `module` keyword and replacement range remain exact; only these heads
     // advertise an incomplete result.
     for prefix in [
-        "signature app v(1); v(1) { breaking { add { ",
-        "signature app v(1); v(1) { breaking { modify { ",
-        "signature app v(1); v(1) { breaking { remove { ",
+        "sig app v(1); v(1) { breaking { add { ",
+        "sig app v(1); v(1) { breaking { modify { ",
+        "sig app v(1); v(1) { breaking { remove { ",
     ] {
         cases
             .iter_mut()
@@ -1116,7 +1093,7 @@ fn insertion_parses(kind: &str, source: &str) -> Result<(), String> {
 #[test]
 fn lsp_protocol_closed_choices_insert_and_retract_across_real_edits() {
     let dir = TempDir::new("completion-closed-edits");
-    dir.write("outer.pkg.kio", "package outer;\n");
+    dir.write("outer.pkg.kio", "pkg outer;\n");
     let mut uris = std::collections::BTreeMap::new();
     for kind in ["", ".pkg", ".dep", ".lock", ".sig"] {
         let uri = path_to_file_uri(&dir.write(&format!("workspace/app{kind}.kio"), ""));
@@ -1206,7 +1183,7 @@ fn lsp_recursive_annotations_replace_canonically_on_current_overlays() {
     dir.write_pkg_root_package();
     dir.write(
         "pkg.kio",
-        "module pkg; host fn drive[S][R](step: ((S -> R) & S) -> (S | R), state: S) -> R; host fn retain(callback: . -> .) -> .;\n",
+        "mod pkg; host fn drive[S][R](step: ((S -> R) & S) -> (S | R), state: S) -> R; host fn retain(callback: . -> .) -> .;\n",
     );
     let path = dir.write("pkg/main.kio", "");
     let uri = path_to_file_uri(&path);
@@ -1272,7 +1249,7 @@ fn lsp_recursive_annotations_replace_canonically_on_current_overlays() {
     let mut version = 1;
     for (annotations, expected, selected, args) in cases.iter().chain(cases.iter().rev()) {
         let marked = format!(
-            "module pkg/main; import pkg as host; rec(host.drive) {{ fn again[A](x: A) -> . {{ recur again(x) }}; pub fn capture[A](x: A) -> . {{ host.retain(.() -> . {{ recur({annotations}) again{args} }}) }} }}"
+            "mod pkg/main; import pkg as host; rec(host.drive) {{ fn again[A](x: A) -> . {{ recur again(x) }}; pub fn capture[A](x: A) -> . {{ host.retain(.() -> . {{ recur({annotations}) again{args} }}) }} }}"
         );
         let cursor = marked.find('|').unwrap();
         let source = marked.replacen('|', "", 1);
@@ -1324,7 +1301,7 @@ fn lsp_recursive_annotations_replace_canonically_on_current_overlays() {
         "textDocument/didClose",
         json!({"textDocument": {"uri": uri}}),
     );
-    let source = "module pkg/main; fn ordinary() { recur(";
+    let source = "mod pkg/main; fn ordinary() { recur(";
     lsp.send_notification("textDocument/didOpen", json!({"textDocument": {"uri": uri, "languageId": "kio", "version": version + 1, "text": source}}));
     wait_for_publish_version(&mut lsp, &uri, i64::from(version + 1));
     let response = send_completion(&mut lsp, &uri, 0, source.len() as u64);

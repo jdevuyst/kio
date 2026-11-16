@@ -1,4 +1,4 @@
-module unresolved_outer_shadowing;
+mod unresolved_outer_shadowing;
 
 host type I32 role(i32);
 

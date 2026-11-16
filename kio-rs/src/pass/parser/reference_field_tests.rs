@@ -45,17 +45,17 @@ fn grouped_reference_contexts_share_canonical_paths() {
         ),
     ] {
         assert_eq!(
-            canonical(&format!("module main; {grouped}")),
-            canonical(&format!("module main; {bare}"))
+            canonical(&format!("mod main; {grouped}")),
+            canonical(&format!("mod main; {bare}"))
         );
     }
     for mode in ["foldl", "foldr", "foldl1", "foldr1"] {
         assert_eq!(
             canonical(&format!(
-                "module main; varop [] {{ {mode} ((helpers.step)) ((Box.seed)); finalize ((helpers.finish)) }}"
+                "mod main; op_var [] {{ {mode} ((helpers.step)) ((Box.seed)); finalize ((helpers.finish)) }}"
             )),
             canonical(&format!(
-                "module main; varop [] {{ {mode} helpers.step Box.seed; finalize helpers.finish }}"
+                "mod main; op_var [] {{ {mode} helpers.step Box.seed; finalize helpers.finish }}"
             )),
         );
     }
@@ -75,7 +75,7 @@ fn grouped_fills_reference_and_schedule_are_distinct() {
             MacroSchedule::Fills,
         ),
     ] {
-        let source = format!("module main; macro inspect : . -> . {{ {field} }}");
+        let source = format!("mod main; macro inspect : . -> . {{ {field} }}");
         let module = parse(&source).unwrap();
         let Item::Macro(macro_def, _) = &module.items[0] else {
             panic!("macro")
@@ -87,21 +87,21 @@ fn grouped_fills_reference_and_schedule_are_distinct() {
 
 #[test]
 fn optional_finalizer_unit_is_absence_but_still_present_for_duplicates() {
-    let bare = canonical("module main; varop [] { foldl step base }");
-    assert_eq!(bare, "module main;\n\nvarop [] { foldl step base }\n");
+    let bare = canonical("mod main; op_var [] { foldl step base }");
+    assert_eq!(bare, "mod main;\n\nop_var [] { foldl step base }\n");
     for unit in ["()", "(())", "((()))"] {
         for body in [
             format!("foldl step base; finalize {unit}"),
             format!("finalize {unit}; foldl step base"),
         ] {
             assert_eq!(
-                canonical(&format!("module main; varop [] {{ {body} }}")),
-                "module main;\n\nvarop [] { foldl step base; finalize () }\n"
+                canonical(&format!("mod main; op_var [] {{ {body} }}")),
+                "mod main;\n\nop_var [] { foldl step base; finalize () }\n"
             );
         }
         for second in ["()", "finish"] {
             let source = format!(
-                "module main; varop [] {{ foldl step base; finalize {unit}; finalize {second} }}"
+                "mod main; op_var [] {{ foldl step base; finalize {unit}; finalize {second} }}"
             );
             assert!(
                 parse(&source)
@@ -116,7 +116,7 @@ fn optional_finalizer_unit_is_absence_but_still_present_for_duplicates() {
 
 #[test]
 fn grouped_references_preserve_name_only_boundaries() {
-    canonical("module main; type { Box: . { mk; get; }; };");
+    canonical("mod main; type { Box: . { mk; get; }; };");
     for target in [
         "()",
         "(())",
@@ -128,32 +128,32 @@ fn grouped_references_preserve_name_only_boundaries() {
         for field in [
             format!("op _ + _ {{ impl {target} }}"),
             format!("macro inspect : . -> . {{ impl {target} }}"),
-            format!("varop [] {{ foldl {target} base }}"),
-            format!("varop [] {{ foldl step {target} }}"),
+            format!("op_var [] {{ foldl {target} base }}"),
+            format!("op_var [] {{ foldl step {target} }}"),
         ] {
-            assert!(parse(&format!("module main; {field}")).is_err(), "{field}");
+            assert!(parse(&format!("mod main; {field}")).is_err(), "{field}");
         }
     }
     for body in [
         "captures (); impl helper",
         "captures ((source())); impl helper",
     ] {
-        assert!(parse(&format!("module main; macro inspect : . -> . {{ {body} }}")).is_err());
+        assert!(parse(&format!("mod main; macro inspect : . -> . {{ {body} }}")).is_err());
     }
     for source in [
-        "module main; type { Box: . { (mk); get; }; }",
-        "module main; type { Box: . { mk; (get); }; }",
-        "module main; fn f(x: .) { x.>(helper)! }",
-        "module main; fn f(x: .) { x.>(helper()) }",
+        "mod main; type { Box: . { (mk); get; }; }",
+        "mod main; type { Box: . { mk; (get); }; }",
+        "mod main; fn f(x: .) { x.>(helper)! }",
+        "mod main; fn f(x: .) { x.>(helper()) }",
     ] {
         assert!(parse(source).is_err(), "{source}");
     }
     for declaration in [
         "op _ + _ { impl ((provider/path.add)) }",
         "macro inspect : . -> . { impl ((provider/path.add)) }",
-        "varop [] { foldl ((provider/path.add)) base }",
+        "op_var [] { foldl ((provider/path.add)) base }",
     ] {
-        let error = parse(&format!("module main; {declaration}")).unwrap_err();
+        let error = parse(&format!("mod main; {declaration}")).unwrap_err();
         assert!(
             error
                 .diag()
@@ -168,11 +168,11 @@ fn grouped_reference_comments_survive_removed_tokens_once() {
     for declaration in [
         "op _ + _ { impl (// opener\n(// inner\nadd // leaf\n) // closer\n) }",
         "macro inspect : . -> . { captures ((// capture\nBox)); impl ((// implementation\nhelper)) }",
-        "varop [] { foldl ((// step\nstep)) ((// base\nbase)); finalize ((// absent\n())) }",
+        "op_var [] { foldl ((// step\nstep)) ((// base\nbase)); finalize ((// absent\n())) }",
         "rec((// capability\nloop // closing\n)) fn f(x: .) -> . { x }",
         "fn f(x: .) -> . { x.>((// callee\nhelper // closing\n)) }",
     ] {
-        let source = format!("module main; {declaration}");
+        let source = format!("mod main; {declaration}");
         let formatted = canonical(&source);
         for line in source.lines() {
             if let Some((_, comment)) = line.split_once("//") {
@@ -192,11 +192,11 @@ fn unfinished_grouped_references_remain_tooling_input() {
         "op _ + _ { impl ((",
         "macro inspect : . -> . { impl (fills) (",
         "macro inspect : . -> . { captures ((",
-        "varop [] { foldl ((step)) ((",
+        "op_var [] { foldl ((step)) ((",
         "rec((",
         "fn f(x: .) { x.>((",
     ] {
-        let source = format!("module main; {tail}");
+        let source = format!("mod main; {tail}");
         let probe = probe_tooling(
             &source,
             Some(KioFileKind::Module),
@@ -214,12 +214,12 @@ fn recovered_reference_closers_never_authorize_normal_input() {
         "op _ + _ { impl(fi }",
         "macro make: . { impl(fi }",
         "macro make: . { impl f; captures ((Type) }",
-        "varop [] { foldl (step base }",
-        "varop [] { foldl step base; finalize ( }",
-        "varop [] { foldl step base; finalize (( }",
+        "op_var [] { foldl (step base }",
+        "op_var [] { foldl step base; finalize ( }",
+        "op_var [] { foldl step base; finalize (( }",
         "fn f(x: .) { x.>(fi }",
     ] {
-        let source = format!("module main; {declaration}");
+        let source = format!("mod main; {declaration}");
         assert!(parse(&source).is_err(), "accepted {source}");
         assert!(
             parse_lazy(&source)
@@ -228,7 +228,7 @@ fn recovered_reference_closers_never_authorize_normal_input() {
             "lazy parsing accepted {source}"
         );
     }
-    let source = "module main; macro make: . { impl(fi";
+    let source = "mod main; macro make: . { impl(fi";
     let probe = probe_tooling(
         source,
         Some(KioFileKind::Module),

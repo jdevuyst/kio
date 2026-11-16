@@ -1,4 +1,4 @@
-package build_label_and_structural_products;
+pkg build_label_and_structural_products;
 
 build {
   cache "out/.kio-cache/";

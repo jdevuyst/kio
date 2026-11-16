@@ -1,3 +1,3 @@
-module lib/core;
+mod lib/core;
 
 pub type { Token: . { pub mk; pub get } }

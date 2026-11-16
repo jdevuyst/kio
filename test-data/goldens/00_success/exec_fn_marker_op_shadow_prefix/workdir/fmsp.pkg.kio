@@ -1,4 +1,4 @@
-package fmsp;
+pkg fmsp;
 
 build {
   cache "out/.kio-cache/";

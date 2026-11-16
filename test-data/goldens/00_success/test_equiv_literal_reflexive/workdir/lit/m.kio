@@ -1,6 +1,6 @@
-module lit/m;
+mod lit/m;
 
-import lit(Bool, Str, U8);
+import lit { type Bool; type Str; type U8 }
 
 equiv int_reflexive() {
   1[U8];

@@ -1,10 +1,10 @@
-module store;
+mod store;
 
 import __intrinsics__;
 
 rec {
-  pub type { Even: . | Odd { pub mk; pub get; }; };
-  pub type { Odd: . | Even { pub mk; pub get; }; }
+  pub type { Even: . | Odd { pub mk; pub get } };
+  pub type { Odd: . | Even { pub mk; pub get } }
 }
 
-pub fn make_even() -> Even { Even.mk(__left__[.][Odd]( ())) }
+pub fn make_even() -> Even { Even.mk(__left__[.][Odd](())) }

@@ -1,4 +1,4 @@
-package right_spine_tuple_calls;
+pkg right_spine_tuple_calls;
 
 build {
   cache "out/.kio-cache/";

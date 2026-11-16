@@ -1,4 +1,4 @@
-package nrk;
+pkg nrk;
 
 build {
   cache "out/.kio-cache/";

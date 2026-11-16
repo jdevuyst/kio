@@ -3,9 +3,9 @@
 /// The frame count is deliberately smaller than the processes' combined
 /// working set: with nine distinct pages competing for four frames, the
 /// replacement policy decides the run rather than decorating it.
-module os/config;
+mod os/config;
 
-import testapi(I32);
+import testapi { type I32 }
 
 pub fn proc_count() -> I32 { 4 }
 

@@ -83,7 +83,7 @@ fn kio_cache_gc(dir: &Path) -> (i32, String, String) {
 /// Write a `pkg.pkg.kio` carrying a `build { ... }` block with
 /// the given body (the `cache` / `target` lines).
 fn write_pkg(dir: &Path, build_body: &str) {
-    let src = format!("package pkg;\n\nbuild {{\n{build_body}}}\n");
+    let src = format!("pkg pkg;\n\nbuild {{\n{build_body}}}\n");
     fs::write(dir.join("pkg.pkg.kio"), src).expect("write package file");
 }
 

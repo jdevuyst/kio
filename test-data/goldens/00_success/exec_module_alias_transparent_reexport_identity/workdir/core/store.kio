@@ -1,6 +1,6 @@
-module core/store;
+mod core/store;
 
-import testapi(I32);
+import testapi { type I32 }
 
 pub type { Tag: I32 { pub mk; pub get } }
 

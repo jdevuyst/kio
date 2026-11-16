@@ -1,4 +1,4 @@
-package parse_arrow_op_char_adjacent;
+pkg parse_arrow_op_char_adjacent;
 
 build {
   cache "out/.kio-cache/";

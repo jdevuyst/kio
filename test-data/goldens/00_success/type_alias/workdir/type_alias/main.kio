@@ -1,6 +1,6 @@
-module type_alias/main;
+mod type_alias/main;
 
-import type_alias(I32);
+import type_alias { type I32 }
 
 // Type aliases name structural type expressions. Both the monomorphic
 // `Small` and the parametric `Pair` are unfolded structurally by the

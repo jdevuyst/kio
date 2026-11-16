@@ -1,4 +1,4 @@
-package specialization;
+pkg specialization;
 
 build {
   cache "out/.kio-cache/";

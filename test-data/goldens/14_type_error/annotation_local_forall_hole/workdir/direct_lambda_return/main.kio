@@ -1,4 +1,4 @@
-module main;
+mod main;
 
 host fn polymorphic(_token: .) -> [Poly] Poly -> Poly;
 

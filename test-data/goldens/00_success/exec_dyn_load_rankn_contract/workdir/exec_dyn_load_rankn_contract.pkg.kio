@@ -1,4 +1,4 @@
-package exec_dyn_load_rankn_contract;
+pkg exec_dyn_load_rankn_contract;
 
 build {
   cache "out/.kio-cache/";

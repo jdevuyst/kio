@@ -1,4 +1,4 @@
-module main;
+mod main;
 
-import other(op macro _ && _);
-import provider(op _ && .__);
+import other { op_macro _ && _ }
+import provider { op _ && .__ }

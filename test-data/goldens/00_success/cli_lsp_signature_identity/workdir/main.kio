@@ -1,8 +1,8 @@
-module main;
+mod main;
 
 import other as other;
 import provider as provider;
-import provider(choose);
+import provider { fn choose }
 
 pub fn bare() { choose((), ()) }
 

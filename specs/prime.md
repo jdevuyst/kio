@@ -401,10 +401,10 @@ These features live only in `language.md`; each one either desugars to Kio' or r
 - **Tuple values** — the surface tuple literal `(a, b)` (and n-ary `(a, b, c)`) is sugar for `__pair__(a, b)` (respectively nested `__pair__` calls). The empty braces `{}` denote the unit value.
 - **Nominal names** — compact entries use ordinary type names such as `F`, `_F` and `F[T]`; the declaration spelling introduces no additional type identity or case-derived name.
 - **`equiv`** — declarative test claim discharged by the `kio test` runner. `kio-prime` rejects `equiv` items at parse time. See [`language.md`](language.md#equivalence-claims-equiv) and [`cli.md`](cli.md#kio-test).
-- **literal aliases** — `literal name = <literal>;` is surface-only. The desugar pass expands a bare reference to the stored literal token, expands `name[Type]` to the stored literal with that annotation, and drops the declaration at the Surface → Desugared boundary. Kio' keeps only the already-expanded literal expression; a Kio'-only parser rejects `literal` items.
+- **literal aliases** — `lit name = <literal>;` is surface-only. The desugar pass expands a bare reference to the stored literal token, expands `name[Type]` to the stored literal with that annotation, and drops the declaration at the Surface → Desugared boundary. Kio' keeps only the already-expanded literal expression; a Kio'-only parser rejects `lit` items.
 - **Fixed and variadic operators** — `op <pattern> { impl <ValuePath>; };`
-  binds a fixed value-operand pattern, while `varop []` or a marked head
-  such as `varop [* *]` binds a square frame around comma-separated values.
+  binds a fixed value-operand pattern, while `op_var []` or a marked head
+  such as `op_var [* *]` binds a square frame around comma-separated values.
   A variadic body selects `foldl`, `foldr`, `foldl1`, or `foldr1` with a
   step and base/seed path, then optionally a unary `finalize` path. These are
   ordinary lexical value paths, not expressions or slash-qualified FQNs.
@@ -417,26 +417,20 @@ These features live only in `language.md`; each one either desugars to Kio' or r
 
 ## Grammar
 
-**Imports.** Kio' uses the same module-first imports as Kio:
-`import module/path(Name, value);`, `import module/path(Name as Local, value as local);`,
-`import module/path as alias;`, and the
-builtin block `import __intrinsics__;`. Selective lists are parenthesized and
-nonempty, with ordinary same-class named selections and optional local aliases.
-Aliases preserve the selected declaration's exact identity, public type, kind,
-purity and direct host-type role; they do not introduce wrapper functions or
-transparent type declarations. Distinct local aliases are permitted, but
-repeated local introductions remain errors. In canonical formatting, the opener
-follows the module path on the introducing line. Braced label selectors, tagged
-operator grammars, tagged macro selections, and
-`import __comptime__;` are surface-only and are rejected by the Kio' grammar.
-Keyword-shaped identifiers keep their ordinary contextual behavior: importing
-an ordinary value named `op` does not introduce an operator.
+**Imports.** Kio' uses the same braced selective imports as Kio, with
+explicit `fn` and `type` selectors, optional same-class aliases, qualified
+module aliases, and the `import __intrinsics__;` builtin block. For example,
+`import module/path { type Name; fn value as local }` imports two bindings.
+Aliases preserve the selected declaration's identity, public type, kind,
+purity and host-type role. Distinct local aliases are permitted; repeated local
+introductions are errors. Literal, macro and operator selections and
+`import __comptime__;` are surface-only.
 
-Kio''s grammar is the **regular-module** file shape — every `*.kio` file with a `module` declaration. The productions live in [`grammar.md`](grammar.md) § Kio' grammar; this section narrates the Kio'-specific properties that the productions encode. Package boundary files have their own grammars in [`grammar.md`](grammar.md) § Package files (see also [`package.md`](package.md)).
+Kio''s grammar is the **regular-module** file shape — every `*.kio` file with a `mod` declaration. The productions live in [`grammar.md`](grammar.md) § Kio' grammar; this section narrates the Kio'-specific properties that the productions encode. Package boundary files have their own grammars in [`grammar.md`](grammar.md) § Package files (see also [`package.md`](package.md)).
 
 **Lexical structure.** Kio' shares Kio's maximal ordinary symbol words, structural dots and square brackets, and finite native dot compounds. The native grammar preserves `[A]`, `[*F]`, `[A][B]`, `.[*F]`, and `type A=.;`; dots and brackets never join user operator words. Native structural-prefix handling remains confined to its grammatical contexts. There is no Kio' fixed/variadic declaration, tagged operator import, or user-operator expression. The shared signed-number rule treats identifiers, literals, `)`, `}`, and `]` as expression-ending; a flush leading minus belongs to a literal only elsewhere. Comment markers `//` and `///` require following whitespace, end-of-line, or end-of-file; `////` and markers flush against non-whitespace characters are lex errors. See [the shared lexical contract](grammar.md#lexical-structure-kio).
 
-**Contextual keywords.** Every Kio' keyword (`module`, `import`, `as`, `pub`, `pure`, `type`, `host`, `fn`, `rec`, `let`, `mk`, `get`, plus the magic phrase `__intrinsics__`) lexes as an ordinary `IDENT`; the parser recognizes the keyword role only at the positions where the productions show it as a literal terminal. `pure` modifies only an ordinary `fn`, `rec` marks an explicitly recursive data declaration or mutual type group, and `host` is a host-declaration modifier only when immediately followed by `type` or `fn`. Surface-only forms have no productions in the Kio' grammar — a Kio'-only parser rejects them as syntax errors. The rejected surface set covers:
+**Contextual keywords.** Every Kio' keyword (`mod`, `import`, `as`, `pub`, `pure`, `type`, `host`, `fn`, `rec`, `let`, `mk`, `get`, plus the magic phrase `__intrinsics__`) lexes as an ordinary `IDENT`; the parser recognizes the keyword role only at the positions where the productions show it as a literal terminal. `pure` modifies only an ordinary `fn`, `rec` marks an explicitly recursive data declaration or mutual type group, and `host` is a host-declaration modifier only when immediately followed by `type` or `fn`. Surface-only forms have no productions in the Kio' grammar — a Kio'-only parser rejects them as syntax errors. The rejected surface set covers:
 
 - Compact nominal declarations with multiple entries, an omitted member body, or a declaration-bearing alias RHS, including their `rec type` forms.
 - Recursive-function syntax: top-level `rec(loop)` groups and `recur name(...)` / `recur(poly, cont) name(...)` calls.

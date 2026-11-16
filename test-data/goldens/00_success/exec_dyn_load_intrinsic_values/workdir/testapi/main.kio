@@ -1,14 +1,21 @@
-module testapi/main;
+mod testapi/main;
 
-import defaults(instantiate_default);
-import loader(Apply, I32_out, Lookup, Unit_in, diag_message, un_load_outcome);
-import loader(Diag, Loaded, Lr_diag, Lr_image, Surface);
-import loader/scan(load_package);
-import macros/match(macro match);
-import macros/row_macros(macro select);
-import testapi(I32, String);
-import testapi/fmt(int_to_string);
-import testapi/io(print);
+import defaults { fn instantiate_default }
+import loader {
+  type Apply;
+  type I32_out;
+  type Lookup;
+  type Unit_in;
+  fn diag_message;
+  fn un_load_outcome
+}
+import loader { type Diag; type Loaded; type Lr_diag; type Lr_image; type Surface }
+import loader/scan { fn load_package }
+import macros/match { macro match }
+import macros/row_macros { macro select }
+import testapi { type I32; type String }
+import testapi/fmt { fn int_to_string }
+import testapi/io { fn print }
 
 fn call_value[P](surface: Surface[P]) -> String {
   match((surface.>select { Lookup.get[P] })("value"[String])) {
@@ -33,34 +40,34 @@ fn call_value[P](surface: Surface[P]) -> String {
 // The image is authored independently of compiler output: bare and partial
 // intrinsic values must be loadable, and each whole packet executes once.
 fn image_source() -> String {
-  "module hostapi;\nhost type I32 role(i32);\nhost type Bool role(bool);\nhost "
-  "type String role(str);\nmodule hostapi/fmt;\nimport hostapi(I32);\nhost fn "
-  "print_i32(value: I32);\nmodule hostapi/io;\nimport hostapi(String);\nhost "
-  "fn print(p0: String);\nmodule guest;\nimport __intrinsics__;\nimport "
-  "hostapi(I32, Bool, String);\nimport hostapi/fmt(print_i32);\nimport "
-  "hostapi/io(print);\nfn print_i32_line(value: I32) { print_i32(value); "
-  "print(\"\\n\"[String]) }\ntype Carrier[A][B] = A;\nfn mark(value: I32) -> I32 "
-  "{ print_i32_line(value); value }\nfn packet() -> I32 & I32 {\n  "
-  "print_i32_line(10[I32]);\n  __pair__[I32][I32](mark(11[I32]), "
-  "mark(12[I32]))\n}\nfn handler(tag: I32) -> I32 -> I32 {\n  "
-  "print_i32_line(tag);\n  .(value: I32) { print_i32_line(25[I32]); value }\n"
-  "}\nfn branch_packet(value: I32) -> (I32 | I32) & (I32 -> I32) & (I32 -> "
-  "I32) {\n  print_i32_line(20[I32]);\n  __pair__[(I32 | I32)][((I32 -> I32) "
-  "& (I32 -> I32))](\n    __left__[I32][I32](value),\n    __pair__[(I32 -> "
-  "I32)][(I32 -> I32)](handler(21[I32]), handler(22[I32]))\n  )\n}\nfn "
-  "yes(value: I32) -> . -> I32 {\n  print_i32_line(31[I32]);\n  .() { "
-  "print_i32_line(41[I32]); value }\n}\nfn no(value: I32) -> . -> I32 {\n  "
-  "print_i32_line(32[I32]);\n  .() { print_i32_line(42[I32]); value }\n}\nfn "
-  "conditional_packet(value: I32) -> Bool & (. -> I32) & (. -> I32) {\n  "
-  "print_i32_line(30[I32]);\n  __pair__[Bool][((. -> I32) & (. -> I32))](\n    "
-  ".t[Bool], __pair__[(. -> I32)][(. -> I32)](yes(value), no(value))\n  )\n}\n"
-  "pub fn value() -> I32 {\n  let pairing = __pair__;\n  let partial = "
-  "pairing[I32];\n  let complete = partial[I32];\n  let product = "
-  "complete(packet());\n  let project = __fst__[I32][I32];\n  let choice = "
-  "__either__[I32][I32][I32];\n  let selected = "
-  "choice(branch_packet(project(product)));\n  let conditional = "
+  "mod hostapi;\nhost type I32 role(i32);\nhost type Bool role(bool);\nhost "
+  "type String role(str);\nmod hostapi/fmt;\nimport hostapi {type I32}\nhost "
+  "fn print_i32(value: I32);\nmod hostapi/io;\nimport hostapi {type String}\n"
+  "host fn print(p0: String);\nmod guest;\nimport __intrinsics__;\nimport "
+  "hostapi {type I32; type Bool; type String}\nimport hostapi/fmt {fn "
+  "print_i32}\nimport hostapi/io {fn print}\nfn print_i32_line(value: I32) { "
+  "print_i32(value); print(\"\\n\"[String]) }\ntype Carrier[A][B] = A;\nfn "
+  "mark(value: I32) -> I32 { print_i32_line(value); value }\nfn packet() -> "
+  "I32 & I32 {\n  print_i32_line(10[I32]);\n  "
+  "__pair__[I32][I32](mark(11[I32]), mark(12[I32]))\n}\nfn handler(tag: I32) "
+  "-> I32 -> I32 {\n  print_i32_line(tag);\n  .(value: I32) { "
+  "print_i32_line(25[I32]); value }\n}\nfn branch_packet(value: I32) -> (I32 "
+  "| I32) & (I32 -> I32) & (I32 -> I32) {\n  print_i32_line(20[I32]);\n  "
+  "__pair__[(I32 | I32)][((I32 -> I32) & (I32 -> I32))](\n    "
+  "__left__[I32][I32](value),\n    __pair__[(I32 -> I32)][(I32 -> "
+  "I32)](handler(21[I32]), handler(22[I32]))\n  )\n}\nfn yes(value: I32) -> . "
+  "-> I32 {\n  print_i32_line(31[I32]);\n  .() { print_i32_line(41[I32]); "
+  "value }\n}\nfn no(value: I32) -> . -> I32 {\n  print_i32_line(32[I32]);\n  "
+  ".() { print_i32_line(42[I32]); value }\n}\nfn conditional_packet(value: "
+  "I32) -> Bool & (. -> I32) & (. -> I32) {\n  print_i32_line(30[I32]);\n  "
+  "__pair__[Bool][((. -> I32) & (. -> I32))](\n    .t[Bool], __pair__[(. -> "
+  "I32)][(. -> I32)](yes(value), no(value))\n  )\n}\npub fn value() -> I32 {\n  "
+  "let pairing = __pair__;\n  let partial = pairing[I32];\n  let complete = "
+  "partial[I32];\n  let product = complete(packet());\n  let project = "
+  "__fst__[I32][I32];\n  let choice = __either__[I32][I32][I32];\n  let "
+  "selected = choice(branch_packet(project(product)));\n  let conditional = "
   "__if_then_else__[Carrier[Bool][I32]];\n  "
-  "conditional[I32](conditional_packet(selected))\n}\npackage guest;\nbridge { "
+  "conditional[I32](conditional_packet(selected))\n}\npkg guest;\nbridge { "
   "guest; hostapi; hostapi/fmt; hostapi/io; }\n"[String]
 }
 

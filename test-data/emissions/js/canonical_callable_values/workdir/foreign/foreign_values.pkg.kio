@@ -1,4 +1,4 @@
-package foreign_values;
+pkg foreign_values;
 
 build {
   target js {

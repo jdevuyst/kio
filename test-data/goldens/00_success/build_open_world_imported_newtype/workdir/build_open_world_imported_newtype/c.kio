@@ -1,8 +1,8 @@
-module build_open_world_imported_newtype/c;
+mod build_open_world_imported_newtype/c;
 
 import __intrinsics__;
 
-import build_open_world_imported_newtype/a(Item);
+import build_open_world_imported_newtype/a { type Item }
 
 pub type Bag = Item & Item;
 

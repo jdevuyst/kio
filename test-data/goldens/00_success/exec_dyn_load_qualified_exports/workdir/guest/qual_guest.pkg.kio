@@ -1,4 +1,4 @@
-package qual_guest;
+pkg qual_guest;
 
 build {
   cache "out/.kio-cache/";

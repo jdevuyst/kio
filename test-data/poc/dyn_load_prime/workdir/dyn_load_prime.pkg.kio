@@ -1,4 +1,4 @@
-package dyn_load_prime;
+pkg dyn_load_prime;
 
 build {
   cache "out/.kio-cache/";

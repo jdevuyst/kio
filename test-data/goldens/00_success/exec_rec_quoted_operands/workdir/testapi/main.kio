@@ -1,19 +1,19 @@
-module testapi/main;
+mod testapi/main;
 
-import macros/control(macro if);
-import macros/match(macro match);
-import quotation(
-, macro duplicate
-, macro marked_duplicate
-, macro marked_swap
-, macro second
-, macro swap
-);
-import stack/testapi/main(deep);
-import testapi(Bool, I32);
+import macros/control { macro if }
+import macros/match { macro match }
+import quotation {
+  macro duplicate;
+  macro marked_duplicate;
+  macro marked_swap;
+  macro second;
+  macro swap
+}
+import stack/testapi/main { fn deep }
+import testapi { type Bool; type I32 }
 import testapi/arith as arith;
 import testapi/io as io;
-import testapi/iter(loop);
+import testapi/iter { fn loop }
 
 rec(loop) {
   fn positive(n: I32) -> Bool { io.print("condition\n"); arith.leq_i32(1, n) };

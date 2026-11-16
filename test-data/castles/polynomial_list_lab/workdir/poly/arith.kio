@@ -1,14 +1,14 @@
 /// The polynomial operations: add, subtract, scale, shift, multiply.
-module poly/arith;
+mod poly/arith;
 
 import list/core as lc;
 import list/list as ll;
-import list/list(varop [] as [* *]);
-import macros/control(macro if);
+import list/list { op_var [] as [* *] }
+import macros/control { macro if }
 import poly/core as core;
-import testapi(Bool, I32);
-import testapi/arith(add_i32, mul_i32, sub_i32);
-import testapi/iter(loop);
+import testapi { type Bool; type I32 }
+import testapi/arith { fn add_i32; fn mul_i32; fn sub_i32 }
+import testapi/iter { fn loop }
 
 type Coeffs = core.Coeffs;
 

@@ -394,8 +394,8 @@ mod tests {
             .iter()
             .map(|pattern| format!("op {pattern}"))
             .collect::<Vec<_>>()
-            .join(", ");
-        format!("module subject; import operators({heads}); fn result() -> . {{ {expression} }}")
+            .join("; ");
+        format!("mod subject; import operators {{{heads}}} fn result() -> . {{ {expression} }}")
     }
 
     fn shape(expr: &Expr) -> String {
@@ -633,8 +633,8 @@ mod tests {
             ("__ + ___", "both exposed"),
         ] {
             for source in [
-                format!("module x; op {pattern} {{ impl f; }};"),
-                format!("module x; import ops(op {pattern});"),
+                format!("mod x; op {pattern} {{ impl f; }};"),
+                format!("mod x; import ops {{op {pattern}}}"),
             ] {
                 let error = parse(&source).expect_err(&source);
                 assert!(error.diag().1.contains(diagnostic), "{source}: {error:?}");
@@ -649,7 +649,7 @@ mod tests {
             "__ ? ___ : _",
             "_ ? __ : ___",
         ] {
-            parse(&format!("module x; op {pattern} {{ impl f; }};"))
+            parse(&format!("mod x; op {pattern} {{ impl f; }};"))
                 .unwrap_or_else(|error| panic!("{pattern}: {error:?}"));
         }
     }
@@ -691,7 +691,7 @@ mod tests {
                                 part != "__" || index == 0 || index == parts.len() - 1
                             });
                         let expected = has_word && exposed_ends_allowed && repeated_words_allowed;
-                        let declaration = format!("module x; import ops(op {pattern});");
+                        let declaration = format!("mod x; import ops {{op {pattern}}}");
                         assert_eq!(parse(&declaration).is_ok(), expected, "{declaration}");
                         if !expected {
                             continue;

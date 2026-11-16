@@ -1,4 +1,4 @@
-package alpha;
+pkg alpha;
 
 build {
   target js {

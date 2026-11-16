@@ -2,14 +2,14 @@
 /// them: the sheet itself (address -> content), the value store (address ->
 /// value), the dependents map (address -> the cells that read it), and the
 /// in-degree counter Kahn's algorithm decrements (address -> count).
-module sheet/table;
+mod sheet/table;
 
-import macros/control(macro if);
-import macros/match(macro match);
-import sheet/addr(Addr, addr_eq);
-import sheet/list(List, cons, nil, reverse);
-import testapi(Bool);
-import testapi/iter(loop);
+import macros/control { macro if }
+import macros/match { macro match }
+import sheet/addr { type Addr; fn addr_eq }
+import sheet/list { type List; fn cons; fn nil; fn reverse }
+import testapi { type Bool }
+import testapi/iter { fn loop }
 
 pub type { Table[V]: List[Addr & V] { pub mk; pub get } }
 

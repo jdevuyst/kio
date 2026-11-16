@@ -1,4 +1,4 @@
-package route_ticket_pricer;
+pkg route_ticket_pricer;
 
 build {
   cache "out/.kio-cache/";

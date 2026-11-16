@@ -1,4 +1,4 @@
-package earley_chart_workbench;
+pkg earley_chart_workbench;
 
 build {
   cache "out/.kio-cache/";

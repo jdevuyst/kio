@@ -1,4 +1,4 @@
-package pure_modifier_on_op;
+pkg pure_modifier_on_op;
 
 build {
   cache "out/.kio-cache/";

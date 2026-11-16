@@ -1,12 +1,12 @@
 # File-backed harness
 
 <!--kio {file}
-module broken;
+mod broken;
 fn value(x: ()) { x }
 -->
 
 <!--kio {harness=sample file placeholder="__INSERT__"}
-module sample;
+mod sample;
 
 __INSERT__
 -->

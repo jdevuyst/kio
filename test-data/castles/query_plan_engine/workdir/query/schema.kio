@@ -4,15 +4,15 @@
 /// A column is a name in the catalog, never a string. The host tier has
 /// no string equality, so column identity is the integer code the catalog
 /// hands out, and `col_eq` is the only way two columns are ever compared.
-module query/schema;
+mod query/schema;
 
-import macros/match(macro match);
-import macros/row_macros(macro select);
-import macros/spine_macros(macro widen_sum);
+import macros/match { macro match }
+import macros/row_macros { macro select }
+import macros/spine_macros { macro widen_sum }
 import query/list as list;
 import query/value as value;
-import testapi(Bool, I32, String);
-import testapi/arith(eq_i32);
+import testapi { type Bool; type I32; type String }
+import testapi/arith { fn eq_i32 }
 
 pub type Col =
   | { C_ship_id: . }

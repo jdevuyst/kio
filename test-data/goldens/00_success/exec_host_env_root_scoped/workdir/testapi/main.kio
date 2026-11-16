@@ -1,7 +1,7 @@
-module testapi/main;
+mod testapi/main;
 
-import testapi(String);
-import testapi/alpha(print);
+import testapi { type String }
+import testapi/alpha { fn print }
 
 fn call_logger(logger: String -> .) { logger("root-scoped host\n"[String]) }
 

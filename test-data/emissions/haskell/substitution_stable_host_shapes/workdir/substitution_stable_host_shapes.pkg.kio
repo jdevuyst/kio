@@ -1,4 +1,4 @@
-package substitution_stable_host_shapes;
+pkg substitution_stable_host_shapes;
 
 build {
   cache "out/.kio-cache/";

@@ -1,6 +1,6 @@
-module retained_macro_closed_abi;
+mod retained_macro_closed_abi;
 
-import retained_macro_closed_abi/macros(macro infer);
+import retained_macro_closed_abi/macros { macro infer }
 
 host type I32 role(i32);
 

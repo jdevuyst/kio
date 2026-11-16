@@ -140,7 +140,6 @@ fn filter[A](keep: A -> Bool, xs: List[A]) -> List[A] {
 A1 applies to every comma-separated list that remains comma-separated in canonical output:
 
 - Signature value-parameter groups (`fn`, lambdas, `equiv`; `name: T` value params and product-destructuring patterns — `(a: A, b: B)` bare or `name: (a: A, b: B)` as-pattern — in one value group; see [`language.md` § Parameter patterns](language.md#parameter-patterns)).
-- Selective `import` name lists (`import path(foo, bar);`).
 - Product-valued expressions, including preassembled products of `match` clauses.
 - Tuple literals (`(a, b, c)`).
 - Call argument lists (`f(a, b, c)`).
@@ -174,7 +173,7 @@ comma-delimited lists.
 An outer braced declaration or section ends at `}`; its optional redundant
 suffix `;` is omitted. Nonbraced outer entries retain their terminator. Braces
 inside a qualifier or right-hand side are not declaration bodies: for example,
-`host type T { owned };` and `type N = { X: .; };` retain their terminators.
+`type N = { X: .; };` retains its terminator.
 Inside a semicolon-delimited block, both braced and nonbraced entries use the
 parent's between-entry separators.
 
@@ -373,7 +372,7 @@ aliases and transparent grouping do not change that ownership.
 
 ## `op` patterns
 
-An `op` declaration binds a fixed operator pattern to a function; `op macro`
+An `op` declaration binds a fixed operator pattern to a function; `op_macro`
 binds it to a macro (see [`language.md`](language.md#operators)). The pattern
 and compact body fit on one line:
 
@@ -382,7 +381,7 @@ op _ + _ { impl add }
 op _ + __ { impl add }
 op _ ? _ : __ { impl if_then_else }
 op _ <| ___ |> { impl index }
-op macro _ && .__ { impl and }
+op_macro _ && .__ { impl and }
 ```
 
 Layout rules:
@@ -394,16 +393,16 @@ Layout rules:
 Top-level item spacing (one blank line between items per [§ Indent and blank lines](#indent-and-blank-lines)) applies to `op` like every other top-level item.
 
 **Operator import selections** retain the complete tagged grammar. Fixed
-selections retain `op` or `op macro` and render every slot kind, delay marker and whole word,
+selections retain `op` or `op_macro` and render every slot kind, delay marker and whole word,
 with the same spacing and necessary quotation as the declaration:
-`import syntax(op _ + __, op _ <| ___ |>);`. A variadic selection renders
-`varop` and its canonical frame, bare `[]` or a spaced marked pair:
-`import syntax(varop [* *]);`. Formatting never shortens
+`import syntax {op _ + __; op _ <| ___ |>}`. A variadic selection renders
+`op_var` and its canonical frame, bare `[]` or a spaced marked pair:
+`import syntax {op_var [* *]}`. Formatting never shortens
 these selections to a dispatch key or reads a provider to recover grammar.
 
 ## Variadic operator declarations
 
-A `varop` declaration uses one space after its keyword, bare `[]` or a
+A `op_var` declaration uses one space after its keyword, bare `[]` or a
 spaced marked pair such as `[* *]`. Its compact body stays on one line,
 like a fixed operator declaration. The primary clause always comes first; it
 renders one of `foldl`, `foldr`, `foldl1`, or `foldr1`, followed by the step
@@ -412,10 +411,10 @@ including an explicit `finalize ()`.
 Dotted path segments have no surrounding spaces.
 
 ```kio
-varop [* *] { foldr cons empty }
-varop [] { foldl append empty; finalize () }
-varop [! !] { foldr1 cons singleton }
-varop [% %] { foldl1 append_entry seed_entry; finalize finish }
+op_var [* *] { foldr cons empty }
+op_var [] { foldl append empty; finalize () }
+op_var [! !] { foldr1 cons singleton }
+op_var [% %] { foldl1 append_entry seed_entry; finalize finish }
 ```
 
 ## Import block ordering
@@ -425,31 +424,30 @@ exactly one blank line:
 
 1. `import __intrinsics__;`
 2. Every other import: `import __comptime__;`, selective
-   `import module/path(items);`, and qualified `import module/path as alias;`.
+   `import module/path {fn items}`, and qualified `import module/path as alias;`.
 
 Within each block, statements sort lexicographically by ASCII codepoint on
-their full rendered string, without locale or case folding. Within a selective
-list, items sort by their full rendered spelling: ordinary selections retain
-their optional `as` alias, and operator selections retain their complete tags and
-grammars. Empty blocks are skipped.
+their full rendered string. Separate clauses remain separate. Within a selective
+list, ordinary names, macros, fixed operators, and variadic operators form groups
+in that order; each group retains stable name or pattern ordering. Ordinary
+functions, types, and literal aliases share the ordinary-name group, and fixed
+function and macro operators share the fixed-operator group.
 
-Selective imports always use parentheses, including for one item. The opening
-parenthesis immediately follows the module path on the introducing line; the
-flat form is `import module/path(First, second);`. A nonempty list breaks using
-the ordinary A1 rule: one item per line with its leading comma at the inherited
-base column, and its closer at the same column. The tag and full grammar form one operator selection; the two
-delimiters of a `varop` head stay together on that line. A renaming clause uses
-one space on each side of `as`; an operator destination omits the repeated
-`op` or `varop` tag. An explicit alias stays explicit, including `name as name`:
-it gives the local spelling an independent refactoring identity.
+Selective imports use braces and semicolon separators, including for one item.
+When the flat form fits within the 100-column budget, it stays on one line,
+for example `import module/path { type First; fn second }`. Otherwise the
+opening brace stays on the introducing line and each item occupies its own
+indented line, with separators between items. The closing brace has no
+trailing semicolon. An operator tag and complete grammar stay together.
+An alias retains its explicit `as` and, for an operator, omits a repeated tag.
 
 ```kio
-import module/path(
-, First
-, op _ ? _ : ___
-, second
-, varop [% %]
-);
+import module/path {
+  type First;
+  fn second;
+  op _ ? _ : ___;
+  op_var [% %]
+}
 ```
 
 Comments remain attached to their statement or selected item when sorting.
@@ -484,10 +482,10 @@ bridge {
 
 ## Dependency files (`*.dep.kio`)
 
-A `<local>.dep.kio` dependency declaration (see [`grammar.md` § Dependency file](grammar.md#dependency-file-depkio)) is user-authored and `kio fmt` canonicalizes it. The whole file is fixed: the `dependency <local>;` header, exactly one blank line, then the `source { … }` block with its origin lines at +2 indent, and a trailing newline. A local `path` source emits one `path "<rel>"` line:
+A `<local>.dep.kio` dependency declaration (see [`grammar.md` § Dependency file](grammar.md#dependency-file-depkio)) is user-authored and `kio fmt` canonicalizes it. The whole file is fixed: the `dep <local>;` header, exactly one blank line, then the `source { … }` block with its origin lines at +2 indent, and a trailing newline. A local `path` source emits one `path "<rel>"` line:
 
 ```
-dependency <local>;
+dep <local>;
 
 source {
   path "<rel>/<name>.pkg.kio"
@@ -497,7 +495,7 @@ source {
 A `git` source emits `git`, `ref`, then `path`, in that fixed order:
 
 ```
-dependency <local>;
+dep <local>;
 
 source {
   git "<url>";
@@ -511,7 +509,7 @@ Without a selector, an omitted `path` stays omitted and a written `path ()` stay
 After the `source` block, any `rehost <from> to <to>;` statements emit — each on its own line, separated from `source` by exactly one blank line — in canonical order: sorted **lexicographically by ASCII codepoint** on the rendered `from` path, then on `to`, the same ordering rule applied to `import` imports above. Source order is not significant; `kio fmt` reorders out-of-order statements rather than erroring. Both paths render as `/`-separated module paths with no trailing item:
 
 ```
-dependency <local>;
+dep <local>;
 
 source {
   path "<rel>/<name>.pkg.kio"
@@ -540,9 +538,9 @@ For a pathless Git source, an omitted `path` stays omitted and a written `path (
 
 ## Signature files (`*.sig.kio`)
 
-A `<pkg>.sig.kio` signature changelog (see [`versioning.md` § The `kio sig` command](versioning.md#the-kio-sig-command)) is generated by `kio sig` and canonicalized by `kio fmt` through the same signature emitter. The file begins with `signature <pkg> v(<N>);`, followed by one blank line before each version block. Version blocks emit oldest-first by version number.
+A `<pkg>.sig.kio` signature changelog (see [`versioning.md` § The `kio sig` command](versioning.md#the-kio-sig-command)) is generated by `kio sig` and canonicalized by `kio fmt` through the same signature emitter. The file begins with `sig <pkg> v(<N>);`, followed by one blank line before each version block. Version blocks emit oldest-first by version number.
 
-Within each `v(<N>) { … }` block, the optional version doc-comment emits immediately above the `v` line as normalized `///` lines. A nonempty version-leading `with` block emits first; its module sections sort by module path, their `import` clauses use canonical import order, and declarations sort by name. Change partitions then emit in fixed order: `breaking`, then `nonbreaking`. Inside each partition, change blocks emit in fixed order: `add`, then `modify`, then `remove`, omitting empty blocks. Exact operation references sort lexicographically by their full `module/path.Item` spelling and emit before any legacy inline module sections; canonical `remove` output always uses those exact references. Module sections inside inline `add` / `modify` emit sorted by module path; `import` clauses inside a section emit in canonical import order; recorded items emit sorted by their declared contract name. All signature-file nesting uses +2 indentation, and the file ends with a trailing newline.
+Within each `v(<N>) { … }` block, the optional version doc-comment emits immediately above the `v` line as normalized `///` lines. A nonempty version-leading `with` block emits first; its module sections sort by module path, their `import` clauses use canonical import order, and declarations sort by name. Change partitions then emit in fixed order: `breaking`, then `nonbreaking`. Inside each partition, change blocks emit in fixed order: `add`, then `modify`, then `remove`, omitting empty blocks. Exact operation references sort lexicographically by their full `module/path.Item` spelling and emit before inline module sections; `remove` uses those exact references. Module sections inside inline `add` / `modify` emit sorted by module path; `import` clauses inside a section emit in canonical import order; recorded items emit sorted by their declared contract name. All signature-file nesting uses +2 indentation, and the file ends with a trailing newline.
 
 ## Comments
 
@@ -551,9 +549,9 @@ and trailing-whitespace normalization. The 100-column line-length budget does
 **not** apply to comments — long comments stay long. The attachment and
 relocation rules below determine their output positions.
 
-**Top-level item comments.** Line comments immediately preceding a top-level `import` or item (`fn`, `type`, `literal`, either `rec` group, `macro`, `op`, `equiv`, `bridge`) survive a `kio fmt` round-trip. They emit on their own lines at column 0, immediately above the item, in source order. The trivia stays attached to the item it preceded; for `import` statements that the formatter sorts into the canonical block layout, the comments ride with each `import` to its sorted position.
+**Top-level item comments.** Line comments immediately preceding a top-level `import` or item (`fn`, `type`, `lit`, either `rec` group, `macro`, `op`, `equiv`, `bridge`) survive a `kio fmt` round-trip. They emit on their own lines at column 0, immediately above the item, in source order. The trivia stays attached to the item it preceded; for `import` statements that the formatter sorts into the canonical block layout, the comments ride with each `import` to its sorted position.
 
-**File-header comments.** Line comments at the very top of a file, immediately preceding the file header — a `module …;` (regular or root module), a `package …;`, or a `dependency …;` — survive a `kio fmt` round-trip. They emit on their own lines at column 0, above the header, in source order, ahead of any `///` module doc-comment. (A `///` run directly above a module header is the module's doc-comment and rides the `///` rule below; the plain `//` header is what this clause preserves.)
+**File-header comments.** Line comments at the very top of a file, immediately preceding the file header — a `mod …;` (regular or root module), a `pkg …;`, or a `dep …;` — survive a `kio fmt` round-trip. They emit on their own lines at column 0, above the header, in source order, ahead of any `///` module doc-comment. (A `///` run directly above a module header is the module's doc-comment and rides the `///` rule below; the plain `//` header is what this clause preserves.)
 
 **Doc-comments (`///`).** Doc-comments are emitted before the definition they document, at column 0, one `/// …` line per source line. The formatter normalizes each line's prefix to exactly `///` for a blank doc line (no content after the slashes) or `///` followed by a space and the line's content. The content itself is not reflowed — Kiodoc directives and Markdown indentation are preserved verbatim.
 

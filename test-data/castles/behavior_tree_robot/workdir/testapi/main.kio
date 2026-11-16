@@ -1,16 +1,16 @@
-module testapi/main;
+mod testapi/main;
 
-import macros/match(macro match);
-import macros/row_macros(macro select);
+import macros/match { macro match }
+import macros/row_macros { macro select }
 import robot/engine as engine;
 import robot/input as input;
 import robot/memory as memory;
 import robot/model as model;
 import robot/report as report;
-import testapi(I32, String);
+import testapi { type I32; type String }
 import testapi/arith as arith;
 import testapi/io as io;
-import testapi/iter(loop);
+import testapi/iter { fn loop }
 import testapi/text as text;
 
 rec(loop) fn simulate(tree: model.Tree, ticks: I32, state: memory.State) {

@@ -1,8 +1,8 @@
-module testapi/main;
+mod testapi/main;
 
-import macros/algebraic_macros(macro into, macro onto);
-import testapi(I32, String);
-import testapi/io(print);
+import macros/algebraic_macros { macro into; macro onto }
+import testapi { type I32; type String }
+import testapi/io { fn print }
 
 // `onto` narrows any type to `()` via product projection (drop
 // all factors) plus, for sum sources, sum collapse over the

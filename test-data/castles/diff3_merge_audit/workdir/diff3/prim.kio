@@ -2,12 +2,12 @@
 /// package declares supplies `leq_i32` and `lt_i32` but no integer
 /// equality and no boolean formatter, so both are derived here once
 /// rather than re-derived at every use site.
-module diff3/prim;
+mod diff3/prim;
 
-import macros/control(macro if);
-import testapi(Bool, I32, String);
-import testapi/arith(leq_i32);
-import testapi/text(string_concat);
+import macros/control { macro if }
+import testapi { type Bool; type I32; type String }
+import testapi/arith { fn leq_i32 }
+import testapi/text { fn string_concat }
 
 pub fn and(left: Bool, right: Bool) -> Bool {
   if(left) { right } else { .f }

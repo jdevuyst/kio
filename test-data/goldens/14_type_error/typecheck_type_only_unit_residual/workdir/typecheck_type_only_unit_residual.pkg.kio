@@ -1,4 +1,4 @@
-package typecheck_type_only_unit_residual;
+pkg typecheck_type_only_unit_residual;
 
 build {
   cache "out/.kio-cache/";

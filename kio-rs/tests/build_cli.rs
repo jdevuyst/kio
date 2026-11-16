@@ -63,7 +63,7 @@ fn write_prime_package(root: &Path, package: &str, main: &str) {
     write(
         &root.join(format!("{package}.pkg.kio")),
         &format!(
-            "package {package};\n\n\
+            "pkg {package};\n\n\
              build {{\n\
              \x20 cache ();\n\n\
              \x20 target kio-prime {{\n\
@@ -82,7 +82,7 @@ fn write_skip_package(root: &Path, package: &str, targets: &str) {
     write(
         &root.join(format!("{package}.pkg.kio")),
         &format!(
-            "package {package};\n\n\
+            "pkg {package};\n\n\
              build {{\n\
              \x20 cache ();\n\n\
              {targets}\
@@ -94,7 +94,7 @@ fn write_skip_package(root: &Path, package: &str, targets: &str) {
     );
     write(
         &root.join("main.kio"),
-        "module main;\n\nfn empty() -> . { () }\n",
+        "mod main;\n\nfn empty() -> . { () }\n",
     );
 }
 
@@ -241,7 +241,7 @@ fn named_target_selection_skips_nonmatching_modules_and_requires_each_name_somew
         write_skip_package(&a, "a", "target (kio-prime, \"web\") { out \"out\" }");
         write_skip_package(&b, "b", "target (kio-prime, \"worker\") { out \"out\" }");
         write(&b.join("main.kio"), "not a valid module");
-        write(&c.join("c.pkg.kio"), "package c; bridge { main; }");
+        write(&c.join("c.pkg.kio"), "pkg c; bridge { main; }");
         write(&c.join("main.kio"), "not a valid module");
 
         assert_build_rejected(
@@ -266,8 +266,8 @@ fn named_package_selection_uses_manifest_names_and_reports_ambiguity() {
         let workspace = TempDir::new().unwrap();
         let first = workspace.path().join("first");
         let second = workspace.path().join("second");
-        write_prime_package(&first, "app", "module main; fn empty() -> . { () }");
-        write_prime_package(&second, "app", "module main; fn empty() -> . { () }");
+        write_prime_package(&first, "app", "mod main; fn empty() -> . { () }");
+        write_prime_package(&second, "app", "mod main; fn empty() -> . { () }");
         let ambiguous = run(&binary, workspace.path(), &["build", "--pkg", "app"]);
         assert_build_rejected(label, &ambiguous, "ambiguous package name `app`");
         let stderr = String::from_utf8_lossy(&ambiguous.stderr);
@@ -398,12 +398,12 @@ fn build_without_selectors_recursively_builds_every_discovered_package() {
         write_prime_package(
             &pkg_a,
             "pkg_a",
-            "module main;\n\nhost type Int role(i32);\nhost fn show(p0: Int) -> .;\n",
+            "mod main;\n\nhost type Int role(i32);\nhost fn show(p0: Int) -> .;\n",
         );
         write_prime_package(
             &pkg_b,
             "pkg_b",
-            "module main;\n\nhost type Str role(str);\nhost fn emit(p0: Str) -> .;\n",
+            "mod main;\n\nhost type Str role(str);\nhost fn emit(p0: Str) -> .;\n",
         );
         write(
             &workspace.path().join("distractor/README.txt"),
@@ -432,7 +432,7 @@ fn build_without_selectors_recursively_builds_every_discovered_package() {
             let manifest = fs::read_to_string(emitted.join(format!("{package}.pkg.kio")))
                 .expect("read emitted package file");
             assert!(
-                manifest.starts_with(&format!("package {package};")),
+                manifest.starts_with(&format!("pkg {package};")),
                 "{label} emitted the wrong package manifest for {package}"
             );
         }
@@ -544,7 +544,7 @@ fn every_backend_rejects_output_containing_source_before_writes() {
                 "app",
                 &format!("target {target} {{ out \"src\"; }}"),
             );
-            let source = "module src/extra;\n";
+            let source = "mod src/extra;\n";
             write(&package.path().join("src/extra.kio"), source);
             write(&package.path().join("src/sentinel.txt"), "keep me");
             let output = run(&binary, package.path(), &["build"]);
@@ -640,7 +640,7 @@ fn independent_package_error_keeps_safe_sibling_builds_and_external_output() {
         let a = workspace.path().join("a");
         let b = workspace.path().join("b");
         write_skip_package(&a, "a", "target js { out \"../external\"; }");
-        write(&b.join("b.pkg.kio"), "package b; build { invalid }");
+        write(&b.join("b.pkg.kio"), "pkg b; build { invalid }");
         let output = run(&binary, workspace.path(), &["build"]);
         assert_eq!(
             output.status.code(),
@@ -680,7 +680,7 @@ fn warm_artifact_restore_cannot_erase_newly_collected_input() {
             stderr.contains("artifact_hit=1"),
             "{label}: expected a real artifact hit: {stderr}"
         );
-        let source = "module out/js/preserved;\n";
+        let source = "mod out/js/preserved;\n";
         write(&package.path().join("out/js/preserved.kio"), source);
         let output = timed_build();
         assert_build_rejected(label, &output, "contains input");

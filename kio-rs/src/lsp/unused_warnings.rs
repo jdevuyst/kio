@@ -506,24 +506,28 @@ pub(crate) fn import_removal(
         return Some(vec![whole_declaration_removal(source, import.span)?]);
     }
     let syntax = import_item_syntax(tokens, item)?;
+    let item_source = source.get(syntax.start as usize..syntax.end as usize)?;
+    if item_source.contains("//") || item_source.contains("/*") {
+        return None;
+    }
     let (first, after) = (
         tokens.partition_point(|token| token.span.start < syntax.start),
         tokens.partition_point(|token| token.span.start < syntax.end),
     );
-    let comma = if selected + 1 < items.len() {
+    let separator = if selected + 1 < items.len() {
         tokens.get(after)?
     } else {
         tokens.get(first.checked_sub(1)?)?
     };
-    if comma.kind != TokenKind::Comma {
+    if separator.kind != TokenKind::Semicolon {
         return None;
     }
-    let (left, right) = if comma.span.start < syntax.start {
-        (comma.span, syntax)
+    let (left, right) = if separator.span.start < syntax.start {
+        (separator.span, syntax)
     } else {
-        (syntax, comma.span)
+        (syntax, separator.span)
     };
-    // A comment between the item and its comma has its own source ownership.
+    // A comment between the item and its separator has its own source ownership.
     // Two token-range edits preserve it without moving a neighbouring comment.
     if source
         .get(left.end as usize..right.start as usize)?
@@ -539,14 +543,24 @@ pub(crate) fn import_removal(
 fn import_item_syntax(tokens: &[Token], item: &ImportItem) -> Option<Span> {
     match item {
         ImportItem::Name {
-            span,
-            alias,
-            macro_span,
-            ..
-        } => Some(Span::new(
-            macro_span.map_or(span.start, |tag| tag.start),
-            alias.as_ref().map_or(span.end, |alias| alias.span.end),
-        )),
+            span, alias, kind, ..
+        } => {
+            let index = tokens.partition_point(|token| token.span.start < span.start);
+            let tag = tokens.get(index.checked_sub(1)?)?;
+            let expected = match kind {
+                crate::ast::ImportNameKind::Function => "fn",
+                crate::ast::ImportNameKind::Type => "type",
+                crate::ast::ImportNameKind::Literal => "lit",
+                crate::ast::ImportNameKind::Macro => "macro",
+            };
+            if !matches!(&tag.kind, TokenKind::Ident(name) if name == expected) {
+                return None;
+            }
+            Some(Span::new(
+                tag.span.start,
+                alias.as_ref().map_or(span.end, |alias| alias.span.end),
+            ))
+        }
         ImportItem::OperatorPattern { span, alias, .. } => {
             let end = alias.as_ref().map_or(span.end, |alias| alias.span.end);
             let after = tokens.partition_point(|token| token.span.start < end);
@@ -614,7 +628,7 @@ mod tests {
     }
 
     fn doc_uncertainty(doc: &str) -> DocDependencyUncertainty {
-        let source = format!("module main;\n{doc}\nfn helper() {{ () }}\n");
+        let source = format!("mod main;\n{doc}\nfn helper() {{ () }}\n");
         let module = parser::parse(&source).expect("valid source");
         let (tokens, trailing) = lexer::lex_with_trailing(&source).expect("valid tokens");
         doc_dependency_uncertainty(&source, &tokens, &trailing, &module)
@@ -707,7 +721,7 @@ mod tests {
 
     #[test]
     fn public_scoped_host_and_equiv_items_are_roots_without_workspace_consumers() {
-        let source = "module main; fn dead() { () } type Dead = .; pub fn exported() { () } pub(main) type Scoped = .; host type Host; host fn host_value() -> .; equiv witness { (); (); }";
+        let source = "mod main; fn dead() { () } type Dead = .; pub fn exported() { () } pub(main) type Scoped = .; host type Host; host fn host_value() -> .; equiv witness { (); (); }";
         let module = parser::parse(source).expect("valid source");
         assert_eq!(
             DeclarationGraph::for_module(&module).reachable(),
@@ -717,55 +731,64 @@ mod tests {
 
     #[test]
     fn nominal_import_removal_preserves_neighbour_comments() {
-        let source = "module main;\nimport lib(kept, // neighbour\n Dead, // next\n other);\n";
+        let source =
+            "mod main;\nimport lib {fn kept; // neighbour\n type Dead; // next\n fn other}\n";
         let result = remove_import_item(source, 1);
         assert_eq!(
             result,
-            "module main;\nimport lib(kept, // neighbour\n  // next\n other);\n"
+            "mod main;\nimport lib {fn kept; // neighbour\n  // next\n fn other}\n"
         );
     }
 
     #[test]
-    fn comments_between_selection_and_comma_are_preserved() {
-        let source = "module main;\nimport lib(dead // keep comment\n , other);\n";
+    fn comments_between_selection_and_separator_are_preserved() {
+        let source = "mod main;\nimport lib {fn dead // keep comment\n ; fn other}\n";
         assert_eq!(
             remove_import_item(source, 0),
-            "module main;\nimport lib( // keep comment\n  other);\n"
+            "mod main;\nimport lib { // keep comment\n  fn other}\n"
         );
+    }
+
+    #[test]
+    fn selection_removal_withholds_fix_for_comment_inside_kind_and_name() {
+        let source = "mod main; import lib {fn // keep\n dead; fn other}";
+        let module = parser::parse(source).expect("valid source");
+        let tokens = lexer::lex(source).expect("valid tokens");
+        assert!(import_removal(source, &tokens, &module.imports[0], Some(0)).is_none());
     }
 
     #[test]
     fn first_last_and_nested_operator_selections_remove_only_their_syntax() {
         for (source, selected, expected) in [
             (
-                "module main; import lib(dead, kept);",
+                "mod main; import lib {fn dead; fn kept}",
                 0,
-                "module main; import lib( kept);",
+                "mod main; import lib { fn kept}",
             ),
             (
-                "module main; import lib(kept, dead);",
+                "mod main; import lib {fn kept; fn dead}",
                 1,
-                "module main; import lib(kept);",
+                "mod main; import lib {fn kept}",
             ),
             (
-                "module main; import lib(op ___ (=) _, kept);",
+                "mod main; import lib {op ___ (=) _; fn kept}",
                 0,
-                "module main; import lib( kept);",
+                "mod main; import lib { fn kept}",
             ),
             (
-                "module main; import lib(kept, op _ (=) ___);",
+                "mod main; import lib {fn kept; op _ (=) ___}",
                 1,
-                "module main; import lib(kept);",
+                "mod main; import lib {fn kept}",
             ),
             (
-                "module main; import lib(varop [], kept);",
+                "mod main; import lib {op_var []; fn kept}",
                 0,
-                "module main; import lib( kept);",
+                "mod main; import lib { fn kept}",
             ),
             (
-                "module main; import lib(kept, varop [**]);",
+                "mod main; import lib {fn kept; op_var [**]}",
                 1,
-                "module main; import lib(kept);",
+                "mod main; import lib {fn kept}",
             ),
         ] {
             assert_eq!(remove_import_item(source, selected), expected);
@@ -774,17 +797,16 @@ mod tests {
 
     #[test]
     fn only_selection_removes_the_statement_without_its_leading_comment() {
-        let source = "module main;\r\n// keep é\r\n\timport lib(Dead);\r\nfn kept() { () }\r\n";
+        let source = "mod main;\r\n// keep é\r\n\timport lib {type Dead}\r\nfn kept() { () }\r\n";
         assert_eq!(
             remove_import_item(source, 0),
-            "module main;\r\n// keep é\r\nfn kept() { () }\r\n"
+            "mod main;\r\n// keep é\r\nfn kept() { () }\r\n"
         );
     }
 
     #[test]
     fn declaration_removal_keeps_unattached_comments_and_removes_pure_and_docs() {
-        let source =
-            "module main;\n// keep\n\n/// owned\npure fn dead() { () }\nfn kept() { () }\n";
+        let source = "mod main;\n// keep\n\n/// owned\npure fn dead() { () }\nfn kept() { () }\n";
         let module = parser::parse(source).expect("valid source");
         let tokens = lexer::lex(source).expect("valid tokens");
         let declaration =
@@ -796,13 +818,13 @@ mod tests {
             "dead"
         );
         let result = apply(source, declaration.removals);
-        assert_eq!(result, "module main;\n// keep\n\nfn kept() { () }\n");
+        assert_eq!(result, "mod main;\n// keep\n\nfn kept() { () }\n");
         parser::parse(&result).expect("complete function removed");
     }
 
     #[test]
     fn suppressed_and_public_items_are_not_removal_candidates() {
-        let source = "module main; type _Ignored = .; fn _ignored() { () } pub type Visible = .; pub(main) fn scoped() { () } host type Host; host fn host_value() -> .;";
+        let source = "mod main; type _Ignored = .; fn _ignored() { () } pub type Visible = .; pub(main) fn scoped() { () } host type Host; host fn host_value() -> .;";
         let module = parser::parse(source).expect("valid source");
         let tokens = lexer::lex(source).expect("valid tokens");
         assert!(
@@ -814,7 +836,7 @@ mod tests {
     }
     fn analyze_sources(sources: &[(&str, &str)]) -> crate::cmd::check::LspAnalysis {
         let dir = tempfile::tempdir().expect("temporary package");
-        let mut bridge = String::from("package lint; bridge { ");
+        let mut bridge = String::from("pkg lint; bridge { ");
         for (name, source) in sources {
             std::fs::write(dir.path().join(format!("{name}.kio")), source).expect("module");
             bridge.push_str(name);
@@ -851,15 +873,11 @@ mod tests {
         let analysis = analyze_sources(&[
             (
                 "provider",
-                "module provider; pub fn used() -> . { () } pub fn unused() -> . { () }",
+                "mod provider; pub fn used() -> . { () } pub fn unused() -> . { () }",
             ),
             (
                 "main",
-                "module main; import provider(used, unused); \
-                type Dead = .; type Live = .; type _Ignored = .; \
-                fn helper(_value: Live) -> . { used() } \
-                fn dead() -> . { () } fn _ignored() -> . { () } \
-                pub fn run() -> . { helper(()) }",
+                "mod main; import provider {fn used; fn unused} type Dead = .; type Live = .; type _Ignored = .; fn helper(_value: Live) -> . { used() } fn dead() -> . { () } fn _ignored() -> . { () } pub fn run() -> . { helper(()) }",
             ),
         ]);
         let mut names: Vec<_> = new_warnings(&analysis)
@@ -867,23 +885,21 @@ mod tests {
             .map(|(name, _)| name)
             .collect();
         names.sort_unstable();
-        assert_eq!(names, ["Dead", "dead", "unused"]);
+        assert_eq!(names, ["Dead", "dead", "fn unused"]);
     }
 
     #[test]
     fn source_warning_graph_distinguishes_qualified_and_selective_type_bindings() {
         let analysis = analyze_sources(&[
-            ("provider", "module provider; pub type Foo = .;"),
+            ("provider", "mod provider; pub type Foo = .;"),
             (
                 "main",
-                "module main; import provider(Foo); import provider as q; \
-                pub fn qualified(_value: q.Foo) -> . { () } \
-                pub fn parameter[Foo](_value: Foo) -> . { () }",
+                "mod main; import provider {type Foo} import provider as q; pub fn qualified(_value: q.Foo) -> . { () } pub fn parameter[Foo](_value: Foo) -> . { () }",
             ),
         ]);
         let warnings = new_warnings(&analysis);
         assert_eq!(warnings.len(), 1, "{:?}", analysis.warnings);
-        assert_eq!(warnings[0].0, "Foo");
+        assert_eq!(warnings[0].0, "type Foo");
         assert_eq!(
             warnings[0].1.kind,
             crate::cmd::check::LspWarningKind::UnusedImport
@@ -892,7 +908,7 @@ mod tests {
 
     #[test]
     fn source_warning_graph_withholds_removal_of_a_surviving_dead_dependency() {
-        let source = "module main; fn leaf() -> . { () } fn dead() -> . { leaf() }";
+        let source = "mod main; fn leaf() -> . { () } fn dead() -> . { leaf() }";
         let analysis = analyze_sources(&[("main", source)]);
         let warnings = new_warnings(&analysis);
         assert_eq!(warnings.len(), 2);
@@ -917,9 +933,9 @@ mod tests {
             ("pub fn run() -> r.Number { 1 }", true),
             ("pub fn run() -> r.Number { 1[r.Number] }", true),
         ] {
-            let main = format!("module main; import roles as r; type Fallback = r.Number; {body}");
+            let main = format!("mod main; import roles as r; type Fallback = r.Number; {body}");
             let analysis = analyze_sources(&[
-                ("roles", "module roles; pub host type Number role(i32);"),
+                ("roles", "mod roles; pub host type Number role(i32);"),
                 ("main", &main),
             ]);
             let warnings = new_warnings(&analysis);
@@ -940,14 +956,13 @@ mod tests {
         let analysis = analyze_sources(&[
             (
                 "syntax",
-                "module syntax; pub fn combine(left: ., _right: .) -> . { left } \
-                pub op _ + _ { impl combine; }; pub op _ - _ { impl combine; };",
+                "mod syntax; pub fn combine(left: ., _right: .) -> . { left } pub op _ + _ { impl combine; }; pub op _ - _ { impl combine; };",
             ),
             (
                 "main",
-                "module main; import syntax(op _ + _, op _ - _); \
+                "mod main; import syntax {op _ + _; op _ - _} \
                 fn combine(left: ., _right: .) -> . { left } fn empty() -> . { () } \
-                op _ * _ { impl combine; }; varop [% %] { foldl combine empty; }; \
+                op _ * _ { impl combine; }; op_var [% %] { foldl combine empty; }; \
                 pub fn fixed() -> . { (() + ()) * () } \
                 pub fn folded() -> . { [% (), () %] }",
             ),
@@ -960,31 +975,22 @@ mod tests {
     #[test]
     fn source_warning_graph_tracks_nominal_aliases_and_generated_members() {
         let analysis = analyze_sources(&[
-            ("types", "module types; pub type { Tag: .; Unused: .; };"),
+            ("types", "mod types; pub type { Tag: .; Unused: .; };"),
             (
                 "main",
-                "module main; import types(Tag, Unused); \
-                type Payload = .; type { Local: Payload; }; type Forwarded = Tag; \
-                pub fn run() -> . { let _ = Forwarded.mk(()); let _ = Local.mk(()); () }",
+                "mod main; import types {type Tag; type Unused} type Payload = .; type { Local: Payload; }; type Forwarded = Tag; pub fn run() -> . { let _ = Forwarded.mk(()); let _ = Local.mk(()); () }",
             ),
         ]);
         let warnings = new_warnings(&analysis);
         assert_eq!(warnings.len(), 1, "{:?}", analysis.warnings);
-        assert_eq!(warnings[0].0, "Unused");
+        assert_eq!(warnings[0].0, "type Unused");
     }
 
     #[test]
     fn source_warning_graph_tracks_recursive_groups_and_loop_drivers() {
         let analysis = analyze_sources(&[(
             "main",
-            "module main; \
-            host fn loop[S][R](step: S -> (S | R), state: S) -> R; \
-            fn driver[S][R](step: S -> (S | R), state: S) -> R { loop(step, state) } \
-            type Payload = .; \
-            rec { type { A: Payload & B { mk; get; }; }; \
-                type { B: A { mk; get; }; }; } \
-            rec(driver) fn repeat(value: A) -> A { recur repeat(value) } \
-            pub fn run() -> . { let _ = repeat; () }",
+            "mod main; host fn loop[S][R](step: S -> (S | R), state: S) -> R; fn driver[S][R](step: S -> (S | R), state: S) -> R { loop(step, state) } type Payload = .; rec { type { A: Payload & B { mk; get; }; }; type { B: A { mk; get; }; }; } rec(driver) fn repeat(value: A) -> A { recur repeat(value) } pub fn run() -> . { let _ = repeat; () }",
         )]);
         assert!(
             new_warnings(&analysis).is_empty(),
@@ -997,14 +1003,7 @@ mod tests {
     fn source_warning_graph_tracks_macro_implementation_and_captures() {
         let analysis = analyze_sources(&[(
             "main",
-            "module main; import __comptime__; \
-            type Hidden = .; pure fn helper() -> . { () } \
-            pure fn build(ct: __Comptime__, _helper: __Checked_term__, \
-                _hidden: __Type__, _unit: __Checked_term__) -> __Checked_term__ { \
-                __term_unit__(ct) \
-            } \
-            macro expand : . -> . { captures (helper, Hidden); impl build; }; \
-            pub fn run() -> . { expand(()) }",
+            "mod main; import __comptime__; type Hidden = .; pure fn helper() -> . { () } pure fn build(ct: __Comptime__, _helper: __Checked_term__, _hidden: __Type__, _unit: __Checked_term__) -> __Checked_term__ { __term_unit__(ct) } macro expand : . -> . { captures (helper, Hidden); impl build; }; pub fn run() -> . { expand(()) }",
         )]);
         assert!(
             new_warnings(&analysis).is_empty(),
@@ -1019,10 +1018,11 @@ mod tests {
             ("pub fn run() -> r.Number { marker[r.Number] }", false),
             ("pub fn run(marker: r.Number) -> r.Number { marker }", true),
         ] {
-            let source = format!("module main; import literals(marker); import roles as r; {body}");
+            let source =
+                format!("mod main; import literals {{lit marker}} import roles as r; {body}");
             let analysis = analyze_sources(&[
-                ("roles", "module roles; pub host type Number role(i32);"),
-                ("literals", "module literals; pub literal marker = 1;"),
+                ("roles", "mod roles; pub host type Number role(i32);"),
+                ("literals", "mod literals; pub lit marker = 1;"),
                 ("main", &source),
             ]);
             let warnings = new_warnings(&analysis);
@@ -1033,7 +1033,7 @@ mod tests {
                 analysis.warnings
             );
             if unused {
-                assert_eq!(warnings[0].0, "marker");
+                assert_eq!(warnings[0].0, "lit marker");
             }
         }
     }
@@ -1059,7 +1059,7 @@ mod tests {
             ),
         ] {
             let source = format!(
-                "module main; import __intrinsics__; import __intrinsics__; import __comptime__; {body}"
+                "mod main; import __intrinsics__; import __intrinsics__; import __comptime__; {body}"
             );
             let analysis = analyze_sources(&[("main", &source)]);
             let actual: Vec<_> = new_warnings(&analysis)
@@ -1074,11 +1074,7 @@ mod tests {
     fn source_warning_graph_keeps_equiv_host_and_scoped_public_dependencies_live() {
         let analysis = analyze_sources(&[(
             "main",
-            "module main; \
-            pub type Contract = .; host fn capability(value: Contract) -> Contract; \
-            pure fn law_helper() -> . { () } equiv law { law_helper(); (); } \
-            fn scoped_helper() -> . { () } pub(main) fn visible() -> . { scoped_helper() } \
-            type Dead = .; type _Ignored = .;",
+            "mod main; pub type Contract = .; host fn capability(value: Contract) -> Contract; pure fn law_helper() -> . { () } equiv law { law_helper(); (); } fn scoped_helper() -> . { () } pub(main) fn visible() -> . { scoped_helper() } type Dead = .; type _Ignored = .;",
         )]);
         let warnings = new_warnings(&analysis);
         assert_eq!(warnings.len(), 1, "{:?}", analysis.warnings);
@@ -1088,7 +1084,7 @@ mod tests {
 
     #[test]
     fn private_removal_does_not_reattach_unowned_executable_documentation() {
-        let source = "module main; fn dead() -> . { () }\n/// ```kio {@}\n/// dead(); ()\n/// ```\n; pub fn live() -> . { () }";
+        let source = "mod main; fn dead() -> . { () }\n/// ```kio {@}\n/// dead(); ()\n/// ```\n; pub fn live() -> . { () }";
         let parsed = parser::parse(source).unwrap();
         let (tokens, trailing) = lexer::lex_with_trailing(source).unwrap();
         assert!(doc_dependency_uncertainty(source, &tokens, &trailing, &parsed).is_empty());
@@ -1113,7 +1109,7 @@ mod tests {
 
     #[test]
     fn import_documentation_cannot_supply_a_clean_unused_warning_snapshot() {
-        let source = "module main;\n/// ```kio {@}\n/// unused(); ()\n/// ```\nimport provider(unused);\npub fn live() -> . { () }";
+        let source = "mod main;\n/// ```kio {@}\n/// unused(); ()\n/// ```\nimport provider {fn unused}\npub fn live() -> . { () }";
         let error = parser::parse(source).expect_err("documentation cannot attach to an import");
         assert!(
             error

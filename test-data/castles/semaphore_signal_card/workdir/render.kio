@@ -1,13 +1,13 @@
-module render;
+mod render;
 
-import alphabet(Card);
-import alphabet(Crossed, Glyph, High, Left, Mnemonic, Right);
-import macros/control(macro if);
-import macros/row_macros(macro select);
-import message(Crossings_even, Has_vowel, Shapes_distinct);
-import message(Facts, Message);
-import testapi(Bool, String);
-import testapi/io(print);
+import alphabet { type Card }
+import alphabet { type Crossed; type Glyph; type High; type Left; type Mnemonic; type Right }
+import macros/control { macro if }
+import macros/row_macros { macro select }
+import message { type Crossings_even; type Has_vowel; type Shapes_distinct }
+import message { type Facts; type Message }
+import testapi { type Bool; type String }
+import testapi/io { fn print }
 
 fn word(flag: Bool) -> String {
   if(flag) { "yes" } else { "no" }

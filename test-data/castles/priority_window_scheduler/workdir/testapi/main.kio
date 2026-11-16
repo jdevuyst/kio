@@ -1,10 +1,10 @@
-module testapi/main;
+mod testapi/main;
 
 import priority_window_scheduler/model as model;
 import priority_window_scheduler/planner as planner;
 import priority_window_scheduler/report as report;
-import testapi(String);
-import testapi/io(print);
+import testapi { type String }
+import testapi/io { fn print }
 
 pub fn main() {
   let early = model.early();

@@ -1,4 +1,4 @@
-module view;
+mod view;
 
 import origin as original;
 

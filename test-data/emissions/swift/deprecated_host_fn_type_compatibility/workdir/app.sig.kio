@@ -1,9 +1,9 @@
-signature app v(3);
+sig app v(3);
 
 v(1) {
   nonbreaking {
     add {
-      module api {
+      mod api {
         host type Live role(str);
         host type Retired role(str);
         host fn archived(value: Retired) -> Retired;

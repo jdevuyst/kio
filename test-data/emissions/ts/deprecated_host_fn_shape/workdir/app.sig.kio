@@ -1,9 +1,9 @@
-signature app v(3);
+sig app v(3);
 
 v(1) {
   nonbreaking {
     add {
-      module api {
+      mod api {
         host type Box[A];
         host type Str role(str);
         pub type { Token[A]: A { pub mk; pub get } };
@@ -12,7 +12,7 @@ v(1) {
         host fn old(head: Str, value: Str & Box[Token[.]]) -> Box[Token[.]];
         host fn open() -> Str
       };
-      module legacy {
+      mod legacy {
         host type Gone;
         host fn retired(value: Gone) -> Gone
       }

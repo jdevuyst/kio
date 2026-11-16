@@ -22,6 +22,3 @@ mixed_integer_first: 14
 mixed_float_first: 14
 explicit_float: 14
 expected_float: 14
-removed_host_modifier: 11
-removed_import_modifier: 11
-removed_alias_modifier: 11

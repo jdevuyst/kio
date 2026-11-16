@@ -1,4 +1,4 @@
-package exec_computed_function_adapter_once;
+pkg exec_computed_function_adapter_once;
 
 build {
   cache "out/.kio-cache/";

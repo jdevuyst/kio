@@ -1,4 +1,4 @@
-package exec_named_import_aliases;
+pkg exec_named_import_aliases;
 
 build {
   cache "out/.kio-cache/";

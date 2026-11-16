@@ -1,4 +1,4 @@
-module tree;
+mod tree;
 
 import __intrinsics__;
 

@@ -1,9 +1,9 @@
-module testapi/main;
+mod testapi/main;
 
-import macros/sequence(macro do);
-import testapi(String);
-import testapi/io(print);
-import testapi/text(string_concat);
+import macros/sequence { macro do }
+import testapi { type String }
+import testapi/io { fn print }
+import testapi/text { fn string_concat }
 
 // `Box(_)` plus a per-monad bind, exercised by both bind-statement
 // and pure-let destructuring forms.

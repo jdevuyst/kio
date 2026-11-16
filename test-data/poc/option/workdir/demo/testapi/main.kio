@@ -1,39 +1,39 @@
-module testapi/main;
+mod testapi/main;
 
-import library/core(
-, Option
-, and_then
-, apply
-, bind
-, from_option
-, map
-, none
-, option
-, or_else
-, some
-, then
-);
-import library/macros/match(macro match);
-import library/macros/spine_macros(macro widen_sum);
-import library/option(
-, cat_options
-, filter
-, is_none
-, is_some
-, join_options
-, map_option
-, op _ <?> _
-, op _ ?? _
-, op _ ||? _
-, op __ ?> _
-);
-import list/core(List, cons, nil);
-import list/list(varop [] as [* *]);
-import testapi(Bool, I32, String);
-import testapi/arith(add, leq_i32, mul);
-import testapi/fmt(bool_to_string, int_to_string);
-import testapi/io(print);
-import testapi/text(string_concat);
+import library/core {
+  type Option;
+  fn and_then;
+  fn apply;
+  fn bind;
+  fn from_option;
+  fn map;
+  fn none;
+  fn option;
+  fn or_else;
+  fn some;
+  fn then
+}
+import library/macros/match { macro match }
+import library/macros/spine_macros { macro widen_sum }
+import library/option {
+  fn cat_options;
+  fn filter;
+  fn is_none;
+  fn is_some;
+  fn join_options;
+  fn map_option;
+  op _ <?> _;
+  op _ ?? _;
+  op _ ||? _;
+  op __ ?> _
+}
+import list/core { type List; fn cons; fn nil }
+import list/list { op_var [] as [* *] }
+import testapi { type Bool; type I32; type String }
+import testapi/arith { fn add; fn leq_i32; fn mul }
+import testapi/fmt { fn bool_to_string; fn int_to_string }
+import testapi/io { fn print }
+import testapi/text { fn string_concat }
 
 fn show(label: String, value: String) {
   print(value.>string_concat("\n").>>string_concat(" = ").>>string_concat(label))

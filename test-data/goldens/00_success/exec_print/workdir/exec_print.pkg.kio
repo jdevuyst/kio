@@ -1,4 +1,4 @@
-package exec_print;
+pkg exec_print;
 
 build {
   cache "out/.kio-cache/";

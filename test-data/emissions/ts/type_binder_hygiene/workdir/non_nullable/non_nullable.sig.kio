@@ -1,9 +1,9 @@
-signature non_nullable v(3);
+sig non_nullable v(3);
 
 v(1) {
   nonbreaking {
     add {
-      module api {
+      mod api {
         host type Token;
         pub fn keep[A](value: A) -> A;
         host fn old(value: Token) -> Token

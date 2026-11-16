@@ -1,4 +1,4 @@
-package user_macro_comptime_surface;
+pkg user_macro_comptime_surface;
 
 build {
   cache "out/.kio-cache/";

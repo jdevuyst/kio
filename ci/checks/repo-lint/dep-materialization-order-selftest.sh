@@ -24,13 +24,13 @@ make_node() {
   terminator=$4
   mkdir -p "$repo/test-data/$node/workdir/$local_name"
   cat > "$repo/test-data/$node/workdir/$local_name.dep.kio" <<EOF
-dependency $local_name;
+dep $local_name;
 
 source {
   path "$source"$terminator
 }
 EOF
-  printf 'package %s;\n' "$local_name" \
+  printf 'pkg %s;\n' "$local_name" \
     > "$repo/test-data/$node/workdir/$local_name.pkg.kio"
   printf 'stale\n' > "$repo/test-data/$node/workdir/$local_name/state"
 }
@@ -41,7 +41,7 @@ make_node a_top top ../../m_middle/workdir/middle.pkg.kio ';'
 make_node m_middle middle ../../z_leaf/workdir/leaf.pkg.kio ''
 make_node z_leaf leaf ../../library/leaf.pkg.kio ';'
 mkdir -p "$repo/test-data/library"
-printf 'package leaf;\n' > "$repo/test-data/library/leaf.pkg.kio"
+printf 'pkg leaf;\n' > "$repo/test-data/library/leaf.pkg.kio"
 
 cat > "$scratch/kio" <<'EOF'
 #!/bin/sh
@@ -93,7 +93,7 @@ fi
 
 # An in-scope cycle fails before any tree is rewritten.
 cat > "$repo/test-data/z_leaf/workdir/leaf.dep.kio" <<'EOF'
-dependency leaf;
+dep leaf;
 
 source {
   path "../../a_top/workdir/top.pkg.kio";
@@ -116,7 +116,7 @@ fi
 # A local source in its own dependency-bearing directory is a self-cycle,
 # not a node with no ordering edge.
 cat > "$repo/test-data/z_leaf/workdir/leaf.dep.kio" <<'EOF'
-dependency leaf;
+dep leaf;
 
 source {
   path "leaf.pkg.kio";

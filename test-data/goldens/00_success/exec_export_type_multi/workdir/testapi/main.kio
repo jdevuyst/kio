@@ -1,10 +1,10 @@
-module testapi/main;
+mod testapi/main;
 
-import macros/match(macro match);
-import testapi(String);
-import testapi/io(print);
-import testapi/types(Cell);
-import testapi/types(Pair);
+import macros/match { macro match }
+import testapi { type String }
+import testapi/io { fn print }
+import testapi/types { type Cell }
+import testapi/types { type Pair }
 
 // Exercise every member of every exported newtype: the
 // `type` declarations in the package file commit the

@@ -1,4 +1,4 @@
-package go_item_name_collisions;
+pkg go_item_name_collisions;
 
 build {
   cache "out/.kio-cache/";

@@ -184,8 +184,8 @@ function infer_path(   i, line) {
     line = body[i]
     sub(/^[ \t]+/, "", line)
     if (line == "" || line ~ /^\/\//) continue
-    if (line ~ /^module[ \t]/) { sub(/^module[ \t]+/, "", line); sub(/[ \t]*;.*$/, "", line); return line ".kio" }
-    if (line ~ /^package[ \t]/) { sub(/^package[ \t]+/, "", line); sub(/[ \t]*;.*$/, "", line); return line ".pkg.kio" }
+    if (line ~ /^mod[ \t]/) { sub(/^mod[ \t]+/, "", line); sub(/[ \t]*;.*$/, "", line); return line ".kio" }
+    if (line ~ /^pkg[ \t]/) { sub(/^pkg[ \t]+/, "", line); sub(/[ \t]*;.*$/, "", line); return line ".pkg.kio" }
     return ""
   }
   return ""

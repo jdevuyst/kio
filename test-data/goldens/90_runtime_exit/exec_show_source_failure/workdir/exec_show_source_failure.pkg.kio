@@ -1,4 +1,4 @@
-package exec_show_source_failure;
+pkg exec_show_source_failure;
 
 build {
   cache "out/.kio-cache/";

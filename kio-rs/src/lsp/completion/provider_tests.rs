@@ -4,8 +4,8 @@ use crate::lsp::state::ServerState;
 use std::collections::{BTreeMap, HashMap};
 use std::path::PathBuf;
 
-const PROVIDER: &str = "module provider; pub macro choose : (. & .) -> . { trailing product; trailing product fallback; impl build }";
-const CONSUMER: &str = "module app; import provider(macro choose); fn run() { choose { () } ";
+const PROVIDER: &str = "mod provider; pub macro choose : (. & .) -> . { trailing product; trailing product fallback; impl build }";
+const CONSUMER: &str = "mod app; import provider {macro choose} fn run() { choose { () } ";
 
 struct Fixture {
     _directory: tempfile::TempDir,
@@ -138,7 +138,7 @@ fn provider_name_enumeration_authenticates_known_paths_without_catalog_rescans()
     for index in 0..16 {
         let name = format!("provider_n{index:02}");
         let path = fixture.root.join(format!("{name}.kio"));
-        std::fs::write(&path, format!("module {name}; pub fn chosen() {{ () }}")).unwrap();
+        std::fs::write(&path, format!("mod {name}; pub fn chosen() {{ () }}")).unwrap();
         catalog.insert(path, name.clone());
         expected.push(name);
     }
@@ -167,7 +167,7 @@ fn duplicate_provider_declarations_are_unavailable_before_visibility_filtering()
     for second_visibility in ["pub ", ""] {
         let mut fixture = Fixture::new(false);
         fixture.replace_provider(&format!(
-            "module provider; pub fn chosen() {{ () }} {second_visibility}fn chosen(value: .) {{ value }}"
+            "mod provider; pub fn chosen() {{ () }} {second_visibility}fn chosen(value: .) {{ value }}"
         ));
         let sources = CompletionSources {
             local: None,
@@ -179,8 +179,8 @@ fn duplicate_provider_declarations_are_unavailable_before_visibility_filtering()
         };
         assert!(sources.provider("provider").is_none());
         for consumer in [
-            "module app; import provider(",
-            "module app; import provider as p; fn run() { p.",
+            "mod app; import provider {",
+            "mod app; import provider as p; fn run() { p.",
         ] {
             fixture
                 .state
@@ -195,7 +195,17 @@ fn duplicate_provider_declarations_are_unavailable_before_visibility_filtering()
             .unwrap()
             .list;
             assert!(result.is_incomplete, "{consumer}");
-            assert!(result.items.is_empty(), "{consumer}");
+            if consumer.contains("import provider {") {
+                assert!(
+                    result
+                        .items
+                        .iter()
+                        .all(|item| item.kind == Some(CompletionItemKind::KEYWORD)),
+                    "{consumer}"
+                );
+            } else {
+                assert!(result.items.is_empty(), "{consumer}");
+            }
         }
     }
 }
@@ -208,7 +218,7 @@ fn provider_declaration_identity_checks_ordinary_nominal_names() {
         .join("provider.kio");
     for visibility in ["pub ", ""] {
         let source = format!(
-            "module provider; pub type {{ Field: .; Other: .; }}; {visibility}type Field = Other;"
+            "mod provider; pub type {{ Field: .; Other: .; }}; {visibility}type Field = Other;"
         );
         assert!(CompletionSources::parse_provider(&path, "provider", &source).is_none());
     }
@@ -217,7 +227,7 @@ fn provider_declaration_identity_checks_ordinary_nominal_names() {
         "pub type Field = { Entry: .; };",
         "pub type { Other: .; }; pub type Field = Other; pub fn field() { () }",
     ] {
-        let source = format!("module provider; {declarations}");
+        let source = format!("mod provider; {declarations}");
         assert!(
             CompletionSources::parse_provider(&path, "provider", &source).is_some(),
             "{declarations}"
@@ -228,15 +238,15 @@ fn provider_declaration_identity_checks_ordinary_nominal_names() {
 #[test]
 fn invalid_current_provider_headers_never_fall_back_to_old_labels() {
     for source in [
-        "module renamed;",
-        "module nested/provider;",
-        "module provider;",
+        "mod renamed;",
+        "mod nested/provider;",
+        "mod provider;",
         "module",
         &PROVIDER.replace("pub macro", "macro"),
         &PROVIDER.replace("macro choose", "macro renamed"),
         &format!(
             "{PROVIDER} {}",
-            PROVIDER.strip_prefix("module provider;").unwrap()
+            PROVIDER.strip_prefix("mod provider;").unwrap()
         ),
         &PROVIDER.replace("trailing product;", "trailing product fallback;"),
     ] {
@@ -276,7 +286,7 @@ fn provider_header_uses_one_canonical_overlay_and_rejects_alias_ambiguity() {
     assert!(fixture.labels().is_empty());
     assert!(fixture.signature().is_none());
     fixture.state.close(&fixture.provider_uri);
-    fixture.state.open(alias, "module renamed;".into(), 2);
+    fixture.state.open(alias, "mod renamed;".into(), 2);
     assert!(fixture.labels().is_empty());
 }
 

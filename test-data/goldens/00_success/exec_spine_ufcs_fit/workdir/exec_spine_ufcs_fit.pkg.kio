@@ -1,4 +1,4 @@
-package exec_spine_ufcs_fit;
+pkg exec_spine_ufcs_fit;
 
 build {
   cache "out/.kio-cache/";

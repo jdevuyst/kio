@@ -1,12 +1,12 @@
-module interpreter/environment;
+mod interpreter/environment;
 
 import interpreter/values as values;
 import list/core as lists;
-import macros/control(macro if);
-import macros/match(macro match);
-import macros/spine_macros(macro widen_sum);
-import testapi(Bool, String);
-import testapi/iter(loop);
+import macros/control { macro if }
+import macros/match { macro match }
+import macros/spine_macros { macro widen_sum }
+import testapi { type Bool; type String }
+import testapi/iter { fn loop }
 import testapi/text as text;
 
 pub fn empty() -> values.Environment { lists.nil[_] }

@@ -1,4 +1,4 @@
-module computed;
+mod computed;
 
 host type T;
 

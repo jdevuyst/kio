@@ -1,14 +1,14 @@
 /// The polynomial representation and its normal form.
-module poly/core;
+mod poly/core;
 
 import list/core as lc;
 import list/list as ll;
-import list/list(varop [] as [* *]);
-import macros/control(macro if);
-import macros/match(macro match);
-import testapi(Bool, I32);
-import testapi/arith(eq_i32, sub_i32);
-import testapi/iter(loop);
+import list/list { op_var [] as [* *] }
+import macros/control { macro if }
+import macros/match { macro match }
+import testapi { type Bool; type I32 }
+import testapi/arith { fn eq_i32; fn sub_i32 }
+import testapi/iter { fn loop }
 
 fn value_or[A](default: A, result: A | .) -> A {
   match(result) {

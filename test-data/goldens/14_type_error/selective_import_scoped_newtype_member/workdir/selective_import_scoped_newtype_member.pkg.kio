@@ -1,4 +1,4 @@
-package selective_import_scoped_newtype_member;
+pkg selective_import_scoped_newtype_member;
 
 build {
   cache "out/.kio-cache/";

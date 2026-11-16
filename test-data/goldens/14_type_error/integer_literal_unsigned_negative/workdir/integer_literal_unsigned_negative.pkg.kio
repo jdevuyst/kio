@@ -1,4 +1,4 @@
-package integer_literal_unsigned_negative;
+pkg integer_literal_unsigned_negative;
 
 build {
   target js {

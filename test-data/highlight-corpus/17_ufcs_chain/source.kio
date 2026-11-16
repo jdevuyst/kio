@@ -1,7 +1,7 @@
-module m;
+mod m;
 
-import library/algebraic_macros(macro atom, macro iso);
-import library/custom(macro transform, macro _transform);
+import library/algebraic_macros {macro atom; macro iso}
+import library/custom {macro transform; macro _transform}
 
 fn chain(p: P, q: Q) -> R { p.>foo.>bar.>baz; q.>atom; (q.>iso)[R]; f(x).>method(arg) }
 

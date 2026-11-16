@@ -1,4 +1,4 @@
-package float_pid_controller;
+pkg float_pid_controller;
 
 build {
   cache "out/.kio-cache/";

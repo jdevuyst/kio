@@ -1,7 +1,7 @@
-module testapi/main;
+mod testapi/main;
 
-import logic(pick);
-import testapi(Bool, String);
-import testapi/io(print);
+import logic { fn pick }
+import testapi { type Bool; type String }
+import testapi/io { fn print }
 
 pub fn main() { print(pick(.t, "yes\n", "no\n")); print(pick(.f, "yes\n", "no\n")) }

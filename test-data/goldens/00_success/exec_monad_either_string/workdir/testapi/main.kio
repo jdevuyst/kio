@@ -1,10 +1,10 @@
-module testapi/main;
+mod testapi/main;
 
-import macros/match(macro match);
-import macros/sequence(macro do);
-import macros/spine_macros(macro widen_sum);
-import testapi(String);
-import testapi/io(print);
+import macros/match { macro match }
+import macros/sequence { macro do }
+import macros/spine_macros { macro widen_sum }
+import testapi { type String }
+import testapi/io { fn print }
 
 // `Either[E][A]` as `E | A`: the canonical "one of two shapes"
 // sum, error-arm `E` and value-arm `A`. It is an arity-2 newtype, so

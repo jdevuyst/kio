@@ -1,18 +1,18 @@
-module testapi/main;
+mod testapi/main;
 
 import __intrinsics__;
 
-import provider(
-, macro all
-, macro any
-, macro projected_all
-, macro projected_any
-, macro quote_all
-, macro quote_any
-);
-import testapi(Bool);
+import provider {
+  macro all;
+  macro any;
+  macro projected_all;
+  macro projected_any;
+  macro quote_all;
+  macro quote_any
+}
+import testapi { type Bool }
 import testapi/io as io;
-import testapi/iter(loop);
+import testapi/iter { fn loop }
 
 fn show(value: Bool) {
   __if_then_else__(value, .() { io.print("true\n") }, .() { io.print("false\n") })

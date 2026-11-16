@@ -629,7 +629,7 @@ mod tests {
 
     #[test]
     fn declaration_arm_traversal_preserves_unvalidated_written_occurrences() {
-        let module = parse("module m; type Choice = { Foo: .; } | { Bar: .; };")
+        let module = parse("mod m; type Choice = { Foo: .; } | { Bar: .; };")
             .expect("parse distinct compact groups");
         let Item::Labels(mut labels, _) = module.items.into_iter().next().unwrap() else {
             panic!("expected compact nominal declaration");
@@ -653,8 +653,7 @@ mod tests {
     #[test]
     fn nominal_rhs_reference_preserves_written_type_arguments() {
         let module = elab(
-            "module x; type { Value[*F][A]: F[A]; }; \
-             type Choice[*G][B] = Value[G][B] & { Other: .; };",
+            "mod x; type { Value[*F][A]: F[A]; }; type Choice[*G][B] = Value[G][B] & { Other: .; };",
         );
         let alias = module
             .items
@@ -683,9 +682,8 @@ mod tests {
 
     #[test]
     fn label_nominal_shape_preserves_headers_visibility_and_owner_spans() {
-        let module =
-            parse("module m;\n/// Label family.\npub(m) type { Box[*F][A]<X>: F[A] & X };")
-                .expect("parse explicit universal/existential label header");
+        let module = parse("mod m;\n/// Label family.\npub(m) type { Box[*F][A]<X>: F[A] & X };")
+            .expect("parse explicit universal/existential label header");
         let Item::Labels(owner, _) = &module.items[0] else {
             panic!("expected labels");
         };
@@ -748,8 +746,8 @@ mod tests {
     #[test]
     fn shared_nominal_owner_does_not_duplicate_documentation() {
         for source in [
-            "module m;\n/// Owner documentation.\ntype { First: .; Second: .; };",
-            "module m;\n/// Owner documentation.\ntype Choice = { First: .; };",
+            "mod m;\n/// Owner documentation.\ntype { First: .; Second: .; };",
+            "mod m;\n/// Owner documentation.\ntype Choice = { First: .; };",
         ] {
             let module = parse(source).unwrap();
             let Item::Labels(owner, _) = &module.items[0] else {
@@ -771,8 +769,7 @@ mod tests {
     #[test]
     fn named_nominal_shape_preserves_groups_and_ordinary_type_arguments() {
         let module = parse(
-            "module m; type Choice[*F][A][B] = \
-             { First[*F][B]<X>: F[B] & X; Second[A]: A } | { Middle: . } | First[F][A];",
+            "mod m; type Choice[*F][A][B] = { First[*F][B]<X>: F[B] & X; Second[A]: A } | { Middle: . } | First[F][A];",
         )
         .expect("parse written product/sum before elaboration");
         let Item::Labels(owner, _) = &module.items[0] else {
@@ -847,11 +844,11 @@ mod tests {
     #[test]
     fn package_label_error_orders_by_module_path_then_span() {
         let z = desugar_module(
-            parse("module pkg/z; type { Dup : . }; type { Dup : I32 };").expect("parse"),
+            parse("mod pkg/z; type { Dup : . }; type { Dup : I32 };").expect("parse"),
         )
         .expect("desugar");
         let a = desugar_module(
-            parse("module pkg/a; type { Dup : . }; type { Dup : I32 };").expect("parse"),
+            parse("mod pkg/a; type { Dup : . }; type { Dup : I32 };").expect("parse"),
         )
         .expect("desugar");
         let parsed = vec![
@@ -866,7 +863,7 @@ mod tests {
 
     #[test]
     fn labels_lower_to_newtype() {
-        let m = elab("module x; type { Foo : . };");
+        let m = elab("mod x; type { Foo : . };");
         // Compact declarations lower to ordinary nominals with the exact written name.
         assert!(matches!(m.items[0], Item::Newtype(_)));
         if let Item::Newtype(d) = &m.items[0] {
@@ -878,10 +875,7 @@ mod tests {
 
     #[test]
     fn recursive_named_labels_lower_to_a_minimal_nominally_grounded_group() {
-        let module = elab(
-            "module x; rec type Tree = \
-             { Leaf: . } | { Branch: Tree & Tree };",
-        );
+        let module = elab("mod x; rec type Tree = { Leaf: . } | { Branch: Tree & Tree };");
         assert!(matches!(&module.items[0], Item::Newtype(newtype) if newtype.name == "Leaf"));
         let Item::TypeRecGroup(group) = &module.items[1] else {
             panic!("recursive labels must retain an explicit Kio' group");
@@ -899,10 +893,7 @@ mod tests {
 
     #[test]
     fn one_recursive_labels_declaration_may_lower_to_multiple_nominal_components() {
-        let module = elab(
-            "module x; rec type Pair = \
-             { First: . | First; Second: . | Second };",
-        );
+        let module = elab("mod x; rec type Pair = { First: . | First; Second: . | Second };");
         let recursive_heads = module
             .items
             .iter()
@@ -928,7 +919,7 @@ mod tests {
             .collect::<Vec<_>>()
             .join("; ");
         crate::pass::resolve::reset_type_rec_classification_work();
-        let module = elab(&format!("module x; rec type Product = {{ {fields} }};"));
+        let module = elab(&format!("mod x; rec type Product = {{ {fields} }};"));
         let work = crate::pass::resolve::type_rec_classification_work();
         assert_eq!(module.items.len(), COUNT + 1);
         for (index, item) in module.items[..COUNT].iter().enumerate() {
@@ -943,7 +934,7 @@ mod tests {
         );
         crate::pass::resolve::Resolver::check_module(&module)
             .expect("all generated components independently resolve");
-        let mut expected_source = String::from("module x;");
+        let mut expected_source = String::from("mod x;");
         for index in 0..COUNT {
             expected_source.push_str(&format!(
                 " rec type {{ Field{index} : . | Field{index} {{ mk; get; }}; }};"
@@ -988,7 +979,7 @@ mod tests {
             ("First: .; Second: .", false),
         ] {
             let mut module = parse(&format!(
-                "module x; rec {{\n/// Product fields.\npub type Product = {{ {fields} }};\ntype {{ Other : . | Other {{ mk; get; }}; }};\n}}"
+                "mod x; rec {{\n/// Product fields.\npub type Product = {{ {fields} }};\ntype {{ Other : . | Other {{ mk; get; }}; }};\n}}"
             )).unwrap();
             let analyses = analyze_surface_type_rec_groups(&module).unwrap();
             let analysis = analyses[0]
@@ -1021,12 +1012,7 @@ mod tests {
 
     #[test]
     fn labels_member_of_a_type_rec_group_is_registered_before_lowering() {
-        let module = elab(
-            "module x; rec { \
-               type A = { To_b: B }; \
-               type { B : A { mk; get; }; }; \
-             }",
-        );
+        let module = elab("mod x; rec { type A = { To_b: B }; type { B : A { mk; get; }; }; }");
         let Item::TypeRecGroup(group) = &module.items[0] else {
             panic!("the mutually recursive labels/newtype component must remain grouped");
         };
@@ -1045,13 +1031,9 @@ mod tests {
 
     #[test]
     fn projected_surface_group_recomputes_labels_owner_dependencies() {
-        let mut module = parse(
-            "module x; rec { \
-               type A = { To_b: B }; \
-               type { B : A { mk; get; }; }; \
-             }",
-        )
-        .expect("parse");
+        let mut module =
+            parse("mod x; rec { type A = { To_b: B }; type { B : A { mk; get; }; }; }")
+                .expect("parse");
         let Item::TypeRecGroup(group) = &mut module.items[0] else {
             panic!("expected recursive type group")
         };
@@ -1072,11 +1054,7 @@ mod tests {
     #[test]
     fn projected_surface_group_reports_indivisible_labels_owner_overlap() {
         let mut module = parse(
-            "module x; rec { \
-               type { A: B & X; C: D & X }; \
-               type { B: A; D: C }; \
-               type { X : A & C { mk; get; }; }; \
-             }",
+            "mod x; rec { type { A: B & X; C: D & X }; type { B: A; D: C }; type { X : A & C { mk; get; }; }; }",
         )
         .expect("parse");
         // The original expanded declarations form one SCC, so this is a
@@ -1103,12 +1081,7 @@ mod tests {
 
     #[test]
     fn mutually_recursive_named_labels_form_one_expanded_nominal_component() {
-        let module = elab(
-            "module x; rec { \
-               type A = { To_b: B }; \
-               type B = { To_a: A }; \
-             }",
-        );
+        let module = elab("mod x; rec { type A = { To_b: B }; type B = { To_a: A }; }");
         let Item::TypeRecGroup(group) = &module.items[0] else {
             panic!("the mutually recursive named labels must remain one Kio' group");
         };
@@ -1129,7 +1102,7 @@ mod tests {
     #[test]
     fn expanded_multi_component_group_labels_every_source_declaration_head() {
         let source = concat!(
-            "module x; rec { ",
+            "mod x; rec { ",
             "type Pair = { First: . | First; Second: . | Second; }; ",
             "type { Other : . | Other { mk; get; }; }; ",
             "}",
@@ -1157,7 +1130,7 @@ mod tests {
     #[test]
     fn unrelated_labels_member_points_to_its_written_alias_head() {
         let source = concat!(
-            "module x; rec { ",
+            "mod x; rec { ",
             "type A = { To_b: B; }; ",
             "type { B : A { mk; get; }; }; ",
             "type Spare = { Unused: .; }; ",
@@ -1182,7 +1155,7 @@ mod tests {
     #[test]
     fn alias_only_cycle_labels_exact_alias_heads_after_label_elaboration() {
         let source = concat!(
-            "module x; rec { ",
+            "mod x; rec { ",
             "type Alias_a = Alias_b; ",
             "type Alias_b = Alias_a; ",
             "type { Nominal : Nominal { mk; get; }; }; ",
@@ -1240,14 +1213,8 @@ mod tests {
     #[test]
     fn nested_singleton_markers_in_a_mutual_group_have_remove_only_fixes() {
         for source in [
-            "module x; rec { \
-               rec type { A : B { mk; get; }; }; \
-               type { B : A { mk; get; }; }; \
-             }",
-            "module x; rec { \
-               rec type A = { To_b: B; }; \
-               type { B : A { mk; get; }; }; \
-             }",
+            "mod x; rec { rec type { A : B { mk; get; }; }; type { B : A { mk; get; }; }; }",
+            "mod x; rec { rec type A = { To_b: B; }; type { B : A { mk; get; }; }; }",
         ] {
             let error = elab_error(source);
             let Error::Parse(diagnostic) = error else {
@@ -1268,13 +1235,13 @@ mod tests {
     fn unmarked_compact_recursion_retains_written_diagnostic_heads() {
         for (source, head, members) in [
             (
-                "module x; type Tree = { Leaf: . } | { Branch: Tree & Tree };",
+                "mod x; type Tree = { Leaf: . } | { Branch: Tree & Tree };",
                 "Tree",
                 3,
             ),
-            ("module x; type { Node: Node; Leaf: . };", "type", 2),
+            ("mod x; type { Node: Node; Leaf: . };", "type", 2),
             (
-                "module x;\n/// Recursive family.\npub type { Node: Node; Leaf: . };",
+                "mod x;\n/// Recursive family.\npub type { Node: Node; Leaf: . };",
                 "type",
                 2,
             ),
@@ -1305,8 +1272,8 @@ mod tests {
     #[test]
     fn anonymous_compact_group_diagnostics_select_the_type_keyword() {
         for source in [
-            "module x; rec { type { First: .; Second: . }; type Extra = .; }",
-            "module x; rec { rec type { Node: Node; Leaf: . }; type Extra = .; }",
+            "mod x; rec { type { First: .; Second: . }; type Extra = .; }",
+            "mod x; rec { rec type { Node: Node; Leaf: . }; type Extra = .; }",
         ] {
             let error = elab_error(source);
             let Error::Parse(diagnostic) = error else {
@@ -1325,7 +1292,7 @@ mod tests {
 
     #[test]
     fn invalid_unmarked_recursive_labels_also_reach_semantic_validation() {
-        let module = elab("module x; type Loop = { Step: Loop -> .; };");
+        let module = elab("mod x; type Loop = { Step: Loop -> .; };");
         let [Item::TypeRecGroup(group)] = module.items.as_slice() else {
             panic!(
                 "expected one deferred generated type group, got {:?}",
@@ -1340,7 +1307,7 @@ mod tests {
 
     #[test]
     fn acyclic_rec_labels_reports_the_redundant_marker_and_fix() {
-        let error = elab_error("module x; rec type Pair = { First: .; Second: .; };");
+        let error = elab_error("mod x; rec type Pair = { First: .; Second: .; };");
         let Error::Parse(diagnostic) = error else {
             panic!("expected Parse, got {error:?}");
         };
@@ -1350,7 +1317,7 @@ mod tests {
 
     #[test]
     fn labels_named_form_emits_type_alias() {
-        let m = elab("module x; type T = { Foo : . };");
+        let m = elab("mod x; type T = { Foo : . };");
         assert!(matches!(m.items[0], Item::Newtype(_)));
         let alias = m
             .items
@@ -1365,7 +1332,7 @@ mod tests {
 
     #[test]
     fn labels_pub_propagates_to_generated_newtype() {
-        let m = elab("module x; pub type { Foo : . };");
+        let m = elab("mod x; pub type { Foo : . };");
         if let Item::Newtype(d) = &m.items[0] {
             assert!(d.vis.is_pub());
             assert!(d.constructor.vis.is_pub());
@@ -1376,8 +1343,8 @@ mod tests {
     #[test]
     fn nominal_rhs_reference_emits_no_second_declaration() {
         for source in [
-            "module x; type { Foo: .; }; type Row = Foo & { Other: .; };",
-            "module x; type Row = Foo & { Other: .; }; type { Foo: .; };",
+            "mod x; type { Foo: .; }; type Row = Foo & { Other: .; };",
+            "mod x; type Row = Foo & { Other: .; }; type { Foo: .; };",
         ] {
             let module = elab(source);
             let names = module
@@ -1396,7 +1363,7 @@ mod tests {
 
     #[test]
     fn nominal_rhs_reference_shares_identity_between_sum_arms() {
-        let module = elab("module x; type Choice = { Bar: .; Baz: .; } | (Bar & { Other: .; });");
+        let module = elab("mod x; type Choice = { Bar: .; Baz: .; } | (Bar & { Other: .; });");
         assert_eq!(
             module
                 .items
@@ -1426,7 +1393,7 @@ mod tests {
 
     #[test]
     fn nominal_rhs_reference_preserves_original_visibility() {
-        let module = elab("module x; type { Foo: .; }; pub type Public_row = Foo & { Other: .; };");
+        let module = elab("mod x; type { Foo: .; }; pub type Public_row = Foo & { Other: .; };");
         for item in &module.items {
             match item {
                 Item::Newtype(nominal) if nominal.name == "Foo" => {
@@ -1450,12 +1417,12 @@ mod tests {
     fn nominal_rhs_reference_keeps_ordinary_import_paths() {
         for (import, reference) in [
             ("import origin as dep;", "dep.Field"),
-            ("import origin(Field);", "Field"),
+            ("import origin {type Field}", "Field"),
         ] {
             let source =
-                format!("module consumer; {import} type Row = {reference} & {{ Other: .; }};");
+                format!("mod consumer; {import} type Row = {reference} & {{ Other: .; }};");
             let modules = elab_modules(&[
-                ("origin.kio", "module origin; pub type { Field: .; };"),
+                ("origin.kio", "mod origin; pub type { Field: .; };"),
                 ("consumer.kio", &source),
             ])
             .expect("ordinary imported nominal reference");
@@ -1480,10 +1447,10 @@ mod tests {
     #[test]
     fn nominal_duplicate_declarations_have_no_payload_rewrite() {
         for source in [
-            "module x; type { Foo: .; }; type Row = { Foo: .; Other: .; };",
-            "module x; type { Foo: .; }; type Row = { Foo: !; };",
-            "module x; type { Foo[A]: A; }; type Row[B] = { Foo[B]: B; };",
-            "module x; type A = .; type { Foo <A>: A; }; type Row = { Foo: A; };",
+            "mod x; type { Foo: .; }; type Row = { Foo: .; Other: .; };",
+            "mod x; type { Foo: .; }; type Row = { Foo: !; };",
+            "mod x; type { Foo[A]: A; }; type Row[B] = { Foo[B]: B; };",
+            "mod x; type A = .; type { Foo <A>: A; }; type Row = { Foo: A; };",
         ] {
             let error = elab_error(source);
             let diagnostic = error.diagnostic();
@@ -1501,17 +1468,13 @@ mod tests {
 
     #[test]
     fn nominal_nested_infer_does_not_suppress_declaration() {
-        let module = elab("module x; type { Value[*F]: F[_]; };");
+        let module = elab("mod x; type { Value[*F]: F[_]; };");
         assert!(matches!(&module.items[0], Item::Newtype(nominal) if nominal.name == "Value"));
     }
 
     #[test]
     fn generated_type_name_is_type_position_spelling() {
-        let m = elab(
-            "module x; \
-             type { Foo : . }; \
-             type T = Foo;",
-        );
+        let m = elab("mod x; type { Foo : . }; type T = Foo;");
         let alias = m
             .items
             .iter()
@@ -1529,12 +1492,8 @@ mod tests {
 
     #[test]
     fn lowercase_label_in_type_position_is_parse_error() {
-        let err = parse(
-            "module x; \
-             type { Foo : . }; \
-             type T = foo;",
-        )
-        .expect_err("lowercase label spelling is not type syntax");
+        let err = parse("mod x; type { Foo : . }; type T = foo;")
+            .expect_err("lowercase label spelling is not type syntax");
         let msg = err.diag().1.to_owned();
         assert_eq!(msg, "type name `foo` must have an uppercase first letter");
     }
@@ -1542,7 +1501,7 @@ mod tests {
     #[test]
     fn recursive_nominal_reference_preserves_written_identity() {
         // The recursive payload keeps the written nominal identity through lowering.
-        let m = elab("module x; rec type { List[A] : (. | (A & List[A])) };");
+        let m = elab("mod x; rec type { List[A] : (. | (A & List[A])) };");
         let Item::Newtype(d) = &m.items[0] else {
             panic!("expected the recursive nominal declaration");
         };
@@ -1578,7 +1537,7 @@ mod tests {
     #[test]
     fn type_param_shadows_nominal_in_fn_signature() {
         // The function's `[A]` binder shadows the nominal in its parameter and return types.
-        let m = elab("module x; type { A : . }; fn f[A](x: A) -> A { x }");
+        let m = elab("mod x; type { A : . }; fn f[A](x: A) -> A { x }");
         let f = m
             .items
             .iter()
@@ -1601,7 +1560,7 @@ mod tests {
 
     #[test]
     fn type_param_shadows_nominal_in_alias_header() {
-        let m = elab("module x; type { A : . }; type T[A] = A;");
+        let m = elab("mod x; type { A : . }; type T[A] = A;");
         let alias = m
             .items
             .iter()
@@ -1615,10 +1574,7 @@ mod tests {
 
     #[test]
     fn type_param_shadows_nominal_in_newtype_header() {
-        let m = elab(
-            "module x; type { A : . }; \
-             type { N[A] : A { mk; get; }; };",
-        );
+        let m = elab("mod x; type { A : . }; type { N[A] : A { mk; get; }; };");
         let nt = m
             .items
             .iter()
@@ -1634,10 +1590,7 @@ mod tests {
     fn type_param_shadows_nominal_in_forall() {
         // A `Type::Forall` mid-type binder `[A] A -> A` in a
         // parameter annotation shadows the nominal `A` in its body.
-        let m = elab(
-            "module x; type { A : . }; \
-             fn g(h: [A] A -> A) -> . { () }",
-        );
+        let m = elab("mod x; type { A : . }; fn g(h: [A] A -> A) -> . { () }");
         let g = m
             .items
             .iter()
@@ -1666,10 +1619,7 @@ mod tests {
 
     #[test]
     fn type_param_shadows_nominal_in_fn_expr_signature() {
-        let m = elab(
-            "module x; type { A : . }; \
-             fn g() -> . { let f = .[A](x: A) -> A { x }; () }",
-        );
+        let m = elab("mod x; type { A : . }; fn g() -> . { let f = .[A](x: A) -> A { x }; () }");
         let g = m
             .items
             .iter()
@@ -1698,11 +1648,7 @@ mod tests {
 
     #[test]
     fn ordinary_value_name_can_match_nominal_stem() {
-        let m = elab(
-            "module x; \
-             type { Foo : . }; \
-             fn foo() -> . { () }",
-        );
+        let m = elab("mod x; type { Foo : . }; fn foo() -> . { () }");
         assert!(
             m.items
                 .iter()
@@ -1732,9 +1678,8 @@ mod nominal_lowering_tests {
 
     #[test]
     fn nominal_lowering_preserves_grouped_mixed_type_shape() {
-        let module = lower(
-            "module x; type { Name: .; Age: .; } type Result = { Success: .; } | (Name & Age);",
-        );
+        let module =
+            lower("mod x; type { Name: .; Age: .; } type Result = { Success: .; } | (Name & Age);");
         let names = module
             .items
             .iter()
@@ -1758,7 +1703,7 @@ mod nominal_lowering_tests {
 
     #[test]
     fn nominal_lowering_uses_independent_member_visibility() {
-        let module = lower("module x; pub type Pair = { Open: .; Closed: . { pub mk; get; }; };");
+        let module = lower("mod x; pub type Pair = { Open: .; Closed: . { pub mk; get; }; };");
         let Item::Newtype(open) = &module.items[0] else {
             panic!("open");
         };

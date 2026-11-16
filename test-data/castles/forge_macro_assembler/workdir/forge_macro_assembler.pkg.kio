@@ -1,4 +1,4 @@
-package forge_macro_assembler;
+pkg forge_macro_assembler;
 
 build {
   cache "out/.kio-cache/";

@@ -1,7 +1,7 @@
-module typed_let_patterns/main;
+mod typed_let_patterns/main;
 
-import macros/sequence(macro do);
-import typed_let_patterns(I32);
+import macros/sequence { macro do }
+import typed_let_patterns { type I32 }
 
 pub type { Box[A]: A { pub mk; pub get } }
 

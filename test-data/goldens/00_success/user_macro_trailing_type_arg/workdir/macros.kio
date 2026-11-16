@@ -1,9 +1,9 @@
-module macros;
+mod macros;
 
 import __intrinsics__;
 
 import __comptime__;
-import macro_util(choose_checked_term);
+import macro_util { fn choose_checked_term }
 
 pub type Marker_bool = . | .;
 

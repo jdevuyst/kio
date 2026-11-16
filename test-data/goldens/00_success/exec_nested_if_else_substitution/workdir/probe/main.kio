@@ -1,9 +1,9 @@
-module probe/main;
+mod probe/main;
 
 import __intrinsics__;
 
-import macros/control(macro if);
-import probe(Bool);
+import macros/control { macro if }
+import probe { type Bool }
 
 fn gen() -> (. | .) | . {
   if(.t) {

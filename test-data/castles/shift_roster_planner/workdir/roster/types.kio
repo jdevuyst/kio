@@ -1,6 +1,6 @@
-module roster/types;
+mod roster/types;
 
-import testapi(I32, String);
+import testapi { type I32; type String }
 
 pub type Shift = { Day: I32; Slot: I32; Worker: I32; Demand: I32; Skill: I32; Preference: I32 };
 

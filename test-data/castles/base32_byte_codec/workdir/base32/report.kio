@@ -4,20 +4,20 @@
 /// Each fixture contributes one block and one row of counters — packets
 /// accepted, packets refused, bytes recovered — and the walk over the
 /// fixtures threads those counters into the closing summary.
-module base32/report;
+mod base32/report;
 
 import base32/alphabet as alphabet;
-import base32/decode(Decoded, Ok, Reject, bytes_eq, decode);
-import base32/encode(encode);
+import base32/decode { type Decoded; type Ok; type Reject; fn bytes_eq; fn decode }
+import base32/encode { fn encode }
 import base32/list as list;
-import base32/packets(Fixture, Payload, Received);
-import macros/control(macro if);
-import macros/match(macro match);
-import testapi(Bool, I32, String);
-import testapi/arith(add_i32);
-import testapi/fmt(int_to_string);
-import testapi/iter(loop);
-import testapi/text(string_concat);
+import base32/packets { type Fixture; type Payload; type Received }
+import macros/control { macro if }
+import macros/match { macro match }
+import testapi { type Bool; type I32; type String }
+import testapi/arith { fn add_i32 }
+import testapi/fmt { fn int_to_string }
+import testapi/iter { fn loop }
+import testapi/text { fn string_concat }
 
 fn cat(a: String, b: String) -> String { string_concat(a, b) }
 

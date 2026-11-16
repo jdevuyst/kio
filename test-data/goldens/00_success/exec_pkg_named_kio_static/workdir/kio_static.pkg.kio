@@ -1,4 +1,4 @@
-package kio_static;
+pkg kio_static;
 
 build {
   cache "out/.kio-cache/";

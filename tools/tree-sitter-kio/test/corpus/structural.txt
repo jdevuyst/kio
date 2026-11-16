@@ -1,9 +1,9 @@
 ================================================================================
 structural typed_collision_control
 ================================================================================
-module type_side;
+mod type_side;
 
-import operators(id);
+import operators {fn id}
 
 fn run[*F]() -> ([*H] . -> .) -> ([*I] . -> .) {
   id[[*F].->.]
@@ -20,11 +20,11 @@ fn run[*F]() -> ([*H] . -> .) -> ([*I] . -> .) {
     (keyword_import)
     (module_path
       (entity_name_module))
-    (bracket_lparen)
+    (bracket_lbrace)
     (import_named_item
+      (keyword_fn)
       source: (identifier))
-    (bracket_rparen)
-    (separator_semicolon))
+    (bracket_rbrace))
   (function_definition
     (fn_decl_head
       (keyword_fn)
@@ -97,8 +97,8 @@ fn run[*F]() -> ([*H] . -> .) -> ([*I] . -> .) {
 ================================================================================
 structural star_literal
 ================================================================================
-module source;
-import ops(varop [* *]);
+mod source;
+import ops {op_var [* *]}
 fn run[*F]() { id([*F*]) }
 --------------------------------------------------------------------------------
 
@@ -112,7 +112,7 @@ fn run[*F]() { id([*F*]) }
     (keyword_import)
     (module_path
       (entity_name_module))
-    (bracket_lparen)
+    (bracket_lbrace)
     (import_operator_item
       (keyword_varop)
       (variadic_head
@@ -120,8 +120,7 @@ fn run[*F]() { id([*F*]) }
         (operator_run)
         (operator_run)
         (bracket_rbracket)))
-    (bracket_rparen)
-    (separator_semicolon))
+    (bracket_rbrace))
   (function_definition
     (fn_decl_head
       (keyword_fn)
@@ -161,7 +160,7 @@ fn run[*F]() { id([*F*]) }
 ================================================================================
 structural comma_keyword_calls
 ================================================================================
-module source;
+mod source;
 fn run() { id([ let(x), if((ok)) { () } else { () } ]) }
 --------------------------------------------------------------------------------
 
@@ -234,8 +233,8 @@ fn run() { id([ let(x), if((ok)) { () } else { () } ]) }
 ================================================================================
 structural ordinary_fixed_pair
 ================================================================================
-module source;
-import ops(varop [ ], op _ => _);
+mod source;
+import ops {op_var [ ]; op _ => _}
 fn run() { id([ key => value, other => let(x) ]) }
 --------------------------------------------------------------------------------
 
@@ -249,20 +248,19 @@ fn run() { id([ key => value, other => let(x) ]) }
     (keyword_import)
     (module_path
       (entity_name_module))
-    (bracket_lparen)
+    (bracket_lbrace)
     (import_operator_item
       (keyword_varop)
       (variadic_head
         (bracket_lbracket)
         (bracket_rbracket)))
-    (separator_comma)
+    (separator_semicolon)
     (import_operator_item
       (keyword_op)
       (slot)
       (operator_run)
       (slot))
-    (bracket_rparen)
-    (separator_semicolon))
+    (bracket_rbrace))
   (function_definition
     (fn_decl_head
       (keyword_fn)
@@ -311,7 +309,7 @@ fn run() { id([ key => value, other => let(x) ]) }
 ================================================================================
 structural nested_groups
 ================================================================================
-module source;
+mod source;
 fn run() { id([ pair(x, y), [ x ] ]) }
 --------------------------------------------------------------------------------
 
@@ -371,7 +369,7 @@ fn run() { id([ pair(x, y), [ x ] ]) }
 ================================================================================
 structural mixed_openers
 ================================================================================
-module source;
+mod source;
 fn run() { id([% x, [* y *] %]) }
 --------------------------------------------------------------------------------
 
@@ -429,7 +427,7 @@ fn run() { id([% x, [* y *] %]) }
 ================================================================================
 structural polymorphic_lambda
 ================================================================================
-module source;
+mod source;
 fn run() { id([ .[*F](x: F[.]) -> F[.] { x } ]) }
 --------------------------------------------------------------------------------
 
@@ -501,7 +499,7 @@ fn run() { id([ .[*F](x: F[.]) -> F[.] { x } ]) }
 ================================================================================
 structural placeholder
 ================================================================================
-module source;
+mod source;
 fn run() { id([ .x. { x1 }, x ]) }
 --------------------------------------------------------------------------------
 
@@ -552,7 +550,7 @@ fn run() { id([ .x. { x1 }, x ]) }
 ================================================================================
 structural call_and_forall
 ================================================================================
-module source;
+mod source;
 fn run() { id([ let(x), call[[*F] F[.] -> F[.]] ]) }
 --------------------------------------------------------------------------------
 
@@ -628,9 +626,9 @@ fn run() { id([ let(x), call[[*F] F[.] -> F[.]] ]) }
 ================================================================================
 structural short_declaration
 ================================================================================
-module source;
+mod source;
 fn seed(x: .) -> . { x }
-varop [ ] { foldr1 seed seed; };
+op_var [ ] { foldr1 seed seed; };
 --------------------------------------------------------------------------------
 
 (source_file
@@ -678,7 +676,7 @@ varop [ ] { foldr1 seed seed; };
 ================================================================================
 structural missing_close
 ================================================================================
-module source;
+mod source;
 fn run() { id([ let(x),
 --------------------------------------------------------------------------------
 
@@ -718,7 +716,7 @@ fn run() { id([ let(x),
 ================================================================================
 structural recovery_tail
 ================================================================================
-module source;
+mod source;
 fn broken() { id([* x }
 fn after() { let(x) }
 --------------------------------------------------------------------------------
@@ -777,8 +775,8 @@ fn after() { let(x) }
 ================================================================================
 structural prefix_postfix
 ================================================================================
-module source;
-import ops(varop [ ], op ~ _, op _ ++);
+mod source;
+import ops {op_var [ ]; op ~ _; op _ ++}
 fn run() { id([ ~let(x), value++ ]) }
 --------------------------------------------------------------------------------
 
@@ -792,24 +790,23 @@ fn run() { id([ ~let(x), value++ ]) }
     (keyword_import)
     (module_path
       (entity_name_module))
-    (bracket_lparen)
+    (bracket_lbrace)
     (import_operator_item
       (keyword_varop)
       (variadic_head
         (bracket_lbracket)
         (bracket_rbracket)))
-    (separator_comma)
+    (separator_semicolon)
     (import_operator_item
       (keyword_op)
       (operator_run)
       (slot))
-    (separator_comma)
+    (separator_semicolon)
     (import_operator_item
       (keyword_op)
       (slot)
       (operator_run))
-    (bracket_rparen)
-    (separator_semicolon))
+    (bracket_rbrace))
   (function_definition
     (fn_decl_head
       (keyword_fn)
@@ -854,7 +851,7 @@ fn run() { id([ ~let(x), value++ ]) }
 ================================================================================
 structural bare_type
 ================================================================================
-module source;
+mod source;
 fn run() { id[[A] A -> A] }
 --------------------------------------------------------------------------------
 
@@ -898,7 +895,7 @@ fn run() { id[[A] A -> A] }
 ================================================================================
 structural grouped_higher_kind
 ================================================================================
-module source;
+mod source;
 fn run() { id[([*F] F[.] -> F[.])] }
 --------------------------------------------------------------------------------
 
@@ -954,7 +951,7 @@ fn run() { id[([*F] F[.] -> F[.])] }
 ================================================================================
 structural fused_runs
 ================================================================================
-module source;
+mod source;
 fn run() { id([[[[ let(x) ]]]]) }
 --------------------------------------------------------------------------------
 
@@ -1021,8 +1018,8 @@ fn run() { id([[[[ let(x) ]]]]) }
 ================================================================================
 structural slash_edges
 ================================================================================
-module source;
-import ops(varop [/ /]);
+mod source;
+import ops {op_var [/ /]}
 fn run() { id([/ let(x) /]) }
 --------------------------------------------------------------------------------
 
@@ -1036,7 +1033,7 @@ fn run() { id([/ let(x) /]) }
     (keyword_import)
     (module_path
       (entity_name_module))
-    (bracket_lparen)
+    (bracket_lbrace)
     (import_operator_item
       (keyword_varop)
       (variadic_head
@@ -1044,8 +1041,7 @@ fn run() { id([/ let(x) /]) }
         (operator_run)
         (operator_run)
         (bracket_rbracket)))
-    (bracket_rparen)
-    (separator_semicolon))
+    (bracket_rbrace))
   (function_definition
     (fn_decl_head
       (keyword_fn)
@@ -1086,8 +1082,8 @@ fn run() { id([/ let(x) /]) }
 ================================================================================
 structural slash_inside
 ================================================================================
-module source;
-import ops(varop [/* */]);
+mod source;
+import ops {op_var [/* */]}
 fn run() { id([/* let(x) */]) }
 --------------------------------------------------------------------------------
 
@@ -1101,7 +1097,7 @@ fn run() { id([/* let(x) */]) }
     (keyword_import)
     (module_path
       (entity_name_module))
-    (bracket_lparen)
+    (bracket_lbrace)
     (import_operator_item
       (keyword_varop)
       (variadic_head
@@ -1109,8 +1105,7 @@ fn run() { id([/* let(x) */]) }
         (operator_run)
         (operator_run)
         (bracket_rbracket)))
-    (bracket_rparen)
-    (separator_semicolon))
+    (bracket_rbrace))
   (function_definition
     (fn_decl_head
       (keyword_fn)
@@ -1151,8 +1146,8 @@ fn run() { id([/* let(x) */]) }
 ================================================================================
 structural dot_pair
 ================================================================================
-module source;
-import ops(varop ..[ ]..);
+mod source;
+import ops {op_var ..[ ]..}
 fn run() { id(..[ let(x) ]..) }
 fn after() { let(x) }
 --------------------------------------------------------------------------------
@@ -1168,7 +1163,7 @@ fn after() { let(x) }
     (module_path
       (entity_name_module)))
   (ERROR
-    (bracket_lparen)
+    (bracket_lbrace)
     (keyword_varop))
   (separator_dot)
   (separator_dot)
@@ -1177,8 +1172,7 @@ fn after() { let(x) }
   (bracket_rbracket)
   (separator_dot)
   (separator_dot)
-  (bracket_rparen)
-  (separator_semicolon)
+  (bracket_rbrace)
   (function_definition
     (fn_decl_head
       (keyword_fn)
@@ -1234,7 +1228,7 @@ fn after() { let(x) }
 ================================================================================
 structural comments
 ================================================================================
-module source;
+mod source;
 fn run() { id([ // region
  let(x), // element
  [ x ] // nested
@@ -1297,8 +1291,8 @@ fn run() { id([ // region
 ================================================================================
 structural compact_head_rejected
 ================================================================================
-module source;
-varop [**] { foldr seed seed; };
+mod source;
+op_var [**] { foldr seed seed; };
 --------------------------------------------------------------------------------
 
 (source_file
@@ -1327,8 +1321,8 @@ varop [**] { foldr seed seed; };
 ================================================================================
 structural one_dot_pair_rejected
 ================================================================================
-module source;
-varop [. .] { foldr seed seed; };
+mod source;
+op_var [. .] { foldr seed seed; };
 --------------------------------------------------------------------------------
 
 (source_file
@@ -1355,11 +1349,10 @@ varop [. .] { foldr seed seed; };
       (bracket_rbrace)))
   (separator_semicolon))
 
-
 ================================================================================
 structural bracket_marker_rejected
 ================================================================================
-module source;
+mod source;
 fn run() { id(.[ { [ }) }
 --------------------------------------------------------------------------------
 
@@ -1396,7 +1389,7 @@ fn run() { id(.[ { [ }) }
 ================================================================================
 structural keyword_name_inverse
 ================================================================================
-module source;
+mod source;
 fn varop(x: .) -> . { x }
 fn run() { varop(()) }
 --------------------------------------------------------------------------------
@@ -1451,7 +1444,7 @@ fn run() { varop(()) }
 ================================================================================
 structural nested_control_values
 ================================================================================
-module source;
+mod source;
 fn run() { id([ scope { let x = f(); if (x) { let(y) } else { scope { z } } }, .(x) { scope { x } } ]) }
 --------------------------------------------------------------------------------
 
@@ -1560,7 +1553,7 @@ fn run() { id([ scope { let x = f(); if (x) { let(y) } else { scope { z } } }, .
 ================================================================================
 structural ordinary_keyword_calls
 ================================================================================
-module source; fn run() { (if(x), else(x), do(x), let(x), role(x), constructor(x), projector(x), cache(x), docs(x), target(x)) }
+mod source; fn run() { (if(x), else(x), do(x), let(x), role(x), constructor(x), projector(x), cache(x), docs(x), target(x)) }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -1676,7 +1669,7 @@ module source; fn run() { (if(x), else(x), do(x), let(x), role(x), constructor(x
 ================================================================================
 structural ordinary_keyword_values
 ================================================================================
-module source; fn run() { (if, else, do, let, role, constructor, projector, cache, docs, target) }
+mod source; fn run() { (if, else, do, let, role, constructor, projector, cache, docs, target) }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -1732,7 +1725,7 @@ module source; fn run() { (if, else, do, let, role, constructor, projector, cach
 ================================================================================
 structural host_role
 ================================================================================
-module source; host type Word role(i64); fn run() { role(x) }
+mod source; host type Word role(i64); fn run() { role(x) }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -1775,7 +1768,7 @@ module source; host type Word role(i64); fn run() { role(x) }
 ================================================================================
 structural nominal_members
 ================================================================================
-module source; type { Box: . { pub mk; pub get; }; }; fn run() { mk(x) }
+mod source; type { Box: . { pub mk; pub get; }; }; fn run() { mk(x) }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -1829,7 +1822,7 @@ module source; type { Box: . { pub mk; pub get; }; }; fn run() { mk(x) }
 ================================================================================
 structural package_fields
 ================================================================================
-package source; build { cache (); docs { md "docs/index.md"; }; target kio-prime { out "out"; } } bridge { api/**; }
+pkg source; build { cache (); docs { md "docs/index.md"; }; target kio-prime { out "out"; } } bridge { api/**; }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -1881,7 +1874,7 @@ package source; build { cache (); docs { md "docs/index.md"; }; target kio-prime
 ================================================================================
 structural comma_runs
 ================================================================================
-module source;
+mod source;
 fn run() { id([* ,,,let(x),,,if((y)) { y } else { y },,, *]) }
 --------------------------------------------------------------------------------
 
@@ -1962,7 +1955,7 @@ fn run() { id([* ,,,let(x),,,if((y)) { y } else { y },,, *]) }
 ================================================================================
 structural type_split_spans
 ================================================================================
-module source;
+mod source;
 fn run() { id[[*F] F[.] -> F[.]] }
 --------------------------------------------------------------------------------
 
@@ -2015,7 +2008,7 @@ fn run() { id[[*F] F[.] -> F[.]] }
 ================================================================================
 structural all_expression_forms
 ================================================================================
-module source;
+mod source;
 fn run() { id([ do (f) { let x <- get(); x }, recur next(x), read(x), write(x, let(x)), apply(x), .x. { x1 }, (x, y) ]) }
 --------------------------------------------------------------------------------
 
@@ -2147,7 +2140,7 @@ fn run() { id([ do (f) { let x <- get(); x }, recur next(x), read(x), write(x, l
 ================================================================================
 structural recovery_"[*"
 ================================================================================
-module source; fn broken() { id([* let(x)
+mod source; fn broken() { id([* let(x)
 --------------------------------------------------------------------------------
 
 (source_file
@@ -2186,7 +2179,7 @@ module source; fn broken() { id([* let(x)
 ================================================================================
 structural recovery_"[*,"
 ================================================================================
-module source; fn broken() { id([* let(x),
+mod source; fn broken() { id([* let(x),
 --------------------------------------------------------------------------------
 
 (source_file
@@ -2226,7 +2219,7 @@ module source; fn broken() { id([* let(x),
 ================================================================================
 structural recovery_"[* ) }\nfn after() { let(x) }"
 ================================================================================
-module source; fn broken() { id([* let(x) ) }
+mod source; fn broken() { id([* let(x) ) }
 fn after() { let(x) }
 --------------------------------------------------------------------------------
 
@@ -2290,7 +2283,7 @@ fn after() { let(x) }
 ================================================================================
 structural recovery_"[* }\nfn after() { let(x) }"
 ================================================================================
-module source; fn broken() { id([* let(x) }
+mod source; fn broken() { id([* let(x) }
 fn after() { let(x) }
 --------------------------------------------------------------------------------
 
@@ -2354,7 +2347,7 @@ fn after() { let(x) }
 ================================================================================
 structural recovery_"[["
 ================================================================================
-module source; fn broken() { id([ let(x)
+mod source; fn broken() { id([ let(x)
 --------------------------------------------------------------------------------
 
 (source_file
@@ -2392,7 +2385,7 @@ module source; fn broken() { id([ let(x)
 ================================================================================
 structural recovery_"[[,"
 ================================================================================
-module source; fn broken() { id([ let(x),
+mod source; fn broken() { id([ let(x),
 --------------------------------------------------------------------------------
 
 (source_file
@@ -2431,7 +2424,7 @@ module source; fn broken() { id([ let(x),
 ================================================================================
 structural recovery_"[[ ) }\nfn after() { let(x) }"
 ================================================================================
-module source; fn broken() { id([ let(x) ) }
+mod source; fn broken() { id([ let(x) ) }
 fn after() { let(x) }
 --------------------------------------------------------------------------------
 
@@ -2494,7 +2487,7 @@ fn after() { let(x) }
 ================================================================================
 structural recovery_"[[ }\nfn after() { let(x) }"
 ================================================================================
-module source; fn broken() { id([ let(x) }
+mod source; fn broken() { id([ let(x) }
 fn after() { let(x) }
 --------------------------------------------------------------------------------
 
@@ -2557,7 +2550,7 @@ fn after() { let(x) }
 ================================================================================
 structural recovery_"[***"
 ================================================================================
-module source; fn broken() { id([*** let(x)
+mod source; fn broken() { id([*** let(x)
 --------------------------------------------------------------------------------
 
 (source_file
@@ -2596,7 +2589,7 @@ module source; fn broken() { id([*** let(x)
 ================================================================================
 structural recovery_"[***,"
 ================================================================================
-module source; fn broken() { id([*** let(x),
+mod source; fn broken() { id([*** let(x),
 --------------------------------------------------------------------------------
 
 (source_file
@@ -2636,7 +2629,7 @@ module source; fn broken() { id([*** let(x),
 ================================================================================
 structural recovery_"[*** ) }\nfn after() { let(x) }"
 ================================================================================
-module source; fn broken() { id([*** let(x) ) }
+mod source; fn broken() { id([*** let(x) ) }
 fn after() { let(x) }
 --------------------------------------------------------------------------------
 
@@ -2700,7 +2693,7 @@ fn after() { let(x) }
 ================================================================================
 structural recovery_"[*** }\nfn after() { let(x) }"
 ================================================================================
-module source; fn broken() { id([*** let(x) }
+mod source; fn broken() { id([*** let(x) }
 fn after() { let(x) }
 --------------------------------------------------------------------------------
 
@@ -2764,7 +2757,7 @@ fn after() { let(x) }
 ================================================================================
 structural recovery_"*["
 ================================================================================
-module source; fn broken() { id([% let(x)
+mod source; fn broken() { id([% let(x)
 --------------------------------------------------------------------------------
 
 (source_file
@@ -2804,7 +2797,7 @@ module source; fn broken() { id([% let(x)
 ================================================================================
 structural recovery_"*[,"
 ================================================================================
-module source; fn broken() { id([% let(x),
+mod source; fn broken() { id([% let(x),
 --------------------------------------------------------------------------------
 
 (source_file
@@ -2845,7 +2838,7 @@ module source; fn broken() { id([% let(x),
 ================================================================================
 structural recovery_"*[ ) }\nfn after() { let(x) }"
 ================================================================================
-module source; fn broken() { id([% let(x) ) }
+mod source; fn broken() { id([% let(x) ) }
 fn after() { let(x) }
 --------------------------------------------------------------------------------
 
@@ -2910,7 +2903,7 @@ fn after() { let(x) }
 ================================================================================
 structural recovery_"*[ }\nfn after() { let(x) }"
 ================================================================================
-module source; fn broken() { id([% let(x) }
+mod source; fn broken() { id([% let(x) }
 fn after() { let(x) }
 --------------------------------------------------------------------------------
 
@@ -2975,7 +2968,7 @@ fn after() { let(x) }
 ================================================================================
 structural forall_recovery_[*F]
 ================================================================================
-module source; fn broken() { id[[*F] }
+mod source; fn broken() { id[[*F] }
 fn after() { let(x) }
 --------------------------------------------------------------------------------
 
@@ -3033,7 +3026,7 @@ fn after() { let(x) }
 ================================================================================
 structural forall_recovery_[A]
 ================================================================================
-module source; fn broken() { id[[A] }
+mod source; fn broken() { id[[A] }
 fn after() { let(x) }
 --------------------------------------------------------------------------------
 
@@ -3090,7 +3083,7 @@ fn after() { let(x) }
 ================================================================================
 structural forall_recovery_[*F] ->
 ================================================================================
-module source; fn broken() { id[[*F] -> }
+mod source; fn broken() { id[[*F] -> }
 fn after() { let(x) }
 --------------------------------------------------------------------------------
 
@@ -3149,7 +3142,7 @@ fn after() { let(x) }
 ================================================================================
 structural forall_recovery_[*F] F[
 ================================================================================
-module source; fn broken() { id[[*F] F[ }
+mod source; fn broken() { id[[*F] F[ }
 fn after() { let(x) }
 --------------------------------------------------------------------------------
 
@@ -3211,7 +3204,7 @@ fn after() { let(x) }
 ================================================================================
 structural empty_comma_varop
 ================================================================================
-module source; fn run() { id([*,,, *]) }
+mod source; fn run() { id([*,,, *]) }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -3252,7 +3245,7 @@ module source; fn run() { id([*,,, *]) }
 ================================================================================
 structural head_comment_gap
 ================================================================================
-module source; varop [*// head
+mod source; op_var [*// head
 *] { foldl seed seed; };
 --------------------------------------------------------------------------------
 
@@ -3284,8 +3277,8 @@ module source; varop [*// head
 ================================================================================
 structural head_doc_gap
 ================================================================================
-module source; import ops(varop [/// head
-]);
+mod source; import ops {op_var [/// head
+]}
 --------------------------------------------------------------------------------
 
 (source_file
@@ -3298,20 +3291,19 @@ module source; import ops(varop [/// head
     (keyword_import)
     (module_path
       (entity_name_module))
-    (bracket_lparen)
+    (bracket_lbrace)
     (import_operator_item
       (keyword_varop)
       (variadic_head
         (bracket_lbracket)
         (comment_doc)
         (bracket_rbracket)))
-    (bracket_rparen)
-    (separator_semicolon)))
+    (bracket_rbrace)))
 
 ================================================================================
 structural type_chain_edges
 ================================================================================
-module source; fn run(x: ( &&& A &&& B &&& )) -> (|||) { x }
+mod source; fn run(x: ( &&& A &&& B &&& )) -> (|||) { x }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -3360,7 +3352,7 @@ module source; fn run(x: ( &&& A &&& B &&& )) -> (|||) { x }
 ================================================================================
 structural git_manifest_source
 ================================================================================
-dependency helper; source { path "packages/helper/helper.pkg.kio"; ref "main"; git "repo"; }
+dep helper; source { path "packages/helper/helper.pkg.kio"; ref "main"; git "repo"; }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -3424,7 +3416,7 @@ lock helper; resolved { sig "digest"; path "packages/helper/helper.pkg.kio"; com
 ================================================================================
 structural dependency_fields
 ================================================================================
-dependency helper; source { path "../helper/helper.pkg.kio"; } rehost helper/base to api/base; retype helper/types.Box to api/types.Box;
+dep helper; source { path "../helper/helper.pkg.kio"; } rehost helper/base to api/base; retype helper/types.Box to api/types.Box;
 --------------------------------------------------------------------------------
 
 (source_file
@@ -3520,11 +3512,10 @@ if else fn type literal alias
     (identifier)
     (identifier)))
 
-
 ================================================================================
 structural ordinary_callable_keywords
 ================================================================================
-module source; op _ + _ { impl if; }; varop [ ] { foldl let do; finalize else; };
+mod source; op _ + _ { impl if; }; op_var [ ] { foldl let do; finalize else; };
 --------------------------------------------------------------------------------
 
 (source_file
@@ -3569,7 +3560,7 @@ module source; op _ + _ { impl if; }; varop [ ] { foldl let do; finalize else; }
 ================================================================================
 structural owned_macro_clause_words
 ================================================================================
-module source; macro simplify: . -> . { captures (x, y); impl (fills) build; }; fn run() { (impl(x), captures(x), fills(x)) }
+mod source; macro simplify: . -> . { captures (x, y); impl (fills) build; }; fn run() { (impl(x), captures(x), fills(x)) }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -3669,7 +3660,7 @@ structural maximal_slash_and_comment_boundaries
 ================================================================================
 structural comment_frontiers_inside_variadic_elements
 ================================================================================
-module source; op _ + { impl bump; }; fn run() { [ x +// operator
+mod source; op _ + { impl bump; }; fn run() { [ x +// operator
 , .x.// marker
 { x1 }, let(x) ] }
 --------------------------------------------------------------------------------
@@ -3741,7 +3732,7 @@ module source; op _ + { impl bump; }; fn run() { [ x +// operator
 ================================================================================
 structural ordinary_bare_recursive_word
 ================================================================================
-module source; fn broken() { rec }
+mod source; fn broken() { rec }
 fn after() { let(x) }
 --------------------------------------------------------------------------------
 
@@ -3787,7 +3778,7 @@ fn after() { let(x) }
 ================================================================================
 structural ordinary_recursive_word_call
 ================================================================================
-module source; fn broken() { rec(value) }
+mod source; fn broken() { rec(value) }
 fn after() { let(x) }
 --------------------------------------------------------------------------------
 
@@ -3839,7 +3830,7 @@ fn after() { let(x) }
 ================================================================================
 structural ordinary_recursive_word_annotation_name_call
 ================================================================================
-module source; fn broken() { rec(poly) }
+mod source; fn broken() { rec(poly) }
 fn after() { let(x) }
 --------------------------------------------------------------------------------
 
@@ -3891,7 +3882,7 @@ fn after() { let(x) }
 ================================================================================
 structural recursive_prefix_multiline_annotation
 ================================================================================
-module source; fn broken() { recur(
+mod source; fn broken() { recur(
  poly
 ) again(x) }
 fn after() { let(x) }
@@ -3950,7 +3941,7 @@ fn after() { let(x) }
 ================================================================================
 structural ordinary_recursive_spelling_owners
 ================================================================================
-module source; fn rec(rec: .) -> . { provider.rec(rec_value) }
+mod source; fn rec(rec: .) -> . { provider.rec(rec_value) }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -4030,7 +4021,7 @@ a-1 1-2 (x)-1 }-1; -1; # -1; ]-1;
 ================================================================================
 structural expression_negative_token_contexts
 ================================================================================
-module source; fn run() { (a-1, 1-2, (x)-1, -1, - 1, -1.25e-2) }
+mod source; fn run() { (a-1, 1-2, (x)-1, -1, - 1, -1.25e-2) }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -4084,20 +4075,20 @@ module source; fn run() { (a-1, 1-2, (x)-1, -1, - 1, -1.25e-2) }
 ================================================================================
 structural review_host_role_values
 ================================================================================
-module app0; host type Word role(i8) { owned };
-module app1; host type Word role(i16) { owned };
-module app2; host type Word role(i32) { owned };
-module app3; host type Word role(i64) { owned };
-module app4; host type Word role(i128) { owned };
-module app5; host type Word role(u8) { owned };
-module app6; host type Word role(u16) { owned };
-module app7; host type Word role(u32) { owned };
-module app8; host type Word role(u64) { owned };
-module app9; host type Word role(u128) { owned };
-module app10; host type Word role(f32) { owned };
-module app11; host type Word role(f64) { owned };
-module app12; host type Word role(bool) { owned };
-module app13; host type Word role(str) { owned };
+mod app0; host type Word role(i8) ;
+mod app1; host type Word role(i16) ;
+mod app2; host type Word role(i32) ;
+mod app3; host type Word role(i64) ;
+mod app4; host type Word role(i128) ;
+mod app5; host type Word role(u8) ;
+mod app6; host type Word role(u16) ;
+mod app7; host type Word role(u32) ;
+mod app8; host type Word role(u64) ;
+mod app9; host type Word role(u128) ;
+mod app10; host type Word role(f32) ;
+mod app11; host type Word role(f64) ;
+mod app12; host type Word role(bool) ;
+mod app13; host type Word role(str) ;
 --------------------------------------------------------------------------------
 
 (source_file
@@ -4116,10 +4107,6 @@ module app13; host type Word role(str) { owned };
         (bracket_lparen)
         (keyword_declaration)
         (bracket_rparen))
-      (owned_block
-        (bracket_lbrace)
-        (keyword_declaration)
-        (bracket_rbrace))
       (separator_semicolon)))
   (module_decl
     (keyword_module)
@@ -4136,10 +4123,6 @@ module app13; host type Word role(str) { owned };
         (bracket_lparen)
         (keyword_declaration)
         (bracket_rparen))
-      (owned_block
-        (bracket_lbrace)
-        (keyword_declaration)
-        (bracket_rbrace))
       (separator_semicolon)))
   (module_decl
     (keyword_module)
@@ -4156,10 +4139,6 @@ module app13; host type Word role(str) { owned };
         (bracket_lparen)
         (keyword_declaration)
         (bracket_rparen))
-      (owned_block
-        (bracket_lbrace)
-        (keyword_declaration)
-        (bracket_rbrace))
       (separator_semicolon)))
   (module_decl
     (keyword_module)
@@ -4176,10 +4155,6 @@ module app13; host type Word role(str) { owned };
         (bracket_lparen)
         (keyword_declaration)
         (bracket_rparen))
-      (owned_block
-        (bracket_lbrace)
-        (keyword_declaration)
-        (bracket_rbrace))
       (separator_semicolon)))
   (module_decl
     (keyword_module)
@@ -4196,10 +4171,6 @@ module app13; host type Word role(str) { owned };
         (bracket_lparen)
         (keyword_declaration)
         (bracket_rparen))
-      (owned_block
-        (bracket_lbrace)
-        (keyword_declaration)
-        (bracket_rbrace))
       (separator_semicolon)))
   (module_decl
     (keyword_module)
@@ -4216,10 +4187,6 @@ module app13; host type Word role(str) { owned };
         (bracket_lparen)
         (keyword_declaration)
         (bracket_rparen))
-      (owned_block
-        (bracket_lbrace)
-        (keyword_declaration)
-        (bracket_rbrace))
       (separator_semicolon)))
   (module_decl
     (keyword_module)
@@ -4236,10 +4203,6 @@ module app13; host type Word role(str) { owned };
         (bracket_lparen)
         (keyword_declaration)
         (bracket_rparen))
-      (owned_block
-        (bracket_lbrace)
-        (keyword_declaration)
-        (bracket_rbrace))
       (separator_semicolon)))
   (module_decl
     (keyword_module)
@@ -4256,10 +4219,6 @@ module app13; host type Word role(str) { owned };
         (bracket_lparen)
         (keyword_declaration)
         (bracket_rparen))
-      (owned_block
-        (bracket_lbrace)
-        (keyword_declaration)
-        (bracket_rbrace))
       (separator_semicolon)))
   (module_decl
     (keyword_module)
@@ -4276,10 +4235,6 @@ module app13; host type Word role(str) { owned };
         (bracket_lparen)
         (keyword_declaration)
         (bracket_rparen))
-      (owned_block
-        (bracket_lbrace)
-        (keyword_declaration)
-        (bracket_rbrace))
       (separator_semicolon)))
   (module_decl
     (keyword_module)
@@ -4296,10 +4251,6 @@ module app13; host type Word role(str) { owned };
         (bracket_lparen)
         (keyword_declaration)
         (bracket_rparen))
-      (owned_block
-        (bracket_lbrace)
-        (keyword_declaration)
-        (bracket_rbrace))
       (separator_semicolon)))
   (module_decl
     (keyword_module)
@@ -4316,10 +4267,6 @@ module app13; host type Word role(str) { owned };
         (bracket_lparen)
         (keyword_declaration)
         (bracket_rparen))
-      (owned_block
-        (bracket_lbrace)
-        (keyword_declaration)
-        (bracket_rbrace))
       (separator_semicolon)))
   (module_decl
     (keyword_module)
@@ -4336,10 +4283,6 @@ module app13; host type Word role(str) { owned };
         (bracket_lparen)
         (keyword_declaration)
         (bracket_rparen))
-      (owned_block
-        (bracket_lbrace)
-        (keyword_declaration)
-        (bracket_rbrace))
       (separator_semicolon)))
   (module_decl
     (keyword_module)
@@ -4356,10 +4299,6 @@ module app13; host type Word role(str) { owned };
         (bracket_lparen)
         (keyword_declaration)
         (bracket_rparen))
-      (owned_block
-        (bracket_lbrace)
-        (keyword_declaration)
-        (bracket_rbrace))
       (separator_semicolon)))
   (module_decl
     (keyword_module)
@@ -4376,16 +4315,12 @@ module app13; host type Word role(str) { owned };
         (bracket_lparen)
         (keyword_declaration)
         (bracket_rparen))
-      (owned_block
-        (bracket_lbrace)
-        (keyword_declaration)
-        (bracket_rbrace))
       (separator_semicolon))))
 
 ================================================================================
 structural review_owned_host_and_inverse
 ================================================================================
-module app; host type Word role(i64) { owned }; fn owned(owned: ., i64: .) { (owned, i64) }
+mod app; host type Word role(i64) ; fn owned(owned: ., i64: .) { (owned, i64) }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -4404,10 +4339,6 @@ module app; host type Word role(i64) { owned }; fn owned(owned: ., i64: .) { (ow
         (bracket_lparen)
         (keyword_declaration)
         (bracket_rparen))
-      (owned_block
-        (bracket_lbrace)
-        (keyword_declaration)
-        (bracket_rbrace))
       (separator_semicolon)))
   (function_definition
     (fn_decl_head
@@ -4443,7 +4374,7 @@ module app; host type Word role(i64) { owned }; fn owned(owned: ., i64: .) { (ow
 ================================================================================
 structural review_scoped_function_visibility
 ================================================================================
-module app; pub(app) fn one() { () } pub(fn) pure fn two() { () } pure pub(app) fn three() { () }
+mod app; pub(app) fn one() { () } pub(fn) pure fn two() { () } pure pub(app) fn three() { () }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -4539,7 +4470,7 @@ structural review_lexical_indexed_minus
 ================================================================================
 structural review_ufcs_atomic_receivers
 ================================================================================
-module app; fn run() { ((value) .> if, .t .> if, if .< (value), if .< .f, 2 .> if, "text" .> if) }
+mod app; fn run() { ((value) .> if, .t .> if, if .< (value), if .< .f, 2 .> if, "text" .> if) }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -4613,7 +4544,7 @@ module app; fn run() { ((value) .> if, .t .> if, if .< (value), if .< .f, 2 .> i
 ================================================================================
 structural review_ufcs_varop_elements
 ================================================================================
-module app; import ops(varop [ ]); fn run() { [ (value) .> if, if .< .t ] }
+mod app; import ops {op_var [ ]} fn run() { [ (value) .> if, if .< .t ] }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -4626,14 +4557,13 @@ module app; import ops(varop [ ]); fn run() { [ (value) .> if, if .< .t ] }
     (keyword_import)
     (module_path
       (entity_name_module))
-    (bracket_lparen)
+    (bracket_lbrace)
     (import_operator_item
       (keyword_varop)
       (variadic_head
         (bracket_lbracket)
         (bracket_rbracket)))
-    (bracket_rparen)
-    (separator_semicolon))
+    (bracket_rbrace))
   (function_definition
     (fn_decl_head
       (keyword_fn)
@@ -4674,7 +4604,7 @@ module app; import ops(varop [ ]); fn run() { [ (value) .> if, if .< .t ] }
 ================================================================================
 structural review_nominal_existentials
 ================================================================================
-module app; type { Tag<A>: A; If<B>: B; };
+mod app; type { Tag<A>: A; If<B>: B; };
 --------------------------------------------------------------------------------
 
 (source_file
@@ -4713,7 +4643,7 @@ module app; type { Tag<A>: A; If<B>: B; };
 ================================================================================
 structural review_bool_raw_query
 ================================================================================
-module app; fn run() { if (.t) { .f } else { .t } }
+mod app; fn run() { if (.t) { .f } else { .t } }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -4760,7 +4690,7 @@ module app; fn run() { if (.t) { .f } else { .t } }
 ================================================================================
 structural review_alias_type_parameter_frontier
 ================================================================================
-module app; type Alias[A]=A; type Pair[A][B] = A & B;
+mod app; type Alias[A]=A; type Pair[A][B] = A & B;
 --------------------------------------------------------------------------------
 
 (source_file
@@ -4808,7 +4738,7 @@ module app; type Alias[A]=A; type Pair[A][B] = A & B;
 ================================================================================
 structural review_uppercase_qualified_nested_callee
 ================================================================================
-module app; fn run() { Box.un_box[A](Box.mk_box[A](value)) }
+mod app; fn run() { Box.un_box[A](Box.mk_box[A](value)) }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -4862,7 +4792,7 @@ module app; fn run() { Box.un_box[A](Box.mk_box[A](value)) }
 ================================================================================
 structural review_scalar_local_binding_role
 ================================================================================
-module app; fn run(value: .) { let local = value; do (bind) { let item <- local; item } }
+mod app; fn run(value: .) { let local = value; do (bind) { let item <- local; item } }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -4918,8 +4848,8 @@ module app; fn run(value: .) { let local = value; do (bind) { let item <- local;
 ================================================================================
 structural review_head_valid
 ================================================================================
-module m;
-varop [+ +] { foldl join empty; };
+mod m;
+op_var [+ +] { foldl join empty; };
 fn after() { let(x) }
 --------------------------------------------------------------------------------
 
@@ -4969,8 +4899,8 @@ fn after() { let(x) }
 ================================================================================
 structural review_head_mismatched
 ================================================================================
-module m;
-varop [+ %] { foldl join empty; };
+mod m;
+op_var [+ %] { foldl join empty; };
 fn after() { let(x) }
 --------------------------------------------------------------------------------
 
@@ -5016,13 +4946,12 @@ fn after() { let(x) }
             (identifier))
           (bracket_rparen)))
       (bracket_rbrace))))
-
 
 ================================================================================
 structural review_head_star_mismatched
 ================================================================================
-module m;
-varop [** *] { foldl join empty; };
+mod m;
+op_var [** *] { foldl join empty; };
 fn after() { let(x) }
 --------------------------------------------------------------------------------
 
@@ -5068,13 +4997,12 @@ fn after() { let(x) }
             (identifier))
           (bracket_rparen)))
       (bracket_rbrace))))
-
 
 ================================================================================
 structural review_head_reserved_close
 ================================================================================
-module m;
-varop [. .] { foldl join empty; };
+mod m;
+op_var [. .] { foldl join empty; };
 fn after() { let(x) }
 --------------------------------------------------------------------------------
 
@@ -5121,12 +5049,11 @@ fn after() { let(x) }
           (bracket_rparen)))
       (bracket_rbrace))))
 
-
 ================================================================================
 structural review_head_compact
 ================================================================================
-module m;
-varop [++] { foldl join empty; };
+mod m;
+op_var [++] { foldl join empty; };
 fn after() { let(x) }
 --------------------------------------------------------------------------------
 
@@ -5175,8 +5102,8 @@ fn after() { let(x) }
 ================================================================================
 structural review_head_import_valid
 ================================================================================
-module m;
-import ops(varop [+ +], value);
+mod m;
+import ops {op_var [+ +]; fn value}
 fn after() { let(x) }
 --------------------------------------------------------------------------------
 
@@ -5190,7 +5117,7 @@ fn after() { let(x) }
     (keyword_import)
     (module_path
       (entity_name_module))
-    (bracket_lparen)
+    (bracket_lbrace)
     (import_operator_item
       (keyword_varop)
       (variadic_head
@@ -5198,11 +5125,11 @@ fn after() { let(x) }
         (operator_run)
         (operator_run)
         (bracket_rbracket)))
-    (separator_comma)
+    (separator_semicolon)
     (import_named_item
+      (keyword_fn)
       source: (identifier))
-    (bracket_rparen)
-    (separator_semicolon))
+    (bracket_rbrace))
   (function_definition
     (fn_decl_head
       (keyword_fn)
@@ -5226,8 +5153,8 @@ fn after() { let(x) }
 ================================================================================
 structural review_head_import_mismatched
 ================================================================================
-module m;
-import ops(varop [+ %], value);
+mod m;
+import ops {op_var [+ %]; fn value}
 fn after() { let(x) }
 --------------------------------------------------------------------------------
 
@@ -5241,17 +5168,17 @@ fn after() { let(x) }
     (keyword_import)
     (module_path
       (entity_name_module))
-    (bracket_lparen)
+    (bracket_lbrace)
     (import_operator_item
       (keyword_varop)
       (variadic_open))
     (ERROR
       (bracket_rbracket))
-    (separator_comma)
+    (separator_semicolon)
     (import_named_item
+      (keyword_fn)
       source: (identifier))
-    (bracket_rparen)
-    (separator_semicolon))
+    (bracket_rbrace))
   (function_definition
     (fn_decl_head
       (keyword_fn)
@@ -5275,8 +5202,8 @@ fn after() { let(x) }
 ================================================================================
 structural review_head_ascii_trivia
 ================================================================================
-module m;
-varop [+ 	
+mod m;
+op_var [+
 +] { foldl join empty; };
 fn after() { let(x) }
 --------------------------------------------------------------------------------
@@ -5327,8 +5254,8 @@ fn after() { let(x) }
 ================================================================================
 structural review_head_direct_comment
 ================================================================================
-module m;
-varop [+// gap
+mod m;
+op_var [+// gap
 +] { foldl join empty; };
 fn after() { let(x) }
 --------------------------------------------------------------------------------
@@ -5380,8 +5307,8 @@ fn after() { let(x) }
 ================================================================================
 structural review_head_direct_doc_comment
 ================================================================================
-module m;
-varop [+/// gap
+mod m;
+op_var [+/// gap
 +] { foldl join empty; };
 fn after() { let(x) }
 --------------------------------------------------------------------------------
@@ -5433,8 +5360,8 @@ fn after() { let(x) }
 ================================================================================
 structural review_head_mixed_comments
 ================================================================================
-module m;
-varop [+ 	// one
+mod m;
+op_var [+ 	// one
  /// two
 	+] { foldl join empty; };
 fn after() { let(x) }
@@ -5488,8 +5415,8 @@ fn after() { let(x) }
 ================================================================================
 structural review_head_incomplete_neighbor
 ================================================================================
-module m;
-varop [+
+mod m;
+op_var [+
 fn after() { let(x) }
 --------------------------------------------------------------------------------
 
@@ -5526,8 +5453,8 @@ fn after() { let(x) }
 ================================================================================
 structural review_head_vertical_tab_rejected
 ================================================================================
-module m;
-varop [+  +] { foldl join empty; };
+mod m;
+op_var [+  +] { foldl join empty; };
 fn after() { let(x) }
 --------------------------------------------------------------------------------
 
@@ -5576,12 +5503,11 @@ fn after() { let(x) }
           (bracket_rparen)))
       (bracket_rbrace))))
 
-
 ================================================================================
 structural review_head_long_general
 ================================================================================
-module m;
-varop [++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++ ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++] { foldl join empty; };
+mod m;
+op_var [++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++ ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++] { foldl join empty; };
 fn after() { let(x) }
 --------------------------------------------------------------------------------
 
@@ -5631,8 +5557,8 @@ fn after() { let(x) }
 ================================================================================
 structural review_head_long_star
 ================================================================================
-module m;
-varop [************************************************************************************************ ************************************************************************************************] { foldl join empty; };
+mod m;
+op_var [************************************************************************************************ ************************************************************************************************] { foldl join empty; };
 fn after() { let(x) }
 --------------------------------------------------------------------------------
 
@@ -5682,8 +5608,8 @@ fn after() { let(x) }
 ================================================================================
 structural review_head_long_multiple_brackets
 ================================================================================
-module m;
-varop [+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+ +]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+] { foldl join empty; };
+mod m;
+op_var [+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+ +]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+] { foldl join empty; };
 fn after() { let(x) }
 --------------------------------------------------------------------------------
 
@@ -6597,11 +6523,10 @@ fn after() { let(x) }
           (bracket_rparen)))
       (bracket_rbrace))))
 
-
 ================================================================================
 structural review_adjacent_function_type_groups
 ================================================================================
-module m;
+mod m;
 fn repeated[A][_A](x: A, y: _A) -> _A { let(x) }
 fn after() { let(x) }
 --------------------------------------------------------------------------------
@@ -6680,7 +6605,7 @@ fn after() { let(x) }
 ================================================================================
 structural review_adjacent_marked_function_type_groups
 ================================================================================
-module m;
+mod m;
 fn repeated[*F][A](_x: F[A]) -> F[A] { if(_x) }
 fn after() { let(_x) }
 --------------------------------------------------------------------------------
@@ -6763,7 +6688,7 @@ fn after() { let(_x) }
 ================================================================================
 structural invalid_role_name
 ================================================================================
-module m; host type Text role(strange);
+mod m; host type Text role(strange);
 --------------------------------------------------------------------------------
 
 (source_file
@@ -6787,7 +6712,7 @@ module m; host type Text role(strange);
 ================================================================================
 structural invalid_owned_body
 ================================================================================
-module m; host type Text { otherwise };
+mod m; host type Text { otherwise };
 --------------------------------------------------------------------------------
 
 (source_file
@@ -6801,16 +6726,18 @@ module m; host type Text { otherwise };
     (host_type_head
       (keyword_type)
       (entity_name_type)))
-  (ERROR
-    (bracket_lbrace))
-  (identifier)
-  (bracket_rbrace)
+  (body_block
+    (expression_block
+      (bracket_lbrace)
+      (expression_path
+        (identifier))
+      (bracket_rbrace)))
   (separator_semicolon))
 
 ================================================================================
 structural tuple_local_rec_binders
 ================================================================================
-module m; fn f() { let .(rec, value) = pair; () }
+mod m; fn f() { let .(rec, value) = pair; () }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -6852,7 +6779,7 @@ module m; fn f() { let .(rec, value) = pair; () }
 ================================================================================
 structural nested_local_binders
 ================================================================================
-module m; fn f() { let .(left, (rec, right)) = pair; do (bind) { let .(rec, value) <- pair; recur(poly) again(value) } }
+mod m; fn f() { let .(left, (rec, right)) = pair; do (bind) { let .(rec, value) <- pair; recur(poly) again(value) } }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -6937,7 +6864,7 @@ module m; fn f() { let .(left, (rec, right)) = pair; do (bind) { let .(rec, valu
 ================================================================================
 structural parameter_rec_binders
 ================================================================================
-module m; fn f((rec, value)) { let(helper.rec) }
+mod m; fn f((rec, value)) { let(helper.rec) }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -6981,7 +6908,7 @@ module m; fn f((rec, value)) { let(helper.rec) }
 ================================================================================
 structural invalid_role_neighbor
 ================================================================================
-module m; host type Text role(strange);
+mod m; host type Text role(strange);
 fn after() { let(x) }
 --------------------------------------------------------------------------------
 
@@ -7025,7 +6952,7 @@ fn after() { let(x) }
 ================================================================================
 structural invalid_owned_neighbor
 ================================================================================
-module m; host type Text { otherwise };
+mod m; host type Text { otherwise };
 fn after() { let(x) }
 --------------------------------------------------------------------------------
 
@@ -7040,10 +6967,12 @@ fn after() { let(x) }
     (host_type_head
       (keyword_type)
       (entity_name_type)))
-  (ERROR
-    (bracket_lbrace))
-  (identifier)
-  (bracket_rbrace)
+  (body_block
+    (expression_block
+      (bracket_lbrace)
+      (expression_path
+        (identifier))
+      (bracket_rbrace)))
   (separator_semicolon)
   (function_definition
     (fn_decl_head
@@ -7068,7 +6997,7 @@ fn after() { let(x) }
 ================================================================================
 structural invalid_role_prefix_suffix
 ================================================================================
-module m; host type Text role(i64suffix);
+mod m; host type Text role(i64suffix);
 --------------------------------------------------------------------------------
 
 (source_file
@@ -7092,7 +7021,7 @@ module m; host type Text role(i64suffix);
 ================================================================================
 structural invalid_owned_prefix_suffix
 ================================================================================
-module m; host type Text { ownedly };
+mod m; host type Text { ownedly };
 --------------------------------------------------------------------------------
 
 (source_file
@@ -7106,16 +7035,18 @@ module m; host type Text { ownedly };
     (host_type_head
       (keyword_type)
       (entity_name_type)))
-  (ERROR
-    (bracket_lbrace))
-  (identifier)
-  (bracket_rbrace)
+  (body_block
+    (expression_block
+      (bracket_lbrace)
+      (expression_path
+        (identifier))
+      (bracket_rbrace)))
   (separator_semicolon))
 
 ================================================================================
 structural valid_role_invalid_owned
 ================================================================================
-module m; host type Text role(i64) { otherwise };
+mod m; host type Text role(i64) { otherwise };
 --------------------------------------------------------------------------------
 
 (source_file
@@ -7134,16 +7065,18 @@ module m; host type Text role(i64) { otherwise };
         (bracket_lparen)
         (keyword_declaration)
         (bracket_rparen))))
-  (ERROR
-    (bracket_lbrace))
-  (identifier)
-  (bracket_rbrace)
+  (body_block
+    (expression_block
+      (bracket_lbrace)
+      (expression_path
+        (identifier))
+      (bracket_rbrace)))
   (separator_semicolon))
 
 ================================================================================
 structural invalid_role_unowned_tail
 ================================================================================
-module m; host type Text role(strange) { owned };
+mod m; host type Text role(strange) ;
 --------------------------------------------------------------------------------
 
 (source_file
@@ -7162,18 +7095,12 @@ module m; host type Text role(strange) { owned };
         (bracket_lparen))))
   (identifier)
   (bracket_rparen)
-  (body_block
-    (expression_block
-      (bracket_lbrace)
-      (expression_path
-        (identifier))
-      (bracket_rbrace)))
   (separator_semicolon))
 
 ================================================================================
 structural many_recursive_local_binders
 ================================================================================
-module m; fn f() { let .(rec, rec, rec, rec, rec, rec, rec, rec) = pair; let(value) }
+mod m; fn f() { let .(rec, rec, rec, rec, rec, rec, rec, rec) = pair; let(value) }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -7272,7 +7199,7 @@ fn neighbor() -> . { let(x) }
 ================================================================================
 structural module_import_neighbor
 ================================================================================
-module m;
+mod m;
 import app
 fn neighbor() -> . { let(x) }
 --------------------------------------------------------------------------------
@@ -7312,7 +7239,7 @@ fn neighbor() -> . { let(x) }
 ================================================================================
 structural import_function_call_inverse
 ================================================================================
-module m; fn f(import: .) { import(value) }
+mod m; fn f(import: .) { import(value) }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -7349,7 +7276,7 @@ module m; fn f(import: .) { import(value) }
 ================================================================================
 structural import_keyword_named_module
 ================================================================================
-module m; import fn as rec;
+mod m; import fn as rec;
 fn neighbor() { let(x) }
 --------------------------------------------------------------------------------
 
@@ -7389,7 +7316,7 @@ fn neighbor() { let(x) }
 ================================================================================
 structural order_varop_foldl_primary_first
 ================================================================================
-module m; varop [+ +] { foldl join empty; finalize finish; };
+mod m; op_var [+ +] { foldl join empty; finalize finish; };
 --------------------------------------------------------------------------------
 
 (source_file
@@ -7423,7 +7350,7 @@ module m; varop [+ +] { foldl join empty; finalize finish; };
 ================================================================================
 structural order_varop_foldl_finalize_first
 ================================================================================
-module m; varop [+ +] { finalize finish; foldl join empty; };
+mod m; op_var [+ +] { finalize finish; foldl join empty; };
 --------------------------------------------------------------------------------
 
 (source_file
@@ -7457,7 +7384,7 @@ module m; varop [+ +] { finalize finish; foldl join empty; };
 ================================================================================
 structural order_varop_foldr_primary_first
 ================================================================================
-module m; varop [+ +] { foldr join empty; finalize finish; };
+mod m; op_var [+ +] { foldr join empty; finalize finish; };
 --------------------------------------------------------------------------------
 
 (source_file
@@ -7491,7 +7418,7 @@ module m; varop [+ +] { foldr join empty; finalize finish; };
 ================================================================================
 structural order_varop_foldr_finalize_first
 ================================================================================
-module m; varop [+ +] { finalize finish; foldr join empty; };
+mod m; op_var [+ +] { finalize finish; foldr join empty; };
 --------------------------------------------------------------------------------
 
 (source_file
@@ -7525,7 +7452,7 @@ module m; varop [+ +] { finalize finish; foldr join empty; };
 ================================================================================
 structural order_varop_foldl1_primary_first
 ================================================================================
-module m; varop [+ +] { foldl1 join empty; finalize finish; };
+mod m; op_var [+ +] { foldl1 join empty; finalize finish; };
 --------------------------------------------------------------------------------
 
 (source_file
@@ -7559,7 +7486,7 @@ module m; varop [+ +] { foldl1 join empty; finalize finish; };
 ================================================================================
 structural order_varop_foldl1_finalize_first
 ================================================================================
-module m; varop [+ +] { finalize finish; foldl1 join empty; };
+mod m; op_var [+ +] { finalize finish; foldl1 join empty; };
 --------------------------------------------------------------------------------
 
 (source_file
@@ -7593,7 +7520,7 @@ module m; varop [+ +] { finalize finish; foldl1 join empty; };
 ================================================================================
 structural order_varop_foldr1_primary_first
 ================================================================================
-module m; varop [+ +] { foldr1 join empty; finalize finish; };
+mod m; op_var [+ +] { foldr1 join empty; finalize finish; };
 --------------------------------------------------------------------------------
 
 (source_file
@@ -7627,7 +7554,7 @@ module m; varop [+ +] { foldr1 join empty; finalize finish; };
 ================================================================================
 structural order_varop_foldr1_finalize_first
 ================================================================================
-module m; varop [+ +] { finalize finish; foldr1 join empty; };
+mod m; op_var [+ +] { finalize finish; foldr1 join empty; };
 --------------------------------------------------------------------------------
 
 (source_file
@@ -7661,7 +7588,7 @@ module m; varop [+ +] { finalize finish; foldr1 join empty; };
 ================================================================================
 structural order_macro_captures_first
 ================================================================================
-module m; macro make: . { captures (helper); impl (fills) run; };
+mod m; macro make: . { captures (helper); impl (fills) run; };
 --------------------------------------------------------------------------------
 
 (source_file
@@ -7698,7 +7625,7 @@ module m; macro make: . { captures (helper); impl (fills) run; };
 ================================================================================
 structural order_package_build_first
 ================================================================================
-package app; build { cache (); } bridge { app; }
+pkg app; build { cache (); } bridge { app; }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -7728,7 +7655,7 @@ package app; build { cache (); } bridge { app; }
 ================================================================================
 structural order_macro_impl_first
 ================================================================================
-module m; macro make: . { impl (fills) run; captures (helper); };
+mod m; macro make: . { impl (fills) run; captures (helper); };
 --------------------------------------------------------------------------------
 
 (source_file
@@ -7765,7 +7692,7 @@ module m; macro make: . { impl (fills) run; captures (helper); };
 ================================================================================
 structural order_package_bridge_first
 ================================================================================
-package app; bridge { app; } build { cache (); }
+pkg app; bridge { app; } build { cache (); }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -7795,7 +7722,7 @@ package app; bridge { app; } build { cache (); }
 ================================================================================
 structural order_build_0
 ================================================================================
-package app; build { cache (); docs { md "guide.md"; }; target rust { out "out"; } }
+pkg app; build { cache (); docs { md "guide.md"; }; target rust { out "out"; } }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -7837,7 +7764,7 @@ package app; build { cache (); docs { md "guide.md"; }; target rust { out "out";
 ================================================================================
 structural order_build_1
 ================================================================================
-package app; build { cache (); target rust { out "out"; }; docs { md "guide.md"; } }
+pkg app; build { cache (); target rust { out "out"; }; docs { md "guide.md"; } }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -7879,7 +7806,7 @@ package app; build { cache (); target rust { out "out"; }; docs { md "guide.md";
 ================================================================================
 structural order_build_2
 ================================================================================
-package app; build { docs { md "guide.md"; }; cache (); target rust { out "out"; } }
+pkg app; build { docs { md "guide.md"; }; cache (); target rust { out "out"; } }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -7921,7 +7848,7 @@ package app; build { docs { md "guide.md"; }; cache (); target rust { out "out";
 ================================================================================
 structural order_build_3
 ================================================================================
-package app; build { docs { md "guide.md"; }; target rust { out "out"; }; cache (); }
+pkg app; build { docs { md "guide.md"; }; target rust { out "out"; }; cache (); }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -7964,7 +7891,7 @@ package app; build { docs { md "guide.md"; }; target rust { out "out"; }; cache 
 ================================================================================
 structural order_build_4
 ================================================================================
-package app; build { target rust { out "out"; }; cache (); docs { md "guide.md"; } }
+pkg app; build { target rust { out "out"; }; cache (); docs { md "guide.md"; } }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -8006,7 +7933,7 @@ package app; build { target rust { out "out"; }; cache (); docs { md "guide.md";
 ================================================================================
 structural order_build_5
 ================================================================================
-package app; build { target rust { out "out"; }; docs { md "guide.md"; }; cache (); }
+pkg app; build { target rust { out "out"; }; docs { md "guide.md"; }; cache (); }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -8049,7 +7976,7 @@ package app; build { target rust { out "out"; }; docs { md "guide.md"; }; cache 
 ================================================================================
 structural order_build_interleaved_targets
 ================================================================================
-package app; build { target rust { out "out"; }; docs { md "guide.md"; }; target java { out "java"; }; cache (); }
+pkg app; build { target rust { out "out"; }; docs { md "guide.md"; }; target java { out "java"; }; cache (); }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -8103,7 +8030,7 @@ package app; build { target rust { out "out"; }; docs { md "guide.md"; }; target
 ================================================================================
 structural order_dependency_0
 ================================================================================
-dependency dep; source { ref "main"; git "repo"; } rehost old to fresh; retype old.T to fresh.T;
+dep dep; source { ref "main"; git "repo"; } rehost old to fresh; retype old.T to fresh.T;
 --------------------------------------------------------------------------------
 
 (source_file
@@ -8151,7 +8078,7 @@ dependency dep; source { ref "main"; git "repo"; } rehost old to fresh; retype o
 ================================================================================
 structural order_dependency_1
 ================================================================================
-dependency dep; source { ref "main"; git "repo"; } retype old.T to fresh.T; rehost old to fresh;
+dep dep; source { ref "main"; git "repo"; } retype old.T to fresh.T; rehost old to fresh;
 --------------------------------------------------------------------------------
 
 (source_file
@@ -8199,7 +8126,7 @@ dependency dep; source { ref "main"; git "repo"; } retype old.T to fresh.T; reho
 ================================================================================
 structural order_dependency_2
 ================================================================================
-dependency dep; rehost old to fresh; source { ref "main"; git "repo"; } retype old.T to fresh.T;
+dep dep; rehost old to fresh; source { ref "main"; git "repo"; } retype old.T to fresh.T;
 --------------------------------------------------------------------------------
 
 (source_file
@@ -8247,7 +8174,7 @@ dependency dep; rehost old to fresh; source { ref "main"; git "repo"; } retype o
 ================================================================================
 structural order_dependency_3
 ================================================================================
-dependency dep; rehost old to fresh; retype old.T to fresh.T; source { ref "main"; git "repo"; }
+dep dep; rehost old to fresh; retype old.T to fresh.T; source { ref "main"; git "repo"; }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -8295,7 +8222,7 @@ dependency dep; rehost old to fresh; retype old.T to fresh.T; source { ref "main
 ================================================================================
 structural order_dependency_4
 ================================================================================
-dependency dep; retype old.T to fresh.T; source { ref "main"; git "repo"; } rehost old to fresh;
+dep dep; retype old.T to fresh.T; source { ref "main"; git "repo"; } rehost old to fresh;
 --------------------------------------------------------------------------------
 
 (source_file
@@ -8343,7 +8270,7 @@ dependency dep; retype old.T to fresh.T; source { ref "main"; git "repo"; } reho
 ================================================================================
 structural order_dependency_5
 ================================================================================
-dependency dep; retype old.T to fresh.T; rehost old to fresh; source { ref "main"; git "repo"; }
+dep dep; retype old.T to fresh.T; rehost old to fresh; source { ref "main"; git "repo"; }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -8391,7 +8318,7 @@ dependency dep; retype old.T to fresh.T; rehost old to fresh; source { ref "main
 ================================================================================
 structural order_signature_sections_0
 ================================================================================
-signature app v(1); v(1) { with { module api { host type T; } }; breaking { remove { api.old; } }; nonbreaking { add { api.fresh; } } }
+sig app v(1); v(1) { with { mod api { host type T; } }; breaking { remove { api.old; } }; nonbreaking { add { api.fresh; } } }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -8463,7 +8390,7 @@ signature app v(1); v(1) { with { module api { host type T; } }; breaking { remo
 ================================================================================
 structural order_signature_sections_1
 ================================================================================
-signature app v(1); v(1) { with { module api { host type T; } }; nonbreaking { add { api.fresh; } }; breaking { remove { api.old; } } }
+sig app v(1); v(1) { with { mod api { host type T; } }; nonbreaking { add { api.fresh; } }; breaking { remove { api.old; } } }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -8535,7 +8462,7 @@ signature app v(1); v(1) { with { module api { host type T; } }; nonbreaking { a
 ================================================================================
 structural order_signature_sections_2
 ================================================================================
-signature app v(1); v(1) { breaking { remove { api.old; } }; with { module api { host type T; } }; nonbreaking { add { api.fresh; } } }
+sig app v(1); v(1) { breaking { remove { api.old; } }; with { mod api { host type T; } }; nonbreaking { add { api.fresh; } } }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -8607,7 +8534,7 @@ signature app v(1); v(1) { breaking { remove { api.old; } }; with { module api {
 ================================================================================
 structural order_signature_sections_3
 ================================================================================
-signature app v(1); v(1) { breaking { remove { api.old; } }; nonbreaking { add { api.fresh; } }; with { module api { host type T; } } }
+sig app v(1); v(1) { breaking { remove { api.old; } }; nonbreaking { add { api.fresh; } }; with { mod api { host type T; } } }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -8679,7 +8606,7 @@ signature app v(1); v(1) { breaking { remove { api.old; } }; nonbreaking { add {
 ================================================================================
 structural order_signature_sections_4
 ================================================================================
-signature app v(1); v(1) { nonbreaking { add { api.fresh; } }; with { module api { host type T; } }; breaking { remove { api.old; } } }
+sig app v(1); v(1) { nonbreaking { add { api.fresh; } }; with { mod api { host type T; } }; breaking { remove { api.old; } } }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -8751,7 +8678,7 @@ signature app v(1); v(1) { nonbreaking { add { api.fresh; } }; with { module api
 ================================================================================
 structural order_signature_sections_5
 ================================================================================
-signature app v(1); v(1) { nonbreaking { add { api.fresh; } }; breaking { remove { api.old; } }; with { module api { host type T; } } }
+sig app v(1); v(1) { nonbreaking { add { api.fresh; } }; breaking { remove { api.old; } }; with { mod api { host type T; } } }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -8823,7 +8750,7 @@ signature app v(1); v(1) { nonbreaking { add { api.fresh; } }; breaking { remove
 ================================================================================
 structural order_signature_buckets_0
 ================================================================================
-signature app v(1); v(1) { breaking { add { api.fresh; }; modify { api.changed; }; remove { api.old; } } }
+sig app v(1); v(1) { breaking { add { api.fresh; }; modify { api.changed; }; remove { api.old; } } }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -8884,7 +8811,7 @@ signature app v(1); v(1) { breaking { add { api.fresh; }; modify { api.changed; 
 ================================================================================
 structural order_signature_buckets_1
 ================================================================================
-signature app v(1); v(1) { breaking { add { api.fresh; }; remove { api.old; }; modify { api.changed; } } }
+sig app v(1); v(1) { breaking { add { api.fresh; }; remove { api.old; }; modify { api.changed; } } }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -8945,7 +8872,7 @@ signature app v(1); v(1) { breaking { add { api.fresh; }; remove { api.old; }; m
 ================================================================================
 structural order_signature_buckets_2
 ================================================================================
-signature app v(1); v(1) { breaking { modify { api.changed; }; add { api.fresh; }; remove { api.old; } } }
+sig app v(1); v(1) { breaking { modify { api.changed; }; add { api.fresh; }; remove { api.old; } } }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -9006,7 +8933,7 @@ signature app v(1); v(1) { breaking { modify { api.changed; }; add { api.fresh; 
 ================================================================================
 structural order_signature_buckets_3
 ================================================================================
-signature app v(1); v(1) { breaking { modify { api.changed; }; remove { api.old; }; add { api.fresh; } } }
+sig app v(1); v(1) { breaking { modify { api.changed; }; remove { api.old; }; add { api.fresh; } } }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -9067,7 +8994,7 @@ signature app v(1); v(1) { breaking { modify { api.changed; }; remove { api.old;
 ================================================================================
 structural order_signature_buckets_4
 ================================================================================
-signature app v(1); v(1) { breaking { remove { api.old; }; add { api.fresh; }; modify { api.changed; } } }
+sig app v(1); v(1) { breaking { remove { api.old; }; add { api.fresh; }; modify { api.changed; } } }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -9128,7 +9055,7 @@ signature app v(1); v(1) { breaking { remove { api.old; }; add { api.fresh; }; m
 ================================================================================
 structural order_signature_buckets_5
 ================================================================================
-signature app v(1); v(1) { breaking { remove { api.old; }; modify { api.changed; }; add { api.fresh; } } }
+sig app v(1); v(1) { breaking { remove { api.old; }; modify { api.changed; }; add { api.fresh; } } }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -9189,7 +9116,7 @@ signature app v(1); v(1) { breaking { remove { api.old; }; modify { api.changed;
 ================================================================================
 structural order_varop_missing_primary
 ================================================================================
-module m; varop [+ +] { finalize finish; };
+mod m; op_var [+ +] { finalize finish; };
 --------------------------------------------------------------------------------
 
 (source_file
@@ -9216,7 +9143,7 @@ module m; varop [+ +] { finalize finish; };
 ================================================================================
 structural order_varop_duplicate_primary
 ================================================================================
-module m; varop [+ +] { foldl join empty; foldl join empty; };
+mod m; op_var [+ +] { foldl join empty; foldl join empty; };
 --------------------------------------------------------------------------------
 
 (source_file
@@ -9251,7 +9178,7 @@ module m; varop [+ +] { foldl join empty; foldl join empty; };
 ================================================================================
 structural order_varop_incompatible_primary
 ================================================================================
-module m; varop [+ +] { foldl join empty; foldr join empty; };
+mod m; op_var [+ +] { foldl join empty; foldr join empty; };
 --------------------------------------------------------------------------------
 
 (source_file
@@ -9286,7 +9213,7 @@ module m; varop [+ +] { foldl join empty; foldr join empty; };
 ================================================================================
 structural order_varop_duplicate_finalizer
 ================================================================================
-module m; varop [+ +] { finalize finish; foldl join empty; finalize finish; };
+mod m; op_var [+ +] { finalize finish; foldl join empty; finalize finish; };
 --------------------------------------------------------------------------------
 
 (source_file
@@ -9321,11 +9248,10 @@ module m; varop [+ +] { finalize finish; foldl join empty; finalize finish; };
   (bracket_rbrace)
   (separator_semicolon))
 
-
 ================================================================================
 structural order_macro_missing_impl
 ================================================================================
-module m; macro make: . { captures (helper); };
+mod m; macro make: . { captures (helper); };
 --------------------------------------------------------------------------------
 
 (source_file
@@ -9353,7 +9279,7 @@ module m; macro make: . { captures (helper); };
 ================================================================================
 structural order_macro_duplicate_impl
 ================================================================================
-module m; macro make: . { impl run; impl run; };
+mod m; macro make: . { impl run; impl run; };
 --------------------------------------------------------------------------------
 
 (source_file
@@ -9384,7 +9310,7 @@ module m; macro make: . { impl run; impl run; };
 ================================================================================
 structural order_macro_duplicate_captures
 ================================================================================
-module m; macro make: . { captures (helper); impl run; captures (helper); };
+mod m; macro make: . { captures (helper); impl run; captures (helper); };
 --------------------------------------------------------------------------------
 
 (source_file
@@ -9428,7 +9354,7 @@ module m; macro make: . { captures (helper); impl run; captures (helper); };
 ================================================================================
 structural order_package_duplicate_build
 ================================================================================
-package app; bridge {} build {} build {}
+pkg app; bridge {} build {} build {}
 --------------------------------------------------------------------------------
 
 (source_file
@@ -9454,7 +9380,7 @@ package app; bridge {} build {} build {}
 ================================================================================
 structural order_package_duplicate_bridge
 ================================================================================
-package app; bridge {} build {} bridge {}
+pkg app; bridge {} build {} bridge {}
 --------------------------------------------------------------------------------
 
 (source_file
@@ -9480,7 +9406,7 @@ package app; bridge {} build {} bridge {}
 ================================================================================
 structural order_build_duplicate_cache
 ================================================================================
-package app; build { cache (); target rust { out "out"; } cache (); }
+pkg app; build { cache (); target rust { out "out"; } cache (); }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -9515,11 +9441,10 @@ package app; build { cache (); target rust { out "out"; } cache (); }
       (separator_semicolon)
       (bracket_rbrace))))
 
-
 ================================================================================
 structural order_build_duplicate_docs
 ================================================================================
-package app; build { docs { md "a"; } cache (); docs { md "b"; } }
+pkg app; build { docs { md "a"; } cache (); docs { md "b"; } }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -9556,17 +9481,16 @@ package app; build { docs { md "a"; } cache (); docs { md "b"; } }
       (bracket_rbrace)))
   (bracket_rbrace))
 
-
 ================================================================================
 structural order_dependency_missing_source
 ================================================================================
-dependency dep; rehost old to fresh;
+dep dep; rehost old to fresh;
 --------------------------------------------------------------------------------
 
 (source_file
   (identifier)
   (ERROR
-    (identifier)
+    (keyword_dependency)
     (separator_semicolon)
     (dependency_remap
       (keyword_declaration)
@@ -9582,7 +9506,7 @@ dependency dep; rehost old to fresh;
 ================================================================================
 structural order_dependency_duplicate_source
 ================================================================================
-dependency dep; source { path "a"; } rehost old to fresh; source { path "b"; }
+dep dep; source { path "a"; } rehost old to fresh; source { path "b"; }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -9621,7 +9545,7 @@ dependency dep; source { path "a"; } rehost old to fresh; source { path "b"; }
 ================================================================================
 structural order_signature_duplicate_section
 ================================================================================
-signature app v(1); v(1) { breaking { remove { api.old; } } nonbreaking { add { api.fresh; } } breaking { remove { api.other; } } }
+sig app v(1); v(1) { breaking { remove { api.old; } } nonbreaking { add { api.fresh; } } breaking { remove { api.other; } } }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -9690,11 +9614,10 @@ signature app v(1); v(1) { breaking { remove { api.old; } } nonbreaking { add { 
       (bracket_rbrace)))
   (bracket_rbrace))
 
-
 ================================================================================
 structural order_signature_missing_changes
 ================================================================================
-signature app v(1); v(1) { with { module api { host type T; } } }
+sig app v(1); v(1) { with { mod api { host type T; } } }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -9736,7 +9659,7 @@ signature app v(1); v(1) { with { module api { host type T; } } }
 ================================================================================
 structural order_signature_duplicate_bucket
 ================================================================================
-signature app v(1); v(1) { breaking { remove { api.old; } add { api.fresh; } remove { api.other; } } }
+sig app v(1); v(1) { breaking { remove { api.old; } add { api.fresh; } remove { api.other; } } }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -9791,11 +9714,10 @@ signature app v(1); v(1) { breaking { remove { api.old; } add { api.fresh; } rem
   (bracket_rbrace)
   (bracket_rbrace))
 
-
 ================================================================================
 structural order_signature_empty_buckets
 ================================================================================
-signature app v(1); v(1) { breaking {} }
+sig app v(1); v(1) { breaking {} }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -9837,11 +9759,10 @@ op import variadic foldl foldr foldl1 foldr1 finalize
     (keyword_declaration)
     (keyword_declaration)))
 
-
 ================================================================================
 structural import_after_function
 ================================================================================
-module m;
+mod m;
 fn f() { () }
 import app
 --------------------------------------------------------------------------------
@@ -9873,7 +9794,7 @@ import app
 ================================================================================
 structural import_after_type
 ================================================================================
-module m; type T = .;
+mod m; type T = .;
 import app
 --------------------------------------------------------------------------------
 
@@ -9896,7 +9817,7 @@ import app
 ================================================================================
 structural rec_name_compact_prime_body
 ================================================================================
-module source; fn use(rec: .)->.{rec}
+mod source; fn use(rec: .)->.{rec}
 --------------------------------------------------------------------------------
 
 (source_file
@@ -9929,7 +9850,7 @@ module source; fn use(rec: .)->.{rec}
 ================================================================================
 structural rec_name_direct_call
 ================================================================================
-module source; fn use(rec: . -> .) -> . { rec() }
+mod source; fn use(rec: . -> .) -> . { rec() }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -9969,7 +9890,7 @@ module source; fn use(rec: . -> .) -> . { rec() }
 ================================================================================
 structural rec_name_balanced_nested_call
 ================================================================================
-module source; fn use(rec: . -> ., poly: .) -> . { rec(((poly))) }
+mod source; fn use(rec: . -> ., poly: .) -> . { rec(((poly))) }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -10023,7 +9944,7 @@ module source; fn use(rec: . -> ., poly: .) -> . { rec(((poly))) }
 ================================================================================
 structural rec_name_qualified_head
 ================================================================================
-module source; fn use() { rec.helper(value) }
+mod source; fn use() { rec.helper(value) }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -10057,7 +9978,7 @@ module source; fn use() { rec.helper(value) }
 ================================================================================
 structural rec_name_qualified_leaf
 ================================================================================
-module source; fn use() { helper.rec(value) }
+mod source; fn use() { helper.rec(value) }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -10091,7 +10012,7 @@ module source; fn use() { helper.rec(value) }
 ================================================================================
 structural rec_name_right_ufcs
 ================================================================================
-module source; fn use() { value.>rec }
+mod source; fn use() { value.>rec }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -10121,7 +10042,7 @@ module source; fn use() { value.>rec }
 ================================================================================
 structural rec_name_left_ufcs
 ================================================================================
-module source; fn use() { rec.<value }
+mod source; fn use() { rec.<value }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -10151,7 +10072,7 @@ module source; fn use() { rec.<value }
 ================================================================================
 structural rec_name_delimited_arguments
 ================================================================================
-module source; fn use() { f(rec, rec(poly), helper.rec) }
+mod source; fn use() { f(rec, rec(poly), helper.rec) }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -10197,7 +10118,7 @@ module source; fn use() { f(rec, rec(poly), helper.rec) }
 ================================================================================
 structural rec_call_owned_callee
 ================================================================================
-module source; fn use() { recur again(value) }
+mod source; fn use() { recur again(value) }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -10229,7 +10150,7 @@ module source; fn use() { recur again(value) }
 ================================================================================
 structural rec_call_owned_annotations
 ================================================================================
-module source; fn use() { recur(poly, cont) again(value) }
+mod source; fn use() { recur(poly, cont) again(value) }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -10269,7 +10190,7 @@ module source; fn use() { recur(poly, cont) again(value) }
 ================================================================================
 structural rec_call_balanced_comment_callee
 ================================================================================
-module source; fn use() { recur(poly) // callee
+mod source; fn use() { recur(poly) // callee
  again(value) }
 --------------------------------------------------------------------------------
 
@@ -10308,7 +10229,7 @@ module source; fn use() { recur(poly) // callee
 ================================================================================
 structural rec_name_balanced_comment_boundary
 ================================================================================
-module source; fn use() { rec(poly) // final
+mod source; fn use() { rec(poly) // final
  }
 --------------------------------------------------------------------------------
 
@@ -10342,7 +10263,7 @@ module source; fn use() { rec(poly) // final
 ================================================================================
 structural rec_call_incomplete_callee
 ================================================================================
-module source; fn use() { recur again
+mod source; fn use() { recur again
 --------------------------------------------------------------------------------
 
 (source_file
@@ -10369,7 +10290,7 @@ module source; fn use() { recur again
 ================================================================================
 structural rec_call_incomplete_annotated_callee
 ================================================================================
-module source; fn use() { recur(poly) again
+mod source; fn use() { recur(poly) again
 --------------------------------------------------------------------------------
 
 (source_file
@@ -10401,7 +10322,7 @@ module source; fn use() { recur(poly) again
 ================================================================================
 structural rec_call_unclosed_annotation
 ================================================================================
-module source; fn use() { recur(poly
+mod source; fn use() { recur(poly
 --------------------------------------------------------------------------------
 
 (source_file
@@ -10430,7 +10351,7 @@ module source; fn use() { recur(poly
 ================================================================================
 structural rec_call_empty_annotation_prefix
 ================================================================================
-module source; fn use() { recur(
+mod source; fn use() { recur(
 --------------------------------------------------------------------------------
 
 (source_file
@@ -10457,7 +10378,7 @@ module source; fn use() { recur(
 ================================================================================
 structural rec_name_bare_at_eof
 ================================================================================
-module source; fn use() { rec
+mod source; fn use() { rec
 --------------------------------------------------------------------------------
 
 (source_file
@@ -10483,7 +10404,7 @@ module source; fn use() { rec
 ================================================================================
 structural rec_call_annotation_recovery_sibling
 ================================================================================
-module source; fn use() { recur(poly }
+mod source; fn use() { recur(poly }
 fn neighbor() { rec(value) }
 --------------------------------------------------------------------------------
 
@@ -10560,7 +10481,7 @@ fn use(rec: .)->.{rec}
 ================================================================================
 structural rec_call_unclosed_annotation_partial_name
 ================================================================================
-module source; fn use() { recur(po
+mod source; fn use() { recur(po
 --------------------------------------------------------------------------------
 
 (source_file
@@ -10589,7 +10510,7 @@ module source; fn use() { recur(po
 ================================================================================
 structural rec_call_unclosed_annotation_invalid_name
 ================================================================================
-module source; fn use() { recur(value
+mod source; fn use() { recur(value
 --------------------------------------------------------------------------------
 
 (source_file
@@ -10618,7 +10539,7 @@ module source; fn use() { recur(value
 ================================================================================
 structural rec_call_unclosed_annotation_invalid_tail
 ================================================================================
-module source; fn use() { recur(value, poly
+mod source; fn use() { recur(value, poly
 --------------------------------------------------------------------------------
 
 (source_file
@@ -10650,7 +10571,7 @@ module source; fn use() { recur(value, poly
 ================================================================================
 structural rec_call_unclosed_annotation_valid_then_invalid
 ================================================================================
-module source; fn use() { recur(poly, value, cont
+mod source; fn use() { recur(poly, value, cont
 --------------------------------------------------------------------------------
 
 (source_file
@@ -10685,7 +10606,7 @@ module source; fn use() { recur(poly, value, cont
 ================================================================================
 structural rec_call_closed_invalid_annotation
 ================================================================================
-module source; fn use() { recur(value) again() }
+mod source; fn use() { recur(value) again() }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -10720,7 +10641,7 @@ module source; fn use() { recur(value) again() }
 ================================================================================
 structural rec_call_closed_invalid_annotation_tail
 ================================================================================
-module source; fn use() { recur(poly, value, cont) again() }
+mod source; fn use() { recur(poly, value, cont) again() }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -10761,7 +10682,7 @@ module source; fn use() { recur(poly, value, cont) again() }
 ================================================================================
 structural rec_call_closed_invalid_nested_annotation
 ================================================================================
-module source; fn use() { recur(()) again() }
+mod source; fn use() { recur(()) again() }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -10798,7 +10719,7 @@ module source; fn use() { recur(()) again() }
 ================================================================================
 structural rec_call_closed_empty_annotation
 ================================================================================
-module source; fn use() { recur() again() }
+mod source; fn use() { recur() again() }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -10870,7 +10791,7 @@ rec(poly)
 ================================================================================
 structural rec_call_duplicate_mode_roles
 ================================================================================
-module source; fn use() { recur(poly, poly) again() }
+mod source; fn use() { recur(poly, poly) again() }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -10908,7 +10829,7 @@ module source; fn use() { recur(poly, poly) again() }
 ================================================================================
 structural rec_name_duplicate_argument_names
 ================================================================================
-module source; fn use() { rec(poly, poly) }
+mod source; fn use() { rec(poly, poly) }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -11022,7 +10943,7 @@ rec(poly) fn again() { () }
 ================================================================================
 structural rec_call_nested_annotation_name
 ================================================================================
-module source; fn use() { recur((poly)) again() }
+mod source; fn use() { recur((poly)) again() }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -11060,7 +10981,7 @@ module source; fn use() { recur((poly)) again() }
 ================================================================================
 structural rec_call_nonidentifier_annotation_prefix
 ================================================================================
-module source; fn use() { recur(poly, 123) again() }
+mod source; fn use() { recur(poly, 123) again() }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -11098,7 +11019,7 @@ module source; fn use() { recur(poly, 123) again() }
 ================================================================================
 structural rec_call_mode_after_nested_invalid_item
 ================================================================================
-module source; fn use() { recur((poly), cont) again() }
+mod source; fn use() { recur((poly), cont) again() }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -11139,7 +11060,7 @@ module source; fn use() { recur((poly), cont) again() }
 ================================================================================
 structural rec_name_nested_item_call_inverse
 ================================================================================
-module source; fn use() { rec((poly), cont) }
+mod source; fn use() { rec((poly), cont) }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -11177,7 +11098,7 @@ module source; fn use() { rec((poly), cont) }
 ================================================================================
 structural rec_call_annotation_comma_runs
 ================================================================================
-module source; fn use() { recur(,,poly,,cont,,) again() }
+mod source; fn use() { recur(,,poly,,cont,,) again() }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -11220,7 +11141,7 @@ module source; fn use() { recur(,,poly,,cont,,) again() }
 ================================================================================
 structural rec_name_argument_comma_runs
 ================================================================================
-module source; fn use() { rec(,,poly,,cont,,) }
+mod source; fn use() { rec(,,poly,,cont,,) }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -11260,7 +11181,7 @@ module source; fn use() { rec(,,poly,,cont,,) }
 ================================================================================
 structural rec_call_comma_only_annotation
 ================================================================================
-module source; fn use() { recur(,,) again() }
+mod source; fn use() { recur(,,) again() }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -11295,7 +11216,7 @@ module source; fn use() { recur(,,) again() }
 ================================================================================
 structural rec_call_missing_comma_item_boundary
 ================================================================================
-module source; fn use() { recur(value poly, cont) again() }
+mod source; fn use() { recur(value poly, cont) again() }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -11334,7 +11255,7 @@ module source; fn use() { recur(value poly, cont) again() }
 ================================================================================
 structural rec_call_star_variadic_annotation_item
 ================================================================================
-module source; fn use() { recur([* poly, poly *], cont) again() }
+mod source; fn use() { recur([* poly, poly *], cont) again() }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -11381,7 +11302,7 @@ module source; fn use() { recur([* poly, poly *], cont) again() }
 ================================================================================
 structural rec_call_general_variadic_annotation_item
 ================================================================================
-module source; fn use() { recur([+ poly, poly +], cont) again() }
+mod source; fn use() { recur([+ poly, poly +], cont) again() }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -11428,7 +11349,7 @@ module source; fn use() { recur([+ poly, poly +], cont) again() }
 ================================================================================
 structural rec_call_nested_variadic_annotation_item
 ================================================================================
-module source; fn use() { recur([+ poly, [* poly, poly *] +], cont) again() }
+mod source; fn use() { recur([+ poly, [* poly, poly *] +], cont) again() }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -11484,7 +11405,7 @@ module source; fn use() { recur([+ poly, [* poly, poly *] +], cont) again() }
 ================================================================================
 structural rec_call_unclosed_variadic_annotation_item
 ================================================================================
-module source; fn use() { recur([* poly, poly, cont) again() }
+mod source; fn use() { recur([* poly, poly, cont) again() }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -11527,7 +11448,7 @@ module source; fn use() { recur([* poly, poly, cont) again() }
 ================================================================================
 structural rec_name_variadic_argument
 ================================================================================
-module source; fn use() { rec([* poly, poly *], cont) }
+mod source; fn use() { rec([* poly, poly *], cont) }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -11576,7 +11497,7 @@ module source; fn use() { rec([* poly, poly *], cont) }
 ================================================================================
 structural rec_call_mismatched_variadic_annotation_item
 ================================================================================
-module source; fn use() { recur([+ poly, poly %], cont) again() }
+mod source; fn use() { recur([+ poly, poly %], cont) again() }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -11623,7 +11544,7 @@ module source; fn use() { recur([+ poly, poly %], cont) again() }
 ================================================================================
 structural ordinary_recur_word_call
 ================================================================================
-module source; fn broken() { recur(value) }
+mod source; fn broken() { recur(value) }
 fn after() { let(x) }
 --------------------------------------------------------------------------------
 
@@ -11675,7 +11596,7 @@ fn after() { let(x) }
 ================================================================================
 structural ordinary_recur_word_annotation_name_call
 ================================================================================
-module source; fn broken() { recur(poly) }
+mod source; fn broken() { recur(poly) }
 fn after() { let(x) }
 --------------------------------------------------------------------------------
 
@@ -11727,7 +11648,7 @@ fn after() { let(x) }
 ================================================================================
 structural recur_name_compact_prime_body
 ================================================================================
-module source; fn use(recur: .)->.{recur}
+mod source; fn use(recur: .)->.{recur}
 --------------------------------------------------------------------------------
 
 (source_file
@@ -11760,7 +11681,7 @@ module source; fn use(recur: .)->.{recur}
 ================================================================================
 structural recur_name_direct_call
 ================================================================================
-module source; fn use(recur: . -> .) -> . { recur() }
+mod source; fn use(recur: . -> .) -> . { recur() }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -11800,7 +11721,7 @@ module source; fn use(recur: . -> .) -> . { recur() }
 ================================================================================
 structural recur_name_balanced_nested_call
 ================================================================================
-module source; fn use(recur: . -> ., poly: .) -> . { recur(((poly))) }
+mod source; fn use(recur: . -> ., poly: .) -> . { recur(((poly))) }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -11854,7 +11775,7 @@ module source; fn use(recur: . -> ., poly: .) -> . { recur(((poly))) }
 ================================================================================
 structural recur_name_qualified_head
 ================================================================================
-module source; fn use() { recur.helper(value) }
+mod source; fn use() { recur.helper(value) }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -11888,7 +11809,7 @@ module source; fn use() { recur.helper(value) }
 ================================================================================
 structural recur_name_qualified_leaf
 ================================================================================
-module source; fn use() { helper.recur(value) }
+mod source; fn use() { helper.recur(value) }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -11922,7 +11843,7 @@ module source; fn use() { helper.recur(value) }
 ================================================================================
 structural recur_name_right_ufcs
 ================================================================================
-module source; fn use() { value.>recur }
+mod source; fn use() { value.>recur }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -11952,7 +11873,7 @@ module source; fn use() { value.>recur }
 ================================================================================
 structural recur_name_left_ufcs
 ================================================================================
-module source; fn use() { recur.<value }
+mod source; fn use() { recur.<value }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -11982,7 +11903,7 @@ module source; fn use() { recur.<value }
 ================================================================================
 structural recur_name_delimited_arguments
 ================================================================================
-module source; fn use() { f(recur, recur(poly), helper.recur) }
+mod source; fn use() { f(recur, recur(poly), helper.recur) }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -12028,7 +11949,7 @@ module source; fn use() { f(recur, recur(poly), helper.recur) }
 ================================================================================
 structural recur_name_balanced_comment_boundary
 ================================================================================
-module source; fn use() { recur(poly) // final
+mod source; fn use() { recur(poly) // final
  }
 --------------------------------------------------------------------------------
 
@@ -12062,7 +11983,7 @@ module source; fn use() { recur(poly) // final
 ================================================================================
 structural recur_name_bare_at_eof
 ================================================================================
-module source; fn use() { recur
+mod source; fn use() { recur
 --------------------------------------------------------------------------------
 
 (source_file
@@ -12132,7 +12053,7 @@ recur(poly)
 ================================================================================
 structural recur_name_duplicate_argument_names
 ================================================================================
-module source; fn use() { recur(poly, poly) }
+mod source; fn use() { recur(poly, poly) }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -12167,7 +12088,7 @@ module source; fn use() { recur(poly, poly) }
 ================================================================================
 structural recur_name_nested_item_call_inverse
 ================================================================================
-module source; fn use() { recur((poly), cont) }
+mod source; fn use() { recur((poly), cont) }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -12205,7 +12126,7 @@ module source; fn use() { recur((poly), cont) }
 ================================================================================
 structural recur_name_argument_comma_runs
 ================================================================================
-module source; fn use() { recur(,,poly,,cont,,) }
+mod source; fn use() { recur(,,poly,,cont,,) }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -12245,7 +12166,7 @@ module source; fn use() { recur(,,poly,,cont,,) }
 ================================================================================
 structural recur_name_variadic_argument
 ================================================================================
-module source; fn use() { recur([* poly, poly *], cont) }
+mod source; fn use() { recur([* poly, poly *], cont) }
 --------------------------------------------------------------------------------
 
 (source_file

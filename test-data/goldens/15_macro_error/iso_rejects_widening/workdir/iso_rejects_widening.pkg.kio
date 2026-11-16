@@ -1,4 +1,4 @@
-package iso_rejects_widening;
+pkg iso_rejects_widening;
 
 build {
   cache "out/.kio-cache/";

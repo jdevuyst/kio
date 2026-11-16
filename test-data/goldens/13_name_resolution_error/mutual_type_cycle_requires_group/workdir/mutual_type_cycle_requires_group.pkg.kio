@@ -1,4 +1,4 @@
-package mutual_type_cycle_requires_group;
+pkg mutual_type_cycle_requires_group;
 
 build {
   target js {

@@ -1,4 +1,4 @@
-module other;
+mod other;
 
 import api as a;
 

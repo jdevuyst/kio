@@ -1,12 +1,12 @@
-module testapi/main;
+mod testapi/main;
 
-import float_signal_filter/calibration(calibrated_stream);
-import float_signal_filter/scoring(score_report);
-import float_signal_filter/sensors(raw_stream);
-import float_signal_filter/smoothing(smoothed_stream);
-import testapi(F64, String);
-import testapi/fmt(f64_to_string);
-import testapi/io(print);
+import float_signal_filter/calibration { fn calibrated_stream }
+import float_signal_filter/scoring { fn score_report }
+import float_signal_filter/sensors { fn raw_stream }
+import float_signal_filter/smoothing { fn smoothed_stream }
+import testapi { type F64; type String }
+import testapi/fmt { fn f64_to_string }
+import testapi/io { fn print }
 
 fn print_value(value: F64) { print(f64_to_string(value)) }
 

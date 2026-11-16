@@ -8,17 +8,17 @@
 /// encoder output, bits left over at the end are zero fill and are dropped.
 /// It does not separately validate padding placement, padding count, or
 /// unused low bits.
-module base32/decode;
+mod base32/decode;
 
 import base32/alphabet as alphabet;
 import base32/bits as bits;
 import base32/list as list;
-import macros/control(macro if);
-import macros/match(macro match);
-import macros/spine_macros(macro widen_sum);
-import testapi(Bool, I32, String);
-import testapi/arith(add_i32, lt_i32, sub_i32);
-import testapi/iter(loop);
+import macros/control { macro if }
+import macros/match { macro match }
+import macros/spine_macros { macro widen_sum }
+import testapi { type Bool; type I32; type String }
+import testapi/arith { fn add_i32; fn lt_i32; fn sub_i32 }
+import testapi/iter { fn loop }
 
 /// What a transmission decoded to: the recovered payload, or the
 /// one-based position of the first glyph outside the alphabet.

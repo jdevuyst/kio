@@ -2,7 +2,7 @@
 set -eu
 
 formatted=$("$KIO_BIN" fmt - <<'KIO'
-module fmt_label_list_comments;
+mod fmt_label_list_comments;
 fn access(row: Ready) { row.>select { Ready.get // access closing
 } }
 fn bind(row: Ready) { let .(ready // binding closing

@@ -1,4 +1,4 @@
-package exec_functor_same_leaf;
+pkg exec_functor_same_leaf;
 
 build {
   cache "out/.kio-cache/";

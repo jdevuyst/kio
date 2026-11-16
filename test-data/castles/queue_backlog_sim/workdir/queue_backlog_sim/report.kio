@@ -1,22 +1,22 @@
-module queue_backlog_sim/report;
+mod queue_backlog_sim/report;
 
-import macros/row_macros(macro select);
-import queue_backlog_sim/model(
-, Arrived_count
-, Backlog_count
-, Completed_effort
-, Current_tick
-, Max_backlog
-, Next_ticket
-, Served_count
-, State
-, Total_wait
-);
-import testapi(Bool, I32, String);
-import testapi/arith(eq_i32);
-import testapi/fmt(bool_to_string, int_to_string);
-import testapi/io(print);
-import testapi/text(string_concat);
+import macros/row_macros { macro select }
+import queue_backlog_sim/model {
+  type Arrived_count;
+  type Backlog_count;
+  type Completed_effort;
+  type Current_tick;
+  type Max_backlog;
+  type Next_ticket;
+  type Served_count;
+  type State;
+  type Total_wait
+}
+import testapi { type Bool; type I32; type String }
+import testapi/arith { fn eq_i32 }
+import testapi/fmt { fn bool_to_string; fn int_to_string }
+import testapi/io { fn print }
+import testapi/text { fn string_concat }
 
 fn cat3(a: String, b: String, c: String) -> String { string_concat(a, string_concat(b, c)) }
 

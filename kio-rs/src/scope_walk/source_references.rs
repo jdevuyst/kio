@@ -242,7 +242,7 @@ mod tests {
     #[cfg(feature = "lsp")]
     #[test]
     fn source_dependency_index_keeps_type_import_edges_and_binder_boundaries() {
-        let source = "module main; import provider(Foo); import provider as q;
+        let source = "mod main; import provider {type Foo} import provider as q;
             type Plain = Foo;
             type Qualified = q.Foo;
             fn generic[Foo](value: Foo) -> Foo { value }
@@ -302,7 +302,7 @@ mod tests {
     #[cfg(feature = "lsp")]
     #[test]
     fn source_dependency_index_preserves_recursive_type_and_value_namespaces() {
-        let source = "module main; import provider(marker, Foo);
+        let source = "mod main; import provider {fn marker; type Foo}
             rec type { Tree[A]: A & Tree[A] { mk; get; }; };
             rec { type Left = Right; type { Right[Left]: Left { mk; get; }; }; }
             fn bare() -> . { marker }
@@ -348,8 +348,8 @@ mod tests {
     #[cfg(feature = "lsp")]
     #[test]
     fn source_dependency_index_preserves_nominal_macro_and_builtin_origins() {
-        let source = "module main;
-            import provider(Tag, macro expand); import provider as q;
+        let source = "mod main;
+            import provider {type Tag; macro expand} import provider as q;
             import __intrinsics__; import __intrinsics__;
             import __comptime__; import __comptime__;
             type { Local: .; }; type Forwarded = q.Tag;
@@ -418,7 +418,7 @@ mod tests {
     #[cfg(feature = "lsp")]
     #[test]
     fn source_dependency_index_keeps_rec_drivers_outside_member_binders() {
-        let source = "module main; import provider(driver); import provider as q;
+        let source = "mod main; import provider {fn driver} import provider as q;
             rec(driver) fn direct(driver: .) -> . { driver }
             rec(q.driver) fn qualified(value: .) -> . { value }";
         let module = crate::pass::parser::parse(source).unwrap();
@@ -469,7 +469,7 @@ mod tests {
     fn source_dependency_index_accounts_for_remaining_per_item_walk_cost() {
         use crate::ast::{Expr, Meta, PathSegment};
 
-        const PREFIX: &str = "module main; import provider(marker); fn run() -> . { ";
+        const PREFIX: &str = "mod main; import provider {fn marker} fn run() -> . { ";
         const STATEMENT: &str = "let _ = marker; ";
 
         for count in [32, 128, 512] {
@@ -586,7 +586,7 @@ mod tests {
     #[test]
     fn targeted_value_lookup_preserves_completion_shadowing() {
         let source = concat!(
-            "module main; import provider(marker);\n",
+            "mod main; import provider {fn marker}\n",
             "fn bare() -> . { marker }\n",
             "fn parameter(marker: .) -> . { marker }\n",
             "fn nested() -> . { let marker = (); .(marker: .) { marker }(marker) }\n",

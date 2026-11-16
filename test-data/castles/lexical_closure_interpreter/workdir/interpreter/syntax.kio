@@ -1,7 +1,7 @@
-module interpreter/syntax;
+mod interpreter/syntax;
 
-import macros/spine_macros(macro widen_sum);
-import testapi(I32, String);
+import macros/spine_macros { macro widen_sum }
+import testapi { type I32; type String }
 
 pub rec type Expr =
   | { Integer: I32 }

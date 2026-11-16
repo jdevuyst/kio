@@ -1,29 +1,29 @@
-module catalog/circulation;
+mod catalog/circulation;
 
 import catalog/domain as dom;
-import catalog/domain(
-, Applied
-, Book
-, Book_index
-, Failure
-, Hold_list
-, Member
-, Member_index
-, Op
-, Outcome
-);
-import catalog/domain(Checkout, Hold, Report, Return);
-import catalog/domain(Copies_out, Copies_total, Held_call, Holder);
-import catalog/domain(cat, fine_rate, istr);
+import catalog/domain {
+  type Applied;
+  type Book;
+  type Book_index;
+  type Failure;
+  type Hold_list;
+  type Member;
+  type Member_index;
+  type Op;
+  type Outcome
+}
+import catalog/domain { fn cat; lit fine_rate; fn istr }
+import catalog/domain { type Checkout; type Hold; type Report; type Return }
+import catalog/domain { type Copies_out; type Copies_total; type Held_call; type Holder }
 import catalog/ledger as ledger;
 import catalog/shelf as shelf;
 import list/list as list;
-import macros/control(macro if);
-import macros/match(macro match);
-import macros/row_macros(macro select);
+import macros/control { macro if }
+import macros/match { macro match }
+import macros/row_macros { macro select }
 import result/result as result;
-import testapi(Bool, I32, String);
-import testapi/arith(leq_i32, mul_i32);
+import testapi { type Bool; type I32; type String }
+import testapi/arith { fn leq_i32; fn mul_i32 }
 
 type Borrower = Member & Book;
 

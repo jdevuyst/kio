@@ -1,4 +1,4 @@
-package nullary_nominal_constructor;
+pkg nullary_nominal_constructor;
 
 build {
   target js {

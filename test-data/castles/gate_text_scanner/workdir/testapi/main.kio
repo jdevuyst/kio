@@ -1,9 +1,17 @@
-module testapi/main;
+mod testapi/main;
 
-import scanner(checksum, class_for, command_tag, gate_target, script_len_tag, set_mark, token);
-import testapi(I32, String);
-import testapi/io(print);
-import testapi/text(string_concat);
+import scanner {
+  fn checksum;
+  fn class_for;
+  fn command_tag;
+  fn gate_target;
+  fn script_len_tag;
+  fn set_mark;
+  fn token
+}
+import testapi { type I32; type String }
+import testapi/io { fn print }
+import testapi/text { fn string_concat }
 
 fn cat3(a: String, b: String, c: String) -> String { string_concat(a, string_concat(b, c)) }
 

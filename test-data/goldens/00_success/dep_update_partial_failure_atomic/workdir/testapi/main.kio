@@ -1,9 +1,9 @@
-module testapi/main;
+mod testapi/main;
 
-import alib/util(keep);
-import blib/greet(first);
-import testapi(String);
-import testapi/io(print);
+import alib/util { fn keep }
+import blib/greet { fn first }
+import testapi { type String }
+import testapi/io { fn print }
 
 // Both dependency exports survive every commit in this case (`keep` from
 // the compatible `alib`, `first` from `blib` whose breaking change only

@@ -1,5 +1,5 @@
-module testapi/main;
+mod testapi/main;
 
-import edit_distance_audit/audit(run);
+import edit_distance_audit/audit { fn run }
 
 pub fn main() { run() }

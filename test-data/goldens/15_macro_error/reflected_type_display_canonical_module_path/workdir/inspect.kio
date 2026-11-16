@@ -1,4 +1,4 @@
-module inspect;
+mod inspect;
 
 import __comptime__;
 

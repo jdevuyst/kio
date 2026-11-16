@@ -1,9 +1,9 @@
-module consumer;
+mod consumer;
 
 import __intrinsics__;
 
 import first as first;
-import macros/control(macro if);
+import macros/control { macro if }
 import second as second;
 
 type First_bool = first.Bool;

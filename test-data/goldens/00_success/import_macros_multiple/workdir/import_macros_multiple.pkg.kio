@@ -1,4 +1,4 @@
-package import_macros_multiple;
+pkg import_macros_multiple;
 
 build {
   cache "out/.kio-cache/";

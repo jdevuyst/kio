@@ -355,7 +355,7 @@ impl Palette {
             TokenKind::KeywordControl
             | TokenKind::CommentDocDirective
             | TokenKind::CommentDocFence => "\x1b[38;2;198;120;221m",
-            // Declaration keywords (`fn` / `module` / `pub` / …) —
+            // Declaration keywords (`fn` / `mod` / `pub` / …) —
             // gold, distinct from control flow.
             TokenKind::KeywordDeclaration => "\x1b[38;2;229;192;123m",
             // Macro names (`iso` / `reorder_*` / `fit` / …) —
@@ -880,7 +880,7 @@ mod tests {
 
     #[test]
     fn plain_palette_is_identity() {
-        let src = "module pkg/main;\npub fn run() -> . { () }\n";
+        let src = "mod pkg/main;\npub fn run() -> . { () }\n";
         assert_eq!(highlight(src, Palette::plain()), src);
     }
 
@@ -1071,7 +1071,7 @@ mod tests {
 
     #[test]
     fn bracket_match_includes_source_local_square_frames() {
-        let forall = "module x; type Id = [A] A -> A;";
+        let forall = "mod x; type Id = [A] A -> A;";
         let open = forall.find('[').expect("forall opener present");
         let close = forall.find(']').expect("forall closer present");
         let emphasis = bracket_emphasis_at(forall, open);

@@ -1,4 +1,4 @@
-package two_three_tree_audit;
+pkg two_three_tree_audit;
 
 build {
   cache "out/.kio-cache/";

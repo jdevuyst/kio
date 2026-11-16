@@ -1,4 +1,4 @@
-package ffi_host_substituted_unit_callback;
+pkg ffi_host_substituted_unit_callback;
 
 build {
   cache "out/.kio-cache/";

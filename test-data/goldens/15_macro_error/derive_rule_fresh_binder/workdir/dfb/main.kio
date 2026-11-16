@@ -1,9 +1,9 @@
-module dfb/main;
+mod dfb/main;
 
 import __intrinsics__;
 
-import dfb(I32, zero);
-import macros/derive(macro derive);
+import dfb { type I32; fn zero }
+import macros/derive { macro derive }
 
 pub type { Pair[A][B]: A & B { pub mk; pub get } }
 

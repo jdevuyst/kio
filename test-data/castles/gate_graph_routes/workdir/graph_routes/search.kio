@@ -1,28 +1,28 @@
-module graph_routes/search;
+mod graph_routes/search;
 
-import graph_routes/model(
-, Blocked
-, Cursor
-, Da
-, Db
-, Dc
-, Dd
-, De
-, Df
-, Dg
-, Relaxed
-, Round
-, Search_state
-, Visited
-, inf
-, initial
-, rebuild
-);
-import macros/control(macro if);
-import macros/row_macros(macro select);
-import testapi(Bool, I32);
-import testapi/arith(add_i32, eq_i32, leq_i32, lt_i32);
-import testapi/iter(loop);
+import graph_routes/model {
+  type Blocked;
+  type Cursor;
+  type Da;
+  type Db;
+  type Dc;
+  type Dd;
+  type De;
+  type Df;
+  type Dg;
+  type Relaxed;
+  type Round;
+  type Search_state;
+  type Visited;
+  fn inf;
+  fn initial;
+  fn rebuild
+}
+import macros/control { macro if }
+import macros/row_macros { macro select }
+import testapi { type Bool; type I32 }
+import testapi/arith { fn add_i32; fn eq_i32; fn leq_i32; fn lt_i32 }
+import testapi/iter { fn loop }
 
 fn seen(s: Search_state) -> Search_state {
   let .(round, cursor, da, db, dc, dd, de, df, dg, visited, relaxed, blocked) =

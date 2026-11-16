@@ -1,3 +1,3 @@
-module app;
+mod app;
 
 pub fn main() { () }

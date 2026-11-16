@@ -1095,7 +1095,7 @@ mod tests {
             &mut |expr, _| crate::ast::convert_expr::<EvalPhase, PrePrime>(expr),
             &mut crate::ast::convert_type::<EvalPhase, PrePrime>,
         );
-        let source = "module witness; import __intrinsics__;
+        let source = "mod witness; import __intrinsics__;
         host type Bool role(bool);
         host fn finish(value: Bool) -> .;
         host fn suspend0(k: Bool -> .) -> .;

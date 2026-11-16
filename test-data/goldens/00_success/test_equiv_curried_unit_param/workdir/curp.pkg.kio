@@ -1,4 +1,4 @@
-package curp;
+pkg curp;
 
 build {
   cache "out/.kio-cache/";

@@ -1,4 +1,4 @@
-package exec_ease_fn_param_narrowed;
+pkg exec_ease_fn_param_narrowed;
 
 build {
   cache "out/.kio-cache/";

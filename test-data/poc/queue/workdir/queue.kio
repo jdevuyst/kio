@@ -1,26 +1,26 @@
 /// FIFO queue library with host-backed amortized normalization, bulk operations, operators, and canonical List interop.
 /// A ready-to-use library module for your own Kio package.
-module queue;
+mod queue;
 
-import core(
-, Bool
-, Queue
-, back
-, count_step
-, empty
-, front
-, no
-, peek
-, pop_front
-, singleton
-, snoc_into_back
-, swap_spines
-, well_formed
-, yes
-);
-import list/core(List, cons, head, nil, uncons);
-import macros/match(macro match);
-import macros/spine_macros(macro widen_sum);
+import core {
+  type Bool;
+  type Queue;
+  fn back;
+  fn count_step;
+  fn empty;
+  fn front;
+  fn no;
+  fn peek;
+  fn pop_front;
+  fn singleton;
+  fn snoc_into_back;
+  fn swap_spines;
+  fn well_formed;
+  fn yes
+}
+import list/core { type List; fn cons; fn head; fn nil; fn uncons }
+import macros/match { macro match }
+import macros/spine_macros { macro widen_sum }
 
 host type I32 role(i32);
 

@@ -1,8 +1,8 @@
-module main;
+mod main;
 
 import __intrinsics__;
 
-import control(macro if);
+import control { macro if }
 
 host type Text role(str);
 

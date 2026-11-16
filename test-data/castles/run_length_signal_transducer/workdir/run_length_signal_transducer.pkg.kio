@@ -1,4 +1,4 @@
-package run_length_signal_transducer;
+pkg run_length_signal_transducer;
 
 build {
   cache "out/.kio-cache/";

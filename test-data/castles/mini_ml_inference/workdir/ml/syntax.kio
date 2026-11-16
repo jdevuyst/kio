@@ -1,7 +1,7 @@
-module ml/syntax;
+mod ml/syntax;
 
-import macros/spine_macros(macro widen_sum);
-import testapi(String);
+import macros/spine_macros { macro widen_sum }
+import testapi { type String }
 
 pub rec type Expr =
   | { Integer: . }

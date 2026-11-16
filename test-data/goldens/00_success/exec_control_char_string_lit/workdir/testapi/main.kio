@@ -1,10 +1,10 @@
-module testapi/main;
+mod testapi/main;
 
-import macros/control(macro if);
-import testapi(Bool, I32, String);
-import testapi/fmt(int_to_string);
-import testapi/io(print);
-import testapi/text(string_concat, string_eq, string_len);
+import macros/control { macro if }
+import testapi { type Bool; type I32; type String }
+import testapi/fmt { fn int_to_string }
+import testapi/io { fn print }
+import testapi/text { fn string_concat; fn string_eq; fn string_len }
 
 // A guest whose host calls centre on `string_len` — a host capability the
 // dyn_load_prime evaluator never hardcoded (it is outside the closed first-order

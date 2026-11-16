@@ -1,4 +1,4 @@
-package hif;
+pkg hif;
 
 build {
   cache "out/.kio-cache/";

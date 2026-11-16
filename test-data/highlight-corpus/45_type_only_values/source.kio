@@ -1,4 +1,4 @@
-module values;
+mod values;
 pure fn nil[A] -> List[A] { empty[A] }
 fn unit[A] { () }
 fn repeated[A][B] -> A -> B -> A { .(a: A)(b: B) { a } }

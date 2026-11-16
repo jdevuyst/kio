@@ -2,13 +2,13 @@
 /// through the same walk — payload bytes (`I32`), transmitted glyphs
 /// (`String`), and the alphabet's `(I32 & String)` entries — so the spine
 /// is polymorphic rather than specialised to bytes.
-module base32/list;
+mod base32/list;
 
-import macros/match(macro match);
-import macros/spine_macros(macro widen_sum);
-import testapi(I32);
-import testapi/arith(add_i32);
-import testapi/iter(loop);
+import macros/match { macro match }
+import macros/spine_macros { macro widen_sum }
+import testapi { type I32 }
+import testapi/arith { fn add_i32 }
+import testapi/iter { fn loop }
 
 /// A list is empty, or a head paired with the rest. The nominal
 /// type ties the recursive knot: an anonymous sum cannot mention

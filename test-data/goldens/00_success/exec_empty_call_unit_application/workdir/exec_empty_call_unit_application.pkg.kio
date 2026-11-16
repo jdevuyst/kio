@@ -1,4 +1,4 @@
-package exec_empty_call_unit_application;
+pkg exec_empty_call_unit_application;
 
 build {
   cache "out/.kio-cache/";

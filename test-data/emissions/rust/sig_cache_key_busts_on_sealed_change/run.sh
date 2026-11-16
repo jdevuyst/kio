@@ -20,12 +20,12 @@ fi
 # sealed v(2). No `.kio` module source changes, so the Prime bytes are
 # identical to build 1.
 cat > app.sig.kio <<'SIG'
-signature app v(3);
+sig app v(3);
 
 v(1) {
   nonbreaking {
     add {
-      module api {
+      mod api {
         host type Str role(str);
         host fn open() -> Str;
         host fn log(p0: Str) -> .;
@@ -38,9 +38,9 @@ v(1) {
 v(2) {
   nonbreaking {
     remove {
-      module api {
-        log;
-      }
+
+        api.log;
+
     }
   }
 }

@@ -1,9 +1,9 @@
-module earley/fixtures;
+mod earley/fixtures;
 
-import earley/arrays(varop [* *]);
+import earley/arrays { op_var [* *] }
 import earley/model as model;
-import macros/row_macros(macro select);
-import testapi(Array, I32, String);
+import macros/row_macros { macro select }
+import testapi { type Array; type I32; type String }
 
 pub type Example = { Name: String; Tokens: Array[I32] };
 

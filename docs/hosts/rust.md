@@ -31,7 +31,7 @@ the newest baseline until `kio fmt` pins them to its concrete name. See
 A package emits to Rust by declaring a `rust` target in `<pkg>.pkg.kio`:
 
 ```kio {variant=package}
-package greeter;
+pkg greeter;
 
 build {
   cache "out/.kio-cache/";
@@ -106,7 +106,7 @@ component, then escape remaining `_` as `_u` and `/` as `_s`. The separator
 
 ```kio {variant=module}
 // greeter.kio
-module greeter;
+mod greeter;
 
 host type String role(str);
 
@@ -193,7 +193,7 @@ their fixed role and index suffixes; semantic nominal identity is unchanged.
 For the examples in this section, add `greeter/api.kio` to the package:
 
 ```kio {file}
-module greeter/api;
+mod greeter/api;
 
 pub fn id[A](value: A) -> A { value }
 
@@ -454,7 +454,7 @@ above.
 `greeter.pkg.kio`:
 
 ```kio {variant=package}
-package greeter;
+pkg greeter;
 
 build {
   cache "out/.kio-cache/";
@@ -475,7 +475,7 @@ bridge {
 `greeter.kio` declares the host capability:
 
 ```kio {file}
-module greeter;
+mod greeter;
 
 host type String role(str);
 host fn print(p0: String);
@@ -484,7 +484,7 @@ host fn print(p0: String);
 `greeter/main.kio` imports it and exports `main`:
 
 <!--kio {file}
-package greeter;
+pkg greeter;
 
 build {
   cache "out/.kio-cache/";
@@ -502,17 +502,17 @@ bridge {
 -->
 
 <!--kio {harness=greeter_rust_main file placeholder="__SNIPPET__"}
-module greeter/main;
+mod greeter/main;
 
-import greeter(String, print);
+import greeter {type String; fn print}
 
 __SNIPPET__
 -->
 
-```kio {@greeter_rust_main placeholder={"module greeter/main;":"","import greeter(String, print);":""}}
-module greeter/main;
+```kio {@greeter_rust_main placeholder={"mod greeter/main;":"","import greeter {type String; fn print}":""}}
+mod greeter/main;
 
-import greeter(String, print);
+import greeter {type String; fn print}
 
 pub fn main() { print("hello from kio\n") }
 ```

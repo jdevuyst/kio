@@ -1,4 +1,4 @@
-package literal_annotation_rejects_context_override;
+pkg literal_annotation_rejects_context_override;
 
 build {
   target js {

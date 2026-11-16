@@ -1,5 +1,5 @@
-module testapi/arith;
+mod testapi/arith;
 
-import testapi(String);
+import testapi { type String }
 
 host fn apply_poly(f: [T] T -> T) -> String;

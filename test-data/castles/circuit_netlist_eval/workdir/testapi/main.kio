@@ -1,7 +1,7 @@
-module testapi/main;
+mod testapi/main;
 
 import circuit_netlist_eval/evaluator as evaluator;
-import circuit_netlist_eval/fixture(initial_state);
-import circuit_netlist_eval/render(render_report);
+import circuit_netlist_eval/fixture { fn initial_state }
+import circuit_netlist_eval/render { fn render_report }
 
 pub fn main() { render_report(evaluator.settle(initial_state())) }

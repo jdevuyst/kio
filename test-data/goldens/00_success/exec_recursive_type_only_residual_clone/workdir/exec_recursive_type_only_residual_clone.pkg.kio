@@ -1,4 +1,4 @@
-package exec_recursive_type_only_residual_clone;
+pkg exec_recursive_type_only_residual_clone;
 
 build {
   cache "out/.kio-cache/";

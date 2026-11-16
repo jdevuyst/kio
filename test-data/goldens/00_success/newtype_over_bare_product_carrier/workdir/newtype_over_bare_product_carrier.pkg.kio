@@ -1,4 +1,4 @@
-package newtype_over_bare_product_carrier;
+pkg newtype_over_bare_product_carrier;
 
 build {
   cache "out/.kio-cache/";

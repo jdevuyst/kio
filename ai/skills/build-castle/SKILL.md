@@ -160,7 +160,7 @@ Do these in order. Steps 1–3 are mandatory reading before you touch any
 
    ```kio
    // macros.dep.kio
-   dependency macros;
+   dep macros;
    source { path "<rel>/macros.pkg.kio"; }
    ```
 

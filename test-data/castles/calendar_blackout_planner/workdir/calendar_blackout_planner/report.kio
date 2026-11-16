@@ -1,9 +1,9 @@
-module calendar_blackout_planner/report;
+mod calendar_blackout_planner/report;
 
-import calendar_blackout_planner/model(Name, Support_load, Window);
+import calendar_blackout_planner/model { type Name; type Support_load; type Window }
 import calendar_blackout_planner/scoring as scoring;
-import macros/row_macros(macro select);
-import testapi(String);
+import macros/row_macros { macro select }
+import testapi { type String }
 import testapi/fmt as fmt;
 import testapi/text as text;
 

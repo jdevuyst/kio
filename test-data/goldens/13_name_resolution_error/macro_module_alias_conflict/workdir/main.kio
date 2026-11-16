@@ -1,4 +1,4 @@
-module main;
+mod main;
 
 import helpers as keep;
-import helpers(macro keep);
+import helpers { macro keep }

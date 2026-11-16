@@ -8,6 +8,6 @@ printf '%s\n' \
     ':refs first' \
     ':sig op _ ++ _' \
     ':refs op _ ++ _' \
-    ':sig varop [% %]' \
-    ':refs varop [% %]' \
+    ':sig op_var [% %]' \
+    ':refs op_var [% %]' \
     ':quit' | "$KIO_BIN" repl demo/main

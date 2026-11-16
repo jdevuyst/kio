@@ -1,4 +1,4 @@
-package inj;
+pkg inj;
 
 build {
   cache "out/.kio-cache/";

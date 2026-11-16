@@ -1,7 +1,7 @@
-module regex/format;
+mod regex/format;
 
-import testapi(String);
-import testapi/text(string_concat);
+import testapi { type String }
+import testapi/text { fn string_concat }
 
 pub fn join3(a: String, b: String, c: String) -> String { string_concat(string_concat(a, b), c) }
 

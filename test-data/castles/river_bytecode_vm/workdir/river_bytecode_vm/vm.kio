@@ -1,28 +1,28 @@
-module river_bytecode_vm/vm;
+mod river_bytecode_vm/vm;
 
-import macros/control(macro if);
-import macros/row_macros(macro select);
+import macros/control { macro if }
+import macros/row_macros { macro select }
 import river_bytecode_vm/constants as c;
 import river_bytecode_vm/model as model;
-import river_bytecode_vm/model(
-, Alerts
-, Cabbage
-, Checksum
-, Farmer
-, Goat
-, Halt_code
-, Moves
-, Pc
-, Snapshot
-, Ticks
-, Waits
-, Wolf
-);
+import river_bytecode_vm/model {
+  type Alerts;
+  type Cabbage;
+  type Checksum;
+  type Farmer;
+  type Goat;
+  type Halt_code;
+  type Moves;
+  type Pc;
+  type Snapshot;
+  type Ticks;
+  type Waits;
+  type Wolf
+}
 import river_bytecode_vm/program as program;
 import river_bytecode_vm/util as util;
-import testapi(Bool, I32);
-import testapi/arith(add_i32, eq_i32, lt_i32, mul_i32);
-import testapi/iter(loop);
+import testapi { type Bool; type I32 }
+import testapi/arith { fn add_i32; fn eq_i32; fn lt_i32; fn mul_i32 }
+import testapi/iter { fn loop }
 
 fn next_side(side: I32) -> I32 {
   if(eq_i32(side, c.east())) { c.west() } else { c.east() }

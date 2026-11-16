@@ -1,12 +1,12 @@
-module deferred;
+mod deferred;
 
-import macros/control(macro if);
-import macros/row_macros(macro select, macro with);
+import macros/control { macro if }
+import macros/row_macros { macro select; macro with }
 import market as market;
-import testapi(Array, Bool, I32);
+import testapi { type Array; type Bool; type I32 }
 import testapi/arith as arith;
 import testapi/array as array;
-import testapi/iter(loop);
+import testapi/iter { fn loop }
 
 pub type Outcome = {
   Partner: Array[I32];

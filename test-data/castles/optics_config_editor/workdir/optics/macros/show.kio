@@ -1,10 +1,10 @@
 /// Show macro that turns supported reflected values into host `String` rendering functions.
-module optics/macros/show;
+mod optics/macros/show;
 
 import __intrinsics__;
 
 import __comptime__;
-import optics/macros/testapi(String);
+import optics/macros/testapi { type String }
 
 /// Renders the unit value.
 pub fn show_unit_text() -> String { "()"[String] }

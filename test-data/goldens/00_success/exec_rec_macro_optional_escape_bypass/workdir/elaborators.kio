@@ -1,4 +1,4 @@
-module elaborators;
+mod elaborators;
 
 import __intrinsics__;
 

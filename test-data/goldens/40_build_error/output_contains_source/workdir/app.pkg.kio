@@ -1,4 +1,4 @@
-package app;
+pkg app;
 
 build {
   target js {

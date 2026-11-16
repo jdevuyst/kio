@@ -1,4 +1,4 @@
-package integer_literal_out_of_range;
+pkg integer_literal_out_of_range;
 
 build {
   target js {

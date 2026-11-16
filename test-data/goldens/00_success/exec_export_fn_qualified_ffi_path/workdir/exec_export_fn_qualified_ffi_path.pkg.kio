@@ -1,4 +1,4 @@
-package exec_export_fn_qualified_ffi_path;
+pkg exec_export_fn_qualified_ffi_path;
 
 build {
   cache "out/.kio-cache/";

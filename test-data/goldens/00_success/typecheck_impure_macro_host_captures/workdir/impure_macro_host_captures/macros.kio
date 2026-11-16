@@ -1,9 +1,9 @@
-module impure_macro_host_captures/macros;
+mod impure_macro_host_captures/macros;
 
 import __intrinsics__;
 
 import __comptime__;
-import impure_macro_host_captures(I32, id_i32);
+import impure_macro_host_captures { type I32; fn id_i32 }
 
 pub pure fn checked_impl(
 , _ct: __Comptime__

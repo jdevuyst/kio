@@ -1,4 +1,4 @@
-package exec_dyn_load_scoped_visibility;
+pkg exec_dyn_load_scoped_visibility;
 
 build {
   cache "out/.kio-cache/";

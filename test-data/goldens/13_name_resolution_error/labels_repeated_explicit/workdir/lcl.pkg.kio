@@ -1,4 +1,4 @@
-package lcl;
+pkg lcl;
 
 build {
   cache "out/.kio-cache/";

@@ -1,4 +1,4 @@
-package bound_partial;
+pkg bound_partial;
 
 build {
   target ts {

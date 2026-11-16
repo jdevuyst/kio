@@ -1,4 +1,4 @@
-package phex;
+pkg phex;
 
 build {
   cache "out/.kio-cache/";

@@ -1,4 +1,4 @@
-module main;
+mod main;
 
 /// Type documentation.
 type T = (

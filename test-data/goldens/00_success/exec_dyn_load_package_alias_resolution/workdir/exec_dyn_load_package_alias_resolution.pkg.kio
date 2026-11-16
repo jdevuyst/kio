@@ -1,4 +1,4 @@
-package exec_dyn_load_package_alias_resolution;
+pkg exec_dyn_load_package_alias_resolution;
 
 build {
   cache "out/.kio-cache/";

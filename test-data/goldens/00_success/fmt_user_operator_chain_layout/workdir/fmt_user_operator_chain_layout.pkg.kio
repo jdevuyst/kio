@@ -1,4 +1,4 @@
-package fmt_user_operator_chain_layout;
+pkg fmt_user_operator_chain_layout;
 
 build {
   cache "out/.kio-cache/";

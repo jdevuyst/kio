@@ -1,4 +1,4 @@
-package markov_ballad_weaver;
+pkg markov_ballad_weaver;
 
 build {
   cache "out/.kio-cache/";

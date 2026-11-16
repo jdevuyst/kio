@@ -1,4 +1,4 @@
-dependency mathlib;
+dep mathlib;
 
 source {
   path "../library/mathlib/mathlib.pkg.kio"

@@ -1,6 +1,6 @@
-module main;
+mod main;
 
-import seclib/calc(spin);
+import seclib/calc { fn spin }
 
 // `main` is not within the `seclib/calc` subtree, so importing the
 // `pub(seclib/calc)`-sealed `spin` must fail with a use error (exit 12).

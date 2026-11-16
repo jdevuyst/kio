@@ -1,6 +1,6 @@
-module testapi/main;
+mod testapi/main;
 
-import form/report(report);
-import testapi/io(print);
+import form/report { fn report }
+import testapi/io { fn print }
 
 pub fn main() { print(report()) }

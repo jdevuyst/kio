@@ -1,4 +1,4 @@
-package derive_recursive_missing_unit_precondition;
+pkg derive_recursive_missing_unit_precondition;
 
 build {
   cache "out/.kio-cache/";

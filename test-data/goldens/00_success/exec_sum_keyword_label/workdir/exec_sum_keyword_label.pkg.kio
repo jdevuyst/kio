@@ -1,4 +1,4 @@
-package exec_sum_keyword_label;
+pkg exec_sum_keyword_label;
 
 build {
   cache "out/.kio-cache/";

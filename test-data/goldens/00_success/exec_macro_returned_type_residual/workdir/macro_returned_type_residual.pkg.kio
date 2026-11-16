@@ -1,4 +1,4 @@
-package macro_returned_type_residual;
+pkg macro_returned_type_residual;
 
 build {
   cache "out/.kio-cache/";

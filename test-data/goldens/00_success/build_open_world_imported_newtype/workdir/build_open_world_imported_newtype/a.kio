@@ -1,6 +1,6 @@
-module build_open_world_imported_newtype/a;
+mod build_open_world_imported_newtype/a;
 
-import build_open_world_imported_newtype(I32);
+import build_open_world_imported_newtype { type I32 }
 
 pub type { Item: I32 { pub mk; pub get } }
 

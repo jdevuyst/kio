@@ -1,15 +1,15 @@
-module fold/reconstruct;
+mod fold/reconstruct;
 
 import fold/numbers as numbers;
 import fold/plan as plan;
-import fold/plan(Decisions, Hi, Length, Lo, Paired);
-import macros/control(macro if);
-import macros/match(macro match);
-import macros/row_macros(macro select);
-import testapi(Array, Bool, I32, String);
+import fold/plan { type Decisions; type Hi; type Length; type Lo; type Paired }
+import macros/control { macro if }
+import macros/match { macro match }
+import macros/row_macros { macro select }
+import testapi { type Array; type Bool; type I32; type String }
 import testapi/arith as arith;
 import testapi/array as array;
-import testapi/iter(loop);
+import testapi/iter { fn loop }
 import testapi/text as text;
 
 fn enqueue(stack: Array[plan.Interval], i: I32, j: I32) {

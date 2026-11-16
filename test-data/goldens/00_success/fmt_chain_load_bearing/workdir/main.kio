@@ -1,4 +1,4 @@
-module main;
+mod main;
 
 type Mixed1 = (A & B) | C;
 

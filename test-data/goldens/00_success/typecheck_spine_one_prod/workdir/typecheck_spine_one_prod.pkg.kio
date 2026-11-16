@@ -1,4 +1,4 @@
-package typecheck_spine_one_prod;
+pkg typecheck_spine_one_prod;
 
 build {
   cache "out/.kio-cache/";

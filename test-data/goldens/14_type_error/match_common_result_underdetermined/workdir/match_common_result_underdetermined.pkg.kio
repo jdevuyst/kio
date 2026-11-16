@@ -1,4 +1,4 @@
-package match_common_result_underdetermined;
+pkg match_common_result_underdetermined;
 
 build {
   cache "out/.kio-cache/";

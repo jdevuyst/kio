@@ -1,7 +1,7 @@
 ================================================================================
 reference grouping preserves operator callable
 ================================================================================
-module m;
+mod m;
 op _ + _ { impl ((ops.add)) }
 --------------------------------------------------------------------------------
 
@@ -34,7 +34,7 @@ op _ + _ { impl ((ops.add)) }
 ================================================================================
 reference grouping preserves macro callable and captures
 ================================================================================
-module m;
+mod m;
 macro form: . -> . { captures ((helper), ((Type)), ((ns.member))); impl ((helpers.run)) }
 --------------------------------------------------------------------------------
 
@@ -101,7 +101,7 @@ macro form: . -> . { captures ((helper), ((Type)), ((ns.member))); impl ((helper
 ================================================================================
 reference grouping preserves macro fills marker target
 ================================================================================
-module m;
+mod m;
 macro form: . -> . { impl(fills) ((helpers.run)) }
 --------------------------------------------------------------------------------
 
@@ -141,7 +141,7 @@ macro form: . -> . { impl(fills) ((helpers.run)) }
 ================================================================================
 reference grouping treats standalone fills as callable
 ================================================================================
-module m;
+mod m;
 macro form: . -> . { impl (fills) }
 --------------------------------------------------------------------------------
 
@@ -173,9 +173,9 @@ macro form: . -> . { impl (fills) }
 ================================================================================
 reference grouping preserves variadic callable fields and absent finalizer
 ================================================================================
-module m;
-varop [* *] { foldl ((helpers.join)) (helpers.empty); finalize ((())) }
-varop [+ +] { finalize ((helpers.done)); foldr (helpers.join) ((helpers.empty)) }
+mod m;
+op_var [* *] { foldl ((helpers.join)) (helpers.empty); finalize ((())) }
+op_var [+ +] { finalize ((helpers.done)); foldr (helpers.join) ((helpers.empty)) }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -267,7 +267,7 @@ varop [+ +] { finalize ((helpers.done)); foldr (helpers.join) ((helpers.empty)) 
 ================================================================================
 reference grouping preserves recursive capability and right UFCS selector
 ================================================================================
-module m;
+mod m;
 rec ((helpers.drive)) fn again(value: .) -> . { value.>((helpers.keep)) }
 --------------------------------------------------------------------------------
 

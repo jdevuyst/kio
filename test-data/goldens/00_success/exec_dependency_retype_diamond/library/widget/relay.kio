@@ -1,5 +1,5 @@
-module relay;
+mod relay;
 
-import store(I32, Tag, make_tag);
+import store { type I32; type Tag; fn make_tag }
 
 pub fn relay_tag(n: I32) -> Tag { make_tag(n) }

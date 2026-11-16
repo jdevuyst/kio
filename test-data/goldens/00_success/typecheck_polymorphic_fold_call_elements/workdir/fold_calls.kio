@@ -1,11 +1,11 @@
-module fold_calls;
+mod fold_calls;
 
-import macro_fold(
-, macro nested_empty
-, macro nested_finalizing
-, macro nested_left
-, macro nested_nonfinalizing
-);
+import macro_fold {
+  macro nested_empty;
+  macro nested_finalizing;
+  macro nested_left;
+  macro nested_nonfinalizing
+}
 
 host type I32 role(i32);
 
@@ -17,7 +17,7 @@ fn right_base[A]() -> Right[A] { Right.mk[A](()) }
 
 fn right_step[A](_value: A, acc: Right[A]) -> Right[A] { acc }
 
-varop [* *] { foldr right_step right_base }
+op_var [* *] { foldr right_step right_base }
 
 type { Left[A]: . { mk; get } }
 
@@ -25,7 +25,7 @@ fn left_base[A]() -> Left[A] { Left.mk[A](()) }
 
 fn left_step[A](acc: Left[A], _value: A) -> Left[A] { acc }
 
-varop [! !] { foldl left_step left_base }
+op_var [! !] { foldl left_step left_base }
 
 type { Entries[K][V]: . { mk; get } }
 
@@ -37,7 +37,7 @@ fn entry[K][V](key: K, value: V) -> K & V { (key, value) }
 
 op _ => _ { impl entry }
 
-varop [% %] { foldr entries_step entries_base }
+op_var [% %] { foldr entries_step entries_base }
 
 type { Before[A]: . { mk; get } }
 
@@ -49,7 +49,7 @@ fn empty_step[A](_value: A, acc: Before[A]) -> Before[A] { acc }
 
 fn empty_finalize[B](_acc: Before[I32]) -> After[B] { After.mk[B](()) }
 
-varop [+ +] { foldr empty_step empty_base; finalize empty_finalize }
+op_var [+ +] { foldr empty_step empty_base; finalize empty_finalize }
 
 fn one(value: I32) -> I32 { value }
 

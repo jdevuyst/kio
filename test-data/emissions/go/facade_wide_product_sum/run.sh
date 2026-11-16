@@ -28,7 +28,7 @@ emit_api() {
   ea_product_arity=$1
   ea_sum_arity=$2
   {
-    printf 'module api;\n\n'
+    printf 'mod api;\n\n'
     printf 'host type I32 role(i32);\n\n'
     printf 'pub type Product%s = ' "$ea_product_arity"
     emit_type_chain "$ea_product_arity" '&'

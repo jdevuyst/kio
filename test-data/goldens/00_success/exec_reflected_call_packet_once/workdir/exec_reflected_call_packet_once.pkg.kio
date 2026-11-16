@@ -1,4 +1,4 @@
-package exec_reflected_call_packet_once;
+pkg exec_reflected_call_packet_once;
 
 build {
   cache "out/.kio-cache/";

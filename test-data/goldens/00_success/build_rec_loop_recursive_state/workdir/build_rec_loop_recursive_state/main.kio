@@ -1,8 +1,8 @@
-module build_rec_loop_recursive_state/main;
+mod build_rec_loop_recursive_state/main;
 
-import build_rec_loop_recursive_state(Bool, I32, leq_i32, loop, sub_i32);
-import macros/control(macro if);
-import macros/row_macros(macro select);
+import build_rec_loop_recursive_state { type Bool; type I32; fn leq_i32; fn loop; fn sub_i32 }
+import macros/control { macro if }
+import macros/row_macros { macro select }
 
 rec type { List[A]: . | (A & List[A]) { mk; get } }
 

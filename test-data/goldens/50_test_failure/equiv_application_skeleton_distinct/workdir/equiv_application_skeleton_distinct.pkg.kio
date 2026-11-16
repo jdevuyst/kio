@@ -1,4 +1,4 @@
-package equiv_application_skeleton_distinct;
+pkg equiv_application_skeleton_distinct;
 
 build {
   cache "out/.kio-cache/";

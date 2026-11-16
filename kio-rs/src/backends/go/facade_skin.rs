@@ -1338,21 +1338,7 @@ mod prepared_tests {
 
     const TEXT_HOST: &str = "KioHost_M1_C3_apiN4_Text";
 
-    const LIVE_SOURCE: &str = "module api; \
-         host type I32 role(i32); \
-         host type Str role(str); \
-         pub type { Id[A]: A { \
-             pub mk; \
-             pub get; \
-         }; }; \
-         host fn abi0() -> I32; \
-         host fn unitful(value: .) -> I32; \
-         host fn regroup(first: I32, rest: Str & I32) -> I32; \
-         host fn product() -> (I32 & Str & I32); \
-         host fn sum() -> (I32 | Str); \
-         host fn nested_function() -> Id[(I32 & Str & I32) -> I32]; \
-         host fn nested_forall() -> Id[[A] A -> A]; \
-         host fn staged[A](value: I32) -> I32;";
+    const LIVE_SOURCE: &str = "mod api; host type I32 role(i32); host type Str role(str); pub type { Id[A]: A { pub mk; pub get; }; }; host fn abi0() -> I32; host fn unitful(value: .) -> I32; host fn regroup(first: I32, rest: Str & I32) -> I32; host fn product() -> (I32 & Str & I32); host fn sum() -> (I32 | Str); host fn nested_function() -> Id[(I32 & Str & I32) -> I32]; host fn nested_forall() -> Id[[A] A -> A]; host fn staged[A](value: I32) -> I32;";
 
     #[derive(Default)]
     struct TestNames {
@@ -1377,9 +1363,7 @@ mod prepared_tests {
             parse(source).expect("parse facade-skin test module"),
         )];
         let package_file = parse_package_file(
-            "package pkg; \
-             build { target go { out \"out/go/\"; } } \
-             bridge { api; }",
+            "pkg pkg; build { target go { out \"out/go/\"; } } bridge { api; }",
             None,
         )
         .expect("parse facade-skin test package file");
@@ -1523,11 +1507,7 @@ mod prepared_tests {
     #[test]
     fn substituted_unit_function_keeps_one_public_slot() {
         let package = package(
-            "module api; \
-             host type Text role(str); \
-             pub type Callback[A] = A -> Text; \
-             host fn substituted() -> Callback[.]; \
-             host fn direct() -> . -> Text;",
+            "mod api; host type Text role(str); pub type Callback[A] = A -> Text; host fn substituted() -> Callback[.]; host fn direct() -> . -> Text;",
         );
         let prepared = PreparedBoundaryCallableSites::collect_live(&package)
             .expect("prepare substituted Unit callback sites");
@@ -1714,13 +1694,13 @@ mod prepared_tests {
 
     #[test]
     fn retained_sites_cannot_supply_live_converter_capabilities() {
-        let package = package("module api;");
+        let package = package("mod api;");
         let signature = parse_signature_file(
-            r#"signature pkg v(2);
+            r#"sig pkg v(2);
 v(1) {
   nonbreaking {
     add {
-      module api {
+      mod api {
         host fn old(value: .) -> .;
       }
     }
@@ -1729,9 +1709,9 @@ v(1) {
 v(2) {
   nonbreaking {
     remove {
-      module api {
-        old;
-      }
+
+        api.old;
+
     }
   }
 }

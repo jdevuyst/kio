@@ -1,4 +1,4 @@
-module nested_alias_frontier;
+mod nested_alias_frontier;
 
 type { Value: . { mk; get } }
 

@@ -1,6 +1,6 @@
-module testapi/forward;
+mod testapi/forward;
 
-import middle(Alias);
+import middle { type Alias }
 
 pub type Display = Alias;
 

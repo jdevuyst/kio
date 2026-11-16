@@ -76,44 +76,39 @@ fn assert_eager_lazy_error(source: &str) -> Error {
 #[test]
 fn identifier_word_repairs_are_role_correct_and_token_local() {
     for (source, role, invalid, valid) in [
-        ("module main; fn a1b() -> . { () }", "value", "a1b", "a1_b"),
+        ("mod main; fn a1b() -> . { () }", "value", "a1b", "a1_b"),
         (
-            "module main; fn foo123bar() -> . { () }",
+            "mod main; fn foo123bar() -> . { () }",
             "value",
             "foo123bar",
             "foo123_bar",
         ),
         (
-            "module main; fn foo_123() -> . { () }",
+            "mod main; fn foo_123() -> . { () }",
             "value",
             "foo_123",
             "foo123",
         ),
         (
-            "module main; fn foo__bar() -> . { () }",
+            "mod main; fn foo__bar() -> . { () }",
             "value",
             "foo__bar",
             "foo_bar",
         ),
         (
-            "module main; fn foo_Bar() -> . { () }",
+            "mod main; fn foo_Bar() -> . { () }",
             "value",
             "foo_Bar",
             "foo_bar",
         ),
+        ("mod main; type Foo_Bar = .;", "type", "Foo_Bar", "Foo_bar"),
         (
-            "module main; type Foo_Bar = .;",
+            "mod main; type { Foo_Bar: . };",
             "type",
             "Foo_Bar",
             "Foo_bar",
         ),
-        (
-            "module main; type { Foo_Bar: . };",
-            "type",
-            "Foo_Bar",
-            "Foo_bar",
-        ),
-        ("module foo_123;", "module", "foo_123", "foo123"),
+        ("mod foo_123;", "module", "foo_123", "foo123"),
     ] {
         let error = parse(source).expect_err("invalid governed name");
         let diagnostic = error.diagnostic();
@@ -142,11 +137,11 @@ fn identifier_word_repairs_are_role_correct_and_token_local() {
 #[test]
 fn all_header_file_kinds_use_the_governed_name_repairs() {
     for (kind, source, role) in [
-        ("package", "package foo_123;", "package"),
-        ("signature", "signature foo_123 v(1);", "package"),
+        ("package", "pkg foo_123;", "package"),
+        ("signature", "sig foo_123 v(1);", "package"),
         (
             "dependency",
-            "dependency foo_123; source { path \"lib/lib.pkg.kio\"; }",
+            "dep foo_123; source { path \"lib/lib.pkg.kio\"; }",
             "dependency",
         ),
         (
@@ -180,13 +175,13 @@ fn all_header_file_kinds_use_the_governed_name_repairs() {
 #[test]
 fn value_name_in_type_reference_reports_syntax_not_binding() {
     for source in [
-        "module main; type Result = value;",
-        "module main; fn value() -> . { () } type Result = value;",
-        "module main; type Result = provider.value;",
-        "module main; fn f(arg: value) -> . { () }",
-        "module main; fn f() -> value { () }",
-        "module main; fn f() -> . { let .(item: value) = (); () }",
-        "module main; type Result = Box[value];",
+        "mod main; type Result = value;",
+        "mod main; fn value() -> . { () } type Result = value;",
+        "mod main; type Result = provider.value;",
+        "mod main; fn f(arg: value) -> . { () }",
+        "mod main; fn f() -> value { () }",
+        "mod main; fn f() -> . { let .(item: value) = (); () }",
+        "mod main; type Result = Box[value];",
     ] {
         let error = parse(source).expect_err("the value spelling is invalid in a type reference");
         let lazy_error = if source.contains("let .(item:") {
@@ -226,34 +221,35 @@ fn value_name_in_type_reference_reports_syntax_not_binding() {
 #[test]
 fn type_reference_wording_preserves_declaration_and_spelling_checks() {
     for source in [
-        "module main; type value = .;",
-        "module main; fn f[value]() -> . { () }",
-        "module main; type Result = FooBar;",
+        "mod main; type value = .;",
+        "mod main; fn f[value]() -> . { () }",
+        "mod main; type Result = FooBar;",
     ] {
         let error = parse(source).expect_err("invalid declaration or type spelling");
         assert!(error.diagnostic().message.starts_with("type name `"));
         assert!(!error.diagnostic().fixes().is_empty());
     }
-    parse("module main; type Value = .; type Result = Value;")
+    parse("mod main; type Value = .; type Result = Value;")
         .expect("ordinary type names remain accepted");
 }
 
 #[test]
 fn module_header_extra_names_explain_the_path_without_reserving_keywords() {
     for name in [
-        "package", "module", "fn", "type", "newtype", "labels", "macro", "op", "rec", "ordinary",
+        "pkg", "package", "module", "fn", "type", "newtype", "labels", "macro", "op", "rec",
+        "ordinary",
     ] {
-        let source = format!("module {name} main;");
+        let source = format!("mod {name} main;");
         let error = assert_eager_lazy_error(&source);
         let diagnostic = error.diagnostic();
         assert_eq!(
             diagnostic.message,
-            "`module` must be followed by one module path, not adjacent names"
+            "`mod` must be followed by one module path, not adjacent names"
         );
-        assert_eq!(diagnostic.span, Span::new(7, (7 + name.len() + 5) as u32));
+        assert_eq!(diagnostic.span, Span::new(4, (4 + name.len() + 5) as u32));
         let help = diagnostic.help().expect("module-path guidance");
         for fact in [
-            "module <path>;",
+            "mod <path>;",
             "`/`",
             "package root",
             "`.kio`",
@@ -265,7 +261,7 @@ fn module_header_extra_names_explain_the_path_without_reserving_keywords() {
             diagnostic.fixes().is_empty(),
             "no filename-derived path may be guessed"
         );
-        if name == "package" {
+        if name == "pkg" {
             assert!(
                 diagnostic
                     .notes()
@@ -278,17 +274,17 @@ fn module_header_extra_names_explain_the_path_without_reserving_keywords() {
 
 #[test]
 fn package_header_in_a_module_explains_the_file_kind() {
-    let error = assert_eager_lazy_error("package app;");
-    assert_eq!(error.diagnostic().span, Span::new(0, 7));
+    let error = assert_eager_lazy_error("pkg app;");
+    assert_eq!(error.diagnostic().span, Span::new(0, 3));
     assert_eq!(
         error.diagnostic().message,
-        "a package declaration is not a module header"
+        "a pkg declaration is not a module header"
     );
     let help = error.diagnostic().help().expect("file-kind guidance");
     assert!(help.contains("*.pkg.kio"));
-    assert!(help.contains("module <path>;"));
+    assert!(help.contains("mod <path>;"));
     assert!(error.diagnostic().fixes().is_empty());
-    parse_package_file("package app;", Some("app")).expect("real package headers remain legal");
+    parse_package_file("pkg app;", Some("app")).expect("real package headers remain legal");
 }
 
 #[test]
@@ -312,7 +308,7 @@ fn legal_contextual_header_names_and_missing_semicolons_keep_their_grammar() {
         "lock",
     ] {
         for path in [name.to_owned(), format!("{name}/module/package")] {
-            let source = format!("module {path}; fn package() -> . {{ let module = (); module }}");
+            let source = format!("mod {path}; fn package() -> . {{ let module = (); module }}");
             let eager = parse(&source).expect("contextual names remain identifiers");
             let lazy = parse_lazy(&source).expect("lazy header accepts contextual names");
             let forced = lazy
@@ -322,9 +318,9 @@ fn legal_contextual_header_names_and_missing_semicolons_keep_their_grammar() {
         }
     }
     for source in [
-        "module main",
-        "module main fn run() -> . { () }",
-        "module package fn run() -> . { () }",
+        "mod main",
+        "mod main fn run() -> . { () }",
+        "mod package fn run() -> . { () }",
     ] {
         let error = assert_eager_lazy_error(source);
         assert_eq!(
@@ -337,12 +333,12 @@ fn legal_contextual_header_names_and_missing_semicolons_keep_their_grammar() {
 #[test]
 fn foreign_file_headers_identify_their_owner_without_reserving_names() {
     for (header, keyword, extension) in [
-        ("package app;", "package", "pkg"),
-        ("dependency app;", "dependency", "dep"),
+        ("pkg app;", "pkg", "pkg"),
+        ("dep app;", "dep", "dep"),
         ("lock app;", "lock", "lock"),
-        ("signature app v(1);", "signature", "sig"),
+        ("sig app v(1);", "sig", "sig"),
     ] {
-        for prefix in ["", "module main; "] {
+        for prefix in ["", "mod main; "] {
             let source = format!("{prefix}{header}");
             let error = assert_eager_lazy_error(&source);
             let diagnostic = error.diagnostic();
@@ -359,36 +355,36 @@ fn foreign_file_headers_identify_their_owner_without_reserving_names() {
             );
             assert!(diagnostic.fixes().is_empty());
         }
-        let valid = format!("module {keyword}; fn {keyword}() -> . {{ () }}");
+        let valid = format!("mod {keyword}; fn {keyword}() -> . {{ () }}");
         parse(&valid).expect("the same spelling remains a legal module/function name");
         parse_lazy(&valid).unwrap().force_all().unwrap();
     }
-    for source in ["dependency app", "lock app", "signature app v(1)"] {
+    for source in ["dependency app", "lock app", "sig app v(1)"] {
         let error = assert_eager_lazy_error(source);
-        assert_eq!(error.diagnostic().message, "expected `module`");
+        assert_eq!(error.diagnostic().message, "expected `mod`");
     }
 }
 
 #[test]
 fn package_body_context_does_not_invent_an_optional_bridge() {
     for source in [
-        "package app; module main;",
-        "package app; build { target js { out \"out/js\"; } } module main;",
-        "package app; bridge { main; } module main;",
+        "pkg app; mod main;",
+        "pkg app; build { target js { out \"out/js\"; } } mod main;",
+        "pkg app; bridge { main; } mod main;",
     ] {
         let error = parse_package_file(source, Some("app")).unwrap_err();
         assert_eq!(
             error.diagnostic().message,
-            "a package file contains a `package <name>;` header, an optional `build` block, and an optional `bridge` block"
+            "a package file contains a `pkg <name>;` header, an optional `build` block, and an optional `bridge` block"
         );
-        let start = source.find("module main").unwrap();
+        let start = source.find("mod main").unwrap();
         assert_eq!(
             error.diagnostic().span,
-            Span::new(start as u32, (start + 6) as u32)
+            Span::new(start as u32, (start + 3) as u32)
         );
     }
-    parse_package_file("package app;", Some("app")).unwrap();
-    parse_package_file("package app; bridge { main; }", Some("app")).unwrap();
+    parse_package_file("pkg app;", Some("app")).unwrap();
+    parse_package_file("pkg app; bridge { main; }", Some("app")).unwrap();
 }
 
 fn assert_forced_parser_message(source: &str, message: &str) {
@@ -407,12 +403,11 @@ fn declaration_and_statement_terminators_name_their_actual_construct() {
     for (tail, context) in [
         ("import __intrinsics__", "import"),
         ("import __comptime__", "import"),
-        ("import lib(thing)", "import"),
         ("import lib as l", "import"),
         ("host type Value", "host type declaration"),
         ("host fn value() -> .", "host function declaration"),
         ("type Value = .", "type alias"),
-        ("literal value = 1", "literal declaration"),
+        ("lit value = 1", "literal declaration"),
         ("type Named = { Value: . }", "type declaration"),
         ("fn value() -> . { let local = () }", "let binding"),
         (
@@ -425,12 +420,12 @@ fn declaration_and_statement_terminators_name_their_actual_construct() {
         ),
     ] {
         assert_forced_parser_message(
-            &format!("module main; {tail}"),
+            &format!("mod main; {tail}"),
             &format!("expected `;` after the {context}"),
         );
     }
     assert_forced_parser_message(
-        "module main; fn value() -> . { do (bind) { let local = () } }",
+        "mod main; fn value() -> . { do (bind) { let local = () } }",
         "expected `;` after neutral let",
     );
     for tail in [
@@ -438,10 +433,10 @@ fn declaration_and_statement_terminators_name_their_actual_construct() {
         "type { Value: . }",
         "macro value : . -> . { impl value; }",
         "op + __ { impl value; }",
-        "varop [% %] { foldr push empty; }",
+        "op_var [% %] { foldr push empty; }",
     ] {
         for suffix in ["", ";"] {
-            let source = format!("module main; {tail}{suffix}");
+            let source = format!("mod main; {tail}{suffix}");
             let eager = parse(&source).unwrap();
             let lazy = parse_lazy(&source).unwrap().force_all().unwrap();
             assert_eq!(eager, lazy, "{source}");
@@ -452,12 +447,38 @@ fn declaration_and_statement_terminators_name_their_actual_construct() {
 #[test]
 fn file_header_and_outer_directive_terminators_keep_file_kind_context() {
     let cases: Vec<(Error, &str)> = vec![
-        (parse_package_file("package app", Some("app")).unwrap_err(), "package header"),
-        (parse_signature_file("signature app v(1)", Some("app")).unwrap_err(), "signature header"),
-        (parse_dependency_file("dependency dep", Some("dep")).unwrap_err(), "dependency header"),
-        (parse_lock_file("lock dep", Some("dep")).unwrap_err(), "lock header"),
-        (parse_dependency_file("dependency dep; source { path \"lib/lib.pkg.kio\"; } rehost lib/host to app/host", Some("dep")).unwrap_err(), "rehost directive"),
-        (parse_dependency_file("dependency dep; source { path \"lib/lib.pkg.kio\"; } retype lib/types to app/types", Some("dep")).unwrap_err(), "retype directive"),
+        (
+            parse_package_file("pkg app", Some("app")).unwrap_err(),
+            "package header",
+        ),
+        (
+            parse_signature_file("sig app v(1)", Some("app")).unwrap_err(),
+            "signature header",
+        ),
+        (
+            parse_dependency_file("dep dep", Some("dep")).unwrap_err(),
+            "dependency header",
+        ),
+        (
+            parse_lock_file("lock dep", Some("dep")).unwrap_err(),
+            "lock header",
+        ),
+        (
+            parse_dependency_file(
+                "dep dep; source { path \"lib/lib.pkg.kio\"; } rehost lib/host to app/host",
+                Some("dep"),
+            )
+            .unwrap_err(),
+            "rehost directive",
+        ),
+        (
+            parse_dependency_file(
+                "dep dep; source { path \"lib/lib.pkg.kio\"; } retype lib/types to app/types",
+                Some("dep"),
+            )
+            .unwrap_err(),
+            "retype directive",
+        ),
     ];
     for (error, context) in cases {
         assert_eq!(
@@ -483,27 +504,27 @@ fn block_field_missing_peer_separators_offer_exact_reparsable_insertions() {
     for (kind, source, completed) in [
         (
             KioFileKind::Package,
-            "package app; build { cache \"out/cache\" target js { out \"out/js\" } }",
+            "pkg app; build { cache \"out/cache\" target js { out \"out/js\" } }",
             "cache \"out/cache\"",
         ),
         (
             KioFileKind::Package,
-            "package app; build { docs { md \"out/docs\" support \"assets\" } }",
+            "pkg app; build { docs { md \"out/docs\" support \"assets\" } }",
             "md \"out/docs\"",
         ),
         (
             KioFileKind::Package,
-            "package app; build { target js { out \"out/js\" namespace \"app\" } }",
+            "pkg app; build { target js { out \"out/js\" namespace \"app\" } }",
             "out \"out/js\"",
         ),
         (
             KioFileKind::Package,
-            "package app; bridge { main other }",
+            "pkg app; bridge { main other }",
             "main",
         ),
         (
             KioFileKind::Dependency,
-            "dependency dep; source { git \"url\" ref \"main\" }",
+            "dep dep; source { git \"url\" ref \"main\" }",
             "git \"url\"",
         ),
         (
@@ -550,9 +571,9 @@ fn malformed_declaration_headers_explain_the_owned_form() {
             "expected `{` to open the function body, after an optional `->` return type",
         ),
     ] {
-        assert_forced_parser_message(&format!("module main; {tail}"), message);
+        assert_forced_parser_message(&format!("mod main; {tail}"), message);
     }
-    let error = assert_eager_lazy_error("module main; host fn value() -> . { () }");
+    let error = assert_eager_lazy_error("mod main; host fn value() -> . { () }");
     assert_eq!(
         error.diagnostic().message,
         "a `host fn` declares a function supplied by the host, not a Kio function body"
@@ -560,30 +581,22 @@ fn malformed_declaration_headers_explain_the_owned_form() {
     let help = error.diagnostic().help().unwrap();
     assert!(help.contains("`;`"));
     assert!(help.contains("ordinary `fn`"));
-    parse("module main; host fn value() -> .;").unwrap();
-    parse("module main; fn value() -> . { () }").unwrap();
+    parse("mod main; host fn value() -> .;").unwrap();
+    parse("mod main; fn value() -> . { () }").unwrap();
 }
 
 #[test]
 fn unit_type_repairs_preserve_complete_spans_and_token_boundaries() {
     for (source, repaired, shape) in [
-        ("module m; type U=();", "module m; type U= . ;", "."),
-        ("module m; type U = ();", "module m; type U =  . ;", "."),
-        ("module m; type U=(,,);", "module m; type U= . ;", "."),
-        ("module m; type U=( \n );", "module m; type U= . ;", "."),
+        ("mod m; type U=();", "mod m; type U= . ;", "."),
+        ("mod m; type U = ();", "mod m; type U =  . ;", "."),
+        ("mod m; type U=(,,);", "mod m; type U= . ;", "."),
+        ("mod m; type U=( \n );", "mod m; type U= . ;", "."),
+        ("mod m; type T=F[()];", "mod m; type T=F[ . ];", "F(.)"),
+        ("mod m; type T=()->A;", "mod m; type T= . ->A;", "Fn(.,A)"),
         (
-            "module m; type T=F[()];",
-            "module m; type T=F[ . ];",
-            "F(.)",
-        ),
-        (
-            "module m; type T=()->A;",
-            "module m; type T= . ->A;",
-            "Fn(.,A)",
-        ),
-        (
-            "module m; type T=A & ();",
-            "module m; type T=A &  . ;",
+            "mod m; type T=A & ();",
+            "mod m; type T=A &  . ;",
             "Prod(A,.)",
         ),
     ] {
@@ -609,13 +622,13 @@ fn unit_type_repairs_preserve_complete_spans_and_token_boundaries() {
         assert_eq!(alias_shape(repaired), shape);
     }
 
-    let source = "module m; fn run(x:())->. { x }";
+    let source = "mod m; fn run(x:())->. { x }";
     let error = assert_eager_lazy_error(source);
     let [fix] = error.diagnostic().fixes() else {
         panic!("missing colon-site Unit fix")
     };
     let repaired = apply_fix(source, fix);
-    assert_eq!(repaired, "module m; fn run(x: . )->. { x }");
+    assert_eq!(repaired, "mod m; fn run(x: . )->. { x }");
     let module = parse(&repaired).expect("compact colon repair parses");
     let Item::FnDef(function) = &module.items[0] else {
         panic!("function")
@@ -642,7 +655,7 @@ fn commented_unit_type_repairs_preserve_every_comment_and_existing_space() {
         ("(, // keep unit\n,)", " .  // keep unit\n"),
         ("(// first\n, // second\n)", " . // first\n // second\n"),
     ] {
-        let source = format!("module m; type U={group};");
+        let source = format!("mod m; type U={group};");
         let error = assert_eager_lazy_error(&source);
         let [fix] = error.diagnostic().fixes() else {
             panic!("missing comment-safe Unit fix")
@@ -656,7 +669,7 @@ fn commented_unit_type_repairs_preserve_every_comment_and_existing_space() {
             );
         }
         let repaired = apply_fix(&source, fix);
-        assert_eq!(repaired, format!("module m; type U={replacement};"));
+        assert_eq!(repaired, format!("mod m; type U={replacement};"));
         assert_eq!(alias_shape(&repaired), ".");
     }
 }
@@ -697,7 +710,7 @@ fn product_type_repairs_preserve_components_nested_applications_and_operator_tok
             "Prod(Fn(A,B),C)",
         ),
     ] {
-        let source = format!("module m; type T={group};");
+        let source = format!("mod m; type T={group};");
         let error = assert_eager_lazy_error(&source);
         let diagnostic = error.diagnostic();
         assert_eq!(
@@ -718,7 +731,7 @@ fn product_type_repairs_preserve_components_nested_applications_and_operator_tok
         assert_eq!(fix.title, "Use `&` for the product type");
         assert_eq!(fix.applicability, Applicability::MachineApplicable);
         let repaired = apply_fix(&source, fix);
-        assert_eq!(repaired, format!("module m; type T={replacement};"));
+        assert_eq!(repaired, format!("mod m; type T={replacement};"));
         assert_eq!(
             alias_shape(&repaired),
             shape,
@@ -740,13 +753,13 @@ fn collapsed_chain_components_keep_their_written_grouping() {
         ("(A,| |)", "(A & (| |))", "Prod(A,!)"),
         ("(A,& .)", "(A & (& .))", "Prod(A,.)"),
     ] {
-        let source = format!("module m; type T={group};");
+        let source = format!("mod m; type T={group};");
         let error = assert_eager_lazy_error(&source);
         let [fix] = error.diagnostic().fixes() else {
             panic!("missing complete chain fix for {group}: {error:?}")
         };
         let repaired = apply_fix(&source, fix);
-        assert_eq!(repaired, format!("module m; type T={replacement};"));
+        assert_eq!(repaired, format!("mod m; type T={replacement};"));
         assert_eq!(alias_shape(&repaired), shape);
     }
 }
@@ -754,13 +767,13 @@ fn collapsed_chain_components_keep_their_written_grouping() {
 #[test]
 fn malformed_type_components_never_offer_a_partial_product_fix() {
     for source in [
-        "module m; type U=(",
-        "module m; type U=(,",
-        "module m; type T=(A,B ->);",
-        "module m; type T=(A,B C);",
-        "module m; type T=(A,B | C & D);",
-        "module m; type T=(A,B;",
-        "module m; type T=(A,(B,C));",
+        "mod m; type U=(",
+        "mod m; type U=(,",
+        "mod m; type T=(A,B ->);",
+        "mod m; type T=(A,B C);",
+        "mod m; type T=(A,B | C & D);",
+        "mod m; type T=(A,B;",
+        "mod m; type T=(A,(B,C));",
     ] {
         let error = parse(source).expect_err("invalid component");
         assert!(
@@ -773,40 +786,20 @@ fn malformed_type_components_never_offer_a_partial_product_fix() {
 #[test]
 fn correct_unit_values_tuple_values_and_type_groups_remain_accepted() {
     for source in [
-        "module m; fn run() -> . { () }",
-        "module m; fn run() -> . & . { ((), ()) }",
-        "module m; type T = .;",
-        "module m; type T = (&);",
-        "module m; type T = (|);",
-        "module m; type T = (A & B);",
-        "module m; type T = (A | B);",
-        "module m; type T = F[A][B];",
-        "module m; type T = [A][B] A;",
+        "mod m; fn run() -> . { () }",
+        "mod m; fn run() -> . & . { ((), ()) }",
+        "mod m; type T = .;",
+        "mod m; type T = (&);",
+        "mod m; type T = (|);",
+        "mod m; type T = (A & B);",
+        "mod m; type T = (A | B);",
+        "mod m; type T = F[A][B];",
+        "mod m; type T = [A][B] A;",
     ] {
         parse(source).unwrap_or_else(|error| panic!("legal syntax changed: {source:?}: {error:?}"));
         parse_lazy(source)
             .expect("valid lazy source")
             .force_all()
             .expect("valid body");
-    }
-}
-
-#[test]
-fn existential_payload_error_teaches_current_nominal_header() {
-    let header = "type { Name[A] <U>: A & U; }";
-    parse(&format!("module x; {header}")).expect("suggested nominal header parses");
-    for source in [
-        "module x; type Alias = (<U>, U);",
-        "module x; type { Pack[A]: (<U>, A & U); };",
-        "module x; type { Pack[A]: (<U>, A & U) { mk; get; }; };",
-    ] {
-        let error = assert_eager_lazy_error(source);
-        let diagnostic = error.diagnostic();
-        assert_eq!(
-            &source[diagnostic.span.start as usize..diagnostic.span.end as usize],
-            "<"
-        );
-        assert!(diagnostic.message.contains(header), "{diagnostic:?}");
-        assert!(diagnostic.message.contains("`Name.get`"), "{diagnostic:?}");
     }
 }

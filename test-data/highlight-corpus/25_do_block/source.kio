@@ -1,6 +1,6 @@
-module m;
+mod m;
 
-import library/custom(macro do);
+import library/custom {macro do}
 
 fn t() -> T {
   do (bind) {

@@ -9,15 +9,15 @@
 /// the canvas is discarded and counted as clipped. That covers a stroke running
 /// past an edge, a `mark` outside the frame, and a pen put down off-canvas,
 /// with no special case for any of them.
-module turtle/exec;
+mod turtle/exec;
 
 import list/core as list;
-import macros/control(macro if);
-import macros/match(macro match);
-import macros/row_macros(macro select);
-import testapi(Bool, I32);
-import testapi/arith(add_i32, leq_i32, sub_i32);
-import testapi/iter(loop);
+import macros/control { macro if }
+import macros/match { macro match }
+import macros/row_macros { macro select }
+import testapi { type Bool; type I32 }
+import testapi/arith { fn add_i32; fn leq_i32; fn sub_i32 }
+import testapi/iter { fn loop }
 import turtle/canvas as canvas;
 import turtle/command as cmd;
 import turtle/glyph as glyph;

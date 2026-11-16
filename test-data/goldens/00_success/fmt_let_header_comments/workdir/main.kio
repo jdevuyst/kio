@@ -1,4 +1,4 @@
-module main;
+mod main;
 fn first() { let // binder
 value // equals
 = (); value }

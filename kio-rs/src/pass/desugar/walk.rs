@@ -90,7 +90,7 @@ pub trait SurfaceToDesugared {
         d: RecGroup<Surface>,
     ) -> Result<Vec<Item<Desugared>>, Error>;
 
-    /// A `literal` item may be dropped or transformed; desugar drops
+    /// A `lit` item may be dropped or transformed; desugar drops
     /// these after consuming the literal substitution table.
     fn rewrite_item_literal_alias(
         &mut self,
@@ -857,7 +857,6 @@ pub trait SurfaceToDesugared {
             name,
             type_params,
             role,
-            owned,
             meta: Meta { span, .. },
             doc,
         } = h;
@@ -865,7 +864,6 @@ pub trait SurfaceToDesugared {
             name,
             type_params,
             role,
-            owned,
             meta: Meta::new(span),
             doc,
         })

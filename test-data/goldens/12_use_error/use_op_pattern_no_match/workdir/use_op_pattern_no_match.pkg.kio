@@ -1,4 +1,4 @@
-package use_op_pattern_no_match;
+pkg use_op_pattern_no_match;
 
 build {
   cache "out/.kio-cache/";

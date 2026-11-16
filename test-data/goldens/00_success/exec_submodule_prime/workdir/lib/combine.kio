@@ -1,5 +1,5 @@
-module lib/combine;
+mod lib/combine;
 
-import lib(identity);
+import lib { fn identity }
 
 pub fn keep_first[A](x: A, y: A) -> A { identity[A](x) }

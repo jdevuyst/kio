@@ -1,6 +1,6 @@
-module lib/show;
+mod lib/show;
 
-import lib/types(I32);
+import lib/types { type I32 }
 import testapi/fmt as testapi_fmt;
 
 pub fn print_i32(p0: I32) { testapi_fmt.print_i32(p0) }

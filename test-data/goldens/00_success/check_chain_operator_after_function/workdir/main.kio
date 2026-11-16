@@ -1,4 +1,4 @@
-module main;
+mod main;
 
 fn op(left: ., right: .) { left }
 

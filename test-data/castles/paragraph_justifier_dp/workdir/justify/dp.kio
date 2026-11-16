@@ -10,18 +10,18 @@
 /// `i` that won, so the layout can be read back out afterwards; `fits[j]` counts
 /// how many of the candidate starts produced a line that did not overflow — the
 /// rest scored `infinite` and were never in the running.
-module justify/dp;
+mod justify/dp;
 
 import justify/cost as cost;
 import justify/list as list;
-import justify/list(List);
-import justify/word(Word, Words, word_width);
-import macros/control(macro if);
-import macros/match(macro match);
-import macros/row_macros(macro select);
-import testapi(Bool, I32);
-import testapi/arith(add_i32, eq_i32, lt_i32, sub_i32);
-import testapi/iter(loop);
+import justify/list { type List }
+import justify/word { type Word; type Words; fn word_width }
+import macros/control { macro if }
+import macros/match { macro match }
+import macros/row_macros { macro select }
+import testapi { type Bool; type I32 }
+import testapi/arith { fn add_i32; fn eq_i32; fn lt_i32; fn sub_i32 }
+import testapi/iter { fn loop }
 
 type Cell = { Score: I32; Back: I32; Fits: I32 };
 

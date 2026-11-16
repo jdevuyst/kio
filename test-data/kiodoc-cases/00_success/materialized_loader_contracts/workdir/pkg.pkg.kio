@@ -1,4 +1,4 @@
-package pkg;
+pkg pkg;
 
 build {
   docs {

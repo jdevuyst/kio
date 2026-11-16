@@ -1147,7 +1147,7 @@ pub trait Phase: Sized {
         + Eq
         + serde::Serialize
         + serde::de::DeserializeOwned;
-    /// `literal name = 1;` is a surface-only declaration form:
+    /// `lit name = 1;` is a surface-only declaration form:
     /// the desugar pass substitutes unshadowed references and drops
     /// the item, so every later phase makes the variant statically
     /// uninhabited via [`Never`].
@@ -1880,6 +1880,18 @@ impl KioFileKind {
         }
     }
 
+    /// Source file headers use shorter keywords than the `variant` metadata.
+    pub fn from_header_keyword(value: &str) -> Option<Self> {
+        match value {
+            "mod" => Some(Self::Module),
+            "pkg" => Some(Self::Package),
+            "sig" => Some(Self::Signature),
+            "dep" => Some(Self::Dependency),
+            "lock" => Some(Self::Lock),
+            _ => None,
+        }
+    }
+
     pub fn accepts_module_path(self) -> bool {
         matches!(self, KioFileKind::Module)
     }
@@ -1917,8 +1929,8 @@ pub struct Module<P: Phase = Surface> {
     pub items: Vec<Item<P>>,
     pub meta: Meta<P>,
     /// Doc-comment attached to the module itself. A `///` block at the
-    /// very top of the file — before the `module` line, with no `import`
-    /// or decl between it and the `module` keyword — attaches here.
+    /// very top of the file — before the `mod` line, with no `import`
+    /// or decl between it and the `mod` keyword — attaches here.
     /// `None` when no module-level doc-comment is present.
     pub doc: Option<DocComment>,
 }
@@ -2102,7 +2114,7 @@ pub enum Item<P: Phase = Surface> {
     TypeRecGroup(TypeRecGroup<P>),
     /// `type NAME = Type;` — a transparent type synonym.
     TypeAlias(TypeAlias<P>),
-    /// `literal name = 1;` — a surface-only literal token alias.
+    /// `lit name = 1;` — a surface-only literal token alias.
     LiteralAlias(LiteralAlias<P>, P::ItemLiteralAlias),
     Newtype(Newtype<P>),
     /// Compact nominal declarations, lowered to ordinary `Item::Newtype`
@@ -2126,7 +2138,7 @@ pub enum Item<P: Phase = Surface> {
     /// plain `Expr::Call` and drops the `Op` item itself before
     /// the `Desugared` phase, so no later pass sees this variant.
     Op(Box<Op<P>>, P::ItemOp),
-    /// `varop [* *] { foldl append empty; };` — a
+    /// `op_var [* *] { foldl append empty; };` — a
     /// user-defined variadic delimited fold binding. Surface-only:
     /// the operator-fold pass uses it to fold bracketed uses into
     /// calls, and desugar drops the item before `Desugared`.
@@ -2183,7 +2195,7 @@ pub struct Op<P: Phase = Surface> {
     /// `pub op` exports the operator binding to consumers of
     /// the declaring module. Without `pub`, the binding stays
     /// module-local. A consumer brings the binding into its own
-    /// operator scope with `import m(op <pattern>);`, and the
+    /// operator scope with `import m { op <pattern> }`, and the
     /// operator-fold pass resolves use-site chains against it.
     pub vis: Visibility,
     /// The fixed-arity pattern and implementation function.
@@ -2520,7 +2532,7 @@ impl<P: Phase> TypeAlias<P> {
     }
 }
 
-/// `pub? literal name = <literal>;` — a surface-only alias for a
+/// `pub? lit name = <literal>;` — a surface-only alias for a
 /// single unannotated literal token.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct LiteralAlias<P: Phase = Surface> {
@@ -2528,7 +2540,7 @@ pub struct LiteralAlias<P: Phase = Surface> {
     pub name: String,
     pub value: LiteralAliasValue,
     pub meta: Meta<P>,
-    /// Doc-comment attached to this `literal` definition, if any.
+    /// Doc-comment attached to this `lit` definition, if any.
     pub doc: Option<DocComment>,
 }
 
@@ -2565,7 +2577,7 @@ impl LiteralAliasValue {
         }
     }
 
-    /// The literal-alias declaration form (`literal name = 1;`) is
+    /// The literal-alias declaration form (`lit name = 1;`) is
     /// surface-only, so `to_expr` only ever mints a literal at a phase
     /// whose annotation container is the optional surface shape; the
     /// bound both documents that and lets the bare `None` construct.
@@ -2616,19 +2628,15 @@ pub struct Import {
     /// belonging to imports through a `kio fmt` round-trip. Empty
     /// at non-Surface phases (no walker re-emits source there).
     pub leading_trivia: Vec<crate::pass::lexer::Trivia>,
-    /// Comments before a selective list's closing parenthesis.
+    /// Comments before a selective list's closing brace.
     /// Empty for generated imports and non-selective forms.
     pub trailing_trivia: Vec<crate::pass::lexer::Trivia>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum ImportKind {
-    /// `import path/to/module(a, B, {field}, op _ + _);` — selective
-    /// import. Bare identifiers select the ordinary value/type namespace,
-    /// braced identifiers select the label namespace, and operator patterns
-    /// select the operator namespace. The three spellings are deliberately
-    /// distinct: adding an export in one namespace cannot change what an
-    /// existing import denotes.
+    /// `import path/to/module { fn a; type B; op _ + _ }` selects
+    /// declarations by their written kind and name or operator grammar.
     Selective {
         items: Vec<ImportItem>,
         from: ModulePath,
@@ -2641,12 +2649,33 @@ pub enum ImportKind {
     Comptime,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum ImportNameKind {
+    Function,
+    Type,
+    Literal,
+    Macro,
+}
+
+impl ImportNameKind {
+    pub fn spelling(self) -> &'static str {
+        match self {
+            Self::Function => "fn",
+            Self::Type => "type",
+            Self::Literal => "lit",
+            Self::Macro => "macro",
+        }
+    }
+}
+
 /// One entry in an [`ImportKind::Selective`] item list.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum ImportItem {
-    /// `foo`, `Bar` — regular identifier import (function or type).
+    /// A named function, type, literal, or macro selection.
     Name {
-        macro_span: Option<Span>,
+        kind: ImportNameKind,
+        /// Written kind token, absent for synthetic and inspector selections.
+        kind_span: Option<Span>,
         name: String,
         span: Span,
         alias: Option<ImportAlias<String>>,
@@ -2799,10 +2828,14 @@ impl OperatorGrammar {
     pub fn render(&self) -> String {
         match self {
             Self::Fixed { kind, pattern } => {
-                let mut words = vec!["op".to_owned()];
-                if *kind == FixedOperatorKind::Macro {
-                    words.push("macro".to_owned());
-                }
+                let mut words = vec![
+                    if *kind == FixedOperatorKind::Macro {
+                        "op_macro"
+                    } else {
+                        "op"
+                    }
+                    .to_owned(),
+                ];
                 words.extend(pattern.iter().map(|part| match part {
                     OpPart::Token { content, .. } if content == "=" => "(=)".to_owned(),
                     OpPart::Token { content, .. } => content.clone(),
@@ -2812,9 +2845,9 @@ impl OperatorGrammar {
             }
             Self::Variadic { open, close } => {
                 if open == &["[".to_owned()] && close == &["]".to_owned()] {
-                    return "varop []".to_owned();
+                    return "op_var []".to_owned();
                 }
-                let mut words = vec!["varop".to_owned()];
+                let mut words = vec!["op_var".to_owned()];
                 words.extend(open.iter().cloned());
                 words.extend(close.iter().cloned());
                 words.join(" ")
@@ -4040,14 +4073,14 @@ pub struct PackageFile<P: Phase = Surface> {
 /// not necessarily the dependency's own package name — and becomes a
 /// synthetic module root under which the dependency's tree re-roots.
 ///
-/// Opens with a `dependency <local>;` header (its `<local>` matches the
+/// Opens with a `dep <local>;` header (its `<local>` matches the
 /// filename stem, the same coherence check `package <name>;` runs),
 /// followed by exactly one [`SourceBlock`] naming the dependency's
 /// `*.pkg.kio` file. A file-shape node sibling to [`PackageFile`] /
 /// [`SignatureFile`]; carries a `Meta<P>` so it round-trips like them.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct DependencyFile<P: Phase = Surface> {
-    /// The dependency's local name from the `dependency <local>;`
+    /// The dependency's local name from the `dep <local>;`
     /// header. Must match the filename stem (`<local>.dep.kio`).
     pub name: String,
     /// The `source { … }` block: where the dependency is fetched from.
@@ -4198,7 +4231,7 @@ pub struct RetypeDecl {
 /// in version control alongside the committed materialized module tree.
 ///
 /// Opens with a `lock <local>;` header (its `<local>` matches the
-/// filename stem, the same coherence check `dependency <local>;` runs),
+/// filename stem, the same coherence check `dep <local>;` runs),
 /// followed by one `resolved { … }` block recording the resolved
 /// `(git, ref, optional path, commit, sig)`. A file-shape node sibling to
 /// [`DependencyFile`]; carries a `Meta<P>` so it round-trips like the
@@ -4252,13 +4285,6 @@ pub struct LockFile<P: Phase = Surface> {
 /// type that `if`/`else` desugars against). Type parameters and a role are
 /// mutually exclusive: role-bearing host types are always nullary.
 ///
-/// The optional `{ owned }` block after the role annotation remains accepted
-/// and round-tripped for source compatibility. It selects no alternate
-/// representation: Rust renders a `role(str)` facade by value at every
-/// occurrence whether the block is present or not (see
-/// [`specs/backends/rust.md`](../../specs/backends/rust.md) § FFI surface >
-/// Atomic types). The flag has no runtime meaning on other backends.
-///
 /// **Inhabited at every phase**; carries a `Meta<P>` so it round-trips
 /// like [`FnDef`] / [`Newtype`] and lives in `module.items`. Always
 /// public — host items have no private form.
@@ -4267,9 +4293,6 @@ pub struct HostType<P: Phase = Surface> {
     pub name: String,
     pub type_params: Vec<TypeParam>,
     pub role: Option<RoleAnnotation>,
-    /// `true` when the declaration carries the source-compatible `{ owned }`
-    /// annotation. See [`HostType`] doc; the flag selects no alternate facade.
-    pub owned: bool,
     pub meta: Meta<P>,
     /// Doc-comment attached to this `host type` declaration, if any.
     pub doc: Option<DocComment>,
@@ -5933,8 +5956,8 @@ impl TargetEntry {
 
 /// A parsed `<name>.sig.kio` package-signature changelog.
 ///
-/// The file is its own file shape, sibling to `module` / `package`:
-/// a `signature <pkg> v(<N>);` header followed by a
+/// The file is its own file shape, sibling to `mod` / `pkg`:
+/// a `sig <pkg> v(<N>);` header followed by a
 /// body of oldest-first per-version blocks. It records *what changed at
 /// each contract generation*, in backend-agnostic Kio′ declarations; the
 /// current interface is recovered by **replaying** the version blocks in
@@ -5946,11 +5969,11 @@ impl TargetEntry {
 /// `newtype`, and a sig-only body-less `pub fn f(p) -> R;` export
 /// production — reusing the regular item parser. The changelog framing
 /// (header, `v(N) { breaking { … } nonbreaking { … } }`, braced
-/// `module <path> { … }` sections, `add` / `modify` / `remove`) is the
+/// `mod <path> { … }` sections, `add` / `modify` / `remove`) is the
 /// sig format itself.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct SignatureFile<P: Phase = Surface> {
-    /// The package name from the `signature <pkg> v(<N>);` header. Must
+    /// The package name from the `sig <pkg> v(<N>);` header. Must
     /// match the filename stem (`<pkg>.sig.kio`), checked the same way
     /// `package <name>;` matches its `.pkg.kio` stem.
     pub pkg: String,
@@ -6011,23 +6034,19 @@ pub struct SigChangeSet<P: Phase = Surface> {
     pub modify_trailing_trivia: Vec<crate::pass::lexer::Trivia>,
     pub remove_leading_trivia: Vec<crate::pass::lexer::Trivia>,
     pub remove_trailing_trivia: Vec<crate::pass::lexer::Trivia>,
-    /// `add { module <path> { … } … }` — module sections introducing new
+    /// `add { mod <path> { … } … }` — module sections introducing new
     /// declarations. Empty when the `add` block is absent.
     pub add: Vec<SigModuleSection<P>>,
     /// Exact declaration references whose complete declarations live in the
     /// enclosing version's `with` block.
     #[serde(default)]
     pub add_refs: Vec<SigItemRef>,
-    /// `modify { module <path> { … } … }` — module sections whose
+    /// `modify { mod <path> { … } … }` — module sections whose
     /// declarations reshape an existing item. Empty when absent.
     pub modify: Vec<SigModuleSection<P>>,
     #[serde(default)]
     pub modify_refs: Vec<SigItemRef>,
-    /// `remove { module <path> { name; … } … }` — name-only lists of
-    /// removed items. Empty when absent.
-    pub remove: Vec<SigRemoveModule>,
-    /// Canonical exact-name spelling for removals. The nested legacy module
-    /// representation remains accepted for existing changelogs.
+    /// Exact declaration references to remove from the recorded interface.
     #[serde(default)]
     pub remove_refs: Vec<SigItemRef>,
     pub span: Span,
@@ -6083,7 +6102,7 @@ pub struct SigExportFn<P: Phase = Surface> {
 /// `host fn` (already signature-only, the env / contravariant side),
 /// `type`, `newtype`, and a body-less `pub fn f(p0: T) -> R;` export
 /// signature (the export / covariant side). No surface-only forms
-/// (`macro` / `op` / `labels` / `equiv` / `literal`) — they are
+/// (`macro` / `op` / compact nominal types / `equiv` / `lit`) — they are
 /// not Kio′.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum SigItem<P: Phase = Surface> {
@@ -6105,34 +6124,6 @@ pub enum SigItem<P: Phase = Surface> {
     /// provision, not a host requirement. The parser rejects a stray
     /// `{ … }` body with a sig-context diagnostic.
     ExportFn(SigExportFn<P>),
-}
-
-/// One `module <path> { <name>; … }` entry inside a `remove` block —
-/// names only. A bare name is side-ambiguous (a value-shaped name could be
-/// a host fn or an export fn; a type-shaped name a `host type` or an
-/// exported `newtype` / `type`); the verifier (a later phase) replays
-/// history to the item's `add` / `modify` origin to recover its side and
-/// frozen signature. Module removal is expressed as removing all of a
-/// module's items (an empty module after replay); there is no dedicated
-/// module-removal op.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub struct SigRemoveModule {
-    pub leading_trivia: Vec<crate::pass::lexer::Trivia>,
-    pub trailing_trivia: Vec<crate::pass::lexer::Trivia>,
-    /// The module path the removed names belong to.
-    pub path: ModulePath,
-    /// The removed item names, in source order.
-    pub names: Vec<SigRemoveName>,
-    pub span: Span,
-}
-
-/// One removed item name inside a [`SigRemoveModule`]. Side (host vs
-/// export) and signature are recovered by replay, not stored here.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub struct SigRemoveName {
-    pub leading_trivia: Vec<crate::pass::lexer::Trivia>,
-    pub name: String,
-    pub span: Span,
 }
 
 /// Right-fold a list of types into a nested `Product`. The
@@ -6984,7 +6975,7 @@ where
 }
 
 /// Phase-rebrand a [`HostType`] across a phase boundary. Signature-only
-/// (no body); the role / owned flags and type params carry verbatim.
+/// (no body); the role and type params carry verbatim.
 pub fn convert_host_type<P, Q>(h: &HostType<P>) -> HostType<Q>
 where
     P: Phase,
@@ -6994,7 +6985,6 @@ where
         name: h.name.clone(),
         type_params: h.type_params.clone(),
         role: h.role,
-        owned: h.owned,
         meta: convert_meta(&h.meta),
         doc: h.doc.clone(),
     }
@@ -7447,7 +7437,7 @@ mod tests {
     #[test]
     fn source_comment_owners_roundtrip_and_erase_at_lowering() {
         use super::{Expr, Item, Module};
-        let source = "module x; fn f( // signature\n) -> . { g(( // unit\n) // call\n) }";
+        let source = "mod x; fn f( // signature\n) -> . { g(( // unit\n) // call\n) }";
         let module = crate::pass::parser::parse(source).unwrap();
         let Item::FnDef(function) = &module.items[0] else {
             panic!("function")
@@ -7472,7 +7462,7 @@ mod tests {
         let bytes = postcard::to_allocvec(&module).unwrap();
         let decoded: Module = postcard::from_bytes(&bytes).unwrap();
         assert_eq!(decoded, module);
-        let plain = crate::pass::parser::parse("module x; fn f() -> . { g(()) }").unwrap();
+        let plain = crate::pass::parser::parse("mod x; fn f() -> . { g(()) }").unwrap();
         let Item::FnDef(function) = &plain.items[0] else {
             panic!("function")
         };
@@ -7536,7 +7526,7 @@ mod tests {
     #[test]
     fn recursive_member_serde_rejects_purity() {
         use super::{FnDef, Item, RecGroup, Surface};
-        let source = "module x; rec(loop) { pub fn first[A](x: A) -> A { recur second[A](x) }; fn second[A](x: A) -> A { x } }";
+        let source = "mod x; rec(loop) { pub fn first[A](x: A) -> A { recur second[A](x) }; fn second[A](x: A) -> A { x } }";
         let module = crate::pass::parser::parse(source).expect("recursive source");
         let Item::RecGroup(group, _) = &module.items[0] else {
             panic!("recursive group")
@@ -7561,7 +7551,7 @@ mod tests {
     fn ordinary_function_serde_retains_purity() {
         use super::{FnDef, Item, Purity};
         for (modifier, purity) in [("", Purity::Impure), ("pure ", Purity::Pure)] {
-            let source = format!("module x; pub {modifier}fn identity[A](x: A) -> A {{ x }}");
+            let source = format!("mod x; pub {modifier}fn identity[A](x: A) -> A {{ x }}");
             let module = crate::pass::parser::parse(&source).expect("ordinary function");
             let Item::FnDef(function) = &module.items[0] else {
                 panic!("ordinary function")
@@ -7582,7 +7572,7 @@ mod tests {
     fn recursive_member_impure_projection_preserves_function_fields() {
         use super::{Item, Purity};
         let module = crate::pass::parser::parse(
-            "module x; /// Member docs.\npub rec(loop) fn identity[A](x: A) -> A { x }",
+            "mod x; /// Member docs.\npub rec(loop) fn identity[A](x: A) -> A { x }",
         )
         .expect("recursive source");
         let Item::RecGroup(group, _) = &module.items[0] else {

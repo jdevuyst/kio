@@ -7,13 +7,13 @@
 /// a depot. The program saturates that once semi-naively and once
 /// naively, prints both traces, checks the two agree, and then asks four
 /// queries of the result. Nothing is read from stdin.
-module testapi/main;
+mod testapi/main;
 
 import datalog/eval as eval;
 import datalog/program as program;
 import datalog/report as report;
-import testapi(String);
-import testapi/io(print);
+import testapi { type String }
+import testapi/io { fn print }
 
 pub fn main() {
   let facts = program.edb();

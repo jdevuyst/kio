@@ -1,4 +1,4 @@
-dependency continuations;
+dep continuations;
 
 source {
   path "../../exec_rec_continuation_resume/workdir/exec_rec_continuation_resume.pkg.kio"

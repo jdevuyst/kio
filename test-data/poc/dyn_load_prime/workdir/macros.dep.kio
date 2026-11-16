@@ -1,4 +1,4 @@
-dependency macros;
+dep macros;
 
 source {
   path "../../macros/workdir/macros.pkg.kio"

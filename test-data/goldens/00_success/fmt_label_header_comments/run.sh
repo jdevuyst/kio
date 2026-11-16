@@ -2,7 +2,7 @@
 set -eu
 
 formatted=$("$KIO_BIN" fmt - <<'KIO'
-module fmt_label_header_comments;
+mod fmt_label_header_comments;
 fn construct(other: .) { record { Ready.mk // construction head
 (other) } }
 fn update(row: Ready, other: .) { row.>with { Ready.mk // update head

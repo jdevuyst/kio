@@ -1,4 +1,4 @@
-module values;
+mod values;
 
 host type First role(bool);
 

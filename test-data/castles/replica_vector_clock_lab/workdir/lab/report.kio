@@ -1,17 +1,17 @@
-module lab/report;
+mod lab/report;
 
 import dict/dict as dict;
 import lab/clock as clock;
 import lab/replica as replica;
 import list/core as core;
 import list/list as lists;
-import macros/match(macro match);
-import macros/row_macros(macro select);
+import macros/match { macro match }
+import macros/row_macros { macro select }
 import result/result as result;
-import testapi(Bool, I32, String);
+import testapi { type Bool; type I32; type String }
 import testapi/fmt as fmt;
-import testapi/io(print);
-import testapi/text(string_concat);
+import testapi/io { fn print }
+import testapi/text { fn string_concat }
 
 pub fn line(name: String, value: String) { name.>string_concat(value).>string_concat("\n").>print }
 

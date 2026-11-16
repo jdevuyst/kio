@@ -1,4 +1,4 @@
-package parse_chain_layouts;
+pkg parse_chain_layouts;
 
 build {
   cache "out/.kio-cache/";

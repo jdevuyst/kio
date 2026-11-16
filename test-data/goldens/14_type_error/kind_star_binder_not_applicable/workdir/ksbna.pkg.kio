@@ -1,4 +1,4 @@
-package ksbna;
+pkg ksbna;
 
 build {
   cache "out/.kio-cache/";

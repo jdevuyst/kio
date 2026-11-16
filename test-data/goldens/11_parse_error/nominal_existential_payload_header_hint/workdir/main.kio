@@ -1,3 +1,0 @@
-module main;
-
-type { Pack[A]: (<U>, A & U); };

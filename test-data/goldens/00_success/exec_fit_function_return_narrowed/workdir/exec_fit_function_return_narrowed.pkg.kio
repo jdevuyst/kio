@@ -1,4 +1,4 @@
-package exec_fit_function_return_narrowed;
+pkg exec_fit_function_return_narrowed;
 
 build {
   cache "out/.kio-cache/";

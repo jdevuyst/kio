@@ -1,3 +1,3 @@
-module widget/feature/target;
+mod widget/feature/target;
 
 pub(widget/feature) type { Token: . { pub mk; pub get } }

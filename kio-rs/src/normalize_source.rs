@@ -213,20 +213,18 @@ mod tests {
         // Surface → Desugared boundary, so `main` reduces to the string
         // literal "hi" — a residual normal form the renderer prints as a
         // quoted string. The whole pipeline runs without the filesystem.
-        let package = "\
-package evalsrc;
+        let package = "pkg evalsrc;
 
 bridge {
   main;
 }
 ";
-        let module = "\
-module main;
+        let module = "mod main;
 
 host type I32 role(i32);
 host type Str role(str);
 
-literal greeting = \"hi\";
+lit greeting = \"hi\";
 
 fn main() -> Str { greeting[Str] }
 ";
@@ -236,15 +234,13 @@ fn main() -> Str { greeting[Str] }
 
     #[test]
     fn validates_elaborated_pure_main_before_evaluation() {
-        let package = "\
-package evalsrc;
+        let package = "pkg evalsrc;
 
 bridge {
   main;
 }
 ";
-        let module = "\
-module main;
+        let module = "mod main;
 
 import __comptime__;
 
@@ -275,15 +271,13 @@ pure fn main() -> . { effect_call() }
     }
 
     fn same_module_macro_sources() -> (&'static str, &'static str) {
-        let package = "\
-package evalsrc;
+        let package = "pkg evalsrc;
 
 bridge {
   main;
 }
 ";
-        let module = "\
-module main;
+        let module = "mod main;
 
 import __comptime__;
 
@@ -336,15 +330,13 @@ pure fn main() -> . {
 
     #[test]
     fn nested_structural_recursion_reduces_but_callback_fault_is_totality() {
-        let package = "\
-package evalsrc;
+        let package = "pkg evalsrc;
 
 bridge {
   main;
 }
 ";
-        let module = "\
-module main;
+        let module = "mod main;
 
 import __comptime__;
 

@@ -1,37 +1,61 @@
 /// The Kio' term parser: a token list → the erased de Bruijn `Term`, name-resolved against a binder scope.
-module parse;
+mod parse;
 
-import chars(
-, c_lbrack
-, c_lparen
-, c_minus
-, c_rbrace
-, c_rbrack
-, c_rparen
-, c_semi
-, c_slash
-, c_star
-, c_under
-);
-import chars(c_amp, c_bang, c_bar, c_colon, c_comma, c_dot, c_eq, c_gt, c_lbrace);
-import host_descriptor(Host_type, Role_host_type, Roleless_host_type, host_type_shape, role_name);
-import lex(Lex_err, lex, lex_err_message, lex_err_pos);
-import list/core(List, cons, nil, uncons);
-import list/list(elem, length, null, reverse);
-import macros/control(macro if);
-import macros/match(macro match);
-import macros/spine_macros(macro widen_sum);
-import prime(Nat, Term, Terms);
-import prime(absurd, app, either, fst);
-import prime(ite, lam, left, let_, lit, ns, nz, pair);
-import prime(right, snd, tcons, tnil, un_terms, unit, var);
-import testapi(Bool, I32, String);
-import testapi/arith(add_i32, eq_i32, leq_i32, sub_i32);
-import testapi/fmt(int_to_string);
-import testapi/iter(loop);
-import testapi/text(string_code_at, string_concat, string_eq);
-import token(Tk_num, Tk_punct, Tk_str, Tk_word, Token, Token_shape, Toks);
-import token(tk_punct, toks_cons, toks_nil, un_token, un_toks);
+import chars {
+  fn c_amp;
+  fn c_bang;
+  fn c_bar;
+  fn c_colon;
+  fn c_comma;
+  fn c_dot;
+  fn c_eq;
+  fn c_gt;
+  fn c_lbrace
+}
+import chars {
+  fn c_lbrack;
+  fn c_lparen;
+  fn c_minus;
+  fn c_rbrace;
+  fn c_rbrack;
+  fn c_rparen;
+  fn c_semi;
+  fn c_slash;
+  fn c_star;
+  fn c_under
+}
+import host_descriptor {
+  type Host_type;
+  type Role_host_type;
+  type Roleless_host_type;
+  fn host_type_shape;
+  fn role_name
+}
+import lex { type Lex_err; fn lex; fn lex_err_message; fn lex_err_pos }
+import list/core { type List; fn cons; fn nil; fn uncons }
+import list/list { fn elem; fn length; fn null; fn reverse }
+import macros/control { macro if }
+import macros/match { macro match }
+import macros/spine_macros { macro widen_sum }
+import prime { fn absurd; fn app; fn either; fn fst }
+import prime { fn ite; fn lam; fn left; fn let_; fn lit; fn ns; fn nz; fn pair }
+import prime { fn right; fn snd; fn tcons; fn tnil; fn un_terms; fn unit; fn var }
+import prime { type Nat; type Term; type Terms }
+import testapi { type Bool; type I32; type String }
+import testapi/arith { fn add_i32; fn eq_i32; fn leq_i32; fn sub_i32 }
+import testapi/fmt { fn int_to_string }
+import testapi/iter { fn loop }
+import testapi/text { fn string_code_at; fn string_concat; fn string_eq }
+import token {
+  type Tk_num;
+  type Tk_punct;
+  type Tk_str;
+  type Tk_word;
+  type Token;
+  type Token_shape;
+  type Toks
+}
+import token { fn tk_punct; fn toks_cons; fn toks_nil; fn un_token; fn un_toks }
 
 // `parse.kio` — read the Kio' term grammar (as the existing Prime emit
 // writes it) into the erased de Bruijn `Term` that `prime_eval` consumes.
@@ -140,7 +164,7 @@ fn pnl_has(p: Pnl, name: String) -> Bool {
 // **A frame carries a spelling list, not one name.** An ordinary binder
 // (a lambda / let / value param) has exactly one spelling. A top-level fn
 // the loader seeds can be referenced under several: its bare name where a
-// module imports it selectively (`import m(f);`), and an alias-qualified
+// module imports it selectively (`import m { fn f }`), and an alias-qualified
 // spelling (`a.f`) where a module imports its module qualified
 // (`import m as a;`) — both may coexist for one chain position, so the frame
 // lists every spelling that resolves to it. A decl not visible to the

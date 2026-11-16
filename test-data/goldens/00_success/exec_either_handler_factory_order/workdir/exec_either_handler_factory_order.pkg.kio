@@ -1,4 +1,4 @@
-package exec_either_handler_factory_order;
+pkg exec_either_handler_factory_order;
 
 build {
   cache "out/.kio-cache/";

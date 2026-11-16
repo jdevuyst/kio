@@ -1,4 +1,4 @@
-package onto_rejects_widening;
+pkg onto_rejects_widening;
 
 build {
   cache "out/.kio-cache/";

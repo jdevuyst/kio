@@ -1,4 +1,4 @@
-package exec_retype_label_later_owners;
+pkg exec_retype_label_later_owners;
 
 build {
   cache "out/.kio-cache/";

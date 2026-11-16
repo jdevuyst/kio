@@ -1,7 +1,7 @@
-module main;
+mod main;
 
 fn nil() { () }
 
 fn cons(head: ., tail: .) { tail }
 
-varop [* *] { foldr .x. { cons(x1, x2) } nil; };
+op_var [* *] { foldr .x. { cons(x1, x2) } nil; };

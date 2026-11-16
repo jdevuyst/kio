@@ -5,22 +5,22 @@
 /// laid open at every step, the key points, and the two areas with their
 /// verdict. A reader who never opens the source should be able to check the
 /// answer against the transcript by eye.
-module skyline/report;
+mod skyline/report;
 
-import macros/control(macro if);
-import macros/match(macro match);
+import macros/control { macro if }
+import macros/match { macro match }
 import skyline/city as city;
 import skyline/events as events;
 import skyline/list as lst;
 import skyline/multiset as ms;
 import skyline/sweep as sweep;
-import testapi(Array, Bool, I32, String);
-import testapi/arith(add_i32, leq_i32);
-import testapi/array(array_get, array_len);
-import testapi/fmt(bool_to_string, int_to_string);
-import testapi/io(print);
-import testapi/iter(loop);
-import testapi/text(string_concat);
+import testapi { type Array; type Bool; type I32; type String }
+import testapi/arith { fn add_i32; fn leq_i32 }
+import testapi/array { fn array_get; fn array_len }
+import testapi/fmt { fn bool_to_string; fn int_to_string }
+import testapi/io { fn print }
+import testapi/iter { fn loop }
+import testapi/text { fn string_concat }
 
 fn cat(a: String, b: String) -> String { string_concat(a, b) }
 

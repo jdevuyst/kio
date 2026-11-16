@@ -5,15 +5,15 @@
 /// Slot 0 counts *work*: one node the tree's descent enters, or one element
 /// the reference reads or writes. Slot 1 counts *tag pushes*, which only the
 /// tree ever bumps -- a plain array has nothing to defer.
-module seg/meter;
+mod seg/meter;
 
-import testapi(Array, I32);
-import testapi/arith(add_i32);
-import testapi/array(array_get, array_make_filled, array_set);
+import testapi { type Array; type I32 }
+import testapi/arith { fn add_i32 }
+import testapi/array { fn array_get; fn array_make_filled; fn array_set }
 
-literal work_slot = 0;
+lit work_slot = 0;
 
-literal push_slot = 1;
+lit push_slot = 1;
 
 pub type { Meter: Array[I32] { mk; get } }
 

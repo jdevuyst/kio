@@ -57,7 +57,7 @@ fn assert_known_type(error: &Error, name: &str, primary: Span, kind: &str) {
 
 #[test]
 fn explicit_type_parameter_call_arguments_keep_admitted_calls() {
-    let source = "module main;
+    let source = "mod main;
         type { List[A]: . { mk; get; }; };
         fn nil[A]() -> List[A] { List.mk(()) }
         fn cons[A](head: A, tail: List[A]) -> List[A] { tail }
@@ -76,7 +76,7 @@ fn explicit_type_parameter_call_arguments_keep_admitted_calls() {
 
 #[test]
 fn type_parameter_argument_resolution_keeps_nested_lexical_scope() {
-    let source = "module main;
+    let source = "mod main;
         fn identity[A](value: A) -> A { value }
         fn shadow[A](value: A) -> A {
             let inner = .[A](other: A) -> A { identity[A](other) };
@@ -89,7 +89,7 @@ fn type_parameter_argument_resolution_keeps_nested_lexical_scope() {
 #[test]
 fn type_argument_resolution_requires_the_exact_reserved_binding() {
     use crate::ast::{CallArg, Expr, Item, SignatureParam};
-    let source = "module main; fn accept[A]() -> . { () } fn caller[A]() -> . { accept[A](()) }";
+    let source = "mod main; fn accept[A]() -> . { () } fn caller[A]() -> . { accept[A](()) }";
     let mut module = prime_module(source);
     let Item::FnDef(caller) = &mut module.items[1] else {
         panic!("caller")
@@ -122,7 +122,7 @@ fn type_argument_resolution_requires_the_exact_reserved_binding() {
     assert!(error.diagnostic().secondary().is_empty());
 
     let mut module = prime_module(
-        "module main; fn consume(value: .) -> . { value } fn caller(value: .) -> . { consume(value) }",
+        "mod main; fn consume(value: .) -> . { value } fn caller(value: .) -> . { consume(value) }",
     );
     let Item::FnDef(caller) = &mut module.items[1] else {
         panic!("caller")
@@ -143,8 +143,7 @@ fn type_argument_resolution_requires_the_exact_reserved_binding() {
 
 #[test]
 fn type_parameter_argument_in_a_value_slot_still_rejects() {
-    let source =
-        "module main; fn consume(value: .) -> . { value } fn caller[A]() -> . { consume(A) }";
+    let source = "mod main; fn consume(value: .) -> . { value } fn caller[A]() -> . { consume(A) }";
     parse(source).expect_err("a parenthesized value packet cannot contain a type path");
     let explicit = source.replace("consume(A)", "consume[A]");
     Resolver::check_module(&prime_module(&explicit)).expect("the lexical type binder resolves");
@@ -156,7 +155,7 @@ fn type_parameter_argument_in_a_value_slot_still_rejects() {
 #[cfg(feature = "surface")]
 #[test]
 fn explicit_type_parameter_arguments_cover_ufcs_and_macro_calls() {
-    let source = "module main;
+    let source = "mod main;
         import __comptime__;
         pure fn implementation(ct: __Comptime__, _ty: __Type__, value: __Checked_term__) -> __Checked_term__ { value }
         macro identity : [A] A -> A { impl implementation; };
@@ -171,7 +170,7 @@ fn explicit_type_parameter_arguments_cover_ufcs_and_macro_calls() {
 fn type_parameter_value_error_selects_the_inner_binding_before_normalization() {
     for name in ["A", "_A"] {
         let source = format!(
-            "module main; fn outer[{name}](value: {name}) -> . {{ let inner = .[{name}](other: {name}) -> . {{ {name} }}; () }}"
+            "mod main; fn outer[{name}](value: {name}) -> . {{ let inner = .[{name}](other: {name}) -> . {{ {name} }}; () }}"
         );
         let primary = source.rfind(&format!("{name} }}")).unwrap();
         let declaration = source.rfind(&format!("[{name}]")).unwrap();
@@ -196,7 +195,7 @@ fn type_parameter_value_error_selects_the_inner_binding_before_normalization() {
 
 #[test]
 fn type_parameter_value_error_does_not_select_a_shadowed_nominal() {
-    let source = "module main; type A = .; fn value[A]() -> . { A }";
+    let source = "mod main; type A = .; fn value[A]() -> . { A }";
     let error = prime_check(&[("main.kio", source)]).unwrap_err().error;
     let primary = source.rfind("A }").unwrap();
     assert_known_type(
@@ -219,10 +218,10 @@ fn local_nominal_value_errors_keep_exact_declaration_kind_and_span() {
         ("type Value = .;", "type alias", 5, 5),
         ("type { Value: . { mk; get; }; };", "newtype", 7, 5),
     ] {
-        let source = format!("module main; {declaration} fn value() -> . {{ Value }}");
+        let source = format!("mod main; {declaration} fn value() -> . {{ Value }}");
         let primary = source.rfind("Value }").unwrap();
         let expected_primary = Span::new(primary as u32, primary as u32 + 5);
-        let binding = "module main; ".len() + binding_start;
+        let binding = "mod main; ".len() + binding_start;
         let expected_binding = Span::new(binding as u32, (binding + binding_len) as u32);
         let error = prime_check(&[("main.kio", &source)]).unwrap_err().error;
         assert!(matches!(error, Error::NameRes(_)));
@@ -239,11 +238,11 @@ fn local_nominal_value_errors_keep_exact_declaration_kind_and_span() {
 
 #[test]
 fn imported_nominal_value_errors_keep_the_selected_provider() {
-    let provider = "module provider; pub type Value = .;";
-    let decoy = "module decoy; pub type { Value: . { pub mk; pub get; }; };";
+    let provider = "mod provider; pub type Value = .;";
+    let decoy = "mod decoy; pub type { Value: . { pub mk; pub get; }; };";
     for (usage, value, code) in [
         (
-            "import provider(Value);",
+            "import provider {type Value}",
             "Value",
             crate::exit_code::ExitCode::NameRes,
         ),
@@ -253,7 +252,7 @@ fn imported_nominal_value_errors_keep_the_selected_provider() {
             crate::exit_code::ExitCode::Type,
         ),
     ] {
-        let consumer = format!("module consumer; {usage} fn value() -> . {{ {value} }}");
+        let consumer = format!("mod consumer; {usage} fn value() -> . {{ {value} }}");
         let sources = [
             ("provider.kio", provider),
             ("decoy.kio", decoy),
@@ -287,8 +286,8 @@ fn imported_nominal_value_errors_keep_the_selected_provider() {
 #[test]
 fn missing_inaccessible_and_later_nominals_do_not_claim_an_available_type() {
     for source in [
-        "module main; fn value() -> . { Missing }",
-        "module main; fn value() -> . { Value } host type Value;",
+        "mod main; fn value() -> . { Missing }",
+        "mod main; fn value() -> . { Value } host type Value;",
     ] {
         let error = prime_check(&[("main.kio", source)]).unwrap_err().error;
         assert!(error.diagnostic().message.starts_with("unbound name"));
@@ -296,8 +295,8 @@ fn missing_inaccessible_and_later_nominals_do_not_claim_an_available_type() {
         assert!(error.diagnostic().secondary().is_empty());
     }
     for visibility in ["", "pub(owner)"] {
-        let provider = format!("module owner/provider; {visibility} type Hidden = .;");
-        let consumer = "module consumer; import owner/provider as p; fn value() -> . { p.Hidden }";
+        let provider = format!("mod owner/provider; {visibility} type Hidden = .;");
+        let consumer = "mod consumer; import owner/provider as p; fn value() -> . { p.Hidden }";
         let error = prime_check(&[
             ("owner/provider.kio", &provider),
             ("consumer.kio", consumer),
@@ -315,10 +314,10 @@ fn missing_inaccessible_and_later_nominals_do_not_claim_an_available_type() {
 #[test]
 fn valid_type_bindings_and_constructor_paths_keep_their_meaning() {
     for source in [
-        "module main; host type Value; fn value(input: Value) -> Value { input }",
-        "module main; fn value[A](input: A) -> A { input }",
-        "module main; type { Value: . { mk; get; }; }; fn value() -> . { Value.get(Value.mk(())) }",
-        "module main; fn outer[A](value: A) -> . { let inner = .[A](other: A) -> A { other }; () }",
+        "mod main; host type Value; fn value(input: Value) -> Value { input }",
+        "mod main; fn value[A](input: A) -> A { input }",
+        "mod main; type { Value: . { mk; get; }; }; fn value() -> . { Value.get(Value.mk(())) }",
+        "mod main; fn outer[A](value: A) -> . { let inner = .[A](other: A) -> A { other }; () }",
     ] {
         prime_check(&[("main.kio", source)]).expect("valid type/value positions remain accepted");
         #[cfg(feature = "surface")]
@@ -330,7 +329,7 @@ fn valid_type_bindings_and_constructor_paths_keep_their_meaning() {
 #[test]
 fn generated_nominal_value_errors_use_the_lowered_declaration_kind() {
     for declaration in ["type { Field: .; };", "type Fields = { Field: .; };"] {
-        let source = format!("module main; {declaration} fn value() -> . {{ Field }}");
+        let source = format!("mod main; {declaration} fn value() -> . {{ Field }}");
         let error = full_check(&[("main.kio", &source)]).unwrap_err().error;
         let primary = source.rfind("Field }").unwrap();
         assert_known_type(
@@ -344,8 +343,8 @@ fn generated_nominal_value_errors_use_the_lowered_declaration_kind() {
 
 #[test]
 fn scoped_import_value_error_uses_the_accessible_declaration() {
-    let provider = "module owner/provider; pub(owner) type Value = .;";
-    let consumer = "module owner/consumer; import owner/provider as p; fn value() -> . { p.Value }";
+    let provider = "mod owner/provider; pub(owner) type Value = .;";
+    let consumer = "mod owner/consumer; import owner/provider as p; fn value() -> . { p.Value }";
     let sources = [
         ("owner/provider.kio", provider),
         ("owner/consumer.kio", consumer),

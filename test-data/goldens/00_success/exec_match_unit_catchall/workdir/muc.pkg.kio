@@ -1,4 +1,4 @@
-package muc;
+pkg muc;
 
 build {
   cache "out/.kio-cache/";

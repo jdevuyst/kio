@@ -1,4 +1,4 @@
-package cmqt;
+pkg cmqt;
 
 build {
   cache "out/.kio-cache/";

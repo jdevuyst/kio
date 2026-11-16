@@ -1,4 +1,4 @@
-package c2_fa;
+pkg c2_fa;
 
 build {
   cache "out/.kio-cache/";

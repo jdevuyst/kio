@@ -1,4 +1,4 @@
-package fills_open_nominal_producer_requires_boundary;
+pkg fills_open_nominal_producer_requires_boundary;
 
 build {
   cache "out/.kio-cache/";

@@ -1,15 +1,15 @@
-module earley/report;
+mod earley/report;
 
 import earley/fixtures as fixtures;
 import earley/model as model;
 import earley/recognize as recognize;
-import macros/control(macro if);
-import testapi(Array, Bool, I32, String);
+import macros/control { macro if }
+import testapi { type Array; type Bool; type I32; type String }
 import testapi/arith as arith;
 import testapi/array as arrays;
 import testapi/fmt as fmt;
 import testapi/io as io;
-import testapi/iter(loop);
+import testapi/iter { fn loop }
 import testapi/text as text;
 
 rec(loop) fn sizes(table: model.Chart, index: I32, result: String) -> String {

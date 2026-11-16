@@ -1,4 +1,4 @@
-module main;
+mod main;
 
 // A kind-`*→*` brand binder `[*F]` is callable in type position:
 // `F(A)` applies the brand to the kind-`*` carrier `A`. The kind

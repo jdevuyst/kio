@@ -1,4 +1,4 @@
-module lit;
+mod lit;
 
 host type F64 role(f64);
 

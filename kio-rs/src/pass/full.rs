@@ -597,11 +597,11 @@ mod tests {
     #[cfg(feature = "lsp")]
     #[test]
     fn operator_use_capture_is_complete_only_for_full_lsp_lowering() {
-        let source = "module main;
+        let source = "mod main;
             fn combine(left: ., right: .) -> . { left }
             fn empty() -> . { () }
             op _ + _ { impl combine; };
-            varop [% %] { foldl combine empty; };
+            op_var [% %] { foldl combine empty; };
             fn run() -> . { [% () + (), () %] }";
         let modules = vec![(PathBuf::from("main.kio"), parse(source).unwrap())];
         let context = FullPipeline::lowering_context_named(&modules, None, None).unwrap();
@@ -644,14 +644,14 @@ mod tests {
     #[test]
     fn nominal_alias_context_and_whole_package_lowering_emit_the_same_prime() {
         let modules = [
-            ("origin", "module origin; pub type { Foo: . };"),
+            ("origin", "mod origin; pub type { Foo: . };"),
             (
                 "provider",
-                "module provider; import origin as o; pub type Bar = o.Foo;",
+                "mod provider; import origin as o; pub type Bar = o.Foo;",
             ),
             (
                 "consumer",
-                "module consumer; import provider as p; fn value() -> . { p.Bar.get(p.Bar.mk(())) }",
+                "mod consumer; import provider as p; fn value() -> . { p.Bar.get(p.Bar.mk(())) }",
             ),
         ]
         .into_iter()
@@ -686,7 +686,7 @@ mod tests {
     fn full_pipeline_lowers_and_typechecks_a_small_module() {
         // Per `specs/package.md` § Module-name rules, the declared
         // segments equal the file's path relative to the package root.
-        let source = r#"module main;
+        let source = r#"mod main;
 
 fn id[A](x: A) -> A { x }
 "#;
@@ -727,11 +727,11 @@ fn id[A](x: A) -> A { x }
         let sources = [
             (
                 "main",
-                "module main; fn make[A](value: A) -> [A] A -> A { .[X](x: X) { x } }",
+                "mod main; fn make[A](value: A) -> [A] A -> A { .[X](x: X) { x } }",
             ),
             (
                 "aux",
-                "module aux; fn make[B](value: B) -> [B] B -> B { .[Y](y: Y) { y } }",
+                "mod aux; fn make[B](value: B) -> [B] B -> B { .[Y](y: Y) { y } }",
             ),
         ];
         let modules = sources
@@ -798,7 +798,7 @@ fn id[A](x: A) -> A { x }
 
     #[test]
     fn typed_module_cache_output_has_a_canonical_statement_spine() {
-        let source = r#"module main;
+        let source = r#"mod main;
 
 host type I32 role(i32);
 host fn effect(value: I32) -> I32;
@@ -864,7 +864,7 @@ fn build(x: I32) -> Pair {
 
     #[test]
     fn single_module_typecheck_accepts_a_logical_package_entry_clone() {
-        let source = r#"module main;
+        let source = r#"mod main;
 
 fn id[A](value: A) -> A { value }
 "#;
@@ -882,7 +882,7 @@ fn id[A](value: A) -> A { value }
     #[test]
     #[should_panic(expected = "must not be part of the package module set")]
     fn full_auxiliary_module_rejects_a_package_path_collision() {
-        let module = parse("module collision; fn id[A](value: A) -> A { value }").expect("parse");
+        let module = parse("mod collision; fn id[A](value: A) -> A { value }").expect("parse");
         let (lowered_modules, _) =
             FullPipeline::lower_package(vec![(PathBuf::from("collision.kio"), module)], None)
                 .expect("lower package");
@@ -902,7 +902,7 @@ fn id[A](value: A) -> A { value }
         let sources = [
             (
                 "helpers.kio",
-                r#"module helpers;
+                r#"mod helpers;
 
 import __comptime__;
 
@@ -911,10 +911,10 @@ pub pure fn keep(_ct: __Comptime__, value: __Checked_term__) -> __Checked_term__
             ),
             (
                 "provider.kio",
-                r#"module provider;
+                r#"mod provider;
 
 import __comptime__;
-import helpers(keep);
+import helpers {fn keep}
 
 pure fn identity_impl(
     _ct: __Comptime__,
@@ -930,9 +930,9 @@ pub macro identity : [Source] Source -> [Target] Target { impl identity_impl; };
             ),
             (
                 "adapter.kio",
-                r#"module adapter;
+                r#"mod adapter;
 
-import provider(macro identity);
+import provider {macro identity}
 
 type Expected = .;
 
@@ -976,17 +976,17 @@ fn adapt_expected() -> Expected {
     #[test]
     fn auxiliary_module_keeps_alias_owner_identity_outside_package_index() {
         let sources = [
-            ("base.kio", "module base; pub host type Value;"),
-            ("wrong.kio", "module wrong; pub host type Value;"),
+            ("base.kio", "mod base; pub host type Value;"),
+            ("wrong.kio", "mod wrong; pub host type Value;"),
             (
                 "owner.kio",
-                "module owner; import base as base; pub type Exact = base.Value;",
+                "mod owner; import base as base; pub type Exact = base.Value;",
             ),
             (
                 "adapter.kio",
-                "module adapter;
-                 import base(Value);
-                 import owner(Exact);
+                "mod adapter;
+                 import base {type Value}
+                 import owner {type Exact}
                  import wrong as base;
                  fn witness(value: Value) -> Value {
                      .(item: Exact) -> Exact { item }(value)

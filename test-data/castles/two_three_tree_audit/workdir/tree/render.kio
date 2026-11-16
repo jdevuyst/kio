@@ -3,16 +3,16 @@
 /// `draw_tree` prints the leaves too, deliberately — every `leaf` line lands at
 /// the same indent exactly when the tree is balanced, so the invariant the audit
 /// reports as a word is also there to see as a shape.
-module tree/render;
+mod tree/render;
 
-import macros/match(macro match);
-import macros/row_macros(macro select);
-import testapi(I32, String);
-import testapi/arith(add_i32);
-import testapi/io(print);
-import testapi/iter(loop);
-import tree/node(Leaf, Node, Three, Tree, Two, root_of);
-import tree/text(cat, cat3, cat4, indent, num);
+import macros/match { macro match }
+import macros/row_macros { macro select }
+import testapi { type I32; type String }
+import testapi/arith { fn add_i32 }
+import testapi/io { fn print }
+import testapi/iter { fn loop }
+import tree/node { type Leaf; type Node; type Three; type Tree; type Two; fn root_of }
+import tree/text { fn cat; fn cat3; fn cat4; fn indent; fn num }
 
 fn entry(k: I32, v: String) -> String { cat3(num(k), "=", v) }
 

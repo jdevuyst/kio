@@ -1,4 +1,4 @@
-package exec_sieve_of_eratosthenes;
+pkg exec_sieve_of_eratosthenes;
 
 build {
   cache "out/.kio-cache/";

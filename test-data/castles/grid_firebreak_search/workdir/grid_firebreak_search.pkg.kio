@@ -1,4 +1,4 @@
-package grid_firebreak_search;
+pkg grid_firebreak_search;
 
 build {
   cache "out/.kio-cache/";

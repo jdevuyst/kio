@@ -1,6 +1,6 @@
-module pure_macro_emits_host_call/main;
+mod pure_macro_emits_host_call/main;
 
-import pure_macro_emits_host_call(I32);
-import pure_macro_emits_host_call/macros(macro apply);
+import pure_macro_emits_host_call { type I32 }
+import pure_macro_emits_host_call/macros { macro apply }
 
 pure fn bad(value: I32) -> I32 { apply(value)[I32] }

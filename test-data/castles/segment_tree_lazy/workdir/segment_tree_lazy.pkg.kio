@@ -1,4 +1,4 @@
-package segment_tree_lazy;
+pkg segment_tree_lazy;
 
 build {
   cache "out/.kio-cache/";

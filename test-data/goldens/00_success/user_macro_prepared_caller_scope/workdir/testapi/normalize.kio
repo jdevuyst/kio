@@ -1,7 +1,7 @@
-module testapi/normalize;
+mod testapi/normalize;
 
-import macros/match(macro match);
-import testapi/model(Expr, Leaf, Pair);
+import macros/match { macro match }
+import testapi/model { type Expr; type Leaf; type Pair }
 
 pub fn normalize(value: Expr) -> Expr {
   match(Expr.get(value)) {

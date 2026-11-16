@@ -62,11 +62,11 @@ try {
   await request('initialize', { processId: process.pid, rootUri: pathToFileURL(resolve('.')).href, capabilities: {} });
   send('initialized', {});
   const cases = [
-    ['.pkg', 'package probe;', 'build { target js { baseline |latest } }', 'build { target js { baseline |', ['()', 'es2020', 'latest']],
-    ['.dep', 'dependency probe;', 'source { |path "vendor.pkg.kio"; }', 'source { |', ['git', 'path', 'ref']],
+    ['.pkg', 'pkg probe;', 'build { target js { baseline |latest } }', 'build { target js { baseline |', ['()', 'es2020', 'latest']],
+    ['.dep', 'dep probe;', 'source { |path "vendor.pkg.kio"; }', 'source { |', ['git', 'path', 'ref']],
     ['.lock', 'lock probe;', 'resolved { |git "url"; ref "main"; commit "sha"; sig "digest"; }', 'resolved { |', ['commit', 'git', 'path', 'ref', 'sig']],
-    ['.sig', 'signature probe v(1);', '|v(1) { nonbreaking { add { module main { pub type A = .; } } } }', 'v(1) { |', ['breaking', 'nonbreaking', 'with']],
-    ['', 'module probe;', '|fn run() { () }', 'fn run() { |', null],
+    ['.sig', 'sig probe v(1);', '|v(1) { nonbreaking { add { mod main { pub type A = .; } } } }', 'v(1) { |', ['breaking', 'nonbreaking', 'with']],
+    ['', 'mod probe;', '|fn run() { () }', 'fn run() { |', null],
   ];
   for (const [kind, header, completeBody, incompleteBody, expected] of cases) {
     const matching = pathToFileURL(resolve(`probe${kind}.kio`)).href;

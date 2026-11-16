@@ -1,4 +1,4 @@
-package idlib;
+pkg idlib;
 
 build {
   cache "out/.kio-cache/";

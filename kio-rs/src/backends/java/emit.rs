@@ -2849,13 +2849,9 @@ mod tests {
     #[test]
     fn nested_sum_input_preserves_canonical_value_and_exact_indices() {
         let package = build_package(
-            &["module api; \
-               host type Str role(str); \
-               pub type { Red: . { pub mk; pub get; }; }; \
-               pub type { Black: . { pub mk; pub get; }; }; \
-               pub type { Nested: . | ((Red | Black) & Str) { \
-                 pub mk; pub get; \
-               }; };"],
+            &[
+                "mod api; host type Str role(str); pub type { Red: . { pub mk; pub get; }; }; pub type { Black: . { pub mk; pub get; }; }; pub type { Nested: . | ((Red | Black) & Str) { pub mk; pub get; }; };",
+            ],
             "bridge { api; }",
         );
         let prepared = PreparedBoundaryCallableSites::collect(&package, None)
@@ -2947,7 +2943,7 @@ mod tests {
             })
             .collect();
         let parsed_package_file =
-            parse_package_file(&format!("package pkg;\n{package_file_src}"), None)
+            parse_package_file(&format!("pkg pkg;\n{package_file_src}"), None)
                 .expect("parse package file");
         let (lowered_modules, lowered_package_file) =
             FullPipeline::lower_package(parsed, Some(parsed_package_file)).expect("lower_package");
@@ -2982,10 +2978,7 @@ mod tests {
         assert_eq!(module.facade_name(true), "java");
         assert_eq!(java_facade_selector_name(&module, false), "KioModule_java");
         assert_eq!(java_public_item_name("java"), "java");
-        let package = build_package(
-            &["module java; pub fn java() -> . { () }"],
-            "bridge { java; }",
-        );
+        let package = build_package(&["mod java; pub fn java() -> . { () }"], "bridge { java; }");
         let emitted = lower_package(&package, "pkg", None).expect("module and method java");
         assert!(emitted.handle_java.contains("Ns_M_java KioModule_java;"));
         assert!(emitted.handle_java.contains("__exports.get(\"java\")"));
@@ -3112,17 +3105,17 @@ mod tests {
     #[test]
     fn native_docs_follow_selected_public_declarations() {
         let package = build_package(
-            &["module api;\n\
-            /// HOST-GENERIC-DOC\n\
-            host type Box[A];\n\
-            /// HOST-FN-DOC\n\
-            host fn effect() -> .;\n\
-            /// OPAQUE-DOC\n\
-            pub type { Token: . { pub mk; get; }; };\n\
-            /// EXPORT-DOC\n\
-            pub fn call() -> . { effect() }\n\
-            /// PRIVATE-DOC\n\
-            fn hidden() -> . { () }"],
+            &["mod api;
+/// HOST-GENERIC-DOC
+host type Box[A];
+/// HOST-FN-DOC
+host fn effect() -> .;
+/// OPAQUE-DOC
+pub type { Token: . { pub mk; get; }; };
+/// EXPORT-DOC
+pub fn call() -> . { effect() }
+/// PRIVATE-DOC
+fn hidden() -> . { () }"],
             "bridge { api; }",
         );
         let emitted = lower_package(&package, "pkg", None).expect("emit documented Java");
@@ -3149,10 +3142,7 @@ mod tests {
         direction: JavaFfiDirection,
     ) -> String {
         let source = format!(
-            "module api; host type Text role(str); \
-             pub type {{ Inner: Text & Text {{ \
-               pub mk; pub get; \
-             }}; }}; host fn receive() -> {return_type};"
+            "mod api; host type Text role(str); pub type {{ Inner: Text & Text {{ pub mk; pub get; }}; }}; host fn receive() -> {return_type};"
         );
         let package = build_package(&[&source], "bridge { api; }");
         let prepared = PreparedBoundaryCallableSites::collect(&package, None)
@@ -3247,10 +3237,8 @@ mod tests {
         );
     }
     fn polymorphic_payload_source(payload: &str) -> JavaPackage {
-        let source = format!(
-            "module api; pub type {{ Dictionary[*F]: {payload} {{ \
-             pub mk; pub get; }}; }};"
-        );
+        let source =
+            format!("mod api; pub type {{ Dictionary[*F]: {payload} {{ pub mk; pub get; }}; }};");
         let package = build_package(&[&source], "bridge { api; }");
         lower_package(&package, "pkg", None).expect("canonical polymorphic payload")
     }
@@ -3348,8 +3336,7 @@ mod tests {
 
     fn direct_payload_member_conversions(existentials: &str, payload: &str) -> Vec<String> {
         let source = format!(
-            "module api; pub type {{ Dictionary[*F] {existentials}: {payload} {{ \
-             pub mk; pub get; }}; }};"
+            "mod api; pub type {{ Dictionary[*F] {existentials}: {payload} {{ pub mk; pub get; }}; }};"
         );
         let package = build_package(&[&source], "bridge { api; }");
         let prepared = PreparedBoundaryCallableSites::collect(&package, None)
@@ -3458,7 +3445,7 @@ mod tests {
             .map(|index| format!("n{index:02}: N{index:02}"))
             .collect::<Vec<_>>()
             .join(", ");
-        let source = format!("module api;\n{declarations}\nhost fn inspect({parameters}) -> .;");
+        let source = format!("mod api;\n{declarations}\nhost fn inspect({parameters}) -> .;");
         let package = build_package(&[source.as_str()], "bridge { api; }");
         let prepared = PreparedBoundaryCallableSites::collect(&package, None)
             .expect("prepare Java payload-owner width fixture");
@@ -3506,7 +3493,7 @@ mod tests {
     #[test]
     fn recursive_nominal_transport_uses_the_exact_factory_without_a_type_walk() {
         let package = build_package(
-            &["module api; pub rec type { Chain: . | Chain { pub mk; pub get; }; };"],
+            &["mod api; pub rec type { Chain: . | Chain { pub mk; pub get; }; };"],
             "bridge { api; }",
         );
         let emitted = lower_package(&package, "pkg", None).expect("recursive nominal");
@@ -3534,8 +3521,8 @@ mod tests {
     fn internal_applied_nominal_storage_does_not_add_public_capabilities() {
         let package = build_package(
             &[
-                "module api; pub fn unit() -> . { () }",
-                "module internal; type { Hidden[A]: . { mk; get; }; };",
+                "mod api; pub fn unit() -> . { () }",
+                "mod internal; type { Hidden[A]: . { mk; get; }; };",
             ],
             "bridge { api; }",
         );
@@ -3568,7 +3555,7 @@ mod tests {
     #[test]
     fn public_existential_newtype_transport_never_exposes_its_payload() {
         let package = build_package(
-            &["module api; pub type { Pack <U>: U { pub mk; pub get; }; };"],
+            &["mod api; pub type { Pack <U>: U { pub mk; pub get; }; };"],
             "bridge { api; }",
         );
         let emitted = lower_package(&package, "pkg", None).expect("existential nominal");
@@ -3597,9 +3584,9 @@ mod tests {
     #[test]
     fn exact_existential_newtype_factories_preserve_the_payload_without_conversion() {
         let package = build_package(
-            &["module api; \
-               pub type { Pack <U>: U { pub mk; pub get; }; }; \
-               pub type { Loaded <U>: U & U { pub mk; pub get; }; };"],
+            &[
+                "mod api; pub type { Pack <U>: U { pub mk; pub get; }; }; pub type { Loaded <U>: U & U { pub mk; pub get; }; };",
+            ],
             "bridge { api; }",
         );
         let emitted = lower_package(&package, "pkg", None).expect("emit Java");
@@ -3638,8 +3625,7 @@ mod tests {
     #[test]
     fn existential_projector_retains_result_binder_after_head_binders() {
         let package = build_package(
-            &["module api; pub type { Packed[A] <U>: U & A { \
-               pub mk; pub get; }; };"],
+            &["mod api; pub type { Packed[A] <U>: U & A { pub mk; pub get; }; };"],
             "bridge { api; }",
         );
         let emitted = lower_package(&package, "pkg", None).expect("emit Java");
@@ -3660,9 +3646,9 @@ mod tests {
     #[test]
     fn bottom_values_cast_from_the_erased_body_at_java_boundaries() {
         let package = build_package(
-            &["module api; \
-               pub fn keep(value: !) -> ! { value } \
-               host fn round(value: ! & !) -> ! & !;"],
+            &[
+                "mod api; pub fn keep(value: !) -> ! { value } host fn round(value: ! & !) -> ! & !;",
+            ],
             "bridge { api; }",
         );
         let emitted = lower_package(&package, "pkg", None).expect("emit Java");
@@ -3744,11 +3730,7 @@ mod tests {
                     .collect::<Vec<_>>()
                     .join(" & ");
                 let source = format!(
-                    "module api; \
-                     host type Str role(str); \
-                     host fn receive({parameters}) -> .; \
-                     host fn round_callback(callback: ({callback}) -> Str) -> Str; \
-                     pub fn send({parameters}) -> . {{ receive({arguments}) }}"
+                    "mod api; host type Str role(str); host fn receive({parameters}) -> .; host fn round_callback(callback: ({callback}) -> Str) -> Str; pub fn send({parameters}) -> . {{ receive({arguments}) }}"
                 );
                 let package = build_package(&[&source], "bridge { api; }");
                 let emitted = lower_package(&package, "pkg", None).expect("emit wide Java facade");
@@ -3775,18 +3757,32 @@ mod tests {
 
     #[test]
     fn retained_host_binding_is_optional_and_keeps_deprecated_nominal_defaults() {
-        let package = build_package(
-            &["module api; pub fn unit() -> . { () }"],
-            "bridge { api; }",
-        );
+        let package = build_package(&["mod api; pub fn unit() -> . { () }"], "bridge { api; }");
         let emitted = lower_with_sig(
             &package,
-            "signature pkg v(3);\n\
-             v(1) {\n  nonbreaking {\n    add {\n      module api {\n        \
-             host type Gone role(i32);\n        host fn archived(value: Gone) -> Gone;\n        \
-             pub fn unit() -> .;\n      }\n    }\n  }\n}\n\
-             v(2) {\n  nonbreaking {\n    remove {\n      module api {\n        \
-             archived;\n        Gone;\n      }\n    }\n  }\n}\n",
+            "sig pkg v(3);
+v(1) {
+  nonbreaking {
+    add {
+      mod api {
+        host type Gone role(i32);
+        host fn archived(value: Gone) -> Gone;
+        pub fn unit() -> .;
+      }
+    }
+  }
+}
+v(2) {
+  nonbreaking {
+    remove {
+
+        api.archived;
+        api.Gone;
+
+    }
+  }
+}
+",
         );
 
         assert!(
@@ -3836,19 +3832,32 @@ mod tests {
 
     #[test]
     fn retained_host_signature_keeps_its_frozen_newtype_carrier() {
-        let package = build_package(
-            &["module api; pub fn unit() -> . { () }"],
-            "bridge { api; }",
-        );
+        let package = build_package(&["mod api; pub fn unit() -> . { () }"], "bridge { api; }");
         let emitted = lower_with_sig(
             &package,
-            "signature pkg v(3);\n\
-             v(1) {\n  nonbreaking {\n    add {\n      module api {\n        \
-             type { Token[A]: A { pub mk; get; }; };\n        \
-             host fn archived(value: Token[.]) -> .;\n        \
-             pub fn unit() -> .;\n      }\n    }\n  }\n}\n\
-             v(2) {\n  nonbreaking {\n    remove {\n      module api {\n        \
-             Token;\n        archived;\n      }\n    }\n  }\n}\n",
+            "sig pkg v(3);
+v(1) {
+  nonbreaking {
+    add {
+      mod api {
+        type { Token[A]: A { pub mk; get; }; };
+        host fn archived(value: Token[.]) -> .;
+        pub fn unit() -> .;
+      }
+    }
+  }
+}
+v(2) {
+  nonbreaking {
+    remove {
+
+        api.Token;
+        api.archived;
+
+    }
+  }
+}
+",
         );
 
         assert!(
@@ -3879,21 +3888,51 @@ mod tests {
 
     #[test]
     fn retained_equal_payload_epochs_ignore_spans_and_close_forall_support() {
-        let package = build_package(
-            &["module api; pub fn unit() -> . { () }"],
-            "bridge { api; }",
-        );
+        let package = build_package(&["mod api; pub fn unit() -> . { () }"], "bridge { api; }");
         let emitted = lower_with_sig(
             &package,
-            "signature pkg v(4);\n\
-             v(1) {\n  nonbreaking {\n    add {\n      module api {\n        \
-             type { Box[A]: [T] T -> A { pub mk; pub get; }; };\n        \
-             host fn first(value: Box[.]) -> .;\n        \
-             pub fn unit() -> .;\n      }\n    }\n  }\n}\n\
-             v(2) {\n  breaking {\n    add {\n      module api {\n        \
-             host fn second(value: Box[.]) -> .;\n      }\n    };\n    modify {\n      module api {\n        \
-             type { Box[A]: [T] T -> A { pub mk; pub get; }; };\n      }\n    };\n    remove {\n      module api {\n        first;\n      }\n    }\n  }\n}\n\
-             v(3) {\n  nonbreaking {\n    remove {\n      module api {\n        Box;\n        second;\n      }\n    }\n  }\n}\n",
+            "sig pkg v(4);
+v(1) {
+  nonbreaking {
+    add {
+      mod api {
+        type { Box[A]: [T] T -> A { pub mk; pub get; }; };
+        host fn first(value: Box[.]) -> .;
+        pub fn unit() -> .;
+      }
+    }
+  }
+}
+v(2) {
+  breaking {
+    add {
+      mod api {
+        host fn second(value: Box[.]) -> .;
+      }
+    };
+    modify {
+      mod api {
+        type { Box[A]: [T] T -> A { pub mk; pub get; }; };
+      }
+    };
+    remove {
+
+        api.first;
+
+    }
+  }
+}
+v(3) {
+  nonbreaking {
+    remove {
+
+        api.Box;
+        api.second;
+
+    }
+  }
+}
+",
         );
         assert_eq!(
             emitted
@@ -3925,19 +3964,32 @@ mod tests {
 
     #[test]
     fn retained_only_host_history_keeps_hostless_factory_and_no_runtime_adapter() {
-        let package = build_package(
-            &["module api; pub fn unit() -> . { () }"],
-            "bridge { api; }",
-        );
+        let package = build_package(&["mod api; pub fn unit() -> . { () }"], "bridge { api; }");
         let emitted = lower_with_sig(
             &package,
-            "signature pkg v(3);\n\
-             v(1) {\n  nonbreaking {\n    add {\n      module api {\n        \
-             host type Gone role(i32);\n        \
-             host fn archived(value: Gone) -> Gone;\n        \
-             pub fn unit() -> .;\n      }\n    }\n  }\n}\n\
-             v(2) {\n  nonbreaking {\n    remove {\n      module api {\n        \
-             archived;\n        Gone;\n      }\n    }\n  }\n}\n",
+            "sig pkg v(3);
+v(1) {
+  nonbreaking {
+    add {
+      mod api {
+        host type Gone role(i32);
+        host fn archived(value: Gone) -> Gone;
+        pub fn unit() -> .;
+      }
+    }
+  }
+}
+v(2) {
+  nonbreaking {
+    remove {
+
+        api.archived;
+        api.Gone;
+
+    }
+  }
+}
+",
         );
 
         assert!(
@@ -3976,17 +4028,31 @@ mod tests {
                     .map(|index| format!("p{index}: Gone"))
                     .collect::<Vec<_>>()
                     .join(", ");
-                let package = build_package(
-                    &["module api; pub fn unit() -> . { () }"],
-                    "bridge { api; }",
-                );
+                let package =
+                    build_package(&["mod api; pub fn unit() -> . { () }"], "bridge { api; }");
                 let signature = format!(
-                    "signature pkg v(3);\n\
-             v(1) {{\n  nonbreaking {{\n    add {{\n      module api {{\n        \
-             host type Gone role(str);\n        host fn archived({parameters}) -> .;\n        \
-             pub fn unit() -> .;\n      }}\n    }}\n  }}\n}}\n\
-             v(2) {{\n  nonbreaking {{\n    remove {{\n      module api {{\n        \
-             archived;\n        Gone;\n      }}\n    }}\n  }}\n}}\n"
+                    "sig pkg v(3);
+v(1) {{
+  nonbreaking {{
+    add {{
+      mod api {{
+        host type Gone role(str);
+        host fn archived({parameters}) -> .;
+        pub fn unit() -> .;
+      }}
+    }}
+  }}
+}}
+v(2) {{
+  nonbreaking {{
+    remove {{
+        api.archived;
+        api.Gone;
+
+    }}
+  }}
+}}
+"
                 );
                 let emitted = lower_with_sig(&package, &signature);
                 let declaration = emitted
@@ -4043,17 +4109,34 @@ mod tests {
     fn live_support_identity_dominates_retained_history() {
         let package = build_package(
             &[
-                "module api; host type Str role(str); host fn current(callback: Str -> .) -> .; pub fn unit() -> . { () }",
+                "mod api; host type Str role(str); host fn current(callback: Str -> .) -> .; pub fn unit() -> . { () }",
             ],
             "bridge { api; }",
         );
         let emitted = lower_with_sig(
             &package,
-            "signature pkg v(3);\n\
-             v(1) {\n  nonbreaking {\n    add {\n      module api {\n        \
-             host type Str role(str);\n        host fn removed(callback: Str -> .) -> .;\n        \
-             pub fn unit() -> .;\n      }\n    }\n  }\n}\n\
-             v(2) {\n  nonbreaking {\n    remove {\n      module api {\n        removed;\n      }\n    }\n  }\n}\n",
+            "sig pkg v(3);
+v(1) {
+  nonbreaking {
+    add {
+      mod api {
+        host type Str role(str);
+        host fn removed(callback: Str -> .) -> .;
+        pub fn unit() -> .;
+      }
+    }
+  }
+}
+v(2) {
+  nonbreaking {
+    remove {
+
+        api.removed;
+
+    }
+  }
+}
+",
         );
         assert!(
             emitted.shapes_java.contains("public interface Fn1<")
@@ -4069,17 +4152,37 @@ mod tests {
     fn live_newtype_payload_dominates_retained_same_identity() {
         let package = build_package(
             &[
-                "module api; host type Str role(str); pub type { Token: Str { pub mk; pub get; }; }; host fn current(value: Token) -> .; pub fn unit() -> . { () }",
+                "mod api; host type Str role(str); pub type { Token: Str { pub mk; pub get; }; }; host fn current(value: Token) -> .; pub fn unit() -> . { () }",
             ],
             "bridge { api; }",
         );
         let emitted = lower_with_sig(
             &package,
-            "signature pkg v(3);\n\
-             v(1) {\n  nonbreaking {\n    add {\n      module api {\n        \
-             host type I32 role(i32);\n        type { Token: I32 { pub mk; pub get; }; };\n        \
-             host fn old(value: Token) -> .;\n        pub fn unit() -> .;\n      }\n    }\n  }\n}\n\
-             v(2) {\n  nonbreaking {\n    remove {\n      module api {\n        I32;\n        Token;\n        old;\n      }\n    }\n  }\n}\n",
+            "sig pkg v(3);
+v(1) {
+  nonbreaking {
+    add {
+      mod api {
+        host type I32 role(i32);
+        type { Token: I32 { pub mk; pub get; }; };
+        host fn old(value: Token) -> .;
+        pub fn unit() -> .;
+      }
+    }
+  }
+}
+v(2) {
+  nonbreaking {
+    remove {
+
+        api.I32;
+        api.Token;
+        api.old;
+
+    }
+  }
+}
+",
         );
         let carrier = exact_newtype_carrier("api", "Token");
         let leaf = carrier.rsplit('.').next().unwrap();
@@ -4102,13 +4205,9 @@ mod tests {
     #[test]
     fn source_parameters_group_native_heads_without_changing_semantic_slots() {
         let package = build_package(
-            &["module api; host type A; host type B; host type C; \
-               pub type Pair = A & B; \
-               host fn split(x: A, y: B) -> A; \
-               host fn grouped(pair: Pair) -> Pair; \
-               host fn mixed(x: A, pair: B & C) -> A; \
-               host fn generic[T](value: T) -> T; \
-               host fn unit(value: .) -> .;"],
+            &[
+                "mod api; host type A; host type B; host type C; pub type Pair = A & B; host fn split(x: A, y: B) -> A; host fn grouped(pair: Pair) -> Pair; host fn mixed(x: A, pair: B & C) -> A; host fn generic[T](value: T) -> T; host fn unit(value: .) -> .;",
+            ],
             "bridge { api; }",
         );
         let prepared = PreparedBoundaryCallableSites::collect(&package, None).expect("prepare");
@@ -4153,13 +4252,9 @@ mod tests {
     #[test]
     fn grouped_callbacks_returned_stages_and_generic_unit_keep_their_cut() {
         let package = build_package(
-            &["module api; host type A; host type B; \
-               pub fn first(x: A, y: B) -> A { x } \
-               pub fn second(pair: A & B) -> A & B { pair } \
-               pub fn generic[T](value: T) -> T { value } \
-               pub fn unit(value: .) -> . { value } \
-               pub fn returned(x: A) -> B -> A { .(y: B) { x } } \
-               pub fn callback(step: (A & B) -> A, pair: A & B) -> A { step(pair) }"],
+            &[
+                "mod api; host type A; host type B; pub fn first(x: A, y: B) -> A { x } pub fn second(pair: A & B) -> A & B { pair } pub fn generic[T](value: T) -> T { value } pub fn unit(value: .) -> . { value } pub fn returned(x: A) -> B -> A { .(y: B) { x } } pub fn callback(step: (A & B) -> A, pair: A & B) -> A { step(pair) }",
+            ],
             "bridge { api; }",
         );
         let emitted = lower_package(&package, "pkg", None).expect("emit grouped Java");
@@ -4182,16 +4277,12 @@ mod tests {
     #[test]
     fn retained_host_parameters_keep_grouping_without_execution() {
         let package = build_package(
-            &["module api; host type A; host type B; pub fn unit() -> . { () }"],
+            &["mod api; host type A; host type B; pub fn unit() -> . { () }"],
             "bridge { api; }",
         );
         let emitted = lower_with_sig(
             &package,
-            "signature pkg v(3); \
-             v(1) { nonbreaking { add { module api { \
-             host type A; host type B; host fn archived(pair: A & B) -> A; \
-             pub fn unit() -> .; } } } } \
-             v(2) { nonbreaking { remove { module api { archived; } } } }",
+            "sig pkg v(3); v(1) { nonbreaking { add { mod api { host type A; host type B; host fn archived(pair: A & B) -> A; pub fn unit() -> .; } } } } v(2) { nonbreaking { remove {  api.archived;  } } }",
         );
         assert!(
             emitted
@@ -4210,11 +4301,9 @@ mod tests {
     #[test]
     fn type_variables_keep_ordered_head_and_generic_rank_n_scope() {
         let package = build_package(
-            &["module main; \
-               host type Str role(str); \
-               pub type { T: Str { pub mk; pub get; }; }; \
-               host fn apply_poly(f: [T] T -> T) -> Str; \
-               pub fn ordered(value: T)[T](later: T) -> T { later }"],
+            &[
+                "mod main; host type Str role(str); pub type { T: Str { pub mk; pub get; }; }; host fn apply_poly(f: [T] T -> T) -> Str; pub fn ordered(value: T)[T](later: T) -> T { later }",
+            ],
             "bridge { main; }",
         );
         let emitted = lower_package(&package, "pkg", None).expect("emit Java");
@@ -4255,12 +4344,8 @@ mod tests {
     fn rank_n_names_follow_shared_alpha_stable_shape_not_source_sites() {
         let package = build_package(
             &[
-                "module testapi; host type String role(str);",
-                "module testapi/arith; import testapi(String); \
-                 host fn apply_poly(f: [T] T -> T) -> String; \
-                 host fn apply_polymorphic_identity_with_a_deliberately_long_public_name( \
-                     f: [U] U -> U \
-                 ) -> String;",
+                "mod testapi; host type String role(str);",
+                "mod testapi/arith; import testapi {type String} host fn apply_poly(f: [T] T -> T) -> String; host fn apply_polymorphic_identity_with_a_deliberately_long_public_name( f: [U] U -> U ) -> String;",
             ],
             "bridge { testapi; testapi/arith; }",
         );
@@ -4329,7 +4414,7 @@ mod tests {
     fn wide_dependent_rank_n_shapes_keep_bounded_native_names() {
         for width in [30, 128] {
             let domain = vec!["T"; width].join(" & ");
-            let source = format!("module api; host fn use_stage(f: [T] ({domain}) -> T) -> .;");
+            let source = format!("mod api; host fn use_stage(f: [T] ({domain}) -> T) -> .;");
             let package = build_package(&[&source], "bridge { api; }");
             let emitted = lower_package(&package, "pkg", None).expect("emit wide Java stage");
             let identity = format!("e0;q*f{}b0;b0;", "pb0;".repeat(width - 1));
@@ -4392,10 +4477,9 @@ mod tests {
     #[test]
     fn unsaturated_and_saturated_nominals_share_the_exact_application_index() {
         let package = build_package(
-            &["module api; \
-               pub type { Box[A]: A { pub mk; pub get; }; }; \
-               pub type { Functor[*F]: [A] F[A] -> F[A] { pub mk; pub get; }; }; \
-               host fn round(value: Functor[Box]) -> Functor[Box];"],
+            &[
+                "mod api; pub type { Box[A]: A { pub mk; pub get; }; }; pub type { Functor[*F]: [A] F[A] -> F[A] { pub mk; pub get; }; }; host fn round(value: Functor[Box]) -> Functor[Box];",
+            ],
             "bridge { api; }",
         );
         let emitted = lower_package(&package, "pkg", None).expect("emit Java");
@@ -4435,9 +4519,9 @@ mod tests {
     #[test]
     fn nominal_application_indices_do_not_grant_generic_payload_access() {
         let package = build_package(
-            &["module api; \
-               pub type { Box[A]: A & . { pub mk; pub get; }; }; \
-               pub type { Hidden[A]: A & . { mk; get; }; };"],
+            &[
+                "mod api; pub type { Box[A]: A & . { pub mk; pub get; }; }; pub type { Hidden[A]: A & . { mk; get; }; };",
+            ],
             "bridge { api; }",
         );
         let emitted = lower_package(&package, "pkg", None).expect("emit Java");
@@ -4491,7 +4575,7 @@ mod tests {
     #[test]
     fn parameterized_host_type_storage_helpers_are_declaration_specific() {
         let package = build_package(
-            &["module api; host type Box[A]; host fn round[A](value: Box[A]) -> Box[A];"],
+            &["mod api; host type Box[A]; host fn round[A](value: Box[A]) -> Box[A];"],
             "bridge { api; }",
         );
         let emitted = lower_package(&package, "pkg", None).expect("emit Java");
@@ -4520,9 +4604,9 @@ mod tests {
     #[test]
     fn procedure_callbacks_keep_explicit_unit_results_in_both_directions() {
         let package = build_package(
-            &["module api; host type Str role(str); \
-               pub fn invoke(callback: Str -> .) -> . { callback(\"called\"[Str]) } \
-               pub fn supply() -> Str -> . { .(_value: Str) { () } }"],
+            &[
+                "mod api; host type Str role(str); pub fn invoke(callback: Str -> .) -> . { callback(\"called\"[Str]) } pub fn supply() -> Str -> . { .(_value: Str) { () } }",
+            ],
             "bridge { api; }",
         );
         let emitted = lower_package(&package, "pkg", None).expect("emit Java");
@@ -4544,35 +4628,9 @@ mod tests {
     #[test]
     fn public_opaque_newtypes_are_nameable_without_public_payload_access() {
         let package = build_package(
-            &["module api; import __comptime__; \
-               type { Hidden_payload: . { mk; get; }; }; \
-               pub type { Opaque_a: Hidden_payload { mk; get; }; }; \
-               pub type { Opaque_b: Hidden_payload { mk; get; }; }; \
-               pub type { Constructor_only[A]: A { pub mk; get; }; }; \
-               pub type { Projector_only[A]: A { mk; pub get; }; }; \
-               pub type { Existential <U>: U { mk; pub get; }; }; \
-               pub type { Transparent_both: . { pub mk; pub get; }; }; \
-               pub type Unit_alias = .; \
-               pub type { Constructor_unit_alias: Unit_alias { pub mk; get; }; }; \
-               pub type { Unit: . { mk; get; }; }; \
-               rec { \
-                 pub type { Outer: Hidden { pub mk; pub get; }; }; \
-                 pub type { Hidden: Outer { mk; get; }; }; \
-               } \
-               pub rec type { Direct_recursive: . | Direct_recursive { pub mk; pub get; }; }; \
-               pub rec type { Recursive_constructor: . | Recursive_constructor { pub mk; get; }; }; \
-               pub rec type { Recursive_projector: . | Recursive_projector { mk; pub get; }; }; \
-               pub type { Comptime_both: __Type__ { pub mk; pub get; }; }; \
-               pub type { Comptime_opaque: __Type__ { mk; get; }; }; \
-               pub type { Comptime_constructor: __Type__ { pub mk; get; }; }; \
-               pub type { Packed_function: (Opaque_a & Projector_only[.]) -> Opaque_a { pub mk; pub get; }; }; \
-               pub type { Spread_function: [A] (Opaque_a & A) -> Opaque_a { pub mk; pub get; }; }; \
-               pub fn keep_a(value: Opaque_a) -> Opaque_a { value } \
-               pub fn keep_b(value: Opaque_b) -> Opaque_b { value } \
-               host fn echo_outer(value: Outer) -> Outer; \
-               host fn echo_direct(value: Direct_recursive) -> Direct_recursive; \
-               host fn nested_partial(value: Opaque_a & Projector_only[.]) -> Opaque_a | Projector_only[.]; \
-               host fn nested_both(value: Transparent_both & Transparent_both) -> Transparent_both & Transparent_both;"],
+            &[
+                "mod api; import __comptime__; type { Hidden_payload: . { mk; get; }; }; pub type { Opaque_a: Hidden_payload { mk; get; }; }; pub type { Opaque_b: Hidden_payload { mk; get; }; }; pub type { Constructor_only[A]: A { pub mk; get; }; }; pub type { Projector_only[A]: A { mk; pub get; }; }; pub type { Existential <U>: U { mk; pub get; }; }; pub type { Transparent_both: . { pub mk; pub get; }; }; pub type Unit_alias = .; pub type { Constructor_unit_alias: Unit_alias { pub mk; get; }; }; pub type { Unit: . { mk; get; }; }; rec { pub type { Outer: Hidden { pub mk; pub get; }; }; pub type { Hidden: Outer { mk; get; }; }; } pub rec type { Direct_recursive: . | Direct_recursive { pub mk; pub get; }; }; pub rec type { Recursive_constructor: . | Recursive_constructor { pub mk; get; }; }; pub rec type { Recursive_projector: . | Recursive_projector { mk; pub get; }; }; pub type { Comptime_both: __Type__ { pub mk; pub get; }; }; pub type { Comptime_opaque: __Type__ { mk; get; }; }; pub type { Comptime_constructor: __Type__ { pub mk; get; }; }; pub type { Packed_function: (Opaque_a & Projector_only[.]) -> Opaque_a { pub mk; pub get; }; }; pub type { Spread_function: [A] (Opaque_a & A) -> Opaque_a { pub mk; pub get; }; }; pub fn keep_a(value: Opaque_a) -> Opaque_a { value } pub fn keep_b(value: Opaque_b) -> Opaque_b { value } host fn echo_outer(value: Outer) -> Outer; host fn echo_direct(value: Direct_recursive) -> Direct_recursive; host fn nested_partial(value: Opaque_a & Projector_only[.]) -> Opaque_a | Projector_only[.]; host fn nested_both(value: Transparent_both & Transparent_both) -> Transparent_both & Transparent_both;",
+            ],
             "bridge { api; }",
         );
         let emitted = lower_package(&package, "pkg", None).expect("emit Java");
@@ -4719,31 +4777,11 @@ mod tests {
     fn comptime_prefixed_user_types_keep_exact_boundary_identity() {
         let package = build_package(
             &[
-                "module visible; \
-                 host type I32 role(i32); \
-                 pub type { Comptime_bool: I32 { \
-                   pub mk; pub get; \
-                 }; }; \
-                 pub fn round_visible(value: Comptime_bool) -> Comptime_bool { value }",
-                "module hidden; \
-                 host type I32 role(i32); \
-                 pub type { Comptime_bool: I32 { \
-                   mk; get; \
-                 }; }; \
-                 pub fn round_hidden(value: Comptime_bool) -> Comptime_bool { value }",
-                "module generic; \
-                 pub fn keep[Comptime_bool](value: Comptime_bool) -> Comptime_bool { value }",
-                "module hostish; \
-                 host type Comptime_bool role(i32); \
-                 pub type { Wrapped: Comptime_bool { \
-                   pub mk; pub get; \
-                 }; }; \
-                 pub fn round_host(value: Comptime_bool) -> Comptime_bool { value } \
-                 pub fn round_wrapped(value: Wrapped) -> Wrapped { value }",
-                "module aliasing; \
-                 host type I32 role(i32); \
-                 pub type Comptime_bool = I32; \
-                 pub fn round_alias(value: Comptime_bool) -> Comptime_bool { value }",
+                "mod visible; host type I32 role(i32); pub type { Comptime_bool: I32 { pub mk; pub get; }; }; pub fn round_visible(value: Comptime_bool) -> Comptime_bool { value }",
+                "mod hidden; host type I32 role(i32); pub type { Comptime_bool: I32 { mk; get; }; }; pub fn round_hidden(value: Comptime_bool) -> Comptime_bool { value }",
+                "mod generic; pub fn keep[Comptime_bool](value: Comptime_bool) -> Comptime_bool { value }",
+                "mod hostish; host type Comptime_bool role(i32); pub type { Wrapped: Comptime_bool { pub mk; pub get; }; }; pub fn round_host(value: Comptime_bool) -> Comptime_bool { value } pub fn round_wrapped(value: Wrapped) -> Wrapped { value }",
+                "mod aliasing; host type I32 role(i32); pub type Comptime_bool = I32; pub fn round_alias(value: Comptime_bool) -> Comptime_bool { value }",
             ],
             "bridge { visible; hidden; generic; hostish; aliasing; }",
         );
@@ -4791,12 +4829,8 @@ mod tests {
     fn same_leaf_host_types_keep_exact_roles() {
         let package = build_package(
             &[
-                "module left; \
-                 host type Shared role(i32); \
-                 host fn keep_left(value: Shared) -> Shared;",
-                "module right; \
-                 host type Shared role(str); \
-                 host fn keep_right(value: Shared) -> Shared;",
+                "mod left; host type Shared role(i32); host fn keep_left(value: Shared) -> Shared;",
+                "mod right; host type Shared role(str); host fn keep_right(value: Shared) -> Shared;",
             ],
             "bridge { left; right; }",
         );
@@ -4829,12 +4863,8 @@ mod tests {
     fn same_leaf_public_newtypes_keep_exact_carrier_identities() {
         let package = build_package(
             &[
-                "module left; \
-                 pub type { Token: . { mk; get; }; }; \
-                 host fn round_token(value: Token) -> Token;",
-                "module right; \
-                 pub type { Token: . { mk; get; }; }; \
-                 host fn round_token(value: Token) -> Token;",
+                "mod left; pub type { Token: . { mk; get; }; }; host fn round_token(value: Token) -> Token;",
+                "mod right; pub type { Token: . { mk; get; }; }; host fn round_token(value: Token) -> Token;",
             ],
             "bridge { left; right; }",
         );
@@ -4872,15 +4902,11 @@ mod tests {
 
     #[test]
     fn partial_carrier_name_is_stable_when_an_unrelated_host_surface_claims_its_readable_base() {
-        let target = "module zed; \
-            pub type { Token: . { mk; get; }; }; \
-            host fn round_token(value: Token) -> Token;";
+        let target = "mod zed; pub type { Token: . { mk; get; }; }; host fn round_token(value: Token) -> Token;";
         let baseline = build_package(&[target], "bridge { zed; }");
         let with_earlier_shape = build_package(
             &[
-                "module aaa; \
-                 pub type { Token: . { pub mk; pub get; }; }; \
-                 host fn unrelated(value: Token) -> Token;",
+                "mod aaa; pub type { Token: . { pub mk; pub get; }; }; host fn unrelated(value: Token) -> Token;",
                 target,
             ],
             "bridge { aaa; zed; }",

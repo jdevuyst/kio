@@ -1,4 +1,4 @@
-package parse_newtype_nullary;
+pkg parse_newtype_nullary;
 
 build {
   cache "out/.kio-cache/";

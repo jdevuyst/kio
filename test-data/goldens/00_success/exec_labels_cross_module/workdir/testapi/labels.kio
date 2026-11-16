@@ -1,6 +1,6 @@
-module testapi/labels;
+mod testapi/labels;
 
-import testapi(String);
+import testapi { type String }
 
 // The public nominal and its members are available to importing modules.
 pub type { Greeting: String { pub mk; pub get } }

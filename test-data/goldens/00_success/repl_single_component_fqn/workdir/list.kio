@@ -1,4 +1,4 @@
-module list;
+mod list;
 
 /// Root item.
 pub pure fn item(value: .) { value }

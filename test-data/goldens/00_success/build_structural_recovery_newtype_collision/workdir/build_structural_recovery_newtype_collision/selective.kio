@@ -1,8 +1,8 @@
-module build_structural_recovery_newtype_collision/selective;
+mod build_structural_recovery_newtype_collision/selective;
 
 import __intrinsics__;
 
-import build_structural_recovery_newtype_collision/provider(Box, Hed, Tal);
+import build_structural_recovery_newtype_collision/provider { type Box; type Hed; type Tal }
 
 pub fn read(r: Hed & Tal) { Hed.get(__fst__[Hed][Tal](r)) }
 

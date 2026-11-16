@@ -63,7 +63,7 @@ Grep `docs/` for symbol names, keywords, syntax forms, or macro names. Cross-che
 - A teaching-purposes naming choice (fine if explained).
 - A stale reference to a removed/renamed feature (flag).
 
-Particular suspects to grep: any keyword or intrinsic name; every macro name in the current palette — take the enumeration (both the spine and the algebraic families) from [`ai/topics/surface-forms.md`](../../topics/surface-forms.md) rather than hardcoding a list here; any `if` / `else` / `.stem.` / `literal` / `labels` / `op` / `equiv` usage.
+Particular suspects to grep: any keyword or intrinsic name; every macro name in the current palette — take the enumeration (both the spine and the algebraic families) from [`ai/topics/surface-forms.md`](../../topics/surface-forms.md) rather than hardcoding a list here; any `if` / `else` / `.stem.` / `lit` / `type` / `op` / `op_macro` / `op_var` / `equiv` usage.
 
 ## 5. Standalone learning path
 

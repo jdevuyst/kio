@@ -1,9 +1,9 @@
-module priority_window_scheduler/report;
+mod priority_window_scheduler/report;
 
-import macros/row_macros(macro select);
-import priority_window_scheduler/model(Name, Span, Window);
+import macros/row_macros { macro select }
+import priority_window_scheduler/model { type Name; type Span; type Window }
 import priority_window_scheduler/planner as planner;
-import testapi(String);
+import testapi { type String }
 import testapi/fmt as fmt;
 import testapi/text as text;
 

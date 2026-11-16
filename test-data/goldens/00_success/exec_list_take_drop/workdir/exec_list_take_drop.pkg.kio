@@ -1,4 +1,4 @@
-package exec_list_take_drop;
+pkg exec_list_take_drop;
 
 build {
   cache "out/.kio-cache/";

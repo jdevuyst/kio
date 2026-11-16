@@ -1,4 +1,4 @@
-package exec_functor_alias_carrier;
+pkg exec_functor_alias_carrier;
 
 build {
   cache "out/.kio-cache/";

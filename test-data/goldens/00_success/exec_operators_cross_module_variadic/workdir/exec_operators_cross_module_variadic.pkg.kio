@@ -1,4 +1,4 @@
-package exec_operators_cross_module_variadic;
+pkg exec_operators_cross_module_variadic;
 
 build {
   cache "out/.kio-cache/";

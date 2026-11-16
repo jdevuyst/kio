@@ -1,6 +1,6 @@
-module dwfs/main;
+mod dwfs/main;
 
-import macros/derive(macro derive);
+import macros/derive { macro derive }
 
 pub type { Atom: . { pub mk; pub get } }
 

@@ -52,7 +52,7 @@ expect_exit 0 "$KIO_BIN" sig commit
 expect_exit 0 "$KIO_BIN" sig status
 
 # Introduce a breaking change: remove the sealed export `serve`.
-printf 'module api;\n\npub fn other() -> . { () }\n' > api.kio
+printf 'mod api;\n\npub fn other() -> . { () }\n' > api.kio
 
 # The break is unrecorded -> status 80 (incompatibility).
 expect_exit 80 "$KIO_BIN" sig status

@@ -1,4 +1,4 @@
-module main;
+mod main;
 
-import first(op + _);
-import second(op + _);
+import first { op + _ }
+import second { op + _ }

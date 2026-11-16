@@ -1,4 +1,4 @@
-package sudoku_backtrack_solver;
+pkg sudoku_backtrack_solver;
 
 build {
   cache "out/.kio-cache/";

@@ -3,7 +3,7 @@
 /// A `fn`'s bound-value type: [`@type compute`].
 /// A nominal type's constructor is a value-level fn: [`@type Wrapped.mk`].
 /// A nominal type's projector is too: [`@type Wrapped.get`].
-module dtype/main;
+mod dtype/main;
 
 /// Computes a result.
 pub fn compute(n: .) { n }

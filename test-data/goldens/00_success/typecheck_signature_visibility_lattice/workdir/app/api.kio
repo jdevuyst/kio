@@ -1,6 +1,6 @@
-module app/api;
+mod app/api;
 
-import app/types(Shared);
+import app/types { type Shared }
 
 host fn loop[S][R](step: S -> (S | R), state: S) -> R;
 

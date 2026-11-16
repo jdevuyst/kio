@@ -1,4 +1,4 @@
-package exec_rec_nested_branch_context;
+pkg exec_rec_nested_branch_context;
 
 build {
   cache "out/.kio-cache/";

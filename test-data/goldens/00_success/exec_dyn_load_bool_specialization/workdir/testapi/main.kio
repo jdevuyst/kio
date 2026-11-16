@@ -1,22 +1,41 @@
-module testapi/main;
+mod testapi/main;
 
-import host_descriptor(Host_type, Role_host_type, Roleless_host_type);
-import host_descriptor(bool_role, host_id_local, host_type_id, host_type_shape, i32_role, role_name);
-import host_descriptor(host_types_cons, host_types_nil, mk_host_id, mk_role_host_type);
-import hostrec(make_lit_default, serve_default);
-import loader(Apply, I32_out, Lookup, Unit_in, diag_message, un_load_outcome);
-import loader(Diag, Loaded, Lr_diag, Lr_image, Surface);
-import loader(Host_adapter, host_fn_bindings_nil, instantiate, mk_host_adapter);
-import loader/scan(load_package);
-import macros/control(macro if);
-import macros/match(macro match);
-import macros/row_macros(macro select);
-import testapi(Bool, I32, Scalar, String);
-import testapi/fmt(int_to_string);
-import testapi/io(print);
-import testapi/scalar(scalar_as_str, scalar_of_str);
-import testapi/text(string_concat, string_eq);
-import value(Side, Value, s_left, s_right, vhost);
+import host_descriptor {
+  fn bool_role;
+  fn host_id_local;
+  fn host_type_id;
+  fn host_type_shape;
+  fn i32_role;
+  fn role_name
+}
+import host_descriptor {
+  fn host_types_cons;
+  fn host_types_nil;
+  fn mk_host_id;
+  fn mk_role_host_type
+}
+import host_descriptor { type Host_type; type Role_host_type; type Roleless_host_type }
+import hostrec { fn make_lit_default; fn serve_default }
+import loader {
+  type Apply;
+  type I32_out;
+  type Lookup;
+  type Unit_in;
+  fn diag_message;
+  fn un_load_outcome
+}
+import loader { type Diag; type Loaded; type Lr_diag; type Lr_image; type Surface }
+import loader { type Host_adapter; fn host_fn_bindings_nil; fn instantiate; fn mk_host_adapter }
+import loader/scan { fn load_package }
+import macros/control { macro if }
+import macros/match { macro match }
+import macros/row_macros { macro select }
+import testapi { type Bool; type I32; type Scalar; type String }
+import testapi/fmt { fn int_to_string }
+import testapi/io { fn print }
+import testapi/scalar { fn scalar_as_str; fn scalar_of_str }
+import testapi/text { fn string_concat; fn string_eq }
+import value { type Side; type Value; fn s_left; fn s_right; fn vhost }
 
 fn adapter() -> Host_adapter {
   mk_host_adapter(
@@ -123,78 +142,78 @@ fn evaluated(source: String) {
 }
 
 pub fn main() {
-  evaluated("module hostapi; host type I32 role(i32); host type First role(bool); "
-            "host type Second role(bool); module guest; import __intrinsics__; import "
-            "hostapi(I32, First, Second); type Identity[A] = A; pub fn value() -> I32 "
-            "{ __if_then_else__[Identity[First]][I32](.t[Identity[First]], .() -> I32 "
-            "{ __if_then_else__[Second][I32](.t[Second], .() -> I32 { 73[I32] }, .() "
-            "-> I32 { 0[I32] }) }, .() -> I32 { 0[I32] }) } package guest; bridge { "
-            "guest; hostapi; }"[String]);
-  evaluated("module hostapi; host type I32 role(i32); host type Flag role(bool); "
-            "module guest; import __intrinsics__; import hostapi(I32, Flag); fn "
+  evaluated("mod hostapi; host type I32 role(i32); host type First role(bool); host "
+            "type Second role(bool); mod guest; import __intrinsics__; import hostapi "
+            "{type I32; type First; type Second} type Identity[A] = A; pub fn value() "
+            "-> I32 { __if_then_else__[Identity[First]][I32](.t[Identity[First]], .() "
+            "-> I32 { __if_then_else__[Second][I32](.t[Second], .() -> I32 { 73[I32] "
+            "}, .() -> I32 { 0[I32] }) }, .() -> I32 { 0[I32] }) } pkg guest; bridge "
+            "{ guest; hostapi; }"[String]);
+  evaluated("mod hostapi; host type I32 role(i32); host type Flag role(bool); mod "
+            "guest; import __intrinsics__; import hostapi {type I32; type Flag} fn "
             "default() -> I32 { 74[I32] } pub fn value() -> I32 { "
             "__if_then_else__[Flag][I32](.f[Flag], .() -> I32 { 0[I32] }, .() -> I32 "
-            "{ default() }) } package guest; bridge { guest; hostapi; }"[String]);
-  evaluated("module hostapi; host type I32 role(i32); host type Flag role(bool); "
-            "module guest; import __intrinsics__; import hostapi(I32, Flag); type "
+            "{ default() }) } pkg guest; bridge { guest; hostapi; }"[String]);
+  evaluated("mod hostapi; host type I32 role(i32); host type Flag role(bool); mod "
+            "guest; import __intrinsics__; import hostapi {type I32; type Flag} type "
             "Ignore[A] = Flag; fn pick[A](condition: Flag, yes: A, no: A) -> A { "
             "__if_then_else__[Ignore[A]][A](condition, .() -> A { yes }, .() -> A { "
             "no }) } pub fn value() -> I32 { pick[I32](.t[Flag], 75[I32], 0[I32]) } "
-            "package guest; bridge { guest; hostapi; }"[String]);
-  evaluated("module hostapi; host type I32 role(i32); host type Flag role(bool); "
-            "module guest; import __intrinsics__; import hostapi(I32, Flag); type "
+            "pkg guest; bridge { guest; hostapi; }"[String]);
+  evaluated("mod hostapi; host type I32 role(i32); host type Flag role(bool); mod "
+            "guest; import __intrinsics__; import hostapi {type I32; type Flag} type "
             "Ignore[*F] = Flag; type { Box[A]: A { mk; get } } pub fn value() -> I32 "
             "{ .[*F](condition: Flag) -> I32 { "
             "__if_then_else__[Ignore[F]][I32](condition, .() -> I32 { 76[I32] }, .() "
-            "-> I32 { 0[I32] }) }[Box](.t[Flag]) } package guest; bridge { guest; "
+            "-> I32 { 0[I32] }) }[Box](.t[Flag]) } pkg guest; bridge { guest; "
             "hostapi; }"[String]);
-  evaluated("module hostapi; host type I32 role(i32); host type Flag role(bool); "
-            "module guest; import __intrinsics__; import hostapi(I32, Flag); type "
+  evaluated("mod hostapi; host type I32 role(i32); host type Flag role(bool); mod "
+            "guest; import __intrinsics__; import hostapi {type I32; type Flag} type "
             "Ignore[A] = Flag; pub fn value() -> I32 { let ignored = .[Flag]() -> "
             "Ignore[Flag] { .t[Ignore[Flag]] }; __if_then_else__[Flag][I32](.t[Flag], "
-            ".() -> I32 { 77[I32] }, .() -> I32 { 0[I32] }) } package guest; bridge { "
+            ".() -> I32 { 77[I32] }, .() -> I32 { 0[I32] }) } pkg guest; bridge { "
             "guest; hostapi; }"[String]);
   rejected(
   , "nonbool"[String]
-  , "module hostapi; host type I32 role(i32); module guest; import "
-    "__intrinsics__; import hostapi(I32); pub fn value() -> I32 { "
+  , "mod hostapi; host type I32 role(i32); mod guest; import __intrinsics__; "
+    "import hostapi {type I32} pub fn value() -> I32 { "
     "__if_then_else__[I32][I32](1[I32], .() -> I32 { 1[I32] }, .() -> I32 { "
-    "0[I32] }) } package guest; bridge { guest; hostapi; }"[String]
+    "0[I32] }) } pkg guest; bridge { guest; hostapi; }"[String]
   );
   rejected(
   , "underapplied"[String]
-  , "module hostapi; host type I32 role(i32); host type Flag role(bool); "
-    "module guest; import __intrinsics__; import hostapi(I32, Flag); type "
+  , "mod hostapi; host type I32 role(i32); host type Flag role(bool); mod "
+    "guest; import __intrinsics__; import hostapi {type I32; type Flag} type "
     "Identity[A] = A; pub fn value() -> I32 { "
     "__if_then_else__[Identity][I32](.t[Flag], .() -> I32 { 1[I32] }, .() -> "
-    "I32 { 0[I32] }) } package guest; bridge { guest; hostapi; }"[String]
+    "I32 { 0[I32] }) } pkg guest; bridge { guest; hostapi; }"[String]
   );
   rejected(
   , "rigid"[String]
-  , "module hostapi; host type I32 role(i32); module guest; import "
-    "__intrinsics__; import hostapi(I32); pub fn value[B](condition: B) -> "
-    "I32 { __if_then_else__[B][I32](condition, .() -> I32 { 1[I32] }, .() -> "
-    "I32 { 0[I32] }) } package guest; bridge { guest; hostapi; }"[String]
+  , "mod hostapi; host type I32 role(i32); mod guest; import __intrinsics__; "
+    "import hostapi {type I32} pub fn value[B](condition: B) -> I32 { "
+    "__if_then_else__[B][I32](condition, .() -> I32 { 1[I32] }, .() -> I32 { "
+    "0[I32] }) } pkg guest; bridge { guest; hostapi; }"[String]
   );
   rejected(
   , "shadowed"[String]
-  , "module hostapi; host type I32 role(i32); host type Flag role(bool); "
-    "module guest; import __intrinsics__; import hostapi(I32, Flag); pub fn "
-    "value[Flag](condition: Flag) -> I32 { "
+  , "mod hostapi; host type I32 role(i32); host type Flag role(bool); mod "
+    "guest; import __intrinsics__; import hostapi {type I32; type Flag} pub "
+    "fn value[Flag](condition: Flag) -> I32 { "
     "__if_then_else__[Flag][I32](condition, .() -> I32 { 1[I32] }, .() -> I32 "
-    "{ 0[I32] }) } package guest; bridge { guest; hostapi; }"[String]
+    "{ 0[I32] }) } pkg guest; bridge { guest; hostapi; }"[String]
   );
   rejected(
   , "nested shadow"[String]
-  , "module hostapi; host type I32 role(i32); host type Flag role(bool); "
-    "module guest; import __intrinsics__; import hostapi(I32, Flag); pub fn "
-    "value() -> I32 { let ignored = .[Flag](condition: Flag) -> I32 { "
+  , "mod hostapi; host type I32 role(i32); host type Flag role(bool); mod "
+    "guest; import __intrinsics__; import hostapi {type I32; type Flag} pub "
+    "fn value() -> I32 { let ignored = .[Flag](condition: Flag) -> I32 { "
     "__if_then_else__[Flag][I32](condition, .() -> I32 { 1[I32] }, .() -> I32 "
-    "{ 0[I32] }) }; 0[I32] } package guest; bridge { guest; hostapi; }"[String]
+    "{ 0[I32] }) }; 0[I32] } pkg guest; bridge { guest; hostapi; }"[String]
   );
   rejected(
   , "removed modifier"[String]
-  , "module hostapi; default host type Flag role(bool); package guest; bridge "
-    "{ hostapi; }"[String]
+  , "mod hostapi; default host type Flag role(bool); pkg guest; bridge { "
+    "hostapi; }"[String]
   )
 }

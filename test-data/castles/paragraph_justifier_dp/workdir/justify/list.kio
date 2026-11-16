@@ -3,14 +3,14 @@
 /// points, a laid-out paragraph's lines. This host tier offers no array type,
 /// so the list is the only sequence there is — the DP table is a list, and it
 /// is indexed by walking.
-module justify/list;
+mod justify/list;
 
-import macros/control(macro if);
-import macros/match(macro match);
-import macros/spine_macros(macro widen_sum);
-import testapi(Bool, I32);
-import testapi/arith(add_i32, eq_i32);
-import testapi/iter(loop);
+import macros/control { macro if }
+import macros/match { macro match }
+import macros/spine_macros { macro widen_sum }
+import testapi { type Bool; type I32 }
+import testapi/arith { fn add_i32; fn eq_i32 }
+import testapi/iter { fn loop }
 
 pub rec type { List[A]: . | (A & List[A]) { pub mk; pub get } }
 

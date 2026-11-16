@@ -1,4 +1,4 @@
-package exec_prime_eval_arith;
+pkg exec_prime_eval_arith;
 
 build {
   cache "out/.kio-cache/";

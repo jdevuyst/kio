@@ -1,4 +1,4 @@
-module rne/closure;
+mod rne/closure;
 
 pub type { Marker: . { pub mk; pub get } }
 

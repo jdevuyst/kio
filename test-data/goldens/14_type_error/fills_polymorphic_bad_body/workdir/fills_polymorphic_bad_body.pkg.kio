@@ -1,4 +1,4 @@
-package fills_polymorphic_bad_body;
+pkg fills_polymorphic_bad_body;
 
 build {
   cache "out/.kio-cache/";

@@ -1,4 +1,4 @@
-package macro_type_mentions_host;
+pkg macro_type_mentions_host;
 
 build {
   cache "out/.kio-cache/";

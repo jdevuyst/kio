@@ -1,4 +1,4 @@
-package typecheck_user_macro_intrinsic_if_then_else;
+pkg typecheck_user_macro_intrinsic_if_then_else;
 
 build {
   cache "out/.kio-cache/";

@@ -3536,7 +3536,7 @@ mod tests {
     use super::*;
 
     fn with_type_ctx(test: impl for<'m, 'e> FnOnce(&mut TypeCtx<'m, 'e, crate::ast::Lowered>)) {
-        with_package_type_ctx(&[("main.kio", "module main;")], "main", test);
+        with_package_type_ctx(&[("main.kio", "mod main;")], "main", test);
     }
 
     fn bind_selected_alpha<'a, 'm>(
@@ -4222,7 +4222,7 @@ mod tests {
     #[test]
     fn lazy_expected_alpha_keeps_a_same_spelled_module_alias_shadowed() {
         with_package_type_ctx(
-            &[("main.kio", "module main; type Expected = .;")],
+            &[("main.kio", "mod main; type Expected = .;")],
             "main",
             |tcx| {
                 let signature = Signature::from_groups(vec![
@@ -4434,13 +4434,13 @@ mod tests {
             &[
                 (
                     "inner.kio",
-                    "module inner; pub type Wrapped[Slot] = [Inner_bound] Slot -> Inner_bound;",
+                    "mod inner; pub type Wrapped[Slot] = [Inner_bound] Slot -> Inner_bound;",
                 ),
                 (
                     "outer.kio",
-                    "module outer; import inner(Wrapped); pub type Outer[Slot] = Wrapped[Slot];",
+                    "mod outer; import inner {type Wrapped} pub type Outer[Slot] = Wrapped[Slot];",
                 ),
-                ("caller.kio", "module caller; import outer(Outer);"),
+                ("caller.kio", "mod caller; import outer {type Outer}"),
             ],
             "caller",
             |tcx| {
@@ -4480,9 +4480,9 @@ mod tests {
             &[
                 (
                     "inner.kio",
-                    "module inner; pub type Wrapped[Slot] = [Inner_bound] Slot -> Inner_bound;",
+                    "mod inner; pub type Wrapped[Slot] = [Inner_bound] Slot -> Inner_bound;",
                 ),
-                ("caller.kio", "module caller; import inner(Wrapped);"),
+                ("caller.kio", "mod caller; import inner {type Wrapped}"),
             ],
             "caller",
             |tcx| {
@@ -4511,11 +4511,11 @@ mod tests {
             &[
                 (
                     "provider.kio",
-                    "module provider; pub type Identity[Slot] = Slot; pub type Wrap[Slot] = [X] Slot -> X;",
+                    "mod provider; pub type Identity[Slot] = Slot; pub type Wrap[Slot] = [X] Slot -> X;",
                 ),
                 (
                     "caller.kio",
-                    "module caller; import provider(Identity); import provider(Wrap);",
+                    "mod caller; import provider {type Identity} import provider {type Wrap}",
                 ),
             ],
             "caller",
@@ -4568,7 +4568,7 @@ mod tests {
         with_package_type_ctx(
             &[(
                 "main.kio",
-                "module main; pub type Keep[First][Dropped] = First;",
+                "mod main; pub type Keep[First][Dropped] = First;",
             )],
             "main",
             |tcx| {

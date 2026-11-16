@@ -3,18 +3,26 @@
 /// A query is an atom with variables, so answering it is the same
 /// machinery a one-goal rule body uses. The only new decision is which
 /// variables an answer should report.
-module datalog/query;
+mod datalog/query;
 
-import datalog/atom(Args, Atom, Atoms, T_const, T_var, Term, args_of);
+import datalog/atom {
+  type Args;
+  type Atom;
+  type Atoms;
+  type T_const;
+  type T_var;
+  type Term;
+  fn args_of
+}
 import datalog/list as list;
 import datalog/subst as subst;
 import datalog/unify as unify;
-import macros/control(macro if);
-import macros/match(macro match);
-import macros/row_macros(macro select);
-import testapi(Bool, I32);
-import testapi/arith(eq_i32);
-import testapi/iter(loop);
+import macros/control { macro if }
+import macros/match { macro match }
+import macros/row_macros { macro select }
+import testapi { type Bool; type I32 }
+import testapi/arith { fn eq_i32 }
+import testapi/iter { fn loop }
 
 pub type Codes = list.List[I32];
 

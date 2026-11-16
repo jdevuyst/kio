@@ -1,4 +1,4 @@
-package build_function_adapter_binder_stability;
+pkg build_function_adapter_binder_stability;
 
 build {
   cache "out/.kio-cache/";

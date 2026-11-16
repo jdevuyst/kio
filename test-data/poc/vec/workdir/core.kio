@@ -1,10 +1,10 @@
 /// Root module vector-tree core with bounds, path, frame, and spine helpers used by loop-driven vector operations.
 /// A ready-to-use library module for your own Kio package.
-module core;
+mod core;
 
-import macros/control(macro scope);
-import macros/match(macro match);
-import macros/spine_macros(macro widen_sum);
+import macros/control { macro scope }
+import macros/match { macro match }
+import macros/spine_macros { macro widen_sum }
 
 // `Vec(A)` is a persistent vector — an indexed sequence with O(log n)
 // random access, update, and append — backed by a fanout-2 digit trie: a

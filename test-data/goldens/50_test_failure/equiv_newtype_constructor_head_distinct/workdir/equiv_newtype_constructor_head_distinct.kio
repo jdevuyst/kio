@@ -1,4 +1,4 @@
-module equiv_newtype_constructor_head_distinct;
+mod equiv_newtype_constructor_head_distinct;
 
 host type T;
 

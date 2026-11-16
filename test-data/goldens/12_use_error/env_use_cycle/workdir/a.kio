@@ -1,6 +1,6 @@
-module a;
+mod a;
 
-import b(Pong);
+import b { type Pong }
 
 host type Str role(str);
 

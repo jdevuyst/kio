@@ -1,4 +1,4 @@
-package typecheck_macro_ease_no_duplication;
+pkg typecheck_macro_ease_no_duplication;
 
 build {
   cache "out/.kio-cache/";

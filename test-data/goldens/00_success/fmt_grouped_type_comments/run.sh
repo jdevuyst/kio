@@ -2,7 +2,7 @@
 set -eu
 
 formatted=$("$KIO_BIN" fmt - <<'KIO'
-module fmt_grouped_type_comments;
+mod fmt_grouped_type_comments;
 fn ordinary() -> (// ordinary result
 .) { () }
 host fn supplied() -> (. // host result

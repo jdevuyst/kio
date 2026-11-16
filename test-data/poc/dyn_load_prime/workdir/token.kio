@@ -1,9 +1,9 @@
 /// The Kio' lexical token model: the closed token sum the lexer produces and the parser consumes.
-module token;
+mod token;
 
-import macros/match(macro match);
-import macros/spine_macros(macro widen_sum);
-import testapi(I32, String);
+import macros/match { macro match }
+import macros/spine_macros { macro widen_sum }
+import testapi { type I32; type String }
 
 // `token.kio` — the token alphabet for the Kio' term-subset grammar.
 //

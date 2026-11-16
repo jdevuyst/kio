@@ -9,9 +9,9 @@ bridge {
   kiodoc;
 }
 
-module kiodoc;
+mod kiodoc;
 
-import control(Bool, macro if, macro and, op macro _ && .__, op macro _ || .__);
+import control {type Bool; macro if; macro and; op_macro _ && .__; op_macro _ || .__}
 
 host type Int role(i32);
 host fn add(a: Int, b: Int) -> Int;
@@ -100,7 +100,7 @@ The [specification](../../specs/language.md#operators) gives the full rule.
 The [macro library](using-libraries.md#the-macro-library) exports `and` and
 `or` with symbolic spellings. After setting up the dependency as `macros`,
 select the names and patterns you use with, for example,
-`import macros/control(Bool, macro and, op macro _ && .__, op macro _ || .__);`.
+`import macros/control {type Bool; macro and; op_macro _ && .__; op_macro _ || .__}`.
 Use the imported `Bool` for the values and predicates in this example:
 
 ```kio {@module}
@@ -133,7 +133,7 @@ thunk body runs only when selected.
 A pattern can contain several symbols and operands. This example also uses a
 host `Bool` with `role(bool)`, shared with or rehosted from `control.Bool`, and `if` from the
 [macro library](using-libraries.md#the-macro-library); with that
-dependency named `macros`, import it as `import macros/control(Bool, macro if);`:
+dependency named `macros`, import it as `import macros/control {type Bool; macro if}`:
 
 ```kio {@module}
 fn cond[A](c: Bool, t: A, e: A) -> A {
@@ -176,7 +176,7 @@ is rejected. Whitespace cannot split a word into interchangeable pieces.
   occur in an operator word, even when quoted.
 - A token may contain at most one `/`; `//` starts a comment.
 - Letters, digits, Unicode symbols, and square brackets are not fixed operator
-  tokens. Square-bracket delimiters use [`varop`](variadic-operators.md).
+  tokens. Square-bracket delimiters use [`op_var`](variadic-operators.md).
 
 ## Export and import
 
@@ -186,23 +186,23 @@ For `pub(path)`, the target must be visible throughout that path. A nominal type
 member target requires both its type or identity alias and the member to meet
 the same visibility requirement.
 
-Use `op macro` for a macro target, for example the control library declares
-`pub op macro _ && .__ { impl and }`. Its target is a macro; an ordinary
+Use `op_macro` for a macro target, for example the control library declares
+`pub op_macro _ && .__ { impl and }`. Its target is a macro; an ordinary
 `op` targets a function. Both follow the same visibility rules.
 
 Import the complete pattern, including its slot kinds and token quotation:
-`import math(op _ + __);`. For example, the dictionary library exports `=>`
+`import math {op _ + __}`. For example, the dictionary library exports `=>`
 as a pair-building operator:
 
 Inside the dictionary package, imports name its local `dict` module, as
 below. To consume it as a dependency named `dict`, follow the
 [collection-library setup](using-libraries.md#collection-and-value-libraries)
-and use `import dict/dict(op _ => _);` instead.
+and use `import dict/dict {op _ => _}` instead.
 
 ```kio {}
-module entry_example;
+mod entry_example;
 
-import dict(op _ => _);
+import dict { op _ => _ }
 
 host type Int role(i32);
 
@@ -216,7 +216,7 @@ reuse the same opening pattern. Prefix and non-prefix operators can share
 symbols, as with unary and binary `-`.
 
 An import can change only the operator's spelling:
-`import math(op _ + __ as _ ++ __);`. Write both complete grammars, with the
+`import math {op _ + __ as _ ++ __}`. Write both complete grammars, with the
 namespace tag only before the source. Every slot kind and whole-word boundary
 stays the same. Token replacement must be
 consistent and injective: repeated source tokens have one destination spelling,

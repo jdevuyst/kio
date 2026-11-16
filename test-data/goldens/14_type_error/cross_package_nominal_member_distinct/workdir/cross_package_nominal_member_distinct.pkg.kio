@@ -1,4 +1,4 @@
-package cross_package_nominal_member_distinct;
+pkg cross_package_nominal_member_distinct;
 
 build {
   cache "out/.kio-cache/";

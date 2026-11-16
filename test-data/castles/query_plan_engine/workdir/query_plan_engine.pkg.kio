@@ -1,4 +1,4 @@
-package query_plan_engine;
+pkg query_plan_engine;
 
 build {
   cache "out/.kio-cache/";

@@ -1,4 +1,4 @@
-package exec_spine_eq_ease_widen_and_project;
+pkg exec_spine_eq_ease_widen_and_project;
 
 build {
   cache "out/.kio-cache/";

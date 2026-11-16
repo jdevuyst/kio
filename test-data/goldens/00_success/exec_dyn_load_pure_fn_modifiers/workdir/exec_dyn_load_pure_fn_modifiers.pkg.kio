@@ -1,4 +1,4 @@
-package exec_dyn_load_pure_fn_modifiers;
+pkg exec_dyn_load_pure_fn_modifiers;
 
 build {
   cache "out/.kio-cache/";

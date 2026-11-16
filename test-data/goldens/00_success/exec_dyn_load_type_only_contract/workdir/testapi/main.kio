@@ -1,9 +1,9 @@
 /// Validates ordinary exported headers from untrusted Prime text.
-module testapi/main;
+mod testapi/main;
 
 import loader as l;
 import loader/scan as scan;
-import macros/match(macro match);
+import macros/match { macro match }
 import testapi as t;
 import testapi/io as io;
 import testapi/text as text;
@@ -36,10 +36,7 @@ fn signature(source: t.String) -> t.String {
 fn report(label: t.String, body: t.String) {
   io.print(text.string_concat(
   , label
-  , text.string_concat(
-    , describe(text.string_concat("module guest;\n"[t.String], body))
-    , "\n"[t.String]
-    )
+  , text.string_concat(describe(text.string_concat("mod guest;\n"[t.String], body)), "\n"[t.String])
   ))
 }
 
@@ -67,15 +64,12 @@ pub fn main() {
   report("explicit Unit: "[t.String], "pub fn unit[A]() -> . { () }\n"[t.String]);
   io.print(text.string_concat(
   , "base signature: "[t.String]
-  , text.string_concat(
-    , signature("module guest; pub fn base[A] -> . { () }"[t.String])
-    , "\n"[t.String]
-    )
+  , text.string_concat(signature("mod guest; pub fn base[A] -> . { () }"[t.String]), "\n"[t.String])
   ));
   io.print(text.string_concat(
   , "Unit signature: "[t.String]
   , text.string_concat(
-    , signature("module guest; pub fn unit[A]() -> . { () }"[t.String])
+    , signature("mod guest; pub fn unit[A]() -> . { () }"[t.String])
     , "\n"[t.String]
     )
   ));

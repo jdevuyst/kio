@@ -1,4 +1,4 @@
-package ordered_tree_edit_distance;
+pkg ordered_tree_edit_distance;
 
 build {
   cache "out/.kio-cache/";

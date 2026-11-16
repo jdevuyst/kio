@@ -1,11 +1,11 @@
-module planner/state;
+mod planner/state;
 
-import macros/control(macro if);
-import macros/row_macros(macro select);
-import planner/tasks(task_effort, task_name);
-import testapi(Bool, I32, String);
-import testapi/arith(add_i32, eq_i32);
-import testapi/text(string_concat);
+import macros/control { macro if }
+import macros/row_macros { macro select }
+import planner/tasks { fn task_effort; fn task_name }
+import testapi { type Bool; type I32; type String }
+import testapi/arith { fn add_i32; fn eq_i32 }
+import testapi/text { fn string_concat }
 
 pub type Plan_state = {
   Fetched: Bool;

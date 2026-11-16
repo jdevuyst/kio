@@ -1,7 +1,7 @@
-module testapi/main;
+mod testapi/main;
 
-import testapi(String);
-import testapi/io(print);
+import testapi { type String }
+import testapi/io { fn print }
 
 // Root host items are ambient in submodules.
 // Calling `print(...)` emits as `__host__.print(...)` per

@@ -12,7 +12,7 @@ fn check(source: &str) -> (i32, String) {
     let fixture = TempDir::new().unwrap();
     fs::write(
         fixture.path().join("probe.pkg.kio"),
-        "package probe;\nbridge { main; control; }\n",
+        "pkg probe;\nbridge { main; control; }\n",
     )
     .unwrap();
     fs::write(
@@ -39,7 +39,7 @@ fn independent_results_report_the_incoming_expression_as_found() {
         let first_value = first.to_ascii_lowercase();
         let second_value = second.to_ascii_lowercase();
         let source = format!(
-            "module main;\nimport control(Bool, macro if);\nhost type Left;\nhost type Right;\nhost fn left() -> Left;\nhost fn right() -> Right;\nfn caller(c: Bool) {{ let result = if(c) {{ {first_value}() }} else {{ {second_value}() }}; () }}\n"
+            "mod main;\nimport control {{ type Bool; macro if }}\nhost type Left;\nhost type Right;\nhost fn left() -> Left;\nhost fn right() -> Right;\nfn caller(c: Bool) {{ let result = if(c) {{ {first_value}() }} else {{ {second_value}() }}; () }}\n"
         );
         let (status, stderr) = check(&source);
         assert_eq!(status, 14, "{stderr}");
@@ -65,7 +65,7 @@ fn independent_results_report_the_incoming_expression_as_found() {
 fn ordinary_shared_arguments_keep_their_directional_requirement() {
     for (arguments, expected, found) in [("(), W.mk(())", ".", "W"), ("W.mk(()), ()", "W", ".")] {
         let source = format!(
-            "module main;\ntype {{ W: . {{ mk; get; }} }};\nfn same[A](a: A, b: A) -> A {{ a }}\nfn caller() {{ let result = same({arguments}); () }}\n"
+            "mod main;\ntype {{ W: . {{ mk; get; }} }};\nfn same[A](a: A, b: A) -> A {{ a }}\nfn caller() {{ let result = same({arguments}); () }}\n"
         );
         let (status, stderr) = check(&source);
         assert_eq!(status, 14, "{stderr}");
@@ -94,8 +94,8 @@ fn ordinary_shared_arguments_keep_their_directional_requirement() {
 #[test]
 fn matching_results_and_arguments_remain_valid() {
     for source in [
-        "module main;\nimport control(Bool, macro if);\nhost type Left;\nhost fn left() -> Left;\nfn caller(c: Bool) { let result = if(c) { left() } else { left() }; () }\n",
-        "module main;\nfn same[A](a: A, b: A) -> A { a }\nfn caller() { same((), ()) }\n",
+        "mod main;\nimport control { type Bool; macro if }\nhost type Left;\nhost fn left() -> Left;\nfn caller(c: Bool) { let result = if(c) { left() } else { left() }; () }\n",
+        "mod main;\nfn same[A](a: A, b: A) -> A { a }\nfn caller() { same((), ()) }\n",
     ] {
         let (status, stderr) = check(source);
         assert_eq!(status, 0, "{stderr}");

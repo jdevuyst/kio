@@ -1,4 +1,4 @@
-package typecheck_inferred_polytype_arguments;
+pkg typecheck_inferred_polytype_arguments;
 
 build {
   cache "out/.kio-cache/";

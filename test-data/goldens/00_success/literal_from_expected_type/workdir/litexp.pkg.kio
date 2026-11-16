@@ -1,4 +1,4 @@
-package litexp;
+pkg litexp;
 
 build {
   cache "out/.kio-cache/";

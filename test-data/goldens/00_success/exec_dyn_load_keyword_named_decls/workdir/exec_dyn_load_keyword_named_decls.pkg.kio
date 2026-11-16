@@ -1,4 +1,4 @@
-package exec_dyn_load_keyword_named_decls;
+pkg exec_dyn_load_keyword_named_decls;
 
 build {
   cache "out/.kio-cache/";

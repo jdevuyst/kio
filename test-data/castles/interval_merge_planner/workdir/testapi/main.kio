@@ -1,4 +1,4 @@
-module testapi/main;
+mod testapi/main;
 
 import interval_merge_planner/planner as planner;
 

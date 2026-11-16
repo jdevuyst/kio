@@ -1,4 +1,4 @@
-module app/macros;
+mod app/macros;
 
 import __comptime__;
 

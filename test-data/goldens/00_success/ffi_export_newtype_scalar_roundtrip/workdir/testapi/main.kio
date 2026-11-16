@@ -1,6 +1,6 @@
-module testapi/main;
+mod testapi/main;
 
-import testapi(I32);
+import testapi { type I32 }
 
 // `Wrap` is a bare scalar-payload newtype — a non-recursive, non-
 // existential newtype whose payload is a single host scalar. It crosses

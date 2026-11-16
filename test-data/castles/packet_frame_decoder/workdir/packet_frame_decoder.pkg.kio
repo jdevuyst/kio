@@ -1,4 +1,4 @@
-package packet_frame_decoder;
+pkg packet_frame_decoder;
 
 build {
   cache "out/.kio-cache/";

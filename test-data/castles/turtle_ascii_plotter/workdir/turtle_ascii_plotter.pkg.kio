@@ -1,4 +1,4 @@
-package turtle_ascii_plotter;
+pkg turtle_ascii_plotter;
 
 build {
   cache "out/.kio-cache/";

@@ -1,7 +1,7 @@
-module flag;
+mod flag;
 
-import macros/match(macro match);
-import macros/spine_macros(macro widen_sum);
+import macros/match { macro match }
+import macros/spine_macros { macro widen_sum }
 
 // A pure two-state truth value named `Bool` — the same shape the
 // `result` POC's root module core mints. The point of this golden is

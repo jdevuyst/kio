@@ -1,4 +1,4 @@
-package fills_polymorphic_recursive_unanchored;
+pkg fills_polymorphic_recursive_unanchored;
 
 build {
   cache "out/.kio-cache/";

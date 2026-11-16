@@ -1,11 +1,11 @@
-module testapi/main;
+mod testapi/main;
 
-import elaborators(macro choose_callbacks);
-import macros/control(macro if);
-import testapi(Bool, I32, String);
-import testapi/arith(leq_i32, sub_i32);
-import testapi/io(print);
-import testapi/iter(loop);
+import elaborators { macro choose_callbacks }
+import macros/control { macro if }
+import testapi { type Bool; type I32; type String }
+import testapi/arith { fn leq_i32; fn sub_i32 }
+import testapi/io { fn print }
+import testapi/iter { fn loop }
 
 pub rec(loop) fn repeat(remaining: I32) {
   choose_callbacks(leq_i32(remaining, 0))(.(_unit: .) {

@@ -1,4 +1,4 @@
-package exec_nested_public_sum_facade;
+pkg exec_nested_public_sum_facade;
 
 build {
   cache "out/.kio-cache/";

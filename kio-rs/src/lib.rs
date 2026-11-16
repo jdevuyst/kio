@@ -288,8 +288,7 @@ fn documentation_routes_share_targets_and_keep_fragments_web_only() {
 // share the `cli` gate (a host embedding the eval core uses the lib API,
 // not `run`).
 #[cfg(feature = "cli")]
-const USAGE_KIO: &str = "\
-Usage: kio <subcommand> [args]
+const USAGE_KIO: &str = "Usage: kio <subcommand> [args]
 
 Subcommands:
   manual                     Read bundled documentation offline.
@@ -392,7 +391,7 @@ Usage: kio-prime <subcommand> [args]
 The kio-prime binary is a Kio'-only compiler: every subcommand parses
 the input as Kio and rejects any surface-only form (tuple literals,
 compact nominal declarations, macro declarations and imports, trailing-block
-calls, UFCS, `.stem. { ... }`, `literal`, `op`, `equiv`) with a parse error.
+calls, UFCS, `.stem. { ... }`, `lit`, `op`, `equiv`) with a parse error.
 Pass-through Kio' programs
 typecheck and build identically to the `kio` binary.
 

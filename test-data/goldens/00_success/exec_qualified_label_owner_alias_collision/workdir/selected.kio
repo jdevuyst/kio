@@ -1,6 +1,6 @@
-module selected;
+mod selected;
 
-import testapi(Bool);
+import testapi { type Bool }
 
 pub type { Flag: Bool { pub mk; pub get } }
 

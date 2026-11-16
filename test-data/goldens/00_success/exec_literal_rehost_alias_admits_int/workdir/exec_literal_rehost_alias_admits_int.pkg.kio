@@ -1,4 +1,4 @@
-package exec_literal_rehost_alias_admits_int;
+pkg exec_literal_rehost_alias_admits_int;
 
 build {
   cache "out/.kio-cache/";

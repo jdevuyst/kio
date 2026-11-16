@@ -1,7 +1,7 @@
-module testapi/main;
+mod testapi/main;
 
-import core(identity);
-import testapi(String);
-import testapi/io(print);
+import core { fn identity }
+import testapi { type String }
+import testapi/io { fn print }
 
 pub fn main() { print(identity("root module header: ok\n")) }

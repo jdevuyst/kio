@@ -1,4 +1,4 @@
-package typecheck_partial_type_application;
+pkg typecheck_partial_type_application;
 
 build {
   cache "out/.kio-cache/";

@@ -1,4 +1,4 @@
-package same_leaf_newtypes;
+pkg same_leaf_newtypes;
 
 build {
   cache "out/.kio-cache/";

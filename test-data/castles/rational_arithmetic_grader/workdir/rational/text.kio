@@ -1,7 +1,7 @@
 /// Fixed-arity string joins over the host's binary `string_concat`.
-module rational/text;
+mod rational/text;
 
-import testapi(String);
+import testapi { type String }
 import testapi/text as text;
 
 pub fn cat2(a: String, b: String) -> String { text.string_concat(a, b) }

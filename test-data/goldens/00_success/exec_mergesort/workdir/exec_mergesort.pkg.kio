@@ -1,4 +1,4 @@
-package exec_mergesort;
+pkg exec_mergesort;
 
 build {
   cache "out/.kio-cache/";

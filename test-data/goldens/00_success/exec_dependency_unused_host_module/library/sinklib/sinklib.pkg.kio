@@ -1,4 +1,4 @@
-package sinklib;
+pkg sinklib;
 
 bridge {
   core;

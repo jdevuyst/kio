@@ -4,16 +4,16 @@
 /// right, and it is what makes a join a join: when a later goal meets a
 /// variable an earlier one already bound, the binding is here and the
 /// match has to agree with it.
-module datalog/subst;
+mod datalog/subst;
 
 import datalog/list as list;
-import macros/control(macro if);
-import macros/match(macro match);
-import macros/row_macros(macro select);
-import macros/spine_macros(macro widen_sum);
-import testapi(Bool, I32);
-import testapi/arith(eq_i32);
-import testapi/iter(loop);
+import macros/control { macro if }
+import macros/match { macro match }
+import macros/row_macros { macro select }
+import macros/spine_macros { macro widen_sum }
+import testapi { type Bool; type I32 }
+import testapi/arith { fn eq_i32 }
+import testapi/iter { fn loop }
 
 pub type Bind = { B_var: I32; B_const: I32 };
 

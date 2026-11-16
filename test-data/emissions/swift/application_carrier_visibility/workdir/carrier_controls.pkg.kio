@@ -1,4 +1,4 @@
-package carrier_controls;
+pkg carrier_controls;
 
 build {
   target swift {

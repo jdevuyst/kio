@@ -1,4 +1,4 @@
-package pure_modifier_on_fold;
+pkg pure_modifier_on_fold;
 
 build {
   cache "out/.kio-cache/";

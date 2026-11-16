@@ -33,7 +33,7 @@ To produce an image, add a `kio-prime` target to the package you want to
 ship:
 
 ```kio {variant=package}
-package greeter;
+pkg greeter;
 
 build {
   cache "out/.kio-cache/";
@@ -67,7 +67,7 @@ host modules, and the `.pkg.kio` manifest alike. You do not curate a
 module subset, strip host declarations, or feed an entry point; the loader
 sorts out the roles itself:
 
-- **Module boundaries and order.** Each `module` / `package` header
+- **Module boundaries and order.** Each `mod` / `pkg` header
   delimits one unit, and the loader topologically orders the modules from
   their `import` headers — the files may arrive in any order.
 - **Host modules.** A module whose declarations are all `host fn` /
@@ -118,7 +118,7 @@ ordinary `pub fn`s your host calls.
 For example, add `docs_loader.dep.kio` at your consumer package root:
 
 ```kio {variant=dependency}
-dependency docs_loader;
+dep docs_loader;
 
 source {
   git "https://github.com/jdevuyst/kio/";
@@ -131,12 +131,12 @@ Then run `kio dep fetch` from that root and commit the dependency file, lock,
 and materialized `docs_loader/` tree. The local alias determines your imports:
 
 ```kio {}
-module consumer/loader_api;
+mod consumer/loader_api;
 
-import docs_loader/defaults(instantiate_default);
-import docs_loader/loader(Diag, Image, Loaded);
-import docs_loader/loader/scan(load_package);
-import docs_loader/testapi(String);
+import docs_loader/defaults { fn instantiate_default }
+import docs_loader/loader { type Diag; type Image; type Loaded }
+import docs_loader/loader/scan { fn load_package }
+import docs_loader/testapi { type String }
 
 pub fn instantiate_image(im: Image) -> Loaded | Diag { instantiate_default(im) }
 ```
@@ -145,7 +145,7 @@ For a complete bridge, this simple consumer package exposes the loader's
 entire public module tree as well as its own entry module:
 
 ```kio {variant=package}
-package consumer;
+pkg consumer;
 
 bridge {
   consumer/**;
@@ -171,12 +171,12 @@ the [case study](../poc/dyn_load_prime.md) distinguishes that adapter from a
 custom guest vocabulary.
 
 <!--kio {harness=load_image placeholder="__INSERT_CODE_HERE__"}
-module guide/load;
+mod guide/load;
 
-import docs_loader/loader/scan(load_package);
-import docs_loader/loader(Lr_image, Lr_diag, un_load_outcome);
-import docs_loader/testapi(String);
-import macros/match(macro match);
+import docs_loader/loader/scan {fn load_package}
+import docs_loader/loader {type Lr_image; type Lr_diag; fn un_load_outcome}
+import docs_loader/testapi {type String}
+import macros/match {macro match}
 
 fn check_load(image_text: String) {
   __INSERT_CODE_HERE__
@@ -184,11 +184,11 @@ fn check_load(image_text: String) {
 -->
 
 <!--kio {harness=instantiate_image placeholder="__INSERT_CODE_HERE__"}
-module guide/instantiate;
+mod guide/instantiate;
 
-import docs_loader/defaults(instantiate_default);
-import docs_loader/loader(Image, Loaded, Diag);
-import macros/match(macro match);
+import docs_loader/defaults {fn instantiate_default}
+import docs_loader/loader {type Image; type Loaded; type Diag}
+import macros/match {macro match}
 
 fn check_instantiate(im: Image) {
   __INSERT_CODE_HERE__
@@ -295,10 +295,10 @@ and has the loader check the image honestly offers them. An expectation
 pairs an export name with the signature's canonical rendering:
 
 <!--kio {harness=contracts placeholder="__INSERT_CODE_HERE__" accumulate}
-module kiodoc;
+mod kiodoc;
 
-import docs_loader/loader(contract_cons, contract_nil, mk_expect);
-import docs_loader/testapi(String);
+import docs_loader/loader {fn contract_cons; fn contract_nil; fn mk_expect}
+import docs_loader/testapi {type String}
 
 fn check_contract() {
   __INSERT_CODE_HERE__

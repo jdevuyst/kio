@@ -1,14 +1,14 @@
-module join/engine;
+mod join/engine;
 
 import join/model as m;
 import list/core as core;
 import list/list as lists;
-import macros/control(macro if);
-import macros/match(macro match);
-import macros/row_macros(macro select);
-import testapi(Bool, I32);
+import macros/control { macro if }
+import macros/match { macro match }
+import macros/row_macros { macro select }
+import testapi { type Bool; type I32 }
 import testapi/arith as a;
-import testapi/iter(loop);
+import testapi/iter { fn loop }
 import testapi/text as text;
 
 pub fn empty() -> m.State {

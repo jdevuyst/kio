@@ -1,8 +1,8 @@
 ================================================================================
 structural bang_marker_edges_preserve_callable_heads
 ================================================================================
-module bang_frames;
-import ops(varop [! !], varop []);
+mod bang_frames;
+import ops {op_var [! !]; op_var []}
 fn run(x: .) {
   [!x!];
   [! x, x!];
@@ -34,7 +34,7 @@ fn run(x: .) {
     (keyword_import)
     (module_path
       (entity_name_module))
-    (bracket_lparen)
+    (bracket_lbrace)
     (import_operator_item
       (keyword_varop)
       (variadic_head
@@ -42,14 +42,13 @@ fn run(x: .) {
         (operator_builtin)
         (operator_builtin)
         (bracket_rbracket)))
-    (separator_comma)
+    (separator_semicolon)
     (import_operator_item
       (keyword_varop)
       (variadic_head
         (bracket_lbracket)
         (bracket_rbracket)))
-    (bracket_rparen)
-    (separator_semicolon))
+    (bracket_rbrace))
   (function_definition
     (fn_decl_head
       (keyword_fn)
@@ -258,9 +257,9 @@ x !
 x // gap
 !
 x!? y
-varop
+op_var
 foldl
-varop
+op_var
 foldl
 --------------------------------------------------------------------------------
 

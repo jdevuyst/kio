@@ -1,4 +1,4 @@
-package align_rejects_projection;
+pkg align_rejects_projection;
 
 build {
   cache "out/.kio-cache/";

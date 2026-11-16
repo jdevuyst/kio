@@ -1,4 +1,4 @@
-package exec_host_fn_value_ref_generic_return;
+pkg exec_host_fn_value_ref_generic_return;
 
 build {
   cache "out/.kio-cache/";

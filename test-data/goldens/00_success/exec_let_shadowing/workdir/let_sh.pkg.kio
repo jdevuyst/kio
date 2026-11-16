@@ -1,4 +1,4 @@
-package let_sh;
+pkg let_sh;
 
 build {
   cache "out/.kio-cache/";

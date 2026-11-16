@@ -1,8 +1,8 @@
-module fold;
+mod fold;
 
-import macros/control(macro if);
-import testapi(Array, Bool, I32);
-import testapi/iter(loop);
+import macros/control { macro if }
+import testapi { type Array; type Bool; type I32 }
+import testapi/iter { fn loop }
 
 type { Cells: Array[I32] { mk; get } }
 

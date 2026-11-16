@@ -2,28 +2,28 @@
 /// simulated heap. `main` is the collector's driver: it builds the
 /// fixture arena and runs the phases in the only order they work in,
 /// printing what each one decided.
-module testapi/main;
+mod testapi/main;
 
-import gc/compact(compact, plan);
-import gc/fixture(build_image);
-import gc/heap(Heap_cells, Heap_roots, top);
-import gc/mark(Mark_bits, Mark_trace, mark_heap);
-import gc/report(
-, addr_list
-, blank
-, labeled
-, line
-, print_heap
-, print_mark
-, print_plan
-, print_relocation
-, print_sweep
-, print_verify
-);
-import gc/sweep(Live_objects, sweep);
-import gc/verify(audit);
-import macros/row_macros(macro select);
-import testapi(String);
+import gc/compact { fn compact; fn plan }
+import gc/fixture { fn build_image }
+import gc/heap { type Heap_cells; type Heap_roots; fn top }
+import gc/mark { type Mark_bits; type Mark_trace; fn mark_heap }
+import gc/report {
+  fn addr_list;
+  fn blank;
+  fn labeled;
+  fn line;
+  fn print_heap;
+  fn print_mark;
+  fn print_plan;
+  fn print_relocation;
+  fn print_sweep;
+  fn print_verify
+}
+import gc/sweep { type Live_objects; fn sweep }
+import gc/verify { fn audit }
+import macros/row_macros { macro select }
+import testapi { type String }
 
 pub fn main() {
   let image = build_image();

@@ -1,6 +1,6 @@
-module relay;
+mod relay;
 
-import store(A, B, C);
+import store { type A; type B; type C }
 
 pub fn make_a() -> A { A.mk(()) }
 

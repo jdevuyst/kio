@@ -1,7 +1,7 @@
-module robot_vacuum_replay/text;
+mod robot_vacuum_replay/text;
 
-import testapi(String);
-import testapi/text(string_concat);
+import testapi { type String }
+import testapi/text { fn string_concat }
 
 pub fn cat2(a: String, b: String) -> String { string_concat(a, b) }
 

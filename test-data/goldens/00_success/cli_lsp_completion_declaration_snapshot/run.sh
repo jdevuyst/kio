@@ -56,7 +56,7 @@ async function waitFor(fn, ready) {
   }
   throw new Error('expected current result did not arrive');
 }
-const completion = () => request('textDocument/completion', { textDocument: { uri }, position: { line: 2, character: 'import provider('.length } });
+const completion = () => request('textDocument/completion', { textDocument: { uri }, position: { line: 2, character: 'import provider { fn '.length } });
 const open = (uri, text, version = 1) => send('textDocument/didOpen', { textDocument: { uri, languageId: 'kio', version, text } });
 const close = uri => send('textDocument/didClose', { textDocument: { uri } });
 const change = (text, version) => send('textDocument/didChange', { textDocument: { uri: providerUri, version }, contentChanges: [{ text }] });
@@ -82,7 +82,7 @@ try {
   assert.deepEqual(ambiguous.items, []);
   close(aliasUri);
   expectOnly(await completion(), 'alternate');
-  change(alternate.replace('module provider;', 'module wrong;'), 2);
+  change(alternate.replace('mod provider;', 'mod wrong;'), 2);
   const invalid = await completion();
   assert.equal(invalid.isIncomplete, true);
   assert.deepEqual(invalid.items, []);
@@ -95,7 +95,7 @@ try {
     assert.deepEqual(duplicate.items, []);
   }
   for (const [visibility, version] of [['pub ', 6], ['', 7]]) {
-    change(`module provider; pub type { Field: . }; pub type { Other: . }; ${visibility}type { Field: Other };`, version);
+    change(`mod provider; pub type { Field: . }; pub type { Other: . }; ${visibility}type { Field: Other };`, version);
     const duplicate = await completion();
     assert.equal(duplicate.isIncomplete, true);
     assert.deepEqual(duplicate.items, []);

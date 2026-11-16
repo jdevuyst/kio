@@ -1,9 +1,9 @@
-module usm/main;
+mod usm/main;
 
 import __intrinsics__;
 
-import macros/match(macro match);
-import testapi(String);
+import macros/match { macro match }
+import testapi { type String }
 
 pub fn main() {
   let _bad =

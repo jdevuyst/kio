@@ -1,4 +1,4 @@
-package macro_import_tagged_function;
+pkg macro_import_tagged_function;
 
 build {
   target js {

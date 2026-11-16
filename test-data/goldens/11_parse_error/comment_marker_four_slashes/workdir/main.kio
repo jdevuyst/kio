@@ -1,4 +1,4 @@
-module parse_err_four_slashes/main;
+mod parse_err_four_slashes/main;
 
 
 //// A four-slash run is a lex error, not a section ruler.

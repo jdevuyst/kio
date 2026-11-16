@@ -1,5 +1,5 @@
-module main;
+mod main;
 
-import macros(macro infer_result);
+import macros { macro infer_result }
 
 fn run() { let _inferred = infer_result(); () }

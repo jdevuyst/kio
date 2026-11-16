@@ -1,4 +1,4 @@
-module build_comptime_type_alias_sum_elimination/main;
+mod build_comptime_type_alias_sum_elimination/main;
 
 import __intrinsics__;
 

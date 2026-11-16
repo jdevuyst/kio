@@ -1,9 +1,9 @@
-signature app v(1);
+sig app v(1);
 
 v(1) {
   nonbreaking {
     add {
-      module api {
+      mod api {
         /// Public newtype documentation.
         pub type { T: . { pub mk; pub get } }
       }

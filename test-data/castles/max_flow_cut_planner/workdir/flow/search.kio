@@ -1,14 +1,14 @@
-module flow/search;
+mod flow/search;
 
 import flow/math as math;
 import flow/network as net;
-import macros/control(macro if);
-import macros/row_macros(macro select);
-import macros/spine_macros(macro widen_sum);
-import testapi(Array, Bool, I32);
+import macros/control { macro if }
+import macros/row_macros { macro select }
+import macros/spine_macros { macro widen_sum }
+import testapi { type Array; type Bool; type I32 }
 import testapi/arith as a;
 import testapi/array as ar;
-import testapi/iter(loop);
+import testapi/iter { fn loop }
 
 rec(loop) fn reconstruct(
 , network: net.Network

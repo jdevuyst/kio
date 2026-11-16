@@ -1,4 +1,4 @@
-package hmv;
+pkg hmv;
 
 build {
   cache "out/.kio-cache/";

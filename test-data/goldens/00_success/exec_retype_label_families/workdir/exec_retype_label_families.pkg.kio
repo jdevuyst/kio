@@ -1,4 +1,4 @@
-package exec_retype_label_families;
+pkg exec_retype_label_families;
 
 build {
   cache "out/.kio-cache/";

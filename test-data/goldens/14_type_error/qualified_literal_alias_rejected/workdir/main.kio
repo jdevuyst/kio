@@ -1,0 +1,5 @@
+mod main;
+
+import provider as p;
+
+fn run() { let value = p.answer; () }

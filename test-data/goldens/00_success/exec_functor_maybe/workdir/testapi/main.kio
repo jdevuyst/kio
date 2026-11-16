@@ -1,9 +1,9 @@
-module testapi/main;
+mod testapi/main;
 
 import __intrinsics__;
 
-import testapi(String);
-import testapi/io(print);
+import testapi { type String }
+import testapi/io { fn print }
 
 // A non-trivial arity-1 type constructor: `Maybe[A] : . | A`
 // carries an optional `A`. Its payload `. | A` (a sum) differs from

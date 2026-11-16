@@ -1,8 +1,8 @@
-module testapi/relay;
+mod testapi/relay;
 
-import testapi(String);
+import testapi { type String }
 import testapi/io as io;
-import testapi/types(Pack);
+import testapi/types { type Pack }
 
 pub type Forwarded[A] = Pack[A];
 

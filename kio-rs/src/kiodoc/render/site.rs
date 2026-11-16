@@ -65,11 +65,11 @@ pub struct PackageBoundaryPage {
     pub items: Vec<ItemSection>,
 }
 
-/// One documented item: a `fn` / `type` / `literal` / `labels` / `op` / `newtype`
+/// One documented item: a function, type, literal alias, or operator
 /// in a module, or a host or export entry on the package-boundary page.
 pub struct ItemSection {
     /// The item's source identifier (the operator token-run for
-    /// `op`, the type-alias name for `labels`).
+    /// `op`, the type-alias name for compact nominal types).
     pub name: String,
     /// Declaring module, also the context of the item's own doc comment.
     pub module_path: String,
@@ -415,7 +415,7 @@ mod tests {
     #[test]
     fn item_section_for_fn() {
         let module = crate::pass::parser::parse(
-            "module pkg/main;\n/// Adds two numbers.\npub fn add(x: Int) -> Int { x }\n",
+            "mod pkg/main;\n/// Adds two numbers.\npub fn add(x: Int) -> Int { x }\n",
         )
         .unwrap();
         let sections = module_item_sections(&module);
@@ -431,8 +431,10 @@ mod tests {
     #[test]
     fn item_section_for_newtype_carries_doc() {
         let module = crate::pass::parser::parse(
-            "module pkg/main;\n/// Wraps a unit.\n\
-             pub type { Wrapped: . { mk; get; }; };\n",
+            "mod pkg/main;
+/// Wraps a unit.
+pub type { Wrapped: . { mk; get; }; };
+",
         )
         .unwrap();
         let sections = module_item_sections(&module);
@@ -445,8 +447,7 @@ mod tests {
     #[test]
     fn package_file_without_matching_modules_has_no_item_sections() {
         let package_file =
-            crate::pass::parser::parse_package_file("package pkg;\nbridge { main; }\n", None)
-                .unwrap();
+            crate::pass::parser::parse_package_file("pkg pkg;\nbridge { main; }\n", None).unwrap();
         let sections = package_file_item_sections(&package_file, &BTreeMap::new());
         assert!(sections.is_empty());
     }
@@ -454,8 +455,7 @@ mod tests {
     #[test]
     fn boundary_sections_preserve_owners_and_complete_operator_identities() {
         let package =
-            crate::pass::parser::parse_package_file("package pkg; bridge { api/**; }", None)
-                .unwrap();
+            crate::pass::parser::parse_package_file("pkg pkg; bridge { api/**; }", None).unwrap();
         let mut modules = BTreeMap::new();
         for (path, body) in [
             (
@@ -470,7 +470,7 @@ mod tests {
         ] {
             modules.insert(
                 path.to_owned(),
-                crate::pass::parser::parse(&format!("module {path}; {body}")).unwrap(),
+                crate::pass::parser::parse(&format!("mod {path}; {body}")).unwrap(),
             );
         }
         let sections = package_file_item_sections(&package, &modules);
@@ -504,7 +504,7 @@ mod tests {
         }
         modules.insert(
             "api/unrelated".to_owned(),
-            crate::pass::parser::parse("module api/unrelated; pub type Other = .;").unwrap(),
+            crate::pass::parser::parse("mod api/unrelated; pub type Other = .;").unwrap(),
         );
         let unchanged = package_file_item_sections(&package, &modules)
             .into_iter()
@@ -518,7 +518,7 @@ mod tests {
     fn module_section_for_host_type_carries_doc() {
         // A `///` on a `host type` flows into the module page model.
         let module = crate::pass::parser::parse(
-            "module pkg/main;\n/// A string host type.\nhost type Text role(str);\n",
+            "mod pkg/main;\n/// A string host type.\nhost type Text role(str);\n",
         )
         .unwrap();
         let sections = module_item_sections(&module);
@@ -531,8 +531,7 @@ mod tests {
     #[test]
     fn anonymous_op_skipped() {
         // An anonymous `equiv` produces no section.
-        let module =
-            crate::pass::parser::parse("module pkg/main;\nequiv e() { (); () }\n").unwrap();
+        let module = crate::pass::parser::parse("mod pkg/main;\nequiv e() { (); () }\n").unwrap();
         assert!(module_item_sections(&module).is_empty());
     }
 
@@ -544,10 +543,9 @@ mod tests {
         let package_root = temp.path();
         let module_dir = package_root.join("pkg");
         fs::create_dir_all(&module_dir).expect("create module directory");
-        fs::write(package_root.join("pkg.pkg.kio"), "package pkg;\n").expect("write package file");
-        let provider_source = "module pkg/syntax; \
-             pub fn combine(left: ., right: .) -> . { () } \
-             pub op _ + _ { impl combine; };\n";
+        fs::write(package_root.join("pkg.pkg.kio"), "pkg pkg;\n").expect("write package file");
+        let provider_source = "mod pkg/syntax; pub fn combine(left: ., right: .) -> . { () } pub op _ + _ { impl combine; };
+";
         let provider =
             crate::pass::parser::parse(provider_source).expect("parse operator provider");
         assert!(
@@ -559,8 +557,8 @@ mod tests {
         );
         fs::write(module_dir.join("syntax.kio"), provider_source).expect("write operator provider");
         let main_source = concat!(
-            "module pkg/main;\n",
-            "import pkg/syntax(op _ + _);\n",
+            "mod pkg/main;\n",
+            "import pkg/syntax {op _ + _}\n",
             "/// [`@source documented`]\n",
             "/// ```kio {@}\n",
             "/// let value = () + ()\n",

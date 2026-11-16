@@ -1,4 +1,4 @@
-module app/syntax;
+mod app/syntax;
 
 pub fn choose[A](left: A, right: A) -> A { right }
 

@@ -1,4 +1,4 @@
-package suffix_automaton_index;
+pkg suffix_automaton_index;
 
 build {
   cache "out/.kio-cache/";

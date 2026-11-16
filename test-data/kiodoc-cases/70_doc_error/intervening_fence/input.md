@@ -4,7 +4,7 @@ A snippet declaring `{stdout}` must be followed by the matching
 output fence *before any other fence appears*.
 
 ```kio {harness=main placeholder="__INSERT_CODE_HERE__"}
-module kiodoc/main;
+mod kiodoc/main;
 __INSERT_CODE_HERE__
 ```
 

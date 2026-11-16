@@ -1,4 +1,4 @@
-package exec_recursive_type_groups;
+pkg exec_recursive_type_groups;
 
 build {
   cache "out/.kio-cache/";

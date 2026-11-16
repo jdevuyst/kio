@@ -1,4 +1,4 @@
-package cps_projector_function_payload;
+pkg cps_projector_function_payload;
 
 build {
   cache "out/.kio-cache/";

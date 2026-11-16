@@ -1,4 +1,4 @@
-package float_literal_overflow;
+pkg float_literal_overflow;
 
 build {
   target js {

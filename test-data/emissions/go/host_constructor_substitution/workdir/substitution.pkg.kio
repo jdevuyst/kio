@@ -1,4 +1,4 @@
-package substitution;
+pkg substitution;
 
 build {
   target go {

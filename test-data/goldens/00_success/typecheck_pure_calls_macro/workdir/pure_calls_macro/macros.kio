@@ -1,4 +1,4 @@
-module pure_calls_macro/macros;
+mod pure_calls_macro/macros;
 
 import __intrinsics__;
 

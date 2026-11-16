@@ -1,4 +1,4 @@
-package structural_witnesses;
+pkg structural_witnesses;
 
 build {
   cache "out/.kio-cache/";

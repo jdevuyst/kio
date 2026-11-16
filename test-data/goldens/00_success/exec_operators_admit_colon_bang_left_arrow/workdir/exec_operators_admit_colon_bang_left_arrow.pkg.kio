@@ -1,4 +1,4 @@
-package exec_operators_admit_colon_bang_left_arrow;
+pkg exec_operators_admit_colon_bang_left_arrow;
 
 build {
   cache "out/.kio-cache/";

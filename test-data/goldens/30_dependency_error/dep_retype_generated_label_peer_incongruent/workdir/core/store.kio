@@ -1,4 +1,4 @@
-module core/store;
+mod core/store;
 
 rec {
   pub type { Odd: Even };

@@ -1,17 +1,17 @@
-module catalog/ledger;
+mod catalog/ledger;
 
 import catalog/domain as dom;
-import catalog/domain(Call_list, Failure, Member, Member_index);
-import catalog/domain(Fines, Held);
-import catalog/domain(fine_rate);
+import catalog/domain { lit fine_rate }
+import catalog/domain { type Call_list; type Failure; type Member; type Member_index }
+import catalog/domain { type Fines; type Held }
 import dict/dict as dict;
 import list/list as list;
-import macros/control(macro if);
-import macros/match(macro match);
-import macros/row_macros(macro select, macro with);
+import macros/control { macro if }
+import macros/match { macro match }
+import macros/row_macros { macro select; macro with }
 import result/result as result;
-import testapi(Bool, I32);
-import testapi/arith(add_i32, eq_i32, mul_i32);
+import testapi { type Bool; type I32 }
+import testapi/arith { fn add_i32; fn eq_i32; fn mul_i32 }
 
 pub type Member_result = result.Result[Member][Failure];
 

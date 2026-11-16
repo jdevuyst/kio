@@ -1,7 +1,7 @@
 ================================================================================
 Compile-time and runtime conditionals retain their written stages
 ================================================================================
-module m; fn f(ct: T, b: Bool) { __comptime_if_then_else__(ct)[.](__.t__(ct), .() { () }, .() { () }); __if_then_else__[Bool][.](b, .() { () }, .() { () }) }
+mod m; fn f(ct: T, b: Bool) { __comptime_if_then_else__(ct)[.](__.t__(ct), .() { () }, .() { () }); __if_then_else__[Bool][.](b, .() { () }, .() { () }) }
 --------------------------------------------------------------------------------
 
 (source_file

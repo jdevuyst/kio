@@ -1,12 +1,12 @@
-module store/commands;
+mod store/commands;
 
-import macros/control(macro if);
-import macros/match(macro match);
-import macros/row_macros(macro select);
-import macros/spine_macros(macro widen_sum);
+import macros/control { macro if }
+import macros/match { macro match }
+import macros/row_macros { macro select }
+import macros/spine_macros { macro widen_sum }
 import store/history as history;
 import store/transactions as tx;
-import testapi(Bool, I32, String);
+import testapi { type Bool; type I32; type String }
 import testapi/fmt as fmt;
 import testapi/io as io;
 import testapi/text as text;

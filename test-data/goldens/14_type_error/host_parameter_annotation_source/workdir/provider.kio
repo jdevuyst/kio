@@ -1,4 +1,4 @@
-module provider;
+mod provider;
 
 import origin as o;
 

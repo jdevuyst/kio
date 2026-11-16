@@ -1,4 +1,4 @@
-module report;
+mod report;
 
 import scale as scale;
 
