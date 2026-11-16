@@ -13503,13 +13503,10 @@ fn run[A](first: Left, second: Right) -> Box[Right] {
                     let error = check_package_preserving_normalization(&package)
                         .err()
                         .expect("untyped continuations lack independent parameter types");
-                    assert!(
-                        error
-                            .error
-                            .diagnostic()
-                            .message
-                            .contains("cannot synthesize the type of `fn` parameter `first_value`")
-                    );
+                    assert!(matches!(&error.error, crate::error::Error::Type(_)));
+                    assert!(error.error.diagnostic().message.contains(
+                        "cannot infer the type of `fn` parameter `value` from this immediate call"
+                    ));
                 } else {
                     let checked = check_package_preserving_normalization(&package)
                         .unwrap_or_else(|error| panic!("Lowered rejected {body}: {error:?}"));
@@ -22863,6 +22860,74 @@ fn generic_last() -> . {
         assert_eq!(scope.memo().user_macro_template_executions(), 1);
         validate_substituted_package(checked.substituted())
             .expect("closed fixed-result action survives standalone Prime validation");
+    }
+
+    #[test]
+    fn retained_macro_result_unblocks_lambda_parameter_once() {
+        let macro_def = "mod macros; import __comptime__; pure fn infer_unit_impl(ct: __Comptime__, _unit: __Checked_term__, _target: .) -> __Checked_term__ { __term_unit__(ct) } pub macro infer_unit : . -> [Target] Target { impl infer_unit_impl; };";
+        for (source, expected_actions) in [
+            (
+                "mod main; import macros {macro infer_unit} fn consume[T](f: T -> T, value: T) -> . { () } fn run() -> . { consume(.(x) { x }, infer_unit()) }",
+                1,
+            ),
+            (
+                "mod main; import macros {macro infer_unit} fn consume[T][R](f: T -> R, value: T) -> . { () } fn run() -> . { consume(.(x) { () }, infer_unit()) }",
+                1,
+            ),
+            (
+                "mod main; import macros {macro infer_unit} fn consume[T][U](f: (T & U) -> ., a: T, b: U) -> . { () } fn run() -> . { consume(.(x, y) { () }, infer_unit(), infer_unit()) }",
+                1,
+            ),
+        ] {
+            let package = lowered_package(&[("macros.kio", macro_def), ("main.kio", source)]);
+            let (checked, scope) = check_retained_success(&package);
+            assert_eq!(
+                scope.memo().user_macro_template_executions(),
+                expected_actions
+            );
+            validate_substituted_package(checked.substituted())
+                .expect("standalone Prime validation");
+        }
+    }
+
+    #[test]
+    fn retained_applied_higher_kinded_head_unblocks_lambda() {
+        let source = "mod main; import __comptime__; host type Box[A]; pub type { Wrapper[*F]: F[.] { pub mk; pub get; }; }; host fn witness() -> Wrapper[Box]; pure fn natural_impl(_ct: __Comptime__, _source: __Type__, value: __Checked_term__, _target: .) -> __Checked_term__ { value } macro natural : [Source] Source -> [Target] Target { impl natural_impl; }; fn consume[*F](f: F[.] -> F[.], value: Wrapper[F]) -> . { () } fn run() -> . { consume(.(x) { x }, natural(witness())) }";
+        let package = lowered_package(&[("main.kio", source)]);
+        let (checked, scope) = check_retained_success(&package);
+        assert_eq!(scope.memo().user_macro_template_executions(), 1);
+        validate_substituted_package(checked.substituted()).expect("standalone Prime validation");
+    }
+
+    #[test]
+    fn retained_higher_kinded_head_ignores_unrelated_argument_and_result_goals() {
+        let source = "mod main; import __comptime__; host type Box[A]; pub type { Wrapper[*F]: F[.] { pub mk; pub get; }; }; host fn witness() -> Wrapper[Box]; pure fn natural_impl(_ct: __Comptime__, _source: __Type__, value: __Checked_term__, _target: .) -> __Checked_term__ { value } macro natural : [Source] Source -> [Target] Target { impl natural_impl; }; fn consume[*F][A][R](f: F[A] -> R, value: Wrapper[F], argument: A) -> . { () } fn run() -> . { consume(.(x) { () }, natural(witness()), natural(())) }";
+        let package = lowered_package(&[("main.kio", source)]);
+        let (checked, scope) = check_retained_success(&package);
+        assert_eq!(scope.memo().user_macro_template_executions(), 2);
+        validate_substituted_package(checked.substituted()).expect("standalone Prime validation");
+    }
+
+    #[test]
+    fn retained_lambda_wait_preserves_hard_preflight_before_macro_action() {
+        let macros = "mod macros; import __comptime__; pure fn unit_impl(ct: __Comptime__, _unit: __Checked_term__, _target: .) -> __Checked_term__ { __term_unit__(ct) } pub macro infer_unit : . -> [Target] Target { impl unit_impl; }; pure fn required_impl(ct: __Comptime__, required: __Type__, _unit: __Checked_term__) -> __Checked_term__ { __macro_error__(ct, __type_display__(ct, required)) } pub macro require_type : [Required] . -> . { impl required_impl; };";
+        let main = "mod main; import macros {macro infer_unit; macro require_type} fn consume[T](f: T -> T, value: T, last: .) -> . { () } fn run() -> . { consume(.(x) { x }, infer_unit(), require_type()) }";
+        let package = lowered_package(&[("macros.kio", macros), ("main.kio", main)]);
+        let (_, scope, errors) = check_retained_module_error(&package, "main");
+        assert!(
+            errors.iter().any(|error| error
+                .diagnostic()
+                .message
+                .contains("cannot infer type argument `[Required]`")),
+            "{errors:#?}"
+        );
+        assert_eq!(scope.memo().user_macro_template_executions(), 0);
+    }
+
+    #[test]
+    fn retained_lambda_cannot_infer_across_a_let_boundary() {
+        let source = "mod main; import __comptime__; pure fn infer_unit_impl(ct: __Comptime__, _unit: __Checked_term__, _target: .) -> __Checked_term__ { __term_unit__(ct) } macro infer_unit : . -> [Target] Target { impl infer_unit_impl; }; fn consume[T](f: T -> T, value: T) -> . { () } fn run() -> . { let f = .(x) { x }; consume(f, infer_unit()) }";
+        assert!(err(source).contains("cannot synthesize the type of `fn` parameter `x`"));
     }
 
     #[test]

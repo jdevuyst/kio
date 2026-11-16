@@ -1,0 +1,15 @@
+mod main;
+
+import __comptime__;
+
+pure fn infer_unit_impl(ct: __Comptime__, _unit: __Checked_term__, _target: .) -> __Checked_term__ {
+  __term_unit__(ct)
+}
+
+macro infer_unit : . -> [Target] Target { impl infer_unit_impl }
+
+fn consume[T](f: T -> T, value: T) { () }
+
+fn run() {
+  consume(.(x) { x }, infer_unit())
+}

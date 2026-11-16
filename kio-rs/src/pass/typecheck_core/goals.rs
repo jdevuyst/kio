@@ -4293,6 +4293,29 @@ impl GoalStore {
         }))
     }
 
+    /// Retain the exact unresolved head goal that blocks a selected source.
+    pub(crate) fn completion_wait_for_goal(
+        &self,
+        delta: &GoalDelta,
+        goal: TypeGoalRef,
+        span: Span,
+    ) -> Result<Option<CompletionWait>, Error> {
+        self.require_delta_owner(delta, span)?;
+        self.goal_state(goal, span)?;
+        if goal.owner() == delta.owner {
+            return Ok(None);
+        }
+        assert!(self.is_strict_ancestor(goal.owner(), delta.owner, span)?);
+        if self.binding(goal, Some(delta)).is_some() {
+            return Ok(None);
+        }
+        Ok(Some(CompletionWait {
+            delta: delta.authority(),
+            origin: delta.owner,
+            deepest: goal,
+        }))
+    }
+
     pub(crate) fn validate_completion_wait_origin(
         &self,
         wait: CompletionWait,

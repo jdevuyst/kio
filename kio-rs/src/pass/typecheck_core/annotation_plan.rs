@@ -1674,7 +1674,7 @@ pub(crate) fn open_synth_return_at(span: Span) -> Error {
 
 #[cfg(feature = "surface")]
 enum SelectedExpectedValueGroup {
-    Deferred,
+    Deferred(Type<Lowered>),
     TooShort,
     Ready {
         bindings: Vec<InternedType<Lowered>>,
@@ -1699,7 +1699,7 @@ where
         let (head, canonical, original) =
             take_expected_frontier(layer, alias_ctx, lexical, identity_canonical);
         return if matches!(head, Type::Goal { .. } | Type::Infer { .. }) {
-            SelectedExpectedValueGroup::Deferred
+            SelectedExpectedValueGroup::Deferred(head)
         } else {
             SelectedExpectedValueGroup::Ready {
                 bindings: Vec::new(),
@@ -1722,8 +1722,8 @@ where
         let (head, canonical, _) =
             take_expected_frontier(layer, alias_ctx, lexical, identity_canonical);
         match head {
-            Type::Goal { .. } | Type::Infer { .. } => {
-                return SelectedExpectedValueGroup::Deferred;
+            blocked @ (Type::Goal { .. } | Type::Infer { .. }) => {
+                return SelectedExpectedValueGroup::Deferred(blocked);
             }
             Type::Product { left, right, .. } => {
                 bindings.push(InternedType::fresh_with_identity(*left, canonical));
@@ -1919,6 +1919,16 @@ impl<'m> LambdaHeaderPlan<'m> {
         fn_span: Span,
         tcx: &TypeCtx<'m, '_, Lowered>,
     ) -> Result<Option<SelectedLambdaCheck>, Error> {
+        self.select_check_with_blocker(expected, fn_span, tcx)
+            .map(|(selected, _)| selected)
+    }
+
+    pub(crate) fn select_check_with_blocker(
+        &mut self,
+        expected: &InternedType<Lowered>,
+        fn_span: Span,
+        tcx: &TypeCtx<'m, '_, Lowered>,
+    ) -> Result<(Option<SelectedLambdaCheck>, Option<Type<Lowered>>), Error> {
         assert!(
             self.body_expected.is_none(),
             "a lambda plan selected checking more than once"
@@ -1972,7 +1982,7 @@ impl<'m> LambdaHeaderPlan<'m> {
                             expected_layer_canonical,
                         );
                         if matches!(&unfolded, Type::Goal { .. } | Type::Infer { .. }) {
-                            return Ok(None);
+                            return Ok((None, Some(unfolded)));
                         }
                         let Type::Forall {
                             param: expected_param,
@@ -2030,7 +2040,7 @@ impl<'m> LambdaHeaderPlan<'m> {
                         expected_layer_canonical,
                     );
                     if matches!(&unfolded, Type::Goal { .. } | Type::Infer { .. }) {
-                        return Ok(None);
+                        return Ok((None, Some(unfolded)));
                     }
                     let (expected_param, ret) = match unfolded {
                         Type::Function { param, ret, .. } => (param, ret),
@@ -2052,7 +2062,9 @@ impl<'m> LambdaHeaderPlan<'m> {
                         &expected_binders,
                     );
                     let (bindings, zero_head, zero_original) = match selected_group {
-                        SelectedExpectedValueGroup::Deferred => return Ok(None),
+                        SelectedExpectedValueGroup::Deferred(blocker) => {
+                            return Ok((None, Some(blocker)));
+                        }
                         SelectedExpectedValueGroup::TooShort => {
                             return Err(Error::type_(
                                 fn_span,
@@ -2091,18 +2103,15 @@ impl<'m> LambdaHeaderPlan<'m> {
                             .expect("lambda plan lost a value-parameter descriptor");
                         assert_eq!(slot.param.meta.span, param.meta.span);
                         if !self.value_slot_supplies_shape(selected_slots.len()) {
-                            let open_head = super::aliases::unfold_alias_frontier_for_comparison_with_binder_lookup(
+                            let alias_head = super::aliases::unfold_alias_frontier_for_comparison_with_binder_lookup(
                                 ty.as_type(),
                                 &alias_ctx,
                                 &expected_binders,
                                 ty.identity_is_canonical(),
-                            )
-                            .map_or_else(
-                                || matches!(ty.as_type(), Type::Goal { .. } | Type::Infer { .. }),
-                                |(head, _)| matches!(head, Type::Goal { .. } | Type::Infer { .. }),
                             );
-                            if open_head {
-                                return Ok(None);
+                            let head = alias_head.as_ref().map_or(ty.as_type(), |(head, _)| head);
+                            if matches!(head, Type::Goal { .. } | Type::Infer { .. }) {
+                                return Ok((None, Some(head.clone())));
                             }
                         }
                         selected_slots.push((ty, selected_alpha_edges.len()));
@@ -2125,7 +2134,7 @@ impl<'m> LambdaHeaderPlan<'m> {
                 expected_layer_canonical,
             );
             if matches!(&unfolded, Type::Goal { .. } | Type::Infer { .. }) {
-                return Ok(None);
+                return Ok((None, Some(unfolded)));
             }
             let (param, ret) = match unfolded {
                 Type::Function { param, ret, .. } => (param, ret),
@@ -2146,7 +2155,7 @@ impl<'m> LambdaHeaderPlan<'m> {
                 canonical,
             );
             if matches!(&param, Type::Goal { .. } | Type::Infer { .. }) {
-                return Ok(None);
+                return Ok((None, Some(param)));
             }
             if !matches!(&param, Type::Unit { .. }) {
                 return Err(Error::type_(
@@ -2178,13 +2187,16 @@ impl<'m> LambdaHeaderPlan<'m> {
         self.alpha_edges_bound = false;
         self.body_expected_alpha_edge_count = type_param_count;
         self.body_expected = Some(expected_layer.clone());
-        Ok(Some((
-            expected_layer,
-            selected_slots
-                .into_iter()
-                .map(|(selected, _)| selected)
-                .collect(),
-        )))
+        Ok((
+            Some((
+                expected_layer,
+                selected_slots
+                    .into_iter()
+                    .map(|(selected, _)| selected)
+                    .collect(),
+            )),
+            None,
+        ))
     }
 
     /// Bind the pure plan's exact expected/source alpha edges to the one set

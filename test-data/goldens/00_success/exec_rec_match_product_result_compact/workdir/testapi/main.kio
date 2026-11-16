@@ -1,0 +1,30 @@
+mod testapi/main;
+
+import fixture/model { type First; type Report; type Second }
+import fixture/search { fn descend; fn descend_pending }
+import macros/row_macros { macro select }
+import testapi { type I32; type String }
+import testapi/fmt { fn int_to_string }
+import testapi/io { fn print }
+
+fn first(report: Report) -> I32 {
+  report.>select { First.get }
+}
+
+fn second(report: Report) -> I32 {
+  report.>select { Second.get }
+}
+
+pub fn main() {
+  let tail = descend(4);
+  let pending = descend_pending(4);
+  print("[");
+  print(int_to_string(first(tail)));
+  print(", ");
+  print(int_to_string(second(tail)));
+  print("] [");
+  print(int_to_string(first(pending)));
+  print(", ");
+  print(int_to_string(second(pending)));
+  print("]\n")
+}

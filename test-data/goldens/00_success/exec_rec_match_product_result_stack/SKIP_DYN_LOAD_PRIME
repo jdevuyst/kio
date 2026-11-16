@@ -1,0 +1,4 @@
+The 5,000-step match/product recursion exhausts the dynamic interpreter's
+fixed evaluation budget. The shared-source exec_rec_match_product_result_compact
+case retains dynamic coverage of both the product result and pending continuation
+at compact depth. All backend stress runs and Prime validation remain applicable.

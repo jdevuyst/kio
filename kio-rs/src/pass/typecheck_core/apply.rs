@@ -6497,6 +6497,7 @@ impl<'m> OpenLambdaOwnerChain<'m> {
 #[allow(clippy::large_enum_variant)] // completed lambda bodies stay inline after retained frames move off stack
 enum OrdinaryLambdaState<'m> {
     Unselected,
+    Waiting(Box<RetainedCompletionWait>),
     Body {
         lambda_owners: OpenLambdaOwnerChain<'m>,
         body: OrdinaryChildContinuation<'m>,
@@ -6853,7 +6854,8 @@ impl<'m> OrdinaryValueCursor<'m> {
                         completion_wait: None,
                         ..
                     }
-                    | OrdinaryLambdaState::Unselected => {}
+                    | OrdinaryLambdaState::Unselected
+                    | OrdinaryLambdaState::Waiting(_) => {}
                 },
                 CompletionNode::Call(call) => {
                     let open = match call {
@@ -6921,6 +6923,11 @@ impl<'m> OrdinaryValueCursor<'m> {
                 }
                 CompletionNode::Value(cursor, delta) => match cursor.planned.observed() {
                     PlannedOrdinaryValue::Lambda(lambda) => {
+                        if let OrdinaryLambdaState::Waiting(wait) = &lambda.state
+                            && visit(wait.0, delta)?
+                        {
+                            return Ok(true);
+                        }
                         nodes.push(CompletionNode::Lambda(lambda))
                     }
                     PlannedOrdinaryValue::Call(call) => nodes.push(CompletionNode::Call(call)),
@@ -13850,17 +13857,49 @@ impl<'m> OrdinaryValueCursor<'m> {
             state,
         } = lambda;
         let state = match state {
-            OrdinaryLambdaState::Unselected => {
+            OrdinaryLambdaState::Unselected | OrdinaryLambdaState::Waiting(_) => {
                 let ambient_binders = tcx.in_scope_type_param_presentation();
-                let Some((mut selection, mut value_param_types)) = select_ordinary_lambda(
+                let (selected, blocker) = select_ordinary_lambda_with_blocker(
                     source,
                     &mut header,
                     expected.as_ref(),
                     mode,
                     frontier,
                     tcx,
-                )?
-                else {
+                )?;
+                let Some((mut selection, mut value_param_types)) = selected else {
+                    if mode.is_final_check() {
+                        header.require_admitted_in_source_order()?;
+                        if let Some(crate::ast::Type::Goal { goal, .. }) = blocker {
+                            let (store, _owner, delta, _publication) = frontier.parts_mut();
+                            if let Some(wait) =
+                                store.completion_wait_for_goal(delta, goal, source.span())?
+                            {
+                                let mut retained = None;
+                                RetainedCompletionWait::retain(&mut retained, wait);
+                                return Ok(OrdinaryDriverStep::Ready(
+                                    OrdinaryValueAdvance::Waiting(Box::new(Self {
+                                        source,
+                                        expected,
+                                        planned: PlannedOrdinaryValue::Lambda(
+                                            PlannedOrdinaryLambda {
+                                                header,
+                                                retained_binders,
+                                                state: OrdinaryLambdaState::Waiting(
+                                                    retained
+                                                        .expect("a lambda blocker was retained"),
+                                                ),
+                                            },
+                                        ),
+                                    })),
+                                ));
+                            }
+                        }
+                        if mode == frontier::FrontierMode::Final {
+                            let _ = header.select_synth(true, tcx)?;
+                            unreachable!("an unselected lambda unexpectedly synthesized");
+                        }
+                    }
                     return Ok(OrdinaryDriverStep::Ready(OrdinaryValueAdvance::pending(
                         Self {
                             source,
@@ -14057,9 +14096,11 @@ impl<'m> OrdinaryValueCursor<'m> {
                             )
                             .map(OrdinaryDriverStep::Ready)
                         }
-                        OrdinaryLambdaState::Unselected => unreachable!(
-                            "a completed driver lambda returned to its unselected state"
-                        ),
+                        OrdinaryLambdaState::Unselected | OrdinaryLambdaState::Waiting(_) => {
+                            unreachable!(
+                                "a completed driver lambda returned to its unselected state"
+                            )
+                        }
                     }
                 }),
             },
@@ -16553,21 +16594,51 @@ fn select_ordinary_lambda<'m>(
     frontier: &mut impl OrdinaryFrontierReentry<'m>,
     tcx: &mut TypeCtx<'m, '_, crate::ast::Lowered>,
 ) -> Result<OrdinaryLambdaSelectionResult, Error> {
+    let (selected, blocker) =
+        select_ordinary_lambda_with_blocker(source, header, expected, mode, frontier, tcx)?;
+    if selected.is_none() && blocker.is_some() && mode == frontier::FrontierMode::Final {
+        let _ = header.select_synth(true, tcx)?;
+        unreachable!("an unselected lambda unexpectedly synthesized");
+    }
+    Ok(selected)
+}
+
+#[cfg(feature = "surface")]
+#[allow(clippy::too_many_arguments)]
+fn select_ordinary_lambda_with_blocker<'m>(
+    source: &'m crate::ast::Expr<crate::ast::Lowered>,
+    header: &mut super::annotation_plan::LambdaHeaderPlan<'m>,
+    expected: Option<&OwnerBoundType>,
+    mode: frontier::FrontierMode,
+    frontier: &mut impl OrdinaryFrontierReentry<'m>,
+    tcx: &mut TypeCtx<'m, '_, crate::ast::Lowered>,
+) -> Result<
+    (
+        OrdinaryLambdaSelectionResult,
+        Option<crate::ast::Type<crate::ast::Lowered>>,
+    ),
+    Error,
+> {
+    let mut blocker = None;
     if let Some(expected) = expected {
         let progressed = {
             let (store, owner, delta, _publication) = frontier.parts_mut();
             let expected = expected.clone().into_scoped(owner, store, source.span())?;
             store.zonk_for_progress(delta, expected, tcx)?
         };
-        if let Some((body_type, value_param_types)) =
-            header.select_check(progressed.ty(), source.span(), tcx)?
-        {
-            return Ok(Some((
-                OrdinaryLambdaSelection::Check {
-                    body_type: OwnerBoundType::Plain(body_type),
-                },
-                value_param_types,
-            )));
+        let (selected, blocked) =
+            header.select_check_with_blocker(progressed.ty(), source.span(), tcx)?;
+        blocker = blocked;
+        if let Some((body_type, value_param_types)) = selected {
+            return Ok((
+                Some((
+                    OrdinaryLambdaSelection::Check {
+                        body_type: OwnerBoundType::Plain(body_type),
+                    },
+                    value_param_types,
+                )),
+                None,
+            ));
         }
     }
 
@@ -16575,18 +16646,23 @@ fn select_ordinary_lambda<'m>(
     // shape chose checking, so a call selector can attach its known value slot
     // before the body commits to standalone synthesis.
     if mode == frontier::FrontierMode::ExpectedOnly {
-        return Ok(None);
+        return Ok((None, blocker));
     }
 
-    let Some((value_param_types, annotated_return)) =
-        header.select_synth(mode == frontier::FrontierMode::Final, tcx)?
+    let Some((value_param_types, annotated_return)) = header.select_synth(
+        mode == frontier::FrontierMode::Final && blocker.is_none(),
+        tcx,
+    )?
     else {
-        return Ok(None);
+        return Ok((None, blocker));
     };
-    Ok(Some((
-        OrdinaryLambdaSelection::Synthesizing { annotated_return },
-        value_param_types,
-    )))
+    Ok((
+        Some((
+            OrdinaryLambdaSelection::Synthesizing { annotated_return },
+            value_param_types,
+        )),
+        None,
+    ))
 }
 
 #[cfg(feature = "surface")]
@@ -25897,6 +25973,20 @@ mod tests {
                     "fn consume[A]({parameters}, _last: A) -> . {{ () }} fn result() -> . {{ consume({callbacks}, {last}) }}"
                 ), width, usize::from(waiting), waiting));
             }
+        }
+        for width in [1, 4, 16] {
+            let parameters = (0..width)
+                .map(|i| format!("_f{i}: A -> A"))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let callbacks = vec![".(value) { value }"; width].join(", ");
+            cases.push((
+                format!("lambda-parameter-width-{width}"),
+                format!("fn consume[A]({parameters}, _last: A) -> . {{ () }} fn result() -> . {{ consume({callbacks}, infer_unit()) }}"),
+                width,
+                1,
+                true,
+            ));
         }
         for (label, declarations, bodies, actions, waiting) in cases {
             let main = format!(
