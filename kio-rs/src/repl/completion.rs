@@ -115,8 +115,8 @@ impl ReplCompleter {
 }
 
 impl Completer for ReplCompleter {
-    fn complete(&mut self, line: &str, pos: usize) -> Vec<Suggestion> {
-        self.route(line, pos)
+    fn complete(&mut self, line: &str, pos: usize) -> reedline::CompletionResult {
+        reedline::CompletionResult::fresh(self.route(line, pos))
     }
 }
 
@@ -493,7 +493,13 @@ mod tests {
             ".() { recur(",
             ":normalize recur(",
         ] {
-            assert!(completer.complete(input, input.len()).is_empty(), "{input}");
+            assert!(
+                completer
+                    .complete(input, input.len())
+                    .suggestions()
+                    .is_empty(),
+                "{input}"
+            );
         }
     }
 
@@ -502,7 +508,8 @@ mod tests {
         let mut completer = completer_with(NameSet::default());
         for prefix in ["", ":normalize "] {
             let input = format!("{prefix}.() {{ let .x. = (); x3; let .x. = (); x");
-            let suggestions = completer.complete(&input, input.len());
+            let result = completer.complete(&input, input.len());
+            let suggestions = result.suggestions();
             let numbered: Vec<_> = suggestions
                 .iter()
                 .filter(|item| item.value.starts_with('x'))
@@ -529,7 +536,8 @@ mod tests {
                 (".[B] { .(value: ", vec!["B", "Existing"]),
             ] {
                 let input = format!("{prefix}{expression}");
-                let suggestions = completer.complete(&input, input.len());
+                let result = completer.complete(&input, input.len());
+                let suggestions = result.suggestions();
                 let mut labels: Vec<_> =
                     suggestions.iter().map(|item| item.value.as_str()).collect();
                 labels.sort_unstable();

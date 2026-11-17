@@ -316,7 +316,7 @@ fn run_loop_interactive(
                 }
             }
             // Ctrl-C — abandon the current line, keep the session.
-            Ok(Signal::CtrlC) => continue,
+            Ok(Signal::CtrlC(_)) => continue,
             // Ctrl-D — leave the REPL.
             Ok(Signal::CtrlD) => break,
             // Other signals (host command, external break) aren't
@@ -781,9 +781,9 @@ mod tests {
         #[derive(Default)]
         struct RecordingCompleter(Vec<(String, usize)>);
         impl reedline::Completer for RecordingCompleter {
-            fn complete(&mut self, line: &str, cursor: usize) -> Vec<reedline::Suggestion> {
+            fn complete(&mut self, line: &str, cursor: usize) -> reedline::CompletionResult {
                 self.0.push((line.to_owned(), cursor));
-                Vec::new()
+                reedline::CompletionResult::fresh(Vec::new())
             }
         }
         let mut editor = reedline::Editor::default();
