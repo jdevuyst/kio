@@ -477,7 +477,7 @@ jobs:
           # Declare every target so `kio build` exercises all emitters
           # (pure-Rust emit; running the output is intentionally skipped).
           printf '%s\n' \
-            'package smoke;' \
+            'pkg smoke;' \
             '' \
             'build {' \
             '  cache "out/.kio-cache/";' \

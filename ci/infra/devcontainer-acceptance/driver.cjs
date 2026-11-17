@@ -14,7 +14,7 @@ const write = (file, data) => fs.writeFileSync(file, JSON.stringify(data, null, 
 const command = (bin, args, options = {}) => cp.execFileSync(bin, args, { encoding: 'utf8', ...options }).trim();
 const dependencies = root => createRequire(path.join(root, 'tools/vscode-kio/package.json'));
 const workspaces = ['kio-rs', 'ci/infra/kio-ci-scheduler-rs', 'ci/infra/kio-gen-rs', 'ci/infra/kio-prime-check-rs', 'ci/infra/kio-test-runner-rs'];
-const fixtureSource = 'module main;\n\nfn identity(x: .) { x }\n\nfn caller() { identity(()) }\n';
+const fixtureSource = 'mod main;\n\nfn identity(x: .) { x }\n\nfn caller() { identity(()) }\n';
 
 function nonroot(uid) { assert.notEqual(uid, 0, 'remote execution must be nonroot'); }
 function ownership(file) {
@@ -61,7 +61,7 @@ function authenticatePulled(info, image, manifest, native) {
 
 function fixture(directory) {
   fs.mkdirSync(directory, { recursive: true });
-  fs.writeFileSync(path.join(directory, 'acceptance.pkg.kio'), 'package acceptance;\n\nbridge {\n  main\n}\n');
+  fs.writeFileSync(path.join(directory, 'acceptance.pkg.kio'), 'pkg acceptance;\n\nbridge {\n  main\n}\n');
   fs.writeFileSync(path.join(directory, 'main.kio'), fixtureSource);
   fs.mkdirSync(path.join(directory, '.vscode'), { recursive: true });
   write(path.join(directory, '.vscode/settings.json'), { 'chat.disableAIFeatures': true });
