@@ -223,7 +223,7 @@ pub use exit_code::ExitCode;
 /// number — `ci/checks/repo-lint/version-check.sh` extracts the
 /// tag version (`releases/v0.2.3`) from this constant and asserts it agrees
 /// with the manifest versions across the tree.
-pub const KIO_DOCS_BASE_URL: &str = "https://github.com/jdevuyst/kio/blob/releases/v0.2.3";
+pub const KIO_DOCS_BASE_URL: &str = "https://github.com/jdevuyst/kio/blob/releases/v0.3.0";
 
 /// Render bundled documentation references with copyable offline and web routes.
 pub fn documentation_help(template: &str) -> String {
