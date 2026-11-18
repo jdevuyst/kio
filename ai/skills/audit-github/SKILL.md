@@ -146,12 +146,17 @@ recovery machinery retained after its stated purpose has ended.
   evidence after partial immutable publication.
 - Verify pre-boundary rollback is supported by receipts written before tag
   mutation: prior digest/absence, candidate identity and a guard against replacing
-  subsequent publication. Cancel/drain and reconcile actual channel state before
-  retry or abort. Post-boundary recovery must not rewrite frozen source/tags or
+  subsequent publication. Check cancellation authority and reconcile actual
+  channel state after the jobs drain. Post-boundary recovery must not rewrite frozen source/tags or
   rebuild payloads merely to retry a publisher. Cleanup preserves required
   artifacts and useful local evidence, targets only authorized attempt resources,
   and does not claim to erase provider-internal audit trails. Keep these rules
   coherent across workflows, release instructions and channel documentation.
+- Walk through a pause request that arrives while a registry upload is running.
+  Verify the release instructions tell the user what is already public, whether
+  the requested pause exists, and what stopping or continuing would do. Check
+  that an ambiguous request prompts a decision and an explicit immediate
+  cancellation is acted on promptly.
 - Recovery reports identify the publication boundary already crossed and the
   remaining reversible actions, and whether existing artifacts can finish through
   `Resume release` or a new version is required. Every run that performed an

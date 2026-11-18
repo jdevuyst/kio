@@ -202,6 +202,17 @@ A release tag starts automation that can cross this boundary without another
 pause. Obtain the selected publication authority before that launch, and honor
 any requested human hold before the boundary.
 
+If the user explicitly requests immediate cancellation, cancel promptly and
+check actual publication as the jobs drain. When the user instead asks to pause
+at a particular stage, check the running jobs and public channels immediately.
+Tell the user whether the workflow can pause there, what has already published,
+and what can still publish while they decide. Give this state in the current
+reply even if an earlier update announced the boundary. If the requested pause
+is unavailable or the user may be unaware that publication is already
+irreversible, explain what interruption could still prevent and what would
+remain unfinished. Ask whether to interrupt the active run or let it finish
+before acting on that choice.
+
 The effective workflow order is:
 
 1. Credential and exact-source CI readiness; build binaries, verify the packaged
@@ -300,8 +311,9 @@ the new SHA instead of treating an old run's retry as validation of new code.
 
 ### Before the point of no return
 
-First cancel and drain affected publication work, then query actual channel
-occupancy: cancellation alone does not prove that publication never happened.
+Once cancellation is authorized, cancel and drain affected publication work.
+Recheck actual channel occupancy afterward because publication can race with
+cancellation.
 For an authorized retry, fold repairs into the release-preparation commit where
 practical, renew affected review/checks and DCO certification, and update the
 approved refs using exact force-with-lease expectations. Reuse the existing
