@@ -1,10 +1,9 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
-const path = require('node:path');
 
 const file = process.argv[2];
 const compiler = fs.realpathSync(process.argv[3]);
-const ts = require(path.resolve(path.dirname(compiler), '../lib/typescript.js'));
+const ts = require('node:module').createRequire(compiler)('typescript');
 const source = ts.createSourceFile(file, fs.readFileSync(file, 'utf8'), ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
 assert.equal(source.parseDiagnostics.length, 0);
 const declarations = new Map();

@@ -18,7 +18,7 @@ if (['--strip-source', '--edit-source'].includes(process.argv[2])) {
 }
 const file = path.resolve(process.argv[2]);
 const compiler = fs.realpathSync(process.argv[3]);
-const ts = require(path.resolve(path.dirname(compiler), '../lib/typescript.js'));
+const ts = require('node:module').createRequire(compiler)('typescript');
 const source = fs.readFileSync(file, 'utf8');
 const exportMarker = process.argv[4] === '--edited' ? 'EXPORT-EDIT-DOC' : 'EXPORT-DOC';
 const markers = ['HOST-FN-DOC', exportMarker, 'FIRST-SAME-DOC', 'SECOND-SAME-DOC', 'NEWTYPE-DOC', 'OPAQUE-DOC', 'GENERIC-DOC', 'EXISTENTIAL-DOC'];
