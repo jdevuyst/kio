@@ -165,6 +165,8 @@ build_corpus_tool_binary \
   kio-lsp-cli "$REPO_ROOT/kio-rs" kio "$KIO_E2E_SERVER" --all-features --bins
 export KIO_E2E_SERVER
 
+node "$REPO_ROOT/ci/infra/devcontainer-acceptance/driver.cjs" selftest "$KIO_E2E_SERVER"
+
 start_xvfb
 
 # One launch per server the extension can meet: the mock (editor-side

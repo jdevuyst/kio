@@ -4,6 +4,7 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const cp = require('node:child_process');
 const { createRequire } = require('node:module');
+const { pathToFileURL } = require('node:url');
 
 const control = '/acceptance';
 const workspace = '/workspaces/kio';
@@ -255,8 +256,42 @@ function authenticateEditorManifest(runtime, baked) {
 }
 
 function fixtureHover(hover) {
-  assert.ok(hover.some(entry => entry.contents.some(content => content.value === '```kio\n. -> .\n```')),
-    'fixture hover must report its unit-to-unit function type');
+  assert.ok(hover.some(entry => entry.contents.some(content => content.value === '```kio\nfn: . -> .\n```')),
+    `fixture hover must report its ordinary unit-to-unit function: ${JSON.stringify(hoverEvidence(hover))}`);
+}
+
+async function checkFixtureHover(child, directory) {
+  const rpc = dependencies(path.resolve(__dirname, '../../..'))('vscode-jsonrpc/node');
+  const connection = rpc.createMessageConnection(new rpc.StreamMessageReader(child.stdout), new rpc.StreamMessageWriter(child.stdin));
+  const uri = pathToFileURL(path.join(directory, 'main.kio')).href;
+  const diagnosed = new Promise(resolve => connection.onNotification('textDocument/publishDiagnostics', params => {
+    if (params.uri === uri && params.version === 1) resolve(params);
+  }));
+  let timer;
+  try {
+    connection.listen();
+    await Promise.race([
+      (async () => {
+        await connection.sendRequest('initialize', { processId: process.pid, rootUri: pathToFileURL(directory).href, capabilities: {} });
+        await connection.sendNotification('initialized', {});
+        await connection.sendNotification('textDocument/didOpen', { textDocument: { uri, languageId: 'kio', version: 1, text: fixtureSource } });
+        const diagnostics = await diagnosed;
+        assert.ok(diagnostics.diagnostics.every(item => item.severity !== 1), JSON.stringify(diagnostics));
+        const prefix = fixtureSource.slice(0, fixtureSource.lastIndexOf('identity') + 3).split('\n');
+        const hover = await connection.sendRequest('textDocument/hover', { textDocument: { uri },
+          position: { line: prefix.length - 1, character: prefix.at(-1).length } });
+        assert.equal(hover?.contents?.kind, 'markdown', JSON.stringify(hover));
+        fixtureHover([{ contents: [hover.contents] }]);
+        console.log('acceptance fixture hover: real LSP reports the ordinary unit-to-unit function');
+        await connection.sendRequest('shutdown');
+        await connection.sendNotification('exit');
+      })(),
+      new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('fixture LSP check timed out')), 60000); }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+    connection.dispose();
+  }
 }
 
 function fixtureCompletion(result) {
@@ -606,7 +641,9 @@ async function selftest(compiler) {
     authenticateEditorManifest({ name: 'kio', main: 'baked.js', extensionLocation: { scheme: 'file' }, isBuiltin: false }, { name: 'kio', main: 'baked.js' });
     assert.throws(() => authenticateEditorManifest({ name: 'kio', main: 'rebuilt.js', isBuiltin: false }, { name: 'kio', main: 'baked.js' }), /baked manifest/);
     assert.throws(() => authenticateEditorManifest({ name: 'kio' }, { name: 'kio', main: 'baked.js' }), /baked manifest/);
-    fixtureHover([{ contents: [{ value: '```kio\n. -> .\n```' }] }]);
+    fixtureHover([{ contents: [{ value: '```kio\nfn: . -> .\n```' }] }]);
+    assert.throws(() => fixtureHover([{ contents: [{ value: '```kio\n. -> .\n```' }] }]), /unit-to-unit/);
+    assert.throws(() => fixtureHover([{ contents: [{ value: '```kio\npure fn: . -> .\n```' }] }]), /unit-to-unit/);
     assert.throws(() => fixtureHover([{ contents: [{ value: 'identity' }] }]), /unit-to-unit/);
     assert.throws(() => fixtureHover([{ contents: [{ value: '```kio\n.\n```' }] }]), /unit-to-unit/);
     assert.ok(fixtureCompletion({ items: [{ label: 'identity' }] }));
@@ -650,7 +687,8 @@ async function selftest(compiler) {
       assert.throws(() => command(compiler, ['check'], { cwd: directory, stdio: 'pipe' }), error => error.status === 14);
       console.log('acceptance editor fixture: clean source accepted; injected type mismatch exits 14');
       if (process.platform === 'linux') {
-        const child = cp.spawn(compiler, ['lsp'], { cwd: directory, stdio: ['pipe', 'ignore', 'pipe'] });
+        fs.writeFileSync(path.join(directory, 'main.kio'), fixtureSource);
+        const child = cp.spawn(compiler, ['lsp'], { cwd: directory, stdio: ['pipe', 'pipe', 'pipe'] });
         const closed = new Promise(resolve => child.once('close', resolve));
         let stderr = '';
         child.stderr.on('data', bytes => { stderr += bytes; });
@@ -666,6 +704,7 @@ async function selftest(compiler) {
           assert.throws(() => runningCompiler({ ...expected, sha256: 'stale-bytes' }), /refreshed compiler bytes/);
           assert.throws(() => runningCompiler({ ...expected, path: path.join(scratch, 'container.json') }), /lifecycle-selected compiler/);
           console.log('acceptance live LSP identity: actual child verified; stale path/bytes rejected');
+          await checkFixtureHover(child, directory);
         } finally {
           child.kill('SIGTERM');
           const killTimer = setTimeout(() => child.kill('SIGKILL'), 10000);
