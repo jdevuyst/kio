@@ -1,0 +1,61 @@
+name: Resume release
+run-name: Resume release 0.3.0 website
+on:
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  prepare:
+    if: github.repository == 'jdevuyst/kio' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - name: Verify the release and original website artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE: 41b85c047bfac6e0864b28d791580965bff021e1
+        run: |
+          set -eu
+          gh api "repos/$GITHUB_REPOSITORY/releases/latest" |
+            jq -e --arg source "$SOURCE" '
+              .id == 449547489 and .immutable and .tag_name == "releases/v0.3.0" and
+              .target_commitish == $source'
+          gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/14400266084" |
+            jq -e --arg source "$SOURCE" '
+              .name == "github-pages" and .expired == false and
+              .workflow_run.id == 44237105527 and .workflow_run.head_sha == $source'
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8
+        with:
+          github-token: ${{ github.token }}
+          run-id: '44237105527'
+          artifact-ids: '14400266084'
+          path: prepared
+          merge-multiple: true
+      - name: Verify the smoke-tested website archive
+        working-directory: prepared
+        run: echo '0dddb2d4760e0ab5b8dfb5da93f0627df27a1c37009c501f99277b1d66fa4551  artifact.tar' | sha256sum --check --strict
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7
+        with:
+          name: github-pages
+          path: prepared/artifact.tar
+          if-no-files-found: error
+          retention-days: 1
+
+  deploy:
+    needs: prepare
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    concurrency:
+      group: pages
+      cancel-in-progress: false
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346  # v5.0.1
