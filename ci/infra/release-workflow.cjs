@@ -57,7 +57,7 @@ function inputs(read, exists, list) {
   // New generator options can introduce file inputs (including build setup or
   // release submodules); extend this bounded model deliberately, not silently.
   const keys = new Set(['members', 'cargo-dist-version', 'allow-dirty', 'ci', 'installers',
-    'targets', 'hosting', 'github-release', 'plan-jobs', 'global-artifacts-jobs', 'post-announce-jobs', 'publish-jobs', 'github-custom-job-permissions']);
+    'targets', 'hosting', 'github-release', 'plan-jobs', 'global-artifacts-jobs', 'post-announce-jobs', 'publish-jobs', 'github-custom-job-permissions', 'github-custom-runners']);
   for (const match of config.matchAll(/^\s*([\w-]+)\s*=/gm))
     assert(keys.has(match[1]), `unsupported dist input: ${match[1]}`);
   assert(!exists('dist.toml') && !exists('kio-rs/dist/dist.toml'), 'unmodeled dist config');
